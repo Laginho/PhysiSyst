@@ -10,7 +10,7 @@ export const ptBR = {
   'palette.rectangle': 'retângulo',
   'palette.circle': 'bola',
   'palette.triangle': 'cunha',
-  'panel.snapToGrid': 'encaixar na grade',
+  'panel.contactSnap': 'encaixar em contato',
   'panel.showVectors': 'mostrar vetores (peso/aplicadas/normais)',
   'panel.gLabel': 'g (m/s²)',
   'panel.particleMode': 'modo partícula — corpo rígido (trava rotações)',

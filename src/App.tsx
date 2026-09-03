@@ -33,6 +33,7 @@ import {
   type BodyPatch,
 } from './editor/doc'
 import { bodyAtPoint, worldToLocal } from './editor/hitTest'
+import { resolveContactSnap } from './editor/contactSnap'
 import {
   alphaFromLocal,
   clampAlphaDeg,
@@ -40,8 +41,6 @@ import {
   HANDLE_SIZE_PX,
   minDimension,
   pickHandle,
-  snapMovePosition,
-  snapPoint,
 } from './editor/handles'
 import { drawArrow, drawGrid, drawScene } from './render/draw'
 import { makeTransform, screenToWorld, type Camera } from './render/transform'
@@ -367,7 +366,7 @@ export default function App() {
     return scene
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [snapToGrid, setSnapToGrid] = useState(true)
+  const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
   const [showGlobal, setShowGlobal] = useState(false)
   const [storageWarning, setStorageWarning] = useState<string | null>(initialSeedWarning)
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
@@ -434,7 +433,7 @@ export default function App() {
   )
 
   // Drag interaction: kind + per-kind payload captured at pointer-down.
-  // move/resize consume snap; rotate and α are deliberately unsnapped (angle inputs).
+  // Only Body movement consumes Contact snap; handle drags stay unsnapped.
   const dragRef = useRef<
     | { kind: 'move'; id: string; offX: number; offY: number }
     | { kind: 'rotate'; id: string; startAngle: number; startRotation: number }
@@ -741,9 +740,16 @@ export default function App() {
     const raw = eventToWorld(e)
 
     if (drag.kind === 'move') {
-      // Body-origin snap semantics: quantize (pointer - grabOffset).
-      const p = snapMovePosition(raw, drag.offX, drag.offY, CAMERA.pixelsPerMeter, snapToGrid)
-      setDoc((d) => updateBody(d, drag.id, { position: p }))
+      setDoc((d) => {
+        const body = d.bodies.find((candidate) => candidate.id === drag.id)
+        if (!body) return d
+        const proposed = {
+          ...body,
+          position: { x: raw.x - drag.offX, y: raw.y - drag.offY },
+        }
+        const snapped = resolveContactSnap(proposed, d.bodies, CAMERA.pixelsPerMeter, contactSnapEnabled)
+        return updateBody(d, drag.id, { position: snapped.position, rotation: snapped.rotation })
+      })
       return
     }
 
@@ -763,8 +769,8 @@ export default function App() {
       return
     }
 
-    // resize: snapped pointer -> local frame -> shape params (height stays derived).
-    const local = worldToLocal(body, snapPoint(raw, CAMERA.pixelsPerMeter, snapToGrid))
+    // Resize follows the pointer exactly; Contact snap applies only to Body movement.
+    const local = worldToLocal(body, raw)
     switch (body.shape) {
       case 'rectangle':
         setDoc((d) =>
@@ -788,11 +794,11 @@ export default function App() {
     dragRef.current = null
   }
 
-  /** Palette creation: sensible dynamic defaults at the view center (snapped when on). */
+  /** Palette creation: sensible dynamic defaults at the exact view center. */
   function addShape(shape: Body['shape']) {
     const prefix = shape === 'rectangle' ? 'retangulo' : shape === 'circle' ? 'bola' : 'cunha'
     const center = screenToWorld(TRANSFORM, CANVAS_W / 2, CANVAS_H / 2)
-    const position = snapPoint(center, CAMERA.pixelsPerMeter, snapToGrid)
+    const position = center
     const id = freshId(doc, prefix)
     const common = { id, position, mass: 1, fixed: false, rotation: 0 } as const
     const body: Body =
@@ -878,10 +884,10 @@ export default function App() {
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
-              checked={snapToGrid}
-              onChange={(e) => setSnapToGrid(e.target.checked)}
+              checked={contactSnapEnabled}
+              onChange={(e) => setContactSnapEnabled(e.target.checked)}
             />{' '}
-            {t('panel.snapToGrid')}
+            {t('panel.contactSnap')}
           </label>
           <label style={{ fontSize: 14 }}>
             <input
@@ -1164,4 +1170,3 @@ export default function App() {
     </main>
   )
 }
-

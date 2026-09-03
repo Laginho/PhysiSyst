@@ -1,5 +1,4 @@
 import type { Body, Vec2 } from '../scene'
-import { gridSpacing } from '../render/draw'
 import { worldToScreen, type ScreenTransform } from '../render/transform'
 
 /** Visual handle size in screen px (zoom-independent by construction). */
@@ -81,35 +80,6 @@ export function pickHandle(handles: Handle[], sx: number, sy: number): Handle | 
     }
   }
   return best
-}
-
-/**
- * Quantizes a pointer position to nearest-gridline world coordinates when snap
- * is on. Snap applies to the DRAGGED ANCHOR only (body origin on move,
- * handle point on resize/placement) — never per-vertex, and not to rotation
- * or α drags, whose input is an angle rather than a position.
- */
-export function snapPoint(p: Vec2, pixelsPerMeter: number, enabled: boolean): Vec2 {
-  if (!enabled) return p
-  const step = gridSpacing(pixelsPerMeter)
-  return {
-    x: Math.round(p.x / step) * step,
-    y: Math.round(p.y / step) * step,
-  }
-}
-
-/**
- * Move-snap with BODY-ORIGIN semantics: quantize (pointer − grabOffset) so the
- * body's origin lands exactly on gridlines regardless of where it was grabbed.
- */
-export function snapMovePosition(
-  pointer: Vec2,
-  offX: number,
-  offY: number,
-  pixelsPerMeter: number,
-  enabled: boolean,
-): Vec2 {
-  return snapPoint({ x: pointer.x - offX, y: pointer.y - offY }, pixelsPerMeter, enabled)
 }
 
 /** α clamp shared by α-handle drags and panel numeric entry. */

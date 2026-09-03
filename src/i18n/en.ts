@@ -10,7 +10,7 @@ export const en = {
   'palette.rectangle': 'rectangle',
   'palette.circle': 'ball',
   'palette.triangle': 'wedge',
-  'panel.snapToGrid': 'snap to grid',
+  'panel.contactSnap': 'snap to contact',
   'panel.showVectors': 'show vectors (weight/applied/normals)',
   'panel.gLabel': 'g (m/s²)',
   'panel.particleMode': 'particle mode — rigid body (lock rotations)',

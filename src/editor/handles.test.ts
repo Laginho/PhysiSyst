@@ -9,8 +9,6 @@ import {
   localToWorld,
   minDimension,
   pickHandle,
-  snapMovePosition,
-  snapPoint,
 } from './handles'
 
 const TRANSFORM = makeTransform({ centerX: 0, centerY: 0, pixelsPerMeter: 100 }, 800, 600)
@@ -27,46 +25,6 @@ const rect: Body = {
 }
 const circle: Body = { ...rect, id: 'c', shape: 'circle', radius: 1 }
 const tri: Body = { ...rect, id: 't', shape: 'triangle', base: 6, alpha: 30 }
-
-describe('snapPoint', () => {
-  it('quantizes to the nearest gridSpacing world step', () => {
-    // ppm 60 -> gridSpacing = 1 m (raw 40/60 ≈ 0.67 -> ladder 1)
-    expect(snapPoint({ x: 3.4, y: -0.7 }, 60, true)).toEqual({ x: 3, y: -1 })
-    expect(snapPoint({ x: 3.51, y: 0 }, 60, true)).toEqual({ x: 4, y: 0 })
-  })
-
-  it('uses finer steps at higher zoom', () => {
-    // ppm 200 -> raw 0.2 -> ladder 0.2 m
-    expect(snapPoint({ x: 1.09, y: 0 }, 200, true).x).toBeCloseTo(1, 9)
-    expect(snapPoint({ x: 1.11, y: 0 }, 200, true).x).toBeCloseTo(1.2, 9)
-  })
-
-  it('passes through when snap is off', () => {
-    const p = { x: 3.412, y: -0.787 }
-    expect(snapPoint(p, 60, false)).toEqual(p)
-  })
-
-  it('is exact on gridlines (no float drift)', () => {
-    expect(snapPoint({ x: 2, y: -3 }, 60, true)).toEqual({ x: 2, y: -3 })
-  })
-})
-
-describe('snapMovePosition', () => {
-  it('snaps the BODY ORIGIN, not the raw pointer (grab-offset aware)', () => {
-    // PLAN scenario: body grabbed at (.2,.2), pointer at (1.2,1.2) on a 1 m
-    // grid -> origin lands exactly on (1,1), not (.8,.8).
-    expect(snapMovePosition({ x: 1.2, y: 1.2 }, 0.2, 0.2, 60, true)).toEqual({ x: 1, y: 1 })
-  })
-
-  it('keeps grid-aligned grabs exact', () => {
-    expect(snapMovePosition({ x: 3, y: -2 }, 1, -1, 60, true)).toEqual({ x: 2, y: -1 })
-  })
-
-  it('passes through unsnapped when disabled', () => {
-    const p = { x: 1.234, y: -5.678 }
-    expect(snapMovePosition(p, 0.2, 0.2, 60, false)).toEqual({ x: 1.034, y: -5.878 })
-  })
-})
 
 describe('panel clamp helpers (same constants as handle drags)', () => {
   it('clampAlphaDeg pins α inside the schema-open interval', () => {
