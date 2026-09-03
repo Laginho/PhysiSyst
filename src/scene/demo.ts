@@ -1,0 +1,58 @@
+import type { Scene } from './types'
+
+export const DEMO_SCENE: Scene = {
+  version: 1,
+  constants: { g: 9.81 },
+  bodies: [
+    {
+      id: 'chao',
+      shape: 'rectangle',
+      position: { x: 7, y: -0.5 },
+      width: 14,
+      height: 1,
+      fixed: true,
+      mass: 0,
+      rotation: 0,
+    },
+    {
+      id: 'rampa',
+      shape: 'triangle',
+      position: { x: 3, y: 0 },
+      base: 6,
+      alpha: 30,
+      fixed: true,
+      mass: 0,
+      rotation: 0,
+    },
+    {
+      id: 'bloco',
+      shape: 'circle',
+      position: { x: 4.2, y: 0.55 },
+      radius: 0.5,
+      mass: 2,
+      fixed: false,
+      rotation: 0,
+    },
+    {
+      id: 'caixa',
+      shape: 'rectangle',
+      position: { x: 9, y: 3 },
+      width: 1.5,
+      height: 1.5,
+      rotation: 0.35,
+      mass: 1,
+      fixed: false,
+    },
+    {
+      id: 'bola',
+      shape: 'circle',
+      position: { x: 11, y: 5 },
+      radius: 0.75,
+      mass: 1,
+      fixed: false,
+      rotation: 0,
+    },
+  ],
+  forces: [],
+  contacts: [{ a: 'rampa', b: 'bloco', muS: 0.3, muK: 0.25 }],
+}
