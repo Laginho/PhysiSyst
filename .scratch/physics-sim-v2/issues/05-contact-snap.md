@@ -6,14 +6,14 @@
 
 **Status:** done
 
-- [ ] A rectangle dragged onto an inclined face lands flush with rotation aligned to that face
-- [ ] A rectangle dragged onto flat ground lands flush with rotation 0
-- [ ] A circle dragged onto a surface lands tangent to it
-- [ ] Outside the pixel tolerance, placement is unaffected (no snap)
-- [ ] Multiple in-range surfaces resolve to the nearest
-- [ ] The snap toggle disables the behavior entirely
-- [ ] Grid snapping is gone: no gridline quantization anywhere in body placement
-- [ ] Rotate and α handle drags remain unsnapped
-- [ ] The resolver is a pure function tested with geometry scenarios (the one new test seam)
-- [ ] Regression tests are mutate-verified per the AGENTS.md build protocol
-- [ ] All four gates green (`test`, `lint`, `typecheck`, `build`)
+- [x] A rectangle dragged onto an inclined face lands flush with rotation aligned to that face
+- [x] A rectangle dragged onto flat ground lands flush with rotation 0
+- [x] A circle dragged onto a surface lands tangent to it
+- [x] Outside the pixel tolerance, placement is unaffected (no snap)
+- [x] Multiple in-range surfaces resolve to the nearest
+- [x] The snap toggle disables the behavior entirely
+- [x] Grid snapping is gone: no gridline quantization anywhere in body placement
+- [x] Rotate and α handle drags remain unsnapped
+- [x] The resolver is a pure function tested with geometry scenarios (the one new test seam)
+- [x] Regression tests are mutate-verified per the AGENTS.md build protocol
+- [x] All four gates green (`test`, `lint`, `typecheck`, `build`)
