@@ -384,7 +384,7 @@ export default function App() {
    */
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
-  const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number } | null>(null)
+  const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
   const playbackRef = useRef<PlaybackState>(playback)
   const simRef = useRef<Simulator | null>(null)
@@ -529,17 +529,19 @@ export default function App() {
       const curr = statesRef.current
       const s = curr?.get(sel)
       if (!s) {
-        // Not yet simulated — fall back to doc pose, vel/acc zero
+        // Not yet simulated — use the document pose, initial velocity, and
+        // analytic acceleration until a measured simulator sample exists.
         const docBody = docRef.current.bodies.find((b) => b.id === sel)
         if (!docBody) {
           setReadout(null)
           return
         }
-        setReadout({ x: docBody.position.x, y: docBody.position.y, vx: 0, vy: 0, ax: 0, ay: 0 })
+        const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+        setReadout({ x: docBody.position.x, y: docBody.position.y, vx: docBody.vx ?? 0, vy: docBody.vy ?? 0, ax: acc.x, ay: acc.y, approximate: acc.approximate })
         return
       }
-      const acc = getAcceleration(accelRef.current, sel, playbackRef.current.status === 'paused')
-      setReadout({ x: s.position.x, y: s.position.y, vx: s.linvel.x, vy: s.linvel.y, ax: acc.x, ay: acc.y })
+      const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+      setReadout({ x: s.position.x, y: s.position.y, vx: s.linvel.x, vy: s.linvel.y, ax: acc.x, ay: acc.y, approximate: acc.approximate })
     }, 100)
     return () => clearInterval(id)
   }, [])
@@ -1083,12 +1085,21 @@ export default function App() {
                   <div>
                     {t('readout.position')}: ({readout.x.toFixed(2)}, {readout.y.toFixed(2)}) m
                   </div>
-                  <div>
-                    {t('readout.velocity')}: ({readout.vx.toFixed(2)}, {readout.vy.toFixed(2)}) m/s
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {t('readout.velocityMagnitude')}: {Math.hypot(readout.vx, readout.vy).toFixed(2)} m/s
                   </div>
-                  <div>
-                    {t('readout.acceleration')}: ({readout.ax.toFixed(2)}, {readout.ay.toFixed(2)}) m/s²
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{Math.hypot(readout.ax, readout.ay).toFixed(2)} m/s²
                   </div>
+                  <details>
+                    <summary>{t('readout.more')}</summary>
+                    <div>
+                      {t('readout.velocity')}: ({readout.vx.toFixed(2)}, {readout.vy.toFixed(2)}) m/s
+                    </div>
+                    <div>
+                      {t('readout.acceleration')}: ({readout.ax.toFixed(2)}, {readout.ay.toFixed(2)}) m/s²
+                    </div>
+                  </details>
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
