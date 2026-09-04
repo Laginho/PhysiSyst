@@ -66,6 +66,46 @@ describe('presets: pure definitions via codec', () => {
     expect(collectWarnings(scene)).toStrictEqual([])
   })
 
+  it('projectile preset is a grounded diagonal Initial-velocity launch without forces', () => {
+    const preset = PRESETS.find((p) => p.id === 'projectile')!
+    const scene = preset.buildScene()
+    const ground = scene.bodies.find((b) => b.id === 'chao')
+    const projectile = scene.bodies.find((b) => b.id === 'projetil')
+    expect(scene.bodies).toHaveLength(2)
+    expect(ground?.fixed).toBe(true)
+    expect(ground?.shape).toBe('rectangle')
+    expect(projectile?.shape).toBe('circle')
+    expect(projectile?.fixed).toBe(false)
+    expect(projectile?.vx).toBeGreaterThan(0)
+    expect(projectile?.vy).toBeGreaterThan(0)
+    expect(scene.forces).toStrictEqual([])
+
+    const groundRect = ground as Extract<NonNullable<typeof ground>, { shape: 'rectangle' }>
+    const ball = projectile as Extract<NonNullable<typeof projectile>, { shape: 'circle' }>
+    const groundTop = groundRect.position.y + groundRect.height / 2
+    expect(ball.position.y).toBeCloseTo(groundTop + ball.radius, 9)
+    expect(collectWarnings(scene)).toStrictEqual([])
+    expect(parse(serialize(scene))).toStrictEqual(scene)
+  })
+
+  it('projectile preset keeps ground, Initial velocity, and empty forces through persistence', () => {
+    const preset = PRESETS.find((p) => p.id === 'projectile')!
+    const s = memStorage()
+    const res = createPresetScene(s, preset, 3000)
+    expect('entry' in res).toBe(true)
+    if (!('entry' in res)) return
+
+    const loaded = loadScene(s, res.entry.id)
+    expect(loaded).toStrictEqual(preset.buildScene())
+    const loadedGround = loaded?.bodies.find((b) => b.id === 'chao')
+    const loadedProjectile = loaded?.bodies.find((b) => b.id === 'projetil')
+    const expectedProjectile = preset.buildScene().bodies.find((b) => b.id === 'projetil')
+    expect(loadedGround?.fixed).toBe(true)
+    expect(loadedProjectile?.vx).toBe(expectedProjectile?.vx)
+    expect(loadedProjectile?.vy).toBe(expectedProjectile?.vy)
+    expect(loaded?.forces).toStrictEqual([])
+  })
+
   it('createPresetScene payload-first via existing persistence path', () => {
     const s = memStorage()
     const preset = PRESETS[0]!

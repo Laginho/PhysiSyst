@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSimulator, TIMESTEP } from './index'
 import type { Scene } from '../scene'
+import { groundBody } from '../persistence'
 
 const G = 9.81
 
@@ -101,47 +102,42 @@ describe('acceptance: projectile', () => {
     const v0x = speed * Math.cos(rad)
     const v0y = speed * Math.sin(rad)
     const MASS = 2
-
-    // SEAM WORKAROUND (documented per brief): createSimulator exposes no way
-    // to inject initial velocity, so the launch uses a momentary applied
-    // force held for exactly 6 ticks, gravity-compensated so the post-cut
-    // state is the intended (v0x, v0y):
-    //   fx*tImp/m = v0x            (no gravity in x)
-    //   fy*tImp/m - g*tImp = v0y   (gravity cancels during boost)
-    const LAUNCH_TICKS = 6
-    const tImp = LAUNCH_TICKS * TIMESTEP
-    const fx = (MASS * v0x) / tImp
-    const fy = MASS * (v0y / tImp + G)
+    const radius = 0.3
+    const ground = groundBody()
+    const groundRect = ground as Extract<typeof ground, { shape: 'rectangle' }>
+    const launchHeight = groundRect.position.y + groundRect.height / 2
+    const launchPosition = { x: 0, y: launchHeight + radius }
     const sim = await createSimulator({
       version: 1,
       constants: { g: G },
       bodies: [
-        { id: 'shot', shape: 'circle', radius: 0.3, fixed: false, mass: MASS, position: { x: 0, y: 25 }, rotation: 0 },
-      ],
-      forces: [
+        ground,
         {
-          id: 'launch',
-          bodyId: 'shot',
-          anchor: { x: 0, y: 0 },
-          magnitude: Math.hypot(fx, fy),
-          direction: (Math.atan2(fy, fx) * 180) / Math.PI,
+          id: 'shot',
+          shape: 'circle',
+          radius,
+          fixed: false,
+          mass: MASS,
+          position: launchPosition,
+          rotation: 0,
+          vx: v0x,
+          vy: v0y,
         },
       ],
+      forces: [],
       contacts: [],
     })
 
-    for (let i = 0; i < LAUNCH_TICKS; i++) sim.step()
-    sim.setForceMagnitude('launch', 0)
     const s0 = sim.readStates().get('shot')!
-    // Boost fidelity: gravity-compensated impulse lands within 0.5%.
-    expect(Math.abs(s0.linvel.x - v0x)).toBeLessThanOrEqual(0.005 * v0x)
-    expect(Math.abs(s0.linvel.y - v0y)).toBeLessThanOrEqual(0.005 * v0y)
+    expect(Math.abs(s0.linvel.x - v0x)).toBeLessThanOrEqual(1e-6)
+    expect(Math.abs(s0.linvel.y - v0y)).toBeLessThanOrEqual(1e-6)
 
     // Parabola sampled at 3 points (closed form, written before running):
     //   y(x) = x tan(theta) - g x^2 / (2 v0x^2)
-    // Tolerance: 1 cm absolute or 1% of predicted height, whichever larger.
-    let stepped = LAUNCH_TICKS
-    for (const totalTicks of [24, 42, 60]) {
+    // Rapier's semi-implicit fixed-timestep integration lags the closed form
+    // by at most 1/2*g*TIMESTEP*t in y; retain only a small solver slack.
+    let stepped = 0
+    for (const totalTicks of [18, 30, 42]) {
       while (stepped < totalTicks) {
         sim.step()
         stepped++
@@ -150,28 +146,43 @@ describe('acceptance: projectile', () => {
       const xr = s.position.x - s0.position.x
       const yr = s.position.y - s0.position.y
       const yPred = xr * Math.tan(rad) - (G * xr * xr) / (2 * v0x * v0x)
-      expect(Math.abs(yr - yPred)).toBeLessThanOrEqual(Math.max(0.02, 0.01 * Math.abs(yPred)))
+      const integrationSlack = 0.5 * G * TIMESTEP * (totalTicks * TIMESTEP)
+      expect(Math.abs(yr - yPred)).toBeLessThanOrEqual(0.01 + integrationSlack)
     }
 
     // Range at re-crossing of launch height: R = v^2 sin(2 theta)/g, which is
-    // identically 2 v0x v0y / g. Measured via linear interpolation between
-    // the straddling ticks. Tolerance 2%: interpolation granularity (one
-    // timestep) dominates.
+    // identically 2 v0x v0y / g. The launch Body must descend into the shared
+    // ground collider; a bottomless Scene that merely falls below its start
+    // height is not an accepted landing.
     const rangeExpected = (2 * v0x * v0y) / G
     let prev = s0
+    let descending = false
     let landed = false
+    let xAtHeight: number | undefined
+    const hasGroundContact = (): boolean =>
+      sim.readContacts().some((c) => {
+        const pair = new Set([c.aId, c.bId])
+        return pair.has('shot') && pair.has('chao')
+      })
     for (let guard = 0; !landed && guard < 400; guard++) {
       sim.step()
       const cur = sim.readStates().get('shot')!
-      if (cur.position.y < s0.position.y && prev.position.y >= s0.position.y) {
-        const frac = (prev.position.y - s0.position.y) / (prev.position.y - cur.position.y)
-        const xLand = prev.position.x + frac * (cur.position.x - prev.position.x)
+      if (!descending && cur.position.y < prev.position.y) descending = true
+      if (descending && xAtHeight === undefined && prev.position.y > s0.position.y && cur.position.y <= s0.position.y + 0.002) {
+        const denom = prev.position.y - cur.position.y
+        const frac = denom === 0 ? 0 : (prev.position.y - s0.position.y) / denom
+        xAtHeight = prev.position.x + Math.max(0, Math.min(1, frac)) * (cur.position.x - prev.position.x)
+      }
+      if (descending && hasGroundContact()) {
+        const xLand = xAtHeight ?? cur.position.x
+        expect(cur.position.y).toBeGreaterThanOrEqual(s0.position.y - 0.01)
         expect(Math.abs(xLand - s0.position.x - rangeExpected)).toBeLessThanOrEqual(0.02 * rangeExpected)
         landed = true
       } else {
         prev = cur
       }
     }
+    expect(descending).toBe(true)
     expect(landed).toBe(true)
   })
 })
