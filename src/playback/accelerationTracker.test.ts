@@ -171,6 +171,14 @@ describe('accelerationTracker elapsed-carry and readout truth', () => {
     expect(getAcceleration(initialTracker(), scene, 'ghost', true)).toEqual({ x: 0, y: 0, approximate: false })
   })
 
+  it('keeps a fixed Contact participant exact at zero acceleration', () => {
+    const scene = sceneOf([fixedBody(), dynamicBody()], {
+      contacts: [{ a: 'ground', b: 'b', muS: 0, muK: 0 }],
+    })
+
+    expect(getAcceleration(initialTracker(), scene, 'ground', true)).toEqual({ x: 0, y: 0, approximate: false })
+  })
+
   it('preserves a surviving body measured acceleration across rebuilds', () => {
     const oldScene = sceneOf([dynamicBody('b')], { constants: { g: 9.81 } })
     const nextScene = sceneOf([dynamicBody('b'), dynamicBody('new')], { constants: { g: 9.81 } })
