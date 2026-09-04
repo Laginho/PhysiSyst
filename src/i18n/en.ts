@@ -64,7 +64,7 @@ export const en = {
   'preset.incline-block.name': 'Block on incline',
   'preset.incline-block.description': 'Block sliding on inclined plane with friction',
   'preset.projectile.name': 'Oblique projectile',
-  'preset.projectile.description': 'Oblique launch with initial force',
+  'preset.projectile.description': 'Oblique launch with diagonal initial velocity',
   'preset.free-fall.name': 'Free fall',
   'preset.free-fall.description': 'Free fall without friction',
   'readout.title': 'readout — {id}',

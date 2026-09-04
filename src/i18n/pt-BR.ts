@@ -64,7 +64,7 @@ export const ptBR = {
   'preset.incline-block.name': 'Bloco na rampa',
   'preset.incline-block.description': 'Bloco deslizando sobre rampa inclinada com atrito',
   'preset.projectile.name': 'Projétil oblíquo',
-  'preset.projectile.description': 'Lançamento oblíquo com força inicial',
+  'preset.projectile.description': 'Lançamento oblíquo com velocidade inicial diagonal',
   'preset.free-fall.name': 'Queda livre',
   'preset.free-fall.description': 'Queda livre sem atrito',
   'readout.title': 'leitura — {id}',
