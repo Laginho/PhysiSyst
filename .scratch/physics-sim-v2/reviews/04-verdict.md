@@ -3,9 +3,24 @@ title: "T04 initial velocity core — READ gate"
 kind: review
 ---
 
-Verdict REJECT
+Verdict PASS
 
-## Evidence
+## Re-verification after fix 04b
+
+Re-verification at 2026-09-03T19:00:38-03:00 confirmed that the committed ticket-04b coverage closes the only rejection cause:
+
+| Gate | Result |
+| --- | --- |
+| `npm test` | PASS — 20 test files, 368/368 tests |
+| `npm run lint` | PASS |
+| `npm run typecheck` | PASS |
+| `npm run build` | PASS — production bundle generated; only the existing chunk-size warning was reported |
+
+READ replayed mutation 6 by inserting `vx`/`vy` before the canonical Body keys. Exactly the three committed ticket-04b regressions failed: byte-identical reserialization, explicit Body key order, and clean `isDirty` after load. Production was restored immediately, the targeted suite returned green, and the full four-gate run above passed.
+
+All six required mutations are now caught by committed tests. Ticket 04 satisfies its acceptance criteria and the mandatory mutate-verify protocol.
+
+## Initial rejection evidence (historical)
 
 The four gates were reproduced independently before the adversarial replay and again after every temporary mutation had been restored:
 
@@ -41,7 +56,7 @@ The temporary byte-order test and all six production mutations were removed/rest
 - Scene version and pre-v2 round-trip behavior remain covered by the green codec/persistence suite. `package.json` shows no dependency added for this ticket.
 - No temporary production mutation or temporary test file remains. This workspace has no `.git` metadata, so the scope review used the brief’s named changeset and the current source/tests directly rather than a commit diff.
 
-## Root causes
+## Resolved root causes
 
 1. The committed regression suite checks semantic object equality for initial-velocity scenes but does not assert `JSON.stringify(serialize(parse(doc)))` byte equality when `vx`/`vy` are present.
 2. Because the deep-equality assertions ignore JavaScript object insertion order, moving `vx`/`vy` ahead of the canonical keys passes all 365 committed tests even though the serialized bytes change.
