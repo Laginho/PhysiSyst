@@ -190,3 +190,28 @@ describe('Initial velocity entry labels', () => {
     expect(angle).toContain('°')
   })
 })
+
+describe('projectile Preset descriptions', () => {
+  beforeEach(() => setLang('pt-BR'))
+
+  it('uses Initial velocity terminology in pt-BR without Applied force', () => {
+    try {
+      const description = t('preset.projectile.description').toLowerCase()
+      expect(description).toMatch(/velocidade inicial|v₀/)
+      expect(description).not.toMatch(/força/)
+    } finally {
+      setLang('pt-BR')
+    }
+  })
+
+  it('uses Initial velocity terminology in EN without Applied force', () => {
+    try {
+      setLang('en')
+      const description = t('preset.projectile.description').toLowerCase()
+      expect(description).toMatch(/initial velocity|v₀/)
+      expect(description).not.toMatch(/force/)
+    } finally {
+      setLang('pt-BR')
+    }
+  })
+})
