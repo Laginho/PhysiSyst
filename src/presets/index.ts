@@ -77,11 +77,27 @@ function inclineBlock(): Scene {
 }
 
 function projectileLaunch(): Scene {
+  const radius = 0.3
+  const ground = groundBody()
+  const groundRect = ground as Extract<typeof ground, { shape: 'rectangle' }>
   return {
     version: 1,
     constants: { g: 9.81 },
-    bodies: [{ id: 'projetil', shape: 'circle', radius: 0.3, fixed: false, mass: 1, position: { x: 2, y: 4 }, rotation: 0 }],
-    forces: [{ id: 'lancamento', bodyId: 'projetil', anchor: { x: 0, y: 0 }, magnitude: 25, direction: 35 }],
+    bodies: [
+      ground,
+      {
+        id: 'projetil',
+        shape: 'circle',
+        radius,
+        fixed: false,
+        mass: 1,
+        position: { x: 2, y: groundRect.position.y + groundRect.height / 2 + radius },
+        rotation: 0,
+        vx: 8,
+        vy: 6,
+      },
+    ],
+    forces: [],
     contacts: [],
   }
 }
@@ -102,7 +118,7 @@ function freeFall(): Scene {
 export const PRESETS: Preset[] = [
   { id: 'wedge-flagship', name: 'Cunha empurrada (clássico)', description: 'Bloco em equilíbrio sobre cunha — F=(M+m)g·tanα mantém o bloco parado', buildScene: wedgeFlagship },
   { id: 'incline-block', name: 'Bloco na rampa', description: 'Bloco deslizando sobre rampa inclinada com atrito', buildScene: inclineBlock },
-  { id: 'projectile', name: 'Projétil oblíquo', description: 'Lançamento oblíquo com força inicial', buildScene: projectileLaunch },
+  { id: 'projectile', name: 'Projétil oblíquo', description: 'Lançamento oblíquo por velocidade inicial, sem força aplicada', buildScene: projectileLaunch },
   { id: 'free-fall', name: 'Queda livre', description: 'Queda livre sem atrito', buildScene: freeFall },
 ]
 
