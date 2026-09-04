@@ -34,6 +34,7 @@ export const en = {
   'properties.radius': 'radius (m)',
   'properties.base': 'base (m)',
   'properties.alpha': 'α (°)',
+  'properties.more': 'show more',
   'forces.title': 'forces of {id}',
   'forces.empty': 'none',
   'forces.magnitude': 'magnitude (N)',

@@ -191,6 +191,16 @@ describe('Initial velocity entry labels', () => {
   })
 })
 
+describe('Body properties disclosure label', () => {
+  beforeEach(() => setLang('pt-BR'))
+
+  it('uses the localized show-more label in pt-BR and EN', () => {
+    expect(t('properties.more')).toBe('ver mais')
+    setLang('en')
+    expect(t('properties.more')).toBe('show more')
+  })
+})
+
 describe('projectile Preset descriptions', () => {
   beforeEach(() => setLang('pt-BR'))
 

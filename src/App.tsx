@@ -185,13 +185,6 @@ function PropertiesPanel({
   return (
     <fieldset style={{ width: 220 }}>
       <legend>{body.id}</legend>
-      <NumField label={t('properties.posX')} value={pos(body.position, 'x')} onChange={(v) => onPatch({ position: { ...body.position, x: v } })} />
-      <NumField label={t('properties.posY')} value={pos(body.position, 'y')} onChange={(v) => onPatch({ position: { ...body.position, y: v } })} />
-      <NumField
-        label={t('properties.rotation')}
-        value={(body.rotation * 180) / Math.PI}
-        onChange={(v) => onPatch({ rotation: (v * Math.PI) / 180 })}
-      />
       <NumField label={t('properties.mass')} value={body.mass} onChange={(v) => onPatch({ mass: v })} />
       <label style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
         {t('properties.fixed')}
@@ -227,21 +220,31 @@ function PropertiesPanel({
           )}
         </>
       )}
-      {body.shape === 'rectangle' && (
-        <>
-          <NumField label={t('properties.width')} value={body.width} onChange={(v) => onPatch({ width: minDimension(v) })} />
-          <NumField label={t('properties.height')} value={body.height} onChange={(v) => onPatch({ height: minDimension(v) })} />
-        </>
-      )}
-      {body.shape === 'circle' && (
-        <NumField label={t('properties.radius')} value={body.radius} onChange={(v) => onPatch({ radius: minDimension(v) })} />
-      )}
-      {body.shape === 'triangle' && (
-        <>
-          <NumField label={t('properties.base')} value={body.base} onChange={(v) => onPatch({ base: minDimension(v) })} />
-          <NumField label={t('properties.alpha')} value={body.alpha} onChange={(v) => onPatch({ alpha: clampAlphaDeg(v) })} />
-        </>
-      )}
+      <details>
+        <summary>{t('properties.more')}</summary>
+        <NumField label={t('properties.posX')} value={pos(body.position, 'x')} onChange={(v) => onPatch({ position: { ...body.position, x: v } })} />
+        <NumField label={t('properties.posY')} value={pos(body.position, 'y')} onChange={(v) => onPatch({ position: { ...body.position, y: v } })} />
+        <NumField
+          label={t('properties.rotation')}
+          value={(body.rotation * 180) / Math.PI}
+          onChange={(v) => onPatch({ rotation: (v * Math.PI) / 180 })}
+        />
+        {body.shape === 'rectangle' && (
+          <>
+            <NumField label={t('properties.width')} value={body.width} onChange={(v) => onPatch({ width: minDimension(v) })} />
+            <NumField label={t('properties.height')} value={body.height} onChange={(v) => onPatch({ height: minDimension(v) })} />
+          </>
+        )}
+        {body.shape === 'circle' && (
+          <NumField label={t('properties.radius')} value={body.radius} onChange={(v) => onPatch({ radius: minDimension(v) })} />
+        )}
+        {body.shape === 'triangle' && (
+          <>
+            <NumField label={t('properties.base')} value={body.base} onChange={(v) => onPatch({ base: minDimension(v) })} />
+            <NumField label={t('properties.alpha')} value={body.alpha} onChange={(v) => onPatch({ alpha: clampAlphaDeg(v) })} />
+          </>
+        )}
+      </details>
     </fieldset>
   )
 }

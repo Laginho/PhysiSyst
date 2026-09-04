@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (vector sizing rule), 04 (initial velocity core).
 
-**Status:** done
+**Status:** complete
 
 - [x] The velocity input toggles between cartesian (`vx`/`vy`) and polar (magnitude/angle) forms
 - [x] Converting between forms round-trips without losing the underlying stored value
