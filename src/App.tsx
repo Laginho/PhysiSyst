@@ -42,9 +42,10 @@ import {
   minDimension,
   pickHandle,
 } from './editor/handles'
+import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
 import { drawArrow, drawGrid, drawScene } from './render/draw'
 import { makeTransform, screenToWorld, type Camera } from './render/transform'
-import { appliedArrows, normalArrows, weightArrows } from './render/overlay'
+import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { getLang, setLang as persistLang, t, type Lang } from './i18n'
 import {
@@ -99,12 +100,14 @@ function paint(
   // Vector overlay: global mode draws scene-wide, otherwise selection-only.
   if (opts?.showGlobal) {
     for (const a of weightArrows(doc, states, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#2e7d32', widthPx: 2, headLenPx: 8 })
+    for (const a of initialVelocityArrows(view, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#43a047', widthPx: 2, headLenPx: 8 })
     for (const a of appliedArrows(view, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#d97742', widthPx: 2, headLenPx: 10 })
     for (const a of normalArrows(opts.contacts ?? [])) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#1565c0', widthPx: 2, headLenPx: 8 })
   } else {
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
-      const selView: Scene = { ...view, forces: view.forces.filter((f) => f.bodyId === sel.id) }
+      const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
+      for (const a of initialVelocityArrows(selView, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#43a047', widthPx: 2, headLenPx: 8 })
       for (const a of appliedArrows(selView, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM)
     }
   }
@@ -177,6 +180,8 @@ function PropertiesPanel({
   onPatch: (patch: BodyPatch) => void
 }) {
   const pos = (p: Vec2, axis: 'x' | 'y') => p[axis]
+  const [velocityMode, setVelocityMode] = useState<'cartesian' | 'polar'>('cartesian')
+  const polar = cartesianToPolar(body.vx ?? 0, body.vy ?? 0)
   return (
     <fieldset style={{ width: 220 }}>
       <legend>{body.id}</legend>
@@ -194,8 +199,32 @@ function PropertiesPanel({
       </label>
       {!body.fixed && (
         <>
-          <NumField label={t('properties.vx')} value={body.vx ?? 0} onChange={(v) => onPatch({ vx: v })} />
-          <NumField label={t('properties.vy')} value={body.vy ?? 0} onChange={(v) => onPatch({ vy: v })} />
+          <label style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+            {t('properties.velocityMode')}
+            <select value={velocityMode} onChange={(e) => setVelocityMode(e.target.value as 'cartesian' | 'polar')}>
+              <option value="cartesian">{t('properties.velocityCartesian')}</option>
+              <option value="polar">{t('properties.velocityPolar')}</option>
+            </select>
+          </label>
+          {velocityMode === 'cartesian' ? (
+            <>
+              <NumField label={t('properties.vx')} value={body.vx ?? 0} onChange={(v) => onPatch({ vx: v })} />
+              <NumField label={t('properties.vy')} value={body.vy ?? 0} onChange={(v) => onPatch({ vy: v })} />
+            </>
+          ) : (
+            <>
+              <NumField
+                label={t('properties.v0Magnitude')}
+                value={polar.magnitude}
+                onChange={(v) => onPatch(polarToCartesian(v, polar.angleDeg))}
+              />
+              <NumField
+                label={t('properties.v0Angle')}
+                value={polar.angleDeg}
+                onChange={(v) => onPatch(polarToCartesian(polar.magnitude, v))}
+              />
+            </>
+          )}
         </>
       )}
       {body.shape === 'rectangle' && (

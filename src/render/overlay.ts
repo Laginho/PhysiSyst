@@ -38,7 +38,7 @@ export function vectorArrowLengthPx(magnitude: number): number {
 export interface OverlayArrow {
   from: { x: number; y: number }
   vec: { x: number; y: number }
-  kind: 'weight' | 'applied' | 'normal'
+  kind: 'weight' | 'applied' | 'normal' | 'initial-velocity'
 }
 
 export function weightArrows(scene: Scene, states: ReadonlyMap<string, BodyState> | null, pixelsPerMeter: number): OverlayArrow[] {
@@ -68,6 +68,24 @@ export function appliedArrows(view: Scene, pixelsPerMeter: number): OverlayArrow
     const rad = (f.direction * Math.PI) / 180
     const lenM = vectorArrowLengthPx(f.magnitude) / pixelsPerMeter
     out.push({ from, vec: { x: lenM * Math.cos(rad), y: lenM * Math.sin(rad) }, kind: 'applied' })
+  }
+  return out
+}
+
+export function initialVelocityArrows(view: Scene, pixelsPerMeter: number): OverlayArrow[] {
+  const out: OverlayArrow[] = []
+  for (const body of view.bodies) {
+    if (body.fixed) continue
+    const vx = body.vx ?? 0
+    const vy = body.vy ?? 0
+    const magnitude = Math.hypot(vx, vy)
+    if (magnitude === 0) continue
+    const lenM = vectorArrowLengthPx(magnitude) / pixelsPerMeter
+    out.push({
+      from: { x: body.position.x, y: body.position.y },
+      vec: { x: (lenM * vx) / magnitude, y: (lenM * vy) / magnitude },
+      kind: 'initial-velocity',
+    })
   }
   return out
 }
