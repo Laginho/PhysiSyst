@@ -69,7 +69,8 @@ export function getAcceleration(tracker: AccelTracker, scene: Scene, id: string,
   void paused
   const measured = tracker.measured.get(id)
   if (measured) return { ...measured, approximate: false }
+  const body = scene.bodies.find((candidate) => candidate.id === id)
   const analytic = estimateAnalyticAcceleration(scene, id)
-  const approximate = scene.contacts.some((contact) => contact.a === id || contact.b === id)
+  const approximate = Boolean(body && !body.fixed && body.mass > 0 && scene.contacts.some((contact) => contact.a === id || contact.b === id))
   return { ...analytic, approximate }
 }
