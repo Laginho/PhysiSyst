@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Pausing playback keeps the last measured acceleration displayed (no zero short-circuit)
-- [ ] A fresh, never-stepped free Body shows its analytic acceleration (free fall → `g` downward; single applied force → `F/m`), matching closed forms
-- [ ] The analytic estimate is flagged with `≈` exactly when the Body participates in a declared Contact
-- [ ] A stepped Body's paused value equals its last measured value
-- [ ] `|v|` and `|a|` are displayed prominently; components are visible under the collapsible section
-- [ ] New UI strings exist in both the pt-BR and EN catalogs (parity tests green)
-- [ ] Regression tests are mutate-verified per the AGENTS.md build protocol
-- [ ] All four gates green (`test`, `lint`, `typecheck`, `build`)
+- [x] Pausing playback keeps the last measured acceleration displayed (no zero short-circuit)
+- [x] A fresh, never-stepped free Body shows its analytic acceleration (free fall → `g` downward; single applied force → `F/m`), matching closed forms
+- [x] The analytic estimate is flagged with `≈` exactly when the Body participates in a declared Contact
+- [x] A stepped Body's paused value equals its last measured value
+- [x] `|v|` and `|a|` are displayed prominently; components are visible under the collapsible section
+- [x] New UI strings exist in both the pt-BR and EN catalogs (parity tests green)
+- [x] Regression tests are mutate-verified per the AGENTS.md build protocol
+- [x] All four gates green (`test`, `lint`, `typecheck`, `build`)
