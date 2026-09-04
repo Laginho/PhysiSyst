@@ -4,15 +4,15 @@
 
 **Blocked by:** 04 (initial velocity core).
 
-**Status:** needs-triage
+**Status:** done
 
-- [ ] The projectile Preset contains a ground, a Body on it, and a diagonal `v₀` — no launch force
-- [ ] Playback traces a parabola matching the closed-form family for the given `v₀` and `g`
-- [ ] The projectile lands on the ground (no bottomless fall)
-- [ ] The preset builds through the codec (same path as all presets) and round-trips
-- [ ] The old force-launch acceptance fixture is replaced, not duplicated
-- [ ] Regression tests are mutate-verified per the AGENTS.md build protocol
-- [ ] All four gates green (`test`, `lint`, `typecheck`, `build`)
+- [x] The projectile Preset contains a ground, a Body on it, and a diagonal `v₀` — no launch force
+- [x] Playback traces a parabola matching the closed-form family for the given `v₀` and `g`
+- [x] The projectile lands on the ground (no bottomless fall)
+- [x] The preset builds through the codec (same path as all presets) and round-trips
+- [x] The old force-launch acceptance fixture is replaced, not duplicated
+- [x] Regression tests are mutate-verified per the AGENTS.md build protocol
+- [x] All four gates green (`test`, `lint`, `typecheck`, `build`)
 
 ## Comments
 
@@ -30,3 +30,19 @@ Mutation evidence (each mutation was restored before final gates):
 All mutations were restored; no test or simulator changes remain.
 
 READ finding: all four gates passed, but the user-visible gallery description remains force-based because `src/App.tsx` renders the localized `preset.${p.id}.description` key, while `src/i18n/pt-BR.ts` and `src/i18n/en.ts` retain the old force-launch strings. The `PRESETS` metadata is correct, but the shipped display contradicts this ticket; no unplanned localization change was made.
+
+Correction cycle 06 MAKE implementation: changed only `src/i18n/pt-BR.ts` and `src/i18n/en.ts`, updating `preset.projectile.description` to describe a diagonal initial-velocity launch. No tests or other catalog keys/files were modified.
+
+Mutation evidence (each mutation was restored before the final gates):
+
+- Restored pt-BR `preset.projectile.description` to `Lançamento oblíquo com força inicial` and ran `npx vitest run src/i18n/i18n.test.ts -t "uses Initial velocity terminology in pt-BR"` (exit 1). Failed `projectile Preset descriptions > uses Initial velocity terminology in pt-BR without Applied force` at `src/i18n/i18n.test.ts:200:27`: expected `'lançamento oblíquo com força inicial'` to match `/velocidade inicial|v₀/`; received `"lançamento oblíquo com força inicial"`.
+- Restored EN `preset.projectile.description` to `Oblique launch with initial force` and ran `npx vitest run src/i18n/i18n.test.ts -t "uses Initial velocity terminology in EN"` (exit 1). Failed `projectile Preset descriptions > uses Initial velocity terminology in EN without Applied force` at `src/i18n/i18n.test.ts:211:27`: expected `'oblique launch with initial force'` to match `/initial velocity|v₀/`; received `"oblique launch with initial force"`.
+
+Final gate evidence (all exit 0):
+
+- `npm test`: `Test Files 22 passed (22)`; `Tests 390 passed (390)`.
+- `npm run lint`: passed with no output.
+- `npm run typecheck`: passed with no output.
+- `npm run build`: passed; Vite transformed 40 modules and emitted `dist/assets/index-B5oVdbPt.js` (2,367.34 kB, gzip 882.53 kB). Existing chunk-size warning only.
+
+Correction cycle 06 READ: no refactor and no findings. The independent review confirmed that only the two intended localized values and their public-seam tests changed; all four gates passed again (390 tests).
