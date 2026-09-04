@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Scene } from '../scene'
+import { applyStates } from '../playback/view'
 import {
   ARROW_MAX_PX,
   ARROW_MIN_PX,
@@ -22,6 +23,23 @@ function sceneWithBodies(bodies: Scene['bodies'], g = 9.81, forces: Scene['force
 
 function stateAt(x: number, y: number): BodyState {
   return { position: { x, y }, rotation: 0, linvel: { x: 0, y: 0 }, angvel: 0 }
+}
+
+type InitialVelocityArrow = {
+  from: { x: number; y: number }
+  vec: { x: number; y: number }
+  kind: string
+}
+
+type InitialVelocityArrowProducer = (view: Scene, pixelsPerMeter: number) => InitialVelocityArrow[]
+
+async function produceInitialVelocityArrows(view: Scene, pixelsPerMeter: number): Promise<InitialVelocityArrow[]> {
+  const { initialVelocityArrows } = await import('./overlay') as unknown as {
+    initialVelocityArrows?: InitialVelocityArrowProducer
+  }
+  expect(typeof initialVelocityArrows, 'ticket 07 requires initialVelocityArrows(view, pixelsPerMeter)').toBe('function')
+  if (!initialVelocityArrows) return []
+  return initialVelocityArrows(view, pixelsPerMeter)
 }
 
 describe('weightArrows', () => {
@@ -93,6 +111,151 @@ describe('appliedArrows', () => {
     expect(arrows).toHaveLength(1)
     expect(arrows[0]!.vec.x).toBeCloseTo(0, 9)
     expect(arrows[0]!.vec.y).toBeCloseTo(vectorArrowLengthPx(5) / PPM, 9)
+  })
+})
+
+describe('initialVelocityArrows', () => {
+  it('anchors to the projected Body and points along stored world-frame v₀', async () => {
+    const doc = sceneWithBodies([
+      {
+        id: 'shot',
+        shape: 'circle',
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: 1, y: 2 },
+        rotation: Math.PI / 2,
+        vx: 3,
+        vy: 4,
+      },
+    ])
+    const view = applyStates(doc, new Map<string, BodyState>([
+      ['shot', { ...stateAt(-7, 11), rotation: Math.PI / 2 }],
+    ]))
+    const arrows = await produceInitialVelocityArrows(view, PPM)
+
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0]!.kind).toBe('initial-velocity')
+    expect(arrows[0]!.from).toEqual({ x: -7, y: 11 })
+    const lenM = vectorArrowLengthPx(5) / PPM
+    expect(arrows[0]!.vec.x).toBeCloseTo((lenM * 3) / 5, 9)
+    expect(arrows[0]!.vec.y).toBeCloseTo((lenM * 4) / 5, 9)
+  })
+
+  it('treats an absent component as zero', async () => {
+    const view = sceneWithBodies([
+      {
+        id: 'x-only',
+        shape: 'circle',
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: 1, y: 0 },
+        rotation: 0,
+        vx: -3,
+      },
+      {
+        id: 'y-only',
+        shape: 'circle',
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: 2, y: 0 },
+        rotation: 0,
+        vy: 4,
+      },
+    ])
+    const arrows = await produceInitialVelocityArrows(view, PPM)
+
+    expect(arrows).toHaveLength(2)
+    const xLenM = vectorArrowLengthPx(3) / PPM
+    expect(arrows[0]!.vec.x).toBeCloseTo(-xLenM, 9)
+    expect(arrows[0]!.vec.y).toBeCloseTo(0, 9)
+    const yLenM = vectorArrowLengthPx(4) / PPM
+    expect(arrows[1]!.vec.x).toBeCloseTo(0, 9)
+    expect(arrows[1]!.vec.y).toBeCloseTo(yLenM, 9)
+  })
+
+  it('suppresses exact zero velocity and Fixed-body arrows', async () => {
+    const view = sceneWithBodies([
+      {
+        id: 'zero',
+        shape: 'circle',
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: 1, y: 0 },
+        rotation: 0,
+        vx: 0,
+        vy: 0,
+      },
+      {
+        id: 'absent',
+        shape: 'circle',
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: 2, y: 0 },
+        rotation: 0,
+      },
+      {
+        id: 'fixed',
+        shape: 'rectangle',
+        width: 2,
+        height: 1,
+        fixed: true,
+        mass: 0,
+        position: { x: 3, y: 0 },
+        rotation: 0,
+        vx: 9,
+        vy: -12,
+      },
+      {
+        id: 'moving',
+        shape: 'circle',
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: 4, y: 0 },
+        rotation: 0,
+        vx: 1,
+        vy: 0,
+      },
+    ])
+    const arrows = await produceInitialVelocityArrows(view, PPM)
+
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0]!.from).toEqual({ x: 4, y: 0 })
+  })
+
+  it('uses the shared bounded monotonic sizing rule for adversarial magnitudes', async () => {
+    const magnitudes = [1e-9, 0.001, 1, 5, 500, 1e6]
+    const view = sceneWithBodies(
+      magnitudes.map((magnitude, i) => ({
+        id: `v-${i}`,
+        shape: 'circle' as const,
+        radius: 0.5,
+        fixed: false,
+        mass: 1,
+        position: { x: i, y: 0 },
+        rotation: 0,
+        vx: magnitude,
+        vy: 0,
+      })),
+    )
+    const arrows = await produceInitialVelocityArrows(view, PPM)
+    const lengthsPx = arrows.map((arrow) => Math.hypot(arrow.vec.x, arrow.vec.y) * PPM)
+
+    expect(arrows).toHaveLength(magnitudes.length)
+    for (let i = 0; i < magnitudes.length; i++) {
+      expect(lengthsPx[i]!).toBeCloseTo(vectorArrowLengthPx(magnitudes[i]!), 9)
+      expect(lengthsPx[i]!).toBeGreaterThanOrEqual(ARROW_MIN_PX)
+      expect(lengthsPx[i]!).toBeLessThanOrEqual(ARROW_MAX_PX)
+      if (i > 0) expect(lengthsPx[i]!).toBeGreaterThanOrEqual(lengthsPx[i - 1]!)
+    }
+    // These are deliberately unlike raw-magnitude pixels and unlike a per-arrow constant.
+    expect(lengthsPx[2]!).toBeLessThan(lengthsPx[3]!)
+    expect(lengthsPx[3]!).toBeLessThan(lengthsPx[4]!)
   })
 })
 
