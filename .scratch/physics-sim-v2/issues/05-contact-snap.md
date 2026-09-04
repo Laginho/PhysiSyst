@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A rectangle dragged onto an inclined face lands flush with rotation aligned to that face
 - [ ] A rectangle dragged onto flat ground lands flush with rotation 0
