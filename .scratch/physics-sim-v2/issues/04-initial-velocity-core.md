@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** done
+**Status:** complete
 
 - [x] Setting `vx`/`vy` on a dynamic Body and pressing play launches it with that velocity (verified against a closed form, e.g. free-flight displacement)
 - [x] The field is additive-optional: a version-1 Scene without it parses and serializes unchanged; scenes with it round-trip losslessly

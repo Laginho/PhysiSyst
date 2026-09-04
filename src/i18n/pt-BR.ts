@@ -34,6 +34,7 @@ export const ptBR = {
   'properties.radius': 'raio (m)',
   'properties.base': 'base (m)',
   'properties.alpha': 'α (°)',
+  'properties.more': 'ver mais',
   'forces.title': 'forças de {id}',
   'forces.empty': 'nenhuma',
   'forces.magnitude': 'módulo (N)',

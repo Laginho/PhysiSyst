@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** done
+**Status:** complete
 
 - [x] Dynamic bodies render white-filled with black stroke; fixed bodies keep hatching; no dashed borders on dynamic bodies
 - [x] Mass labels render inside dynamic bodies (first text rendering in the render layer, with its own unscaled transform)
