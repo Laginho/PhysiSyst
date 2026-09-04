@@ -14,3 +14,15 @@
 - [x] New UI strings exist in both the pt-BR and EN catalogs (parity tests green)
 - [x] Regression tests are mutate-verified per the AGENTS.md build protocol
 - [x] All four gates green (`test`, `lint`, `typecheck`, `build`)
+
+## Comments
+
+2026-09-03 — READ independently replayed and restored each production mutation:
+
+- swapping Cartesian conversion arguments failed the axes/quadrants and round-trip tests in `src/editor/initialVelocity.test.ts`;
+- inverting Initial-velocity arrow components failed the projected-anchor/direction and absent-component tests in `src/render/overlay.test.ts`;
+- removing either zero-velocity or Fixed-body suppression failed the suppression regression in `src/render/overlay.test.ts`;
+- replacing the shared sizing rule with a constant/raw magnitude failed the direction-length and bounded/monotonic sizing regressions in `src/render/overlay.test.ts`;
+- corrupting each of the five ticket-07 keys in pt-BR and EN failed the corresponding locale semantic test in `src/i18n/i18n.test.ts`.
+
+After every restoration, `npm test` passed 386/386; lint, typecheck, and build were green. The Cartesian/polar toggle wiring and exact canvas style remained inspection-only as declared in the handoff's `Not test-first` section.

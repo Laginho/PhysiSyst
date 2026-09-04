@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { cartesianToPolar, polarToCartesian } from './initialVelocity'
 
-const TABLE = [
+const CARTESIAN_POLAR_CASES = [
   { vx: 1, vy: 0, magnitude: 1, angleDeg: 0 },
   { vx: 0, vy: 1, magnitude: 1, angleDeg: 90 },
   { vx: -1, vy: 0, magnitude: 1, angleDeg: 180 },
@@ -19,7 +19,7 @@ function expectComponentClose(actual: number, expected: number): void {
 
 describe('Initial velocity Cartesian/polar conversion', () => {
   it('maps axes and all quadrants to magnitude plus degrees without swapping signs', () => {
-    for (const row of TABLE) {
+    for (const row of CARTESIAN_POLAR_CASES) {
       const polar = cartesianToPolar(row.vx, row.vy)
       expect(polar.magnitude).toBeCloseTo(row.magnitude, 10)
       expect(polar.angleDeg).toBeCloseTo(row.angleDeg, 10)
@@ -31,7 +31,7 @@ describe('Initial velocity Cartesian/polar conversion', () => {
   })
 
   it('round-trips Cartesian components to floating-point precision', () => {
-    for (const row of [...TABLE, { vx: 0.123456789, vy: -9876.54321 }]) {
+    for (const row of [...CARTESIAN_POLAR_CASES, { vx: 0.123456789, vy: -9876.54321 }]) {
       const polar = cartesianToPolar(row.vx, row.vy)
       const cartesian = polarToCartesian(polar.magnitude, polar.angleDeg)
       expectComponentClose(cartesian.vx, row.vx)
@@ -39,12 +39,12 @@ describe('Initial velocity Cartesian/polar conversion', () => {
     }
   })
 
-  it('keeps stored components unchanged when the UI mode is projected repeatedly', () => {
+  it('projects stored components repeatedly without mutating them', () => {
     const stored = { vx: 0.123456789, vy: -9.87654321 }
     const before = { ...stored }
 
     for (let i = 0; i < 100; i++) {
-      // A mode switch reads the polar projection; it does not write it back.
+      // The UI may read this projection on every render; conversion itself is read-only.
       const display = cartesianToPolar(stored.vx, stored.vy)
       expect(display.magnitude).toBeGreaterThan(0)
       expect(stored).toEqual(before)
