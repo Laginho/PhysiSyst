@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** done
+**Status:** in-progress
 
 - [x] Pausing playback keeps the last measured acceleration displayed (no zero short-circuit)
 - [x] A fresh, never-stepped free Body shows its analytic acceleration (free fall → `g` downward; single applied force → `F/m`), matching closed forms
-- [x] The analytic estimate is flagged with `≈` exactly when the Body participates in a declared Contact
+- [ ] The analytic estimate is flagged with `≈` exactly when a dynamic Body participates in a declared Contact; Fixed-body acceleration remains exact zero
 - [x] A stepped Body's paused value equals its last measured value
 - [x] `|v|` and `|a|` are displayed prominently; components are visible under the collapsible section
 - [x] New UI strings exist in both the pt-BR and EN catalogs (parity tests green)
