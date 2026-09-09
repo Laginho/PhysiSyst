@@ -4,7 +4,7 @@
 
 **Blocked by:** PHY-04 (initial velocity core).
 
-**Status:** complete
+Stage: done
 
 - [x] Default body panel shows exactly: massa, fixo, initial velocity
 - [x] Position, rotation, and shape dimensions live under the collapsible "ver mais" and remain functional there

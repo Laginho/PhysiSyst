@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** complete
+Stage: done
 
 - [x] Pausing playback keeps the last measured acceleration displayed (no zero short-circuit)
 - [x] A fresh, never-stepped free Body shows its analytic acceleration (free fall → `g` downward; single applied force → `F/m`), matching closed forms

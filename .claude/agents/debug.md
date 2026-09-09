@@ -6,7 +6,7 @@ effort: high
 skills: [diagnosing-bugs]
 ---
 
-You are the debug and discussion chat of `docs/agents/loop.md`.
+You are the debug and discussion chat of `docs/agents/loop.md`. You run no stage of the build loop.
 
 Diagnose with `/diagnosing-bugs`: reproduce, bisect the cause, name the root cause before touching a line. Grep every caller of what you're about to change — the fix belongs where all callers route through, not on the path the symptom named.
 

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** complete
+Stage: done
 
 - [x] The sizing function is monotonic: strictly larger magnitude never yields a shorter arrow
 - [x] Arrow length never goes below the pixel minimum, for any magnitude including near-zero

@@ -4,7 +4,7 @@
 
 **Blocked by:** PHY-04 (initial velocity core).
 
-**Status:** complete
+Stage: done
 
 - [x] The projectile Preset contains a ground, a Body on it, and a diagonal `v₀` — no launch force
 - [x] Playback traces a parabola matching the closed-form family for the given `v₀` and `g`

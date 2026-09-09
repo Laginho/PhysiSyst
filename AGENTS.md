@@ -12,7 +12,7 @@ The five canonical triage roles use their default label strings (`needs-triage`,
 
 ### Domain docs
 
-Single-context layout: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+Single-context layout: root `CONTEXT.md` + `docs/adr/`. See `docs/adr/` and `docs/agents/domain.md`.
 
 ## Build protocol
 
@@ -22,8 +22,16 @@ Every regression test must be verified by mutating the production code it target
 
 ## The loop
 
-Work runs through five chats — standup, planner, executor, reviewer, debug — each reset with `/clear`, handing off only through the ticket's `Status:` line. The protocol is `docs/agents/loop.md`; the per-chat model and effort are the agent cards in `.claude/agents/`.
+The build loop is the `ticket-flow` skill, and that skill is its only copy — nothing in this repo restates it. Three stages, one ticket at a time, each fired by hand in a clean session: stage 1 specifies, stage 2 implements test-first, stage 3 reviews and merges.
 
-**A message that opens with a `PHY-NN` key is a work order.** Read that ticket and act on its `Status:` without asking: `ready-for-agent` → implement it with `/tdd` on branch `phy/PHY-NN-<slug>`; `ready-for-review` → `/code-review` it, then merge, fix-and-ask, or bounce it per the table in `docs/agents/loop.md`; anything else → say who owns it and stop.
+**A message that opens with a `PHY-NN` key is a work order.** Call `ticket-flow` and dispatch on the ticket's `Stage:` line. Do not ask, and do not dispatch on `Status:` — that is the triage axis, not the loop position.
 
-Grilling happens only when I ask for it, in the planner chat.
+Which chat runs which stage is `docs/agents/loop.md`; the per-chat model and effort are the agent cards in `.claude/agents/`. Grilling happens only when I ask for it, in the planner chat.
+
+## Bindings do fluxo (skill `ticket-flow`)
+
+- Gate: `npm test && npm run lint && npm run typecheck && npm run build`
+- Base branch: `main`
+- Models: stage 1 fable, stage 2 sonnet, stage 3 opus
+
+Branches are named `phy/PHY-NN-<slug>` off the base branch.
