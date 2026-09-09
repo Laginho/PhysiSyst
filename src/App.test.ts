@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
+import { makeTransform, worldToScreen } from './render/transform'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -225,5 +226,127 @@ describe('drag-to-trash', () => {
 
     const bodyPanel = [...host.querySelectorAll('fieldset')].find((fieldset) => fieldset.querySelector('legend')?.textContent?.trim() === 'retangulo')
     expect(bodyPanel).toBeDefined()
+  })
+})
+
+describe('snap declara contato (PHY-13)', () => {
+  // Same camera as App.tsx's module-private CAMERA/TRANSFORM (900x600, center
+  // (6,4), 60 px/m) — needed to convert the demo scene's world positions to
+  // the screen coordinates pointer events carry.
+  const TRANSFORM = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: 60 }, 900, 600)
+  function screen(wx: number, wy: number) {
+    return worldToScreen(TRANSFORM, wx, wy)
+  }
+
+  function contactPairs(host: HTMLElement): string[] {
+    const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
+    if (!fieldset) return []
+    return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
+  }
+
+  // Drags whatever body sits at world (from.x, from.y) to world (to.x, to.y).
+  // Snap adjusts the exact resting position, so callers doing a second drag on
+  // an already-snapped body must pass its CURRENT position (see
+  // currentPosition below), never the position it was born at.
+  function dragTo(canvas: Element, from: { x: number; y: number }, to: { x: number; y: number }) {
+    const start = screen(from.x, from.y)
+    const target = screen(to.x, to.y)
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x, start.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', target.x, target.y)))
+  }
+
+  // Reads the selected body's live x/y off its properties panel (opening "ver
+  // mais" if needed) — the public seam for "where is this body right now".
+  function currentPosition(host: HTMLElement, id: string): { x: number; y: number } {
+    const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === id)
+    if (!bodyPanel) throw new Error(`missing panel for ${id}`)
+    const more = bodyPanel.querySelector(':scope > details') as HTMLDetailsElement | null
+    if (!more) throw new Error(`missing details for ${id}`)
+    if (!more.open) act(() => more.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    return { x: Number(inputForLabel(more, 'x (m)').value), y: Number(inputForLabel(more, 'y (m)').value) }
+  }
+
+  it('creates exactly one pair on the pointer-up of a move drag that snaps', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    const before = contactPairs(host)
+    dragTo(canvas, { x: 9, y: 3 }, { x: 9, y: 0.8 })
+    const after = contactPairs(host)
+
+    expect(after.length).toBe(before.length + 1)
+    expect(after).toContain('caixa ↔ chao')
+  })
+
+  it('never creates a Contact mid-drag — only a pointer-up within tolerance does', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    const before = contactPairs(host)
+    const start = screen(9, 3)
+    const touching = screen(9, 0.8)
+    const farAgain = screen(9, 3)
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x, start.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', touching.x, touching.y))) // touches chao mid-drag
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', farAgain.x, farAgain.y))) // leaves tolerance again
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', farAgain.x, farAgain.y))) // drops far away
+
+    expect(contactPairs(host)).toEqual(before)
+  })
+
+  it('re-snapping the same pair is a silent no-op — contacts stay the same', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    dragTo(canvas, { x: 9, y: 3 }, { x: 9, y: 0.8 })
+    const onceSnapped = contactPairs(host)
+    expect(onceSnapped).toContain('caixa ↔ chao')
+
+    // Drag away, then re-snap onto the same neighbor — grabbing the body
+    // where each drag actually left it, never where the scene born it.
+    const snappedAt = currentPosition(host, 'caixa')
+    dragTo(canvas, snappedAt, { x: 9, y: 3 })
+    const awayAt = currentPosition(host, 'caixa')
+    dragTo(canvas, awayAt, { x: 9, y: 0.8 })
+    const reSnapped = contactPairs(host)
+
+    expect(reSnapped).toEqual(onceSnapped)
+  })
+
+  it('moving the body away afterward keeps the Contact', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    dragTo(canvas, { x: 9, y: 3 }, { x: 9, y: 0.8 })
+    const snapped = contactPairs(host)
+    expect(snapped).toContain('caixa ↔ chao')
+
+    const snappedAt = currentPosition(host, 'caixa')
+    dragTo(canvas, snappedAt, { x: 9, y: 3 })
+    expect(contactPairs(host)).toEqual(snapped)
+  })
+
+  it('dropping the body on the trash after a snap leaves no dangling Contact', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    dragTo(canvas, { x: 9, y: 3 }, { x: 9, y: 0.8 })
+    expect(contactPairs(host)).toContain('caixa ↔ chao')
+
+    const snappedAt = currentPosition(host, 'caixa')
+    // Trash target sits in the canvas's bottom-right corner (screen ~868,568).
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', screen(snappedAt.x, snappedAt.y).x, screen(snappedAt.x, snappedAt.y).y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', 868, 568)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', 868, 568)))
+
+    const after = contactPairs(host)
+    expect(after.some((pair) => pair.includes('caixa'))).toBe(false)
   })
 })

@@ -189,10 +189,16 @@ describe('addForce / updateForce / removeForce', () => {
 })
 
 describe('addContact guards + edit/remove', () => {
-  it('adds with documented frictionless-adjacent defaults (muS .3 / muK .25)', () => {
+  it('adds with the idealized default (muS = muK = 0) when no mu is given (ADR-0002)', () => {
     const { doc, error } = addContact({ ...DOC, contacts: [] }, 'a', 'b')
     expect(error).toBeNull()
-    expect(doc.contacts.at(-1)).toEqual({ a: 'a', b: 'b', muS: 0.3, muK: 0.25 })
+    expect(doc.contacts.at(-1)).toEqual({ a: 'a', b: 'b', muS: 0, muK: 0 })
+  })
+
+  it('accepts an optional mu override instead of the default', () => {
+    const { doc, error } = addContact({ ...DOC, contacts: [] }, 'a', 'b', { muS: 0.6, muK: 0.4 })
+    expect(error).toBeNull()
+    expect(doc.contacts.at(-1)).toEqual({ a: 'a', b: 'b', muS: 0.6, muK: 0.4 })
   })
 
   it('rejects self-pairs, duplicates (same AND reversed order), and dangling references', () => {

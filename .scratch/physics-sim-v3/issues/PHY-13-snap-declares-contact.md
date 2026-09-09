@@ -1,5 +1,5 @@
 # PHY-13: Snap declara Contato
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 
@@ -40,3 +40,135 @@ Quando o aluno arrasta um Corpo e o snap o encosta em um vizinho (rampa, chão, 
 - `src/App.test.ts`, no espelho do pointer: um par por arraste (critério 3), no-op no re-snap (4), Contato sobrevive ao afastamento (5), lixeira não deixa par pendente (6). Vermelhos porque o pointer-up ainda não cria Contato.
 
 ## Comments
+
+#### Review (2026-09-09) — reopened
+
+Produção está certa; os testes de App não são. O gate está verde (405/405, lint,
+typecheck, build) e a verificação live confere, mas três dos quatro testes novos
+de `src/App.test.ts` sobrevivem a mutações óbvias do código que dizem cobrir —
+falha do protocolo mutate-verify do `AGENTS.md`.
+
+- 1 ✓ resolver devolve `neighborId`, nulo fora de tolerância e com snap desligado, função pura
+- 2 ✓ `CONTACT_DEFAULTS = { muS: 0, muK: 0 }`, `mu` opcional em `addContact`
+- 3 ⚠️ o comportamento está certo (um par por arraste, criado no pointer-up), mas nenhum teste prende a metade "nunca durante o movimento": movendo o `addContact` para dentro do updater do `onPointerMove` a suíte inteira segue verde (405/405). O par único não distingue as duas implementações — a guarda de duplicado esconde a diferença. O observável que distingue: encostar no meio do arraste e **soltar longe** → nenhum Contato
+- 4 ❌ o teste "re-snapping the same pair is a silent no-op" nunca re-encosta nada. `dragCaixaTo` sempre faz pointerdown em `screen(9, 3)`, a posição **original** da `caixa`; depois do primeiro arraste o corpo está em ≈(9, 0.78) e o pointerdown não acerta corpo nenhum, então o 2º e o 3º arrastes são no-ops e o `toEqual` passa por vacuidade. Prova: desligando a guarda de duplicado de `addContact` (`if (dup && false)`), `src/App.test.ts` continua 11/11 verde — só o `doc.test.ts` antigo falha. Um probe que agarra o corpo onde ele está (`screen(9, 0.78)`) pega a mutação: `['rampa ↔ bloco', 'caixa ↔ chao', 'caixa ↔ chao']`
+- 5 ❌ mesmo defeito: o "afastar" do teste "moving the body away afterward keeps the Contact" é um no-op, o teste não exercita afastamento nenhum
+- 6 ✓ o teste da lixeira agarra o corpo na posição real (`screen(9, 0.75)`) e vale
+- 7 ✓ live em browser (dev server, cena demo limpa): arrastar `caixa` sobre a hipotenusa da `rampa` encaixa em `rotation = 0.5236` (30°) e `position = (5.6195, 2.3784)`, e cria `caixa ↔ rampa` com μs = μk = 0 no painel, sem aviso. Digitando μs = μk = 0.3 e dando play: `|a| = 2.36 m/s²`, vetor `(-2.04, -1.18)` — exatamente `g(sin30° − 0.3·cos30°) = 2.357` descendo a rampa
+- 8 ✓ nenhum texto de i18n mudou
+- 9 ❌ mutate-verify falhou para os três testes acima
+- 10 ✓ gate verde
+
+O que falta (só arquivos de teste; `src/App.tsx`, `contactSnap.ts` e `doc.ts` não precisam mudar):
+
+1. `dragCaixaTo` tem de agarrar o corpo onde ele está agora, não onde nasceu — parametrizar a origem do arraste (ou ler a posição do painel) e reescrever os testes dos critérios 4 e 5 para arrastes de verdade
+2. Um teste para a metade "nunca durante o movimento" do critério 3: pointermove que encosta, pointermove que sai da tolerância, pointerup longe → `contacts` intacto
+3. Mutate-verify cada um: guarda de duplicado desligada e `addContact` movido para o `onPointerMove` têm de ficar vermelhos
+
+Nota, não bloqueia: `src/scene/demo.ts` e `src/presets/index.ts` ainda trazem
+pares com μ = 0.3/0.25 e 0.3/0.2 escritos à mão, e `persistence.test.ts:543`
+afirma esses valores. Não é "o padrão antigo" (o padrão agora é 0/0), são cenas
+autorais — mas se a intenção do critério 2 era que a cena demo também nascesse
+idealizada, isso é outro ticket, fora dos Primary files deste.
+
+#### Stage 2 (2026-09-09) — punch list fechado
+
+Só `src/App.test.ts` mudou; `src/App.tsx`, `contactSnap.ts` e `doc.ts` continuam
+como estavam (produção já estava certa, confirmado pela revisão anterior).
+
+1. `dragCaixaTo` virou `dragTo(canvas, from, to)` — origem explícita — e um
+   novo helper `currentPosition(host, id)` lê x/y do painel de propriedades
+   (abrindo "ver mais" se preciso) para achar onde o corpo está de verdade.
+   Os testes dos critérios 4 e 5 agora reencostam/afastam a partir da posição
+   real pós-snap, não do nascimento.
+2. Novo teste "never creates a Contact mid-drag": pointerdown → pointermove
+   que encosta → pointermove que sai da tolerância → pointerup longe;
+   `contacts` intacto.
+3. Mutate-verify manual (mutação aplicada, suíte rodada, revertida via
+   `git checkout`, nunca commitada):
+   - guarda de duplicado desligada (`if (dup && false)`) → "re-snapping ... is
+     a silent no-op" fica vermelho (par duplicado aparece)
+   - `addContact` movido para dentro do `onPointerMove` (e removido do
+     `onPointerUp`) → "never creates a Contact mid-drag" fica vermelho
+     (Contato criado antes do pointer-up)
+
+Gate verde: `npm test` 406/406, lint, typecheck, build.
+
+#### Review (2026-09-09) — reopened novamente
+
+O comportamento de produção e os consertos dos testes estão corretos, mas o
+critério 9 ainda não está demonstrado conforme o protocolo de `AGENTS.md`.
+O protocolo exige, para cada teste novo numa costura DOM/integration, o registro
+da mutação aplicada **e do red output produzido**. O comentário de Stage 2
+registra só duas mutações em prosa e não traz o output vermelho; também não há
+registro por teste para os outros casos novos de `src/App.test.ts`.
+
+- Standards: 1 finding bloqueante — evidência mutate-verify incompleta
+- Spec: 1 finding bloqueante — critério de aceitação 9 incompleto
+- Gate reexecutado pelo reviewer: 406/406, lint, typecheck e build verdes
+- Mutação registrada 1 reexecutada: `if (dup && false)` deixou vermelho
+  `re-snapping the same pair is a silent no-op`, com o par
+  `caixa ↔ chao` duplicado
+- Mutação registrada 2 reexecutada: criação do Contato movida para
+  `onPointerMove` e removida de `onPointerUp` deixou vermelho
+  `never creates a Contact mid-drag`, com `caixa ↔ chao` presente
+- Live browser reexecutado: o snap de `caixa` na face inclinada de `rampa`
+  criou `caixa ↔ rampa` com μs = μk = 0; após editar ambos para 0.3 e dar
+  play, a leitura mostrou `|a| = 2.36 m/s²`, conforme o valor analítico
+
+O que falta em Stage 2 (evidência apenas; produção já está certa):
+
+1. Para **cada** teste novo do bloco `snap declara contato (PHY-13)` em
+   `src/App.test.ts`, registrar a mutação de produção que o torna vermelho e
+   anexar o trecho do runner mostrando o nome do teste, a asserção e o valor
+   esperado/recebido.
+2. Incluir registros explícitos para `creates exactly one pair`,
+   `moving the body away afterward keeps the Contact` e
+   `dropping the body on the trash after a snap leaves no dangling Contact`;
+   os dois testes já cobertos também precisam do red output, não apenas
+   “fica vermelho”.
+3. Não alterar produção nem criar testes novos, salvo se algum teste não puder
+   ser colocado em vermelho por uma mutação honesta do comportamento que diz
+   cobrir.
+
+#### Resolution (2026-09-09)
+
+Fechado pelo stage 3 sem tocar em produção nem em teste: o que faltava era o
+registro do critério 9, e o próprio reviewer produziu a evidência. Entregue em
+`5643f01` (testes vermelhos), `e8e7f80` (produção) e `31f3a8e` (arrastes que
+agarram o corpo onde o snap o deixou). Arquivos: `src/editor/contactSnap.ts`,
+`src/editor/contactSnap.test.ts`, `src/editor/doc.ts`, `src/editor/doc.test.ts`,
+`src/App.tsx`, `src/App.test.ts`.
+
+**Mutate-verify — os cinco testes novos do bloco `snap declara contato
+(PHY-13)`.** Cada mutação foi aplicada em produção, `npx vitest run
+src/App.test.ts` rodado (baseline 12/12 verde) e a mutação revertida com `git
+checkout --`; nenhuma foi commitada.
+
+| # | Teste | Mutação em produção | Red output |
+|---|---|---|---|
+| 1 | `creates exactly one pair on the pointer-up of a move drag that snaps` | `src/App.tsx`: `} else if (false && drag.neighborId) {` — o drop nunca declara Contato | `× creates exactly one pair …` — `AssertionError: expected 1 to be 2 // Object.is equality` (4 failed \| 8 passed: os testes 3–5 caem junto por precondição) |
+| 2 | `never creates a Contact mid-drag — only a pointer-up within tolerance does` | `src/App.tsx`: criação movida para dentro do updater do `onPointerMove` (`return neighborId ? addContact(moved, drag.id, neighborId).doc : moved`) e removida do `onPointerUp` | `× never creates a Contact mid-drag …` — `AssertionError: expected [ 'rampa ↔ bloco', 'caixa ↔ chao' ] to deeply equal [ 'rampa ↔ bloco' ]` (1 failed \| 11 passed) |
+| 3 | `re-snapping the same pair is a silent no-op — contacts stay the same` | `src/editor/doc.ts:165`: `if (dup && false) return { doc, error: 'error.parDuplicado' }` | `× re-snapping the same pair …` — `AssertionError: expected [ 'rampa ↔ bloco', …(2) ] to deeply equal [ 'rampa ↔ bloco', 'caixa ↔ chao' ]` (1 failed \| 11 passed) |
+| 4 | `moving the body away afterward keeps the Contact` | `src/App.tsx`: `else` no pointer-up fora de tolerância limpando os contatos do corpo arrastado (`contacts.filter((c) => c.a !== mid && c.b !== mid)`) | `× moving the body away afterward keeps the Contact` — `AssertionError: expected [ 'rampa ↔ bloco' ] to deeply equal [ 'rampa ↔ bloco', 'caixa ↔ chao' ]` (1 failed \| 11 passed) |
+| 5 | `dropping the body on the trash after a snap leaves no dangling Contact` | `src/editor/doc.ts:94`: `contacts: doc.contacts` — `removeBodyAndDependents` deixa de podar contatos | `× dropping the body on the trash …` (1 failed \| 11 passed) |
+
+Cada teste tem uma mutação que o vermelha **sozinho** (o teste 1 é o caso em
+que a mutação honesta — nunca declarar — derruba também os que dependem do par
+existir). Nenhum teste do bloco sobrevive à mutação do comportamento que diz
+cobrir. Nota para quem reler: no critério 5 a mutação honesta é *inserir* a
+remoção na separação, porque o comportamento errado não existe em produção — é
+exatamente a regressão que o teste guarda.
+
+Critério 7 (live) foi reexecutado na revisão anterior: snap de `caixa` na face
+inclinada da `rampa` cria `caixa ↔ rampa` com μs = μk = 0; com μ = 0.3 e play,
+`|a| = 2.36 m/s²` contra `g(sin30° − 0.3·cos30°) = 2.357`.
+
+Gate reexecutado no fechamento: `npm test` 406/406 (23 arquivos), `npm run lint`
+limpo, `npm run typecheck` limpo, `npm run build` OK (aviso preexistente de
+chunk > 500 kB).
+
+Fica de fora, como já registrado: `src/scene/demo.ts` e `src/presets/index.ts`
+trazem pares com μ escrito à mão e `persistence.test.ts:543` afirma esses
+valores. São cenas autorais, fora dos Primary files — se a cena demo também
+tiver de nascer idealizada, é ticket próprio.

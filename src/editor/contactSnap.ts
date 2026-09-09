@@ -86,17 +86,23 @@ function snapCandidate(dragged: Body, position: Vec2, tolerance: number, rotatio
   return { body, displacement }
 }
 
-/** Pure editor seam: returns the dragged Body at its nearest valid Contact, or unchanged. */
+export interface ContactSnapResult {
+  body: Body
+  /** Id of the winning neighbor; null when no snap happened or snap is disabled. */
+  neighborId: string | null
+}
+
+/** Pure editor seam: returns the dragged Body at its nearest valid Contact, plus which neighbor won. */
 export function resolveContactSnap(
   dragged: Body,
   neighbors: readonly Body[],
   pixelsPerMeter: number,
   enabled: boolean,
-): Body {
-  if (!enabled) return dragged
+): ContactSnapResult {
+  if (!enabled) return { body: dragged, neighborId: null }
 
   const tolerance = CONTACT_SNAP_TOLERANCE_PX / pixelsPerMeter
-  let best: { body: Body; displacement: number } | null = null
+  let best: { body: Body; displacement: number; neighborId: string } | null = null
 
   for (const neighbor of neighbors) {
     if (neighbor.id === dragged.id) continue
@@ -117,7 +123,8 @@ export function resolveContactSnap(
         tolerance,
         normalizeAxisAngle(Math.atan2(ny, nx) + Math.PI / 2),
       )
-      if (candidate && (!best || candidate.displacement < best.displacement)) best = candidate
+      if (candidate && (!best || candidate.displacement < best.displacement))
+        best = { ...candidate, neighborId: neighbor.id }
       continue
     }
     for (const segment of segments(neighbor)) {
@@ -136,9 +143,10 @@ export function resolveContactSnap(
         y: onSurface.y + ny * surfaceOffset,
       }
       const candidate = snapCandidate(dragged, position, tolerance, axisAngle(segment))
-      if (candidate && (!best || candidate.displacement < best.displacement)) best = candidate
+      if (candidate && (!best || candidate.displacement < best.displacement))
+        best = { ...candidate, neighborId: neighbor.id }
     }
   }
 
-  return best?.body ?? dragged
+  return best ? { body: best.body, neighborId: best.neighborId } : { body: dragged, neighborId: null }
 }
