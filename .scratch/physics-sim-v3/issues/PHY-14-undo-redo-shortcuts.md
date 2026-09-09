@@ -1,5 +1,5 @@
 # PHY-14: Undo/redo, Delete, atalhos e menu `?`
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
@@ -32,6 +32,8 @@ Atalhos: Ctrl+Z desfaz · Ctrl+Shift+Z e Ctrl+Y refazem · Delete/Backspace remo
 12. Verificação live em browser: arrastar, Ctrl+Z volta; Backspace dentro de um campo numérico apaga o dígito, não o corpo; Espaço alterna play/pause
 13. Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
 14. Gate verde
+15. Nenhum atalho dispara quando o elemento focado trata a tecla nativamente: com foco em `button`, Espaço (e Enter) ativa o botão, não o playback
+16. O rótulo da tecla Espaço na tabela do popover vem do i18n — nenhuma palavra em português hard-coded no JSX do menu
 
 #### Verification
 
@@ -97,3 +99,49 @@ função de produção direto — sem registro aqui, por protocolo.
   restaurar o doc (botão volta a "▶ reproduzir").
 
 ## Comments
+
+#### Review (2026-09-09) — reopened
+
+Separação dos commits certa (`51f1767` só toca teste + a linha `Stage:`, os dois
+commits de código não tocam teste nenhum), gate verde de verdade — 25 arquivos /
+436 testes, lint, typecheck, build — e o registro mutate-verify tem as oito
+mutações com o vermelho de cada. O módulo puro e a função tecla→ação estão bem
+desenhados. Dois defeitos reais, nenhum pego por critério existente porque os
+critérios 9 e 10 estão cumpridos na letra.
+
+- 1 ✓ `history.ts` puro e genérico; `push` fatia em `HISTORY_LIMIT = 50` e zera `future`; `undo`/`redo` recebem o valor corrente e devolvem `null` na borda
+- 2 ✓ `actionForKey` pura; `metaKey ≡ ctrlKey`, `inTextField` → nulo, tecla desconhecida → nulo, e `if (ctrl) return null` preserva Ctrl+R
+- 3 ✓ `startDoc` capturado no pointer-down das quatro variantes de drag, um único `pushHistory` no pointer-up
+- 4 ✓ tudo que muda o doc passa por `commitDoc`: g, modo partícula, `PropertiesPanel`, forças, contatos, duplicar, `addShape`, `deleteSelected`
+- 5 ✓ os quatro caminhos (trocar, importar, criar, excluir cena) desembocam em `switchToScene`, que chama `clearHistory()`
+- 6 ✓ `undo`/`redo` despacham `pause` antes do `setDoc`; nenhuma lógica nova de playback
+- 7 ✓ `deleteSelected` é o mesmo caminho do botão do painel — `removeBodyAndDependents` + `setSelectedId(null)`
+- 8 ✓ `disabled={!canUndo(history)}` / `{!canRedo(history)}`, títulos via `playback.undoTitle`/`redoTitle`
+- 9 ❌ letra cumprida, intenção não: o popover abre/fecha nos três gestos e os nomes das ações vêm do i18n, mas o rótulo da tecla Espaço é o literal `Espaço` no JSX, fora de qualquer `t()`. Em EN a tabela mostra "Espaço — play/pause". Os outros rótulos (`Ctrl+Z`, `→`, `R`, `Esc`, `Delete / Backspace`) são neutros; só esse é uma palavra
+- 10 ❌ letra cumprida, intenção não: o listener é único e ignora `input`/`textarea`/`select`/`contenteditable`, mas não o caso em que o elemento focado **já trata a tecla nativamente**. Com foco em qualquer `<button>` — paleta, ↶, ↷, `?`, reiniciar, cenas, exportar — Espaço cai em `togglePlay` com `preventDefault()`, e o botão nunca ativa. Um usuário de teclado tabula até "retângulo", aperta Espaço e o playback alterna em vez de criar o corpo. Prova (probe descartável em jsdom, `keydown` de `' '` despachado com o botão da paleta focado): `defaultPrevented === true`. O checkbox do modo partícula escapa por acidente, porque o `tagName` dele é `INPUT`
+- 11 ✓ 11 chaves novas nos dois catálogos, paridade verde
+- 12 ✓ registro live presente e coerente com o código (drag → Ctrl+Z, Backspace em campo numérico, `?`, Espaço, undo durante playback)
+- 13 ✓ oito mutações em `src/App.tsx`, cada uma com o vermelho que produziu; `history.test.ts` e `shortcuts.test.ts` chamam produção direto, sem registro por protocolo
+- 14 ✓ gate verde
+
+O que falta (tudo dentro dos Primary files; reabre porque o item 1 precisa de
+teste novo, e essa é a regra mecânica do `ticket-flow`, não uma questão de
+tamanho do diff):
+
+1. Critério 15 — excluir do atalho a tecla que o controle focado ativa por conta
+   própria. Espaço e Enter com foco em `button` têm de chegar no botão. Fica
+   melhor como um campo novo do `KeyInput` do que como um `inTextField`
+   esticado: `inTextField` significa "campo de texto", e um botão não é um.
+   Teste em `shortcuts.test.ts` para a função pura, mais um em `App.test.ts` que
+   prenda o observável (Espaço com a paleta focada cria o corpo e não mexe no
+   transporte)
+2. Critério 16 — uma chave nova (`shortcuts.keySpace`) nos dois catálogos e
+   `t()` no lugar do literal. Sem teste novo: a paridade de `i18n.test.ts` já
+   cobre
+
+Nota, não bloqueia e não é critério: soltar um corpo na lixeira **sem nenhum
+pointermove** entre o pointer-down e o pointer-up não empilha nada
+(`drag.startDoc === docRef.current`, então o `push` não acontece, e a remoção
+logo abaixo entra sem entrada de histórico). Só é alcançável se o corpo já
+estiver por baixo do alvo da lixeira; se algum dia for, o conserto é empilhar
+`startDoc` também no ramo da lixeira.
