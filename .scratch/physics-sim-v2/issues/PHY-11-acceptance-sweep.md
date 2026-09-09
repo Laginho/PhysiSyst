@@ -1,8 +1,8 @@
-# 11: Acceptance sweep + closeout
+# PHY-11: Acceptance sweep + closeout
 
 **What to build:** The whole v2 diff verified as one unit: the projectile-with-initial-velocity closed-form acceptance family runs green end-to-end; all four gates pass over the full changeset (not just per-ticket); cross-ticket interactions hold (labels + contact snap + trash on the same scene; vector sizing consistent across weight/applied/`v₀` arrows; panel split with all new fields). Independent READ verification over the complete diff, then FINAL_REPORT updated for v2.
 
-**Blocked by:** 01, 02, 03, 04, 05, 06, 07, 08, 09, 10 (all).
+**Blocked by:** PHY-01, PHY-02, PHY-03, PHY-04, PHY-05, PHY-06, PHY-07, PHY-08, PHY-09, PHY-10 (all).
 
 **Status:** complete
 

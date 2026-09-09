@@ -1,4 +1,4 @@
-# 03: Undo/redo, Delete, atalhos e menu `?`
+# PHY-14: Undo/redo, Delete, atalhos e menu `?`
 
 **What to build:** O aluno pode desfazer e refazer qualquer edição de cena, remover o corpo selecionado pelo teclado, e controlar o playback sem o mouse. Botões ↶ ↷ na barra de playback ficam desabilitados quando não há o que desfazer/refazer. Um botão `?` (e a tecla `?`) abre um popover listando todos os atalhos; Esc ou clique fora fecha. Nenhum atalho dispara enquanto o foco está em um campo de texto.
 

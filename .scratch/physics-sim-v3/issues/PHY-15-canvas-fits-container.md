@@ -1,4 +1,4 @@
-# 04: Canvas mede o container
+# PHY-15: Canvas mede o container
 
 **What to build:** O canvas deixa de ser 900×600 fixo. Ele ocupa o maior tamanho 3:2 que cabe no container (letterbox nos dois eixos), com largura mínima de 600 px, e se re-mede quando a janela é redimensionada ou maximizada, durante edição ou playback, sem esticar o desenho. A mesma região do mundo fica visível em qualquer tamanho: muda a escala, não o enquadramento. Arraste, hit-test, snap, lixeira e overlays continuam precisos após o resize.
 

@@ -2,7 +2,7 @@
 
 Você é o READ da pipeline physics-sim v2: verificação independente com replay adversarial. Ticket e spec:
 
-- Ticket: `.scratch/physics-sim-v2/issues/01-vector-sizing.md` (critérios de aceite)
+- Ticket: `.scratch/physics-sim-v2/issues/PHY-01-vector-sizing.md` (critérios de aceite)
 - Spec: `.scratch/physics-sim-v2/spec.md` (seção "Vector sizing")
 
 ## Changeset sob revisão (feito pelo MAKE)

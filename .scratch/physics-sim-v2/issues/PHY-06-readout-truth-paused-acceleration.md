@@ -1,4 +1,4 @@
-# 06: Readout truth — paused acceleration + magnitudes
+# PHY-06: Readout truth — paused acceleration + magnitudes
 
 **What to build:** The readout tells the truth at every moment. Pausing keeps the last measured acceleration visible (no reset to zero). A Body that has never stepped shows its analytic acceleration — `(Σ applied forces + weight) / mass` — exact for free bodies, and marked with `≈` when the Body participates in a declared Contact (contact-force magnitudes are unavailable on this seam, so the marker is the honest contract). Velocity and acceleration magnitudes (`|v|`, `|a|`) display prominently; vector components move under a collapsible "ver mais" section.
 

@@ -1,4 +1,4 @@
-# 01: Release mecânico
+# PHY-12: Release mecânico
 
 **What to build:** O repositório passa a ter um caminho automático até o aluno. Todo PR roda os quatro portões (`test`, `lint`, `typecheck`, `build`) no GitHub Actions e fica vermelho se qualquer um falhar. Todo push em `main` que passa nos portões publica o app em GitHub Pages, em `https://laginho.github.io/PhysiSyst/`. O repo ganha LICENSE MIT (Bruno Lage, 2026), `version` 0.3.0, e o README aponta para o site publicado.
 

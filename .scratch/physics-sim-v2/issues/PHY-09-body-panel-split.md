@@ -1,8 +1,8 @@
-# 09: Body panel split
+# PHY-09: Body panel split
 
 **What to build:** The body panel shows only the essentials by default: massa, fixo, and initial velocity. Everything the mouse already does better — position x/y, rotação, and shape dimensions (largura/altura/raio/base/α) — moves under a collapsible "ver mais" section. Dragging remains the primary way to position, rotate, and resize. The contacts panel is unchanged (μ per pair, per the friction ADR).
 
-**Blocked by:** 04 (initial velocity core).
+**Blocked by:** PHY-04 (initial velocity core).
 
 **Status:** complete
 

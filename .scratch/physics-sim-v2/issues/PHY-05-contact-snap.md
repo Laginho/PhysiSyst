@@ -1,4 +1,4 @@
-# 05: Contact snap
+# PHY-05: Contact snap
 
 **What to build:** Dragging a Body near a neighbor snaps it into direct Contact: position flush against the nearest surface within a small pixel tolerance, and for rectangles rotation aligned to the touched surface (flat ground → rotation 0); circles snap to tangent distance. Contact snap fully replaces grid snapping — the existing toggle becomes the snap toggle. Rotate and α handle drags remain unsnapped. When several surfaces are in range, the nearest wins.
 

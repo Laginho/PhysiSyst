@@ -1,4 +1,4 @@
-# 01: Vector sizing rule
+# PHY-01: Vector sizing rule
 
 **What to build:** Every magnitude-bearing arrow on the canvas (weight, applied force) is drawn with one shared sizing rule: length is a square-root function of magnitude, clamped to a hard pixel minimum and maximum. The clamps are the critical contract: no arrow ever leaves the canvas or clutters the drawing, and ordering is preserved — a larger magnitude never draws a shorter arrow. A scene with forces 1, 5, and 500 N shows three visibly different arrows. Normal arrows stay direction-only (unchanged).
 

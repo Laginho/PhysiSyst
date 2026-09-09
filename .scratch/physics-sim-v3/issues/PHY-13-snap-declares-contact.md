@@ -1,4 +1,4 @@
-# 02: Snap declara Contato
+# PHY-13: Snap declara Contato
 
 **What to build:** Quando o aluno arrasta um Corpo e o snap o encosta em um vizinho (rampa, chão, outro bloco, círculo), soltar o mouse cria o Contato entre os dois no doc, com μs = μk = 0. O par aparece no painel de contatos sem aviso nem destaque; o aluno digita μ só se o enunciado der. Re-encostar dois corpos que já têm Contato não duplica. Afastar o corpo depois não remove o Contato. O padrão do botão "adicionar contato" do painel também passa a ser μ = 0, para que exista um único padrão (ADR-0002: idealização padrão, realismo opt-in).
 

@@ -1,8 +1,8 @@
-# 07: v₀ polar input + canvas arrow
+# PHY-07: v₀ polar input + canvas arrow
 
 **What to build:** Initial velocity can be entered as magnitude + angle via a toggle that switches the input with cartesian `vx`/`vy` (pure conversion, no precision loss on round-trip). The initial velocity is drawn on the canvas as a green arrow anchored to the Body, sized by the shared vector sizing rule, so direction and relative size are visible before pressing play.
 
-**Blocked by:** 01 (vector sizing rule), 04 (initial velocity core).
+**Blocked by:** PHY-01 (vector sizing rule), PHY-04 (initial velocity core).
 
 **Status:** complete
 

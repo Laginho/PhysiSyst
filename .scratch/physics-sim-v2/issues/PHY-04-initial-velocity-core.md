@@ -1,4 +1,4 @@
-# 04: Initial velocity core
+# PHY-04: Initial velocity core
 
 **What to build:** A student can give a dynamic Body an initial velocity (`vx`, `vy` in m/s, world frame) via two numeric fields in the body panel, press play, and watch it move ballistically. The Initial velocity is an additive-optional Scene schema field — the Scene version stays 1, pre-v2 scenes parse untouched — applied by the simulator as linear velocity when the world is built, and carried across structural rebuilds like existing runtime velocity. Fixed bodies expose no velocity input.
 

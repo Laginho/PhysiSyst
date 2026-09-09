@@ -2,7 +2,7 @@
 
 Você é o READ da pipeline physics-sim v2: verificação independente com replay adversarial. Ticket e spec:
 
-- Ticket: `.scratch/physics-sim-v2/issues/03-scene-hygiene-warnings-ground.md` (critérios de aceite)
+- Ticket: `.scratch/physics-sim-v2/issues/PHY-03-scene-hygiene-warnings-ground.md` (critérios de aceite)
 - Spec: `.scratch/physics-sim-v2/spec.md`, seção "Warning policy" + item "Ground everywhere" das Implementation Decisions + glossário em `CONTEXT.md` (Fixed body, Body, Preset, Scene)
 
 ## Changeset sob revisão (feito pelo MAKE)

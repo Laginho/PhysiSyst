@@ -1,4 +1,4 @@
-# 03: Scene hygiene — honest warnings + grounded scenes
+# PHY-03: Scene hygiene — honest warnings + grounded scenes
 
 **What to build:** Warnings only flag real problems: Fixed bodies are exempt from the positive-mass warning (mass 0 is legitimate for them), and every warning names the offending Body by id instead of array position. Every new Scene starts with a ground: the blank-scene factory includes a fixed hatched ground (same recipe as the presets), and the free-fall Preset gains a ground under the falling Body.
 

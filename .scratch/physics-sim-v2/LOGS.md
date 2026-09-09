@@ -5,7 +5,7 @@ MAKE: `opencode:big-pickle` Â· READ: `gpt-5.6-luna` (codex, effort max).
 
 ## Protocol
 
-- Tickets: `.scratch/physics-sim-v2/issues/NN-*.md` â€” Status line flows `ready-for-agent` â†’ `in-progress` â†’ `done` (only after READ PASS).
+- Tickets: `.scratch/physics-sim-v2/issues/PHY-NN-*.md` â€” Status line flows `ready-for-agent` â†’ `in-progress` â†’ `done` (only after READ PASS).
 - MAKE: red-green test-first; mutate-verify every regression test (AGENTS.md); four gates per ticket; max 3 fix loops then report BLOCKED.
 - READ: independent gate reproduction + adversarial mutate-replay + diff review against ticket acceptance criteria and spec; verdict PASS/REJECT with numbered root causes to PLAN.
 - Heartbeat: `.scratch/physics-sim-v2/HEARTBEAT.md` touched at every milestone by MAKE and PLAN.

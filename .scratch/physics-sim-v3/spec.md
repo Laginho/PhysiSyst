@@ -150,7 +150,7 @@ Um ciclo curto, seis tickets, uma ideia: **tirar o app da pasta `dist/` e coloc�
 
 ### Closeout
 - Sweep: quatro portões locais + CI verde no último merge.
-- Passe manual desktop (8 itens, escritos no ticket 06, substituem os 8 itens desktop do T12 do v1; os 10 itens mobile do T12 são declarados `wontfix`). Executado pelo reviewer no browser real, resultados registrados no FINAL_REPORT.
+- Passe manual desktop (8 itens, escritos em PHY-17, substituem os 8 itens desktop do T12 do v1; os 10 itens mobile do T12 são declarados `wontfix`). Executado pelo reviewer no browser real, resultados registrados no FINAL_REPORT.
 - FINAL_REPORT ganha a seção v3: escopo entregue, portões, passe manual, limitações conhecidas (as 10 do v1 continuam), próximos passos (v4: constraints, restituição, code-split).
 
 ## Testing Decisions
@@ -177,6 +177,6 @@ Um ciclo curto, seis tickets, uma ideia: **tirar o app da pasta `dist/` e coloc�
 
 ## Further Notes
 
-- Tickets 01–05 são independentes entre si; a ordem 01→05 é preferência (CI primeiro para que todo PR seguinte já passe por ele). Só o 06 é bloqueado de fato.
+- PHY-12 a PHY-16 são independentes entre si; a ordem PHY-12→PHY-16 é preferência (CI primeiro para que todo PR seguinte já passe por ele). Só PHY-17 é bloqueado de fato.
 - O padrão μ = 0 muda o comportamento do botão "adicionar contato" do painel (antes 0.3/0.25). É intencional e alinhado ao ADR-0002; nenhum teste existente pode depender do valor antigo sem ser atualizado com justificativa.
 - O `≈` do readout (estimativa analítica para participantes de Contato) passa a aparecer também em corpos encostados por snap. É comportamento correto já especificado no v2, não regressão.

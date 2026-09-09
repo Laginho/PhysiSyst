@@ -2,7 +2,7 @@
 
 Você é o MAKE da pipeline physics-sim v2: implementação test-first (red→green), mutação-verificada.
 
-**Ticket:** `.scratch/physics-sim-v2/issues/03-scene-hygiene-warnings-ground.md` — leia-o e execute-o. Ao começar, mude o Status dele para `in-progress`.
+**Ticket:** `.scratch/physics-sim-v2/issues/PHY-03-scene-hygiene-warnings-ground.md` — leia-o e execute-o. Ao começar, mude o Status dele para `in-progress`.
 
 **Spec:** `.scratch/physics-sim-v2/spec.md` (seções que cubrem higiene de warnings e presets) + glossário em `CONTEXT.md` (Fixed body, Body, Preset — use os termos verbatim em código, testes e strings).
 

@@ -2,7 +2,7 @@
 
 Você é o READ da pipeline physics-sim v2: verificação independente com replay adversarial. Ticket e spec:
 
-- Ticket: `.scratch/physics-sim-v2/issues/04-initial-velocity-core.md` (critérios de aceite)
+- Ticket: `.scratch/physics-sim-v2/issues/PHY-04-initial-velocity-core.md` (critérios de aceite)
 - Spec: `.scratch/physics-sim-v2/spec.md`, bullet "Initial velocity" das Implementation Decisions + glossário em `CONTEXT.md` (Initial velocity, Body, Scene)
 
 ## Changeset sob revisão (feito pelo MAKE)

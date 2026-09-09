@@ -1,4 +1,4 @@
-# 10: Drag-to-trash
+# PHY-10: Drag-to-trash
 
 **What to build:** While a Body drag is active, a trash target renders in a canvas corner; dropping the dragged Body on it deletes it — its applied forces and Contacts go with it (the existing remove-with-dependents behavior). The trash target is invisible when not dragging. Panel buttons stay.
 

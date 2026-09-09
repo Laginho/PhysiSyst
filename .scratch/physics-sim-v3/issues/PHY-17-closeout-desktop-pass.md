@@ -1,8 +1,8 @@
-# 06: Closeout — sweep, passe manual desktop e FINAL_REPORT v3
+# PHY-17: Closeout — sweep, passe manual desktop e FINAL_REPORT v3
 
 **What to build:** Fechar o ciclo com evidência. Os quatro portões verdes localmente e no CI do último merge. O passe manual desktop (herdeiro dos 8 itens desktop do T12 do v1, pendente desde 2026-08-23) executado pelo reviewer em browser real, item a item, com resultado registrado. Os 10 itens mobile do T12 declarados `wontfix` (público é desktop). FINAL_REPORT ganha a seção v3.
 
-**Blocked by:** 01 Release mecânico, 02 Snap declara Contato, 03 Undo/redo e atalhos, 04 Canvas mede o container, 05 Tela de carregamento.
+**Blocked by:** PHY-12 Release mecânico, PHY-13 Snap declara Contato, PHY-14 Undo/redo e atalhos, PHY-15 Canvas mede o container, PHY-16 Tela de carregamento.
 
 **Status:** ready-for-agent
 

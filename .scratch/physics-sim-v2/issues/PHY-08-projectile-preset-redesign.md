@@ -1,8 +1,8 @@
-# 08: Projectile preset redesign
+# PHY-08: Projectile preset redesign
 
 **What to build:** The projectile Preset becomes a textbook launch: a Body resting on the ground with a diagonal initial velocity — the fake continuous launch force is removed entirely. Playing shows a real parabola that lands on the ground. The preset's closed-form acceptance family (parabola/range) is updated to launch from `v₀` instead of the force fixture.
 
-**Blocked by:** 04 (initial velocity core).
+**Blocked by:** PHY-04 (initial velocity core).
 
 **Status:** complete
 

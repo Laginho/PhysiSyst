@@ -2,7 +2,7 @@
 
 Você é o READ da pipeline physics-sim v2: verificação independente com replay adversarial. Ticket e spec:
 
-- Ticket: `.scratch/physics-sim-v2/issues/02-textbook-bodies-mass-labels.md` (critérios de aceite)
+- Ticket: `.scratch/physics-sim-v2/issues/PHY-02-textbook-bodies-mass-labels.md` (critérios de aceite)
 - Spec: `.scratch/physics-sim-v2/spec.md`, seções "Textbook rendering" / "Panel split" (só o que o ticket cobre) + glossário em `CONTEXT.md` (Mass label, Fixed body, Triangle)
 
 ## Changeset sob revisão (feito pelo MAKE)
