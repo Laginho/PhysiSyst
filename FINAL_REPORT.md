@@ -82,3 +82,36 @@ Highlights:
 - Resize handling (backing store re-measure) in the polish pass.
 - Gallery reset affordance; pulley bodies (polia terminology already localized).
 - Consider raising the review bar earlier: the hollow-pin pattern (tests passing beside broken/mutated production code) recurred three times (T8/T9/T11) — a standing "mutate-verify your own regression" rule is now de facto and worth formalizing in AGENTS.md.
+
+---
+
+# physics-sim v2 — Textbook polish, contact snap, initial velocity
+
+**Closeout swept 2026-09-09.** Ten coordinated changes (tickets 01–10) making scenes look and behave like the textbook problems students study, plus this acceptance sweep (11).
+
+## Scope Delivered (01–10)
+
+| Ticket | Deliverable |
+|---|---|
+| 01 Vector sizing | One shared bounded non-linear rule (`vectorArrowLengthPx`, √magnitude clamped to [24,120] px) consumed by weight, applied-force, and `v₀` arrows alike |
+| 02 Textbook bodies + mass labels | White/black-outline rendering; `massLabels()` derives `m`/`M`, subscripted (`m_a`, `m_b`) only when two bodies share a symbol, re-flowing on delete; fixed bodies hatched, unlabeled |
+| 03 Scene hygiene | Mass warnings exempt fixed bodies, name the offending body; new scenes (including projectile/free-fall presets) start with a ground |
+| 04 Initial velocity core | Per-body `v0` in the Scene doc; simulator seam consumes it at spawn |
+| 05 Contact snap | Dragging a body near a neighbor lands it flush, rotation aligned to the touched surface |
+| 06 Readout truth | Acceleration survives pausing (`AccelTracker`, elapsed = steps·dt); `≈` marks only analytic estimates for Contact participants, never Fixed bodies |
+| 07 `v₀` polar arrow | Cartesian and polar (magnitude + angle) entry, drawn via the same arrow primitive as forces |
+| 08 Projectile preset redesign | Preset launches via real `v₀`, not a sustained fake force; gallery copy (pt-BR + EN) matches |
+| 09 Body panel split | Mass/fixed/`v₀` up front; mouse-redundant numeric fields under "ver mais" |
+| 10 Drag-to-trash | Trash target in the canvas corner, visible only mid-drag; drop routes through the existing `removeBodyAndDependents` (dependents cleanup, structural rebuild with carry-over — no new deletion path) |
+
+## Acceptance Sweep (11) — Gate Outcomes
+
+- **400 tests / 23 files, all green** (`npm test`), incl. the `v₀` parabola/range closed-form family (`sim/acceptance.test.ts`, launch-height re-crossing within 2% of `R = 2·v0x·v0y/g`).
+- **lint, typecheck, build all green** (build: one non-blocking >500 kB chunk-size advisory, pre-existing, out of scope).
+- **Cross-ticket scenario verified live** (real browser, not jsdom): textbook wedge scene with mass-labeled bodies → contact-snap onto the incline (rotation aligned to surface) → drag-to-trash removal (label re-flow confirmed: `m_b` deleted, survivor relabels `m_a` → `m`) → projectile preset paused mid-flight showing a `v₀` arrow sized by the same rule as weight/applied arrows.
+- **i18n parity**: catalog-completeness suite (`i18n.test.ts`) asserts pt-BR/EN key sets are identical; passing as part of the 400.
+- **Independent mutate-replay pass** on three new-seam functions, each mutation caught by its targeted test then restored: `pointInTrash` bounding-box inversion (editor/trash.test.ts), `vectorArrowLengthPx` sqrt→linear (render/overlay.test.ts), `massLabels` subscript-suppression (render/draw.test.ts). Working tree confirmed clean after restoration.
+
+## Known Limitations (v2, carried forward from v1 §4 unless noted)
+
+All ten v1 items stand. No new limitations introduced by v2 — the drag-to-trash, contact-snap, and initial-velocity seams reused existing structural-rebuild and dependents-cleanup paths rather than adding new state machinery.
