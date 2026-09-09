@@ -36,6 +36,17 @@ import { bodyAtPoint, worldToLocal } from './editor/hitTest'
 import { resolveContactSnap } from './editor/contactSnap'
 import { pointInTrash, trashRect } from './editor/trash'
 import {
+  canRedo,
+  canUndo,
+  clear as clearHistory,
+  initialHistory,
+  push as pushHistory,
+  redo as redoHistory,
+  undo as undoHistory,
+  type History,
+} from './editor/history'
+import { actionForKey, type ShortcutAction } from './editor/shortcuts'
+import {
   alphaFromLocal,
   clampAlphaDeg,
   getHandles,
@@ -422,6 +433,8 @@ export default function App() {
     return scene
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [history, setHistory] = useState<History<Scene>>(initialHistory)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
   const [showGlobal, setShowGlobal] = useState(false)
   const [storageWarning, setStorageWarning] = useState<string | null>(initialSeedWarning)
@@ -457,6 +470,8 @@ export default function App() {
   const docRef = useRef<Scene>(doc)
   const selectedIdRef = useRef<string | null>(selectedId)
   const showGlobalRef = useRef(showGlobal)
+  const historyRef = useRef<History<Scene>>(history)
+  const showShortcutsRef = useRef(showShortcuts)
   const saverRef = useRef<DebouncedSaver | null>(null)
   if (!saverRef.current) {
     saverRef.current = new DebouncedSaver(AUTOSAVE_DELAY_MS, (id, scene) => {
@@ -484,16 +499,42 @@ export default function App() {
       setDoc(scene)
       setSelectedId(null)
       setImportError(null)
+      // Switching/importing/creating/deleting a scene starts a fresh document
+      // identity — undo history from the PREVIOUS scene makes no sense here.
+      setHistory(clearHistory())
     },
     [storage],
   )
 
+  /**
+   * Every doc mutation that should be one undo step routes through here: it
+   * snapshots the doc as it stood BEFORE the edit onto the history stack, then
+   * applies the edit. A drag is the one exception — it calls `setDoc` directly
+   * on every pointermove and pushes a single history entry on pointer-up
+   * instead (see onPointerUp), so an in-progress drag isn't 50 undo steps.
+   */
+  const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => {
+    const prev = docRef.current
+    const resolved = typeof next === 'function' ? (next as (d: Scene) => Scene)(prev) : next
+    if (resolved === prev) return
+    setHistory((h) => pushHistory(h, prev))
+    setDoc(resolved)
+  }, [])
+
+  /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
+  const deleteSelected = useCallback(() => {
+    const id = selectedIdRef.current
+    if (!id) return
+    commitDoc((d) => removeBodyAndDependents(d, id))
+    setSelectedId(null)
+  }, [commitDoc])
+
   // Drag interaction: kind + per-kind payload captured at pointer-down.
   // Only Body movement consumes Contact snap; handle drags stay unsnapped.
   const dragRef = useRef<
-    | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null }
-    | { kind: 'rotate'; id: string; startAngle: number; startRotation: number }
-    | { kind: 'resize' | 'alpha'; id: string }
+    | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null; startDoc: Scene }
+    | { kind: 'rotate'; id: string; startAngle: number; startRotation: number; startDoc: Scene }
+    | { kind: 'resize' | 'alpha'; id: string; startDoc: Scene }
     | null
   >(null)
 
@@ -528,6 +569,14 @@ export default function App() {
     playbackRef.current = t.state
     setPlayback(t.state)
   }, [])
+
+  useEffect(() => {
+    historyRef.current = history
+  }, [history])
+
+  useEffect(() => {
+    showShortcutsRef.current = showShortcuts
+  }, [showShortcuts])
 
   useEffect(() => {
     docRef.current = doc
@@ -724,6 +773,71 @@ export default function App() {
     }
   }, [playback.status, runSteps, syncWorld])
 
+  const undo = useCallback(() => {
+    const step = undoHistory(historyRef.current, docRef.current)
+    if (!step) return
+    dispatch({ type: 'pause' })
+    setHistory(step.history)
+    setDoc(step.entry)
+  }, [dispatch])
+
+  const redo = useCallback(() => {
+    const step = redoHistory(historyRef.current, docRef.current)
+    if (!step) return
+    dispatch({ type: 'pause' })
+    setHistory(step.history)
+    setDoc(step.entry)
+  }, [dispatch])
+
+  // The single keyboard-shortcut listener for the whole editor (T-PHY-14):
+  // reads latest state off refs so it never needs re-subscribing on every
+  // keystroke, the same pattern the rAF loop above uses for the same reason.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName
+      const inTextField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!(e.target as HTMLElement | null)?.isContentEditable
+      const action: ShortcutAction | null = actionForKey({
+        key: e.key,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        shiftKey: e.shiftKey,
+        inTextField,
+        targetHandlesKeyNatively: tag === 'BUTTON',
+      })
+      if (!action) return
+      e.preventDefault()
+      switch (action) {
+        case 'undo':
+          undo()
+          break
+        case 'redo':
+          redo()
+          break
+        case 'delete':
+          deleteSelected()
+          break
+        case 'togglePlay':
+          togglePlay()
+          break
+        case 'stepOnce':
+          stepOnce()
+          break
+        case 'reset':
+          dispatch({ type: 'reset' })
+          break
+        case 'deselectOrClose':
+          if (showShortcutsRef.current) setShowShortcuts(false)
+          else setSelectedId(null)
+          break
+        case 'toggleHelp':
+          setShowShortcuts((v) => !v)
+          break
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [undo, redo, deleteSelected, dispatch])
+
   function togglePlay() {
     if (playbackRef.current.status === 'playing') {
       dispatch({ type: 'pause' })
@@ -775,9 +889,10 @@ export default function App() {
             id: selected.id,
             startAngle: Math.atan2(w.y - selected.position.y, w.x - selected.position.x),
             startRotation: selected.rotation,
+            startDoc: docRef.current,
           }
         } else {
-          dragRef.current = { kind: handle.kind, id: selected.id }
+          dragRef.current = { kind: handle.kind, id: selected.id, startDoc: docRef.current }
         }
         return
       }
@@ -786,7 +901,7 @@ export default function App() {
     const hit = bodyAtPoint(bodies, w)
     if (hit) {
       setSelectedId(hit.id)
-      dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null }
+      dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, startDoc: docRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
     } else {
@@ -853,6 +968,11 @@ export default function App() {
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragRef.current
+    // One complete drag (move/rotate/resize/alpha) is a single undo step:
+    // push the pre-drag snapshot ONCE, here, never on pointermove.
+    if (drag && drag.startDoc !== docRef.current) {
+      setHistory((h) => pushHistory(h, drag.startDoc))
+    }
     if (drag?.kind === 'move') {
       const { sx, sy } = eventToScreen(e)
       if (pointInTrash(TRASH_RECT, sx, sy)) {
@@ -881,7 +1001,7 @@ export default function App() {
         : shape === 'circle'
           ? { ...common, shape, radius: 0.75 }
           : { ...common, shape, base: 2, alpha: 30 }
-    setDoc({ ...doc, bodies: [...doc.bodies, body] })
+    commitDoc({ ...doc, bodies: [...doc.bodies, body] })
     setSelectedId(id)
   }
 
@@ -933,6 +1053,53 @@ export default function App() {
             <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
               {t('playback.reset')}
             </button>
+            <button onClick={undo} disabled={!canUndo(history)} title={t('playback.undoTitle')}>
+              ↶
+            </button>
+            <button onClick={redo} disabled={!canRedo(history)} title={t('playback.redoTitle')}>
+              ↷
+            </button>
+            <span style={{ position: 'relative' }}>
+              <button onClick={() => setShowShortcuts((v) => !v)} title={t('shortcuts.title')}>
+                ?
+              </button>
+              {showShortcuts && (
+                <div
+                  onClick={() => setShowShortcuts(false)}
+                  style={{ position: 'fixed', inset: 0, zIndex: 1 }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      top: 24,
+                      left: 0,
+                      background: '#fff',
+                      border: '1px solid #999',
+                      borderRadius: 4,
+                      padding: 10,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                      fontSize: 12,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <strong>{t('shortcuts.title')}</strong>
+                    <table style={{ marginTop: 6, borderSpacing: '0 4px' }}>
+                      <tbody>
+                        <tr><td style={{ paddingRight: 12 }}>Ctrl+Z</td><td>{t('shortcuts.undo')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>Ctrl+Shift+Z / Ctrl+Y</td><td>{t('shortcuts.redo')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </span>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
               {t('playback.speedLabel')}
               <input
@@ -1178,28 +1345,28 @@ export default function App() {
               {!selected && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => setDoc((d) => updateG(d, v))} />
+          <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
               checked={doc.constants.particleMode ?? false}
-              onChange={(e) => setDoc((d) => updateParticleMode(d, e.target.checked))}
+              onChange={(e) => commitDoc((d) => updateParticleMode(d, e.target.checked))}
             />{' '}
             {t('panel.particleMode')}
           </label>
           {selected && (
             <>
-              <PropertiesPanel body={selected} onPatch={(patch) => setDoc((d) => updateBody(d, selected.id, patch))} />
+              <PropertiesPanel body={selected} onPatch={(patch) => commitDoc((d) => updateBody(d, selected.id, patch))} />
               <ForcesPanel
                 bodyId={selected.id}
                 forces={doc.forces.filter((f) => f.bodyId === selected.id)}
                 onAdd={() => {
                   const res = addForce(doc, { bodyId: selected.id, anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 })
-                  setDoc(res.doc)
+                  commitDoc(res.doc)
                   return res.error
                 }}
-                onPatch={(id, patch) => setDoc((d) => updateForce(d, id, patch))}
-                onRemove={(id) => setDoc((d) => removeForce(d, id))}
+                onPatch={(id, patch) => commitDoc((d) => updateForce(d, id, patch))}
+                onRemove={(id) => commitDoc((d) => removeForce(d, id))}
               />
             </>
           )}
@@ -1207,11 +1374,11 @@ export default function App() {
             doc={doc}
             onAdd={(a, b) => {
               const res = addContact(doc, a, b)
-              setDoc(res.doc)
+              commitDoc(res.doc)
               return res.error
             }}
-            onPatch={(a, b, patch) => setDoc((d) => updateContact(d, a, b, patch))}
-            onRemove={(a, b) => setDoc((d) => removeContact(d, a, b))}
+            onPatch={(a, b, patch) => commitDoc((d) => updateContact(d, a, b, patch))}
+            onRemove={(a, b) => commitDoc((d) => removeContact(d, a, b))}
           />
           {simError && (
             <fieldset style={{ width: 220, borderColor: '#b00' }}>
@@ -1232,20 +1399,13 @@ export default function App() {
               <button
                 onClick={() => {
                   const { doc: next, newId } = duplicateBody(doc, selected.id)
-                  setDoc(next)
+                  commitDoc(next)
                   if (newId) setSelectedId(newId)
                 }}
               >
                 {t('panel.duplicate')}
               </button>
-              <button
-                onClick={() => {
-                  setDoc(removeBodyAndDependents(doc, selected.id))
-                  setSelectedId(null)
-                }}
-              >
-                {t('panel.delete')}
-              </button>
+              <button onClick={deleteSelected}>{t('panel.delete')}</button>
             </div>
           )}
         </div>
