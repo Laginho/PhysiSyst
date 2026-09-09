@@ -1,5 +1,7 @@
 ﻿# PhysiSyst
 
+**[Abrir o simulador](https://laginho.github.io/PhysiSyst/)** — publicado automaticamente a cada push em `main` via GitHub Actions, após os quatro portões (`test`, `lint`, `typecheck`, `build`) passarem.
+
 Simulador 2D interativo de mecânica clássica voltado para problemas típicos de livro-texto (planos inclinados, blocos, cunhas, atrito e colisões).
 
 O projeto permite montar cenários físicos livremente, definir parâmetros numéricos (massa, forças aplicadas, coeficientes de atrito) e observar o movimento resultante com fidelidade analítica.
