@@ -1,5 +1,5 @@
 # PHY-14: Undo/redo, Delete, atalhos e menu `?`
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 
@@ -165,3 +165,48 @@ estiver por baixo do alvo da lixeira; se algum dia for, o conserto é empilhar
 - Commits: `test(PHY-14): red tests for native-activation targets (criteria
   15-16)` (só teste), depois o commit de código (`shortcuts.ts`, `App.tsx`,
   `pt-BR.ts`, `en.ts` — nenhum arquivo de teste).
+
+#### Resolution (2026-09-09)
+
+Reabertura fechada. Revisão de stage 3 conferiu os dois itens que faltavam e
+re-verificou o resto por amostragem — nada regrediu.
+
+- 15 ✓ `targetHandlesKeyNatively` é campo próprio do `KeyInput`, não um
+  `inTextField` esticado, e a decisão fica na função pura; `App.tsx` só informa
+  `tag === 'BUTTON'`. `NATIVE_ACTIVATION_KEYS` cobre Espaço e Enter, e o guarda
+  entra **depois** de `inTextField` e **antes** do ramo de Ctrl — por isso
+  Ctrl+Z continua funcionando com um botão focado (há teste para isso). Varri o
+  JSX: não existe `role="button"`, `tabIndex` nem `<a>` no app, então todo
+  controle focável é `BUTTON` de verdade ou cai em `inTextField` — `tagName`
+  basta, não falta caso
+- 16 ✓ `t('shortcuts.keySpace')` no lugar do literal; nenhuma palavra em
+  português sobrou no JSX do popover (as outras células são `Ctrl+Z`,
+  `Ctrl+Shift+Z / Ctrl+Y`, `Delete / Backspace`, `→`, `R`, `Esc`, `?`, todas
+  neutras)
+
+Mutate-verify refeito pelo revisor, não aceito de palavra:
+`targetHandlesKeyNatively: tag === 'BUTTON'` → `false` em `src/App.tsx`,
+`npx vitest run src/App.test.ts -t "Space with a palette button focused"` →
+vermelho em `expect(event.defaultPrevented).toBe(false)` (recebeu `true`),
+revertido em seguida.
+
+Gate rodado pelo revisor: **440 testes / 25 arquivos**, `eslint` limpo,
+`tsc --noEmit` limpo, `vite build` ok (só o aviso de chunk > 500 kB que já
+existia).
+
+Duas observações, nenhuma bloqueia:
+
+- O teste de App para o critério 15 se chama "creates the body", mas o que ele
+  prende é `defaultPrevented === false` mais o transporte intacto — jsdom não
+  ativa `<button>` por Espaço. A asserção é a certa e é a única que pode
+  regredir (o bug era o `preventDefault`); a ativação em si é comportamento do
+  próprio navegador. O nome promete um pouco mais do que o corpo entrega
+- Tentei confirmar a ativação nativa em browser de verdade: o harness de
+  preview não entrega `key` nos eventos sintéticos (um `<button>` de controle
+  criado na mão também não recebeu `click`), então a checagem live desse item
+  não é possível por aqui. Fica pela via lógica acima
+
+Merge direto: a revisão não mudou código.
+
+Files: `src/editor/history.ts`, `src/editor/shortcuts.ts`, `src/App.tsx`,
+`src/i18n/pt-BR.ts`, `src/i18n/en.ts` (+ os três arquivos de teste).
