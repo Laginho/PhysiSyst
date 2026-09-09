@@ -10,6 +10,7 @@ export const en = {
   'playback.undoTitle': 'undo (Ctrl+Z)',
   'playback.redoTitle': 'redo (Ctrl+Shift+Z or Ctrl+Y)',
   'shortcuts.title': 'shortcuts',
+  'shortcuts.keySpace': 'Space',
   'shortcuts.undo': 'undo',
   'shortcuts.redo': 'redo',
   'shortcuts.delete': 'remove selected body',

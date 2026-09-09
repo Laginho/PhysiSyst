@@ -802,6 +802,7 @@ export default function App() {
         metaKey: e.metaKey,
         shiftKey: e.shiftKey,
         inTextField,
+        targetHandlesKeyNatively: tag === 'BUTTON',
       })
       if (!action) return
       e.preventDefault()
@@ -1088,7 +1089,7 @@ export default function App() {
                         <tr><td style={{ paddingRight: 12 }}>Ctrl+Z</td><td>{t('shortcuts.undo')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>Ctrl+Shift+Z / Ctrl+Y</td><td>{t('shortcuts.redo')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Espaço</td><td>{t('shortcuts.togglePlay')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>

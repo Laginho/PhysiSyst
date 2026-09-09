@@ -10,6 +10,7 @@ export const ptBR = {
   'playback.undoTitle': 'desfazer (Ctrl+Z)',
   'playback.redoTitle': 'refazer (Ctrl+Shift+Z ou Ctrl+Y)',
   'shortcuts.title': 'atalhos',
+  'shortcuts.keySpace': 'Espaço',
   'shortcuts.undo': 'desfazer',
   'shortcuts.redo': 'refazer',
   'shortcuts.delete': 'remover corpo selecionado',

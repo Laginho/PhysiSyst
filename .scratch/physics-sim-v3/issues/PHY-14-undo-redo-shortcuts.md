@@ -1,5 +1,5 @@
 # PHY-14: Undo/redo, Delete, atalhos e menu `?`
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -145,3 +145,23 @@ pointermove** entre o pointer-down e o pointer-up não empilha nada
 logo abaixo entra sem entrada de histórico). Só é alcançável se o corpo já
 estiver por baixo do alvo da lixeira; se algum dia for, o conserto é empilhar
 `startDoc` também no ramo da lixeira.
+
+#### Reabertura resolvida (2026-09-09)
+
+- 15 ✓ novo campo `targetHandlesKeyNatively` em `KeyInput` (`shortcuts.ts`),
+  não um `inTextField` esticado. `actionForKey` devolve `null` para
+  Espaço/Enter quando o alvo já trata a tecla (checkbox escapa por acidente
+  como antes, porque continua sendo `INPUT` → `inTextField`). `App.tsx`
+  calcula `targetHandlesKeyNatively: tag === 'BUTTON'` no listener único.
+  Teste novo na função pura (`shortcuts.test.ts`) e no observável
+  (`App.test.ts`: Espaço com a paleta focada não previne o default e não
+  mexe no transporte). Mutate-verify: `targetHandlesKeyNatively: tag ===
+  'BUTTON'` virou `targetHandlesKeyNatively: false`; vermelho por
+  `event.defaultPrevented` `true` em vez de `false`; revertido.
+- 16 ✓ chave `shortcuts.keySpace` em `pt-BR.ts`/`en.ts`, `t('shortcuts.keySpace')`
+  no lugar do literal `Espaço` no JSX do popover. Sem teste novo — paridade
+  de `i18n.test.ts` já cobre.
+- Gate verde: 440 testes / lint / typecheck / build.
+- Commits: `test(PHY-14): red tests for native-activation targets (criteria
+  15-16)` (só teste), depois o commit de código (`shortcuts.ts`, `App.tsx`,
+  `pt-BR.ts`, `en.ts` — nenhum arquivo de teste).

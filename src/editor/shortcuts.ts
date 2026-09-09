@@ -15,13 +15,18 @@ export interface KeyInput {
   metaKey: boolean
   shiftKey: boolean
   inTextField: boolean
+  /** The focused element (e.g. a <button>) already activates on Space/Enter itself. */
+  targetHandlesKeyNatively: boolean
 }
+
+const NATIVE_ACTIVATION_KEYS = new Set([' ', 'enter'])
 
 /** Pure keydown -> action mapping. Null means "not a shortcut, let the browser/field handle it". */
 export function actionForKey(input: KeyInput): ShortcutAction | null {
   if (input.inTextField) return null
-  const ctrl = input.ctrlKey || input.metaKey
   const key = input.key.toLowerCase()
+  if (input.targetHandlesKeyNatively && NATIVE_ACTIVATION_KEYS.has(key)) return null
+  const ctrl = input.ctrlKey || input.metaKey
 
   if (ctrl && key === 'z') return input.shiftKey ? 'redo' : 'undo'
   if (ctrl && key === 'y') return 'redo'
