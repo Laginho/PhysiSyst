@@ -14,7 +14,7 @@ const ground: Body = {
 }
 
 describe('resolveContactSnap', () => {
-  it('places a rectangle flush on flat ground and aligns its rotation', () => {
+  it('places a rectangle flush on flat ground and aligns its rotation, naming the winning neighbor', () => {
     const body: Body = {
       id: 'box',
       shape: 'rectangle',
@@ -26,11 +26,12 @@ describe('resolveContactSnap', () => {
       rotation: 0.4,
     }
 
-    const snapped = resolveContactSnap(body, [ground], 100, true)
+    const { body: snapped, neighborId } = resolveContactSnap(body, [ground], 100, true)
 
     expect(snapped.position.x).toBeCloseTo(2, 9)
     expect(snapped.position.y).toBeCloseTo(0.5, 9)
     expect(snapped.rotation).toBeCloseTo(0, 9)
+    expect(neighborId).toBe('ground')
   })
 
   it('places a rectangle flush against an inclined face and aligns to that face', () => {
@@ -60,11 +61,12 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    const snapped = resolveContactSnap(body, [incline], 100, true)
+    const { body: snapped, neighborId } = resolveContactSnap(body, [incline], 100, true)
 
     expect(snapped.position.x).toBeCloseTo(onSlope.x - Math.sin(angle) * 0.25, 9)
     expect(snapped.position.y).toBeCloseTo(onSlope.y + Math.cos(angle) * 0.25, 9)
     expect(snapped.rotation).toBeCloseTo(angle, 9)
+    expect(neighborId).toBe('incline')
   })
 
   it('places a circle tangent to the nearest surface', () => {
@@ -78,12 +80,13 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    const snapped = resolveContactSnap(body, [ground], 100, true)
+    const { body: snapped, neighborId } = resolveContactSnap(body, [ground], 100, true)
 
     expect(snapped.position).toEqual({ x: -1, y: 0.4 })
+    expect(neighborId).toBe('ground')
   })
 
-  it('leaves placement untouched outside the pixel tolerance or when disabled', () => {
+  it('leaves placement untouched and names no neighbor outside the pixel tolerance or when disabled', () => {
     const body: Body = {
       id: 'ball',
       shape: 'circle',
@@ -94,11 +97,13 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    expect(resolveContactSnap(body, [ground], 100, true)).toBe(body)
-    expect(resolveContactSnap({ ...body, position: { x: 0.137, y: 0.47 } }, [ground], 100, false).position).toEqual({
-      x: 0.137,
-      y: 0.47,
-    })
+    const outOfTolerance = resolveContactSnap(body, [ground], 100, true)
+    expect(outOfTolerance.body).toBe(body)
+    expect(outOfTolerance.neighborId).toBeNull()
+
+    const disabled = resolveContactSnap({ ...body, position: { x: 0.137, y: 0.47 } }, [ground], 100, false)
+    expect(disabled.body.position).toEqual({ x: 0.137, y: 0.47 })
+    expect(disabled.neighborId).toBeNull()
   })
 
   it('keeps the tolerance fixed in screen pixels as zoom changes', () => {
@@ -112,11 +117,16 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    expect(resolveContactSnap(body, [ground], 100, true).position.y).toBe(0.4)
-    expect(resolveContactSnap(body, [ground], 200, true)).toBe(body)
+    const tight = resolveContactSnap(body, [ground], 100, true)
+    expect(tight.body.position.y).toBe(0.4)
+    expect(tight.neighborId).toBe('ground')
+
+    const zoomedOut = resolveContactSnap(body, [ground], 200, true)
+    expect(zoomedOut.body).toBe(body)
+    expect(zoomedOut.neighborId).toBeNull()
   })
 
-  it('chooses the nearest when several surfaces are within tolerance', () => {
+  it('chooses the nearest when several surfaces are within tolerance, naming that surface as the neighbor', () => {
     const ceiling: Body = { ...ground, id: 'ceiling', position: { x: 0, y: 1.4 } }
     const body: Body = {
       id: 'ball',
@@ -128,10 +138,13 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    const snapped = resolveContactSnap(body, [ground, ceiling], 100, true)
+    const { body: snapped, neighborId } = resolveContactSnap(body, [ground, ceiling], 100, true)
 
     expect(snapped.position.x).toBeCloseTo(0, 9)
     expect(snapped.position.y).toBeCloseTo(0.5, 9)
+    // The ceiling's underside is the nearer surface (smaller displacement),
+    // even though the ground is the one the ball's y is closest to in raw terms.
+    expect(neighborId).toBe('ceiling')
   })
 
   it('uses tangent distance when a circle is dropped near another circle', () => {
@@ -154,9 +167,10 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    const snapped = resolveContactSnap(body, [neighbor], 100, true)
+    const { body: snapped, neighborId } = resolveContactSnap(body, [neighbor], 100, true)
 
     expect(snapped.position).toEqual({ x: 1.5, y: 0 })
+    expect(neighborId).toBe('fixed-ball')
   })
 
   it('moves a triangle into contact without changing its rotation', () => {
@@ -171,9 +185,10 @@ describe('resolveContactSnap', () => {
       rotation: 0,
     }
 
-    const snapped = resolveContactSnap(body, [ground], 100, true)
+    const { body: snapped, neighborId } = resolveContactSnap(body, [ground], 100, true)
 
     expect(snapped.position).toEqual({ x: -1, y: 0 })
     expect(snapped.rotation).toBe(0)
+    expect(neighborId).toBe('ground')
   })
 })

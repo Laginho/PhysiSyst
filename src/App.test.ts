@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
+import { makeTransform, worldToScreen } from './render/transform'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -225,5 +226,92 @@ describe('drag-to-trash', () => {
 
     const bodyPanel = [...host.querySelectorAll('fieldset')].find((fieldset) => fieldset.querySelector('legend')?.textContent?.trim() === 'retangulo')
     expect(bodyPanel).toBeDefined()
+  })
+})
+
+describe('snap declara contato (PHY-13)', () => {
+  // Same camera as App.tsx's module-private CAMERA/TRANSFORM (900x600, center
+  // (6,4), 60 px/m) — needed to convert the demo scene's world positions to
+  // the screen coordinates pointer events carry.
+  const TRANSFORM = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: 60 }, 900, 600)
+  function screen(wx: number, wy: number) {
+    return worldToScreen(TRANSFORM, wx, wy)
+  }
+
+  function contactPairs(host: HTMLElement): string[] {
+    const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
+    if (!fieldset) return []
+    return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
+  }
+
+  // Demo scene's "caixa" rectangle (world 9,3) sits well above "chao"'s flat
+  // top surface (world y=0) — within snap tolerance once dragged down to y≈0.8.
+  function dragCaixaTo(canvas: Element, wx: number, wy: number) {
+    const start = screen(9, 3)
+    const target = screen(wx, wy)
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x, start.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', target.x, target.y)))
+  }
+
+  it('creates exactly one pair on the pointer-up of a move drag that snaps', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    const before = contactPairs(host)
+    dragCaixaTo(canvas, 9, 0.8)
+    const after = contactPairs(host)
+
+    expect(after.length).toBe(before.length + 1)
+    expect(after).toContain('caixa ↔ chao')
+  })
+
+  it('re-snapping the same pair is a silent no-op — contacts stay the same', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    dragCaixaTo(canvas, 9, 0.8)
+    const onceSnapped = contactPairs(host)
+    expect(onceSnapped).toContain('caixa ↔ chao')
+
+    // Drag away, then re-snap onto the same neighbor.
+    dragCaixaTo(canvas, 9, 3)
+    dragCaixaTo(canvas, 9, 0.8)
+    const reSnapped = contactPairs(host)
+
+    expect(reSnapped).toEqual(onceSnapped)
+  })
+
+  it('moving the body away afterward keeps the Contact', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    dragCaixaTo(canvas, 9, 0.8)
+    const snapped = contactPairs(host)
+    expect(snapped).toContain('caixa ↔ chao')
+
+    dragCaixaTo(canvas, 9, 3)
+    expect(contactPairs(host)).toEqual(snapped)
+  })
+
+  it('dropping the body on the trash after a snap leaves no dangling Contact', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    dragCaixaTo(canvas, 9, 0.8)
+    expect(contactPairs(host)).toContain('caixa ↔ chao')
+
+    // Trash target sits in the canvas's bottom-right corner (screen ~868,568).
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', screen(9, 0.75).x, screen(9, 0.75).y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', 868, 568)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', 868, 568)))
+
+    const after = contactPairs(host)
+    expect(after.some((pair) => pair.includes('caixa'))).toBe(false)
   })
 })
