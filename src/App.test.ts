@@ -71,6 +71,58 @@ function setNativeInputValue(input: HTMLInputElement, value: number): void {
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+// Same camera as App.tsx's module-private CAMERA/TRANSFORM (900x600, center
+// (6,4), 60 px/m) — needed to convert the demo scene's world positions to the
+// screen coordinates pointer events carry.
+const TRANSFORM = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: 60 }, 900, 600)
+function screen(wx: number, wy: number) {
+  return worldToScreen(TRANSFORM, wx, wy)
+}
+
+function contactPairs(host: HTMLElement): string[] {
+  const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
+  if (!fieldset) return []
+  return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
+}
+
+// Drags whatever body sits at world (from.x, from.y) to world (to.x, to.y).
+// Snap adjusts the exact resting position, so callers doing a second drag on
+// an already-snapped body must pass its CURRENT position (see
+// currentPosition below), never the position it was born at.
+function dragTo(canvas: Element, from: { x: number; y: number }, to: { x: number; y: number }) {
+  const start = screen(from.x, from.y)
+  const target = screen(to.x, to.y)
+  act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x, start.y)))
+  act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
+  act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
+  act(() => canvas.dispatchEvent(pointerEvent('pointerup', target.x, target.y)))
+}
+
+// Reads the selected body's live x/y off its properties panel (opening "ver
+// mais" if needed) — the public seam for "where is this body right now".
+function currentPosition(host: HTMLElement, id: string): { x: number; y: number } {
+  const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === id)
+  if (!bodyPanel) throw new Error(`missing panel for ${id}`)
+  const more = bodyPanel.querySelector(':scope > details') as HTMLDetailsElement | null
+  if (!more) throw new Error(`missing details for ${id}`)
+  if (!more.open) act(() => more.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  return { x: Number(inputForLabel(more, 'x (m)').value), y: Number(inputForLabel(more, 'y (m)').value) }
+}
+
+/**
+ * Dispatches a keydown at the currently focused element (falling back to
+ * window), bubbling up to the App's single shortcut listener — same path a
+ * real keystroke takes, and the only way `e.target` reflects a focused field.
+ */
+function pressKey(key: string, opts: Partial<KeyboardEventInit> = {}): void {
+  const target: EventTarget = document.activeElement && document.activeElement !== document.body ? document.activeElement : window
+  act(() => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...opts })))
+}
+
+function findButton(host: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
+}
+
 describe('smoke', () => {
   it('loads the app module and exports a component', () => {
     expect(typeof App).toBe('function')
@@ -230,44 +282,6 @@ describe('drag-to-trash', () => {
 })
 
 describe('snap declara contato (PHY-13)', () => {
-  // Same camera as App.tsx's module-private CAMERA/TRANSFORM (900x600, center
-  // (6,4), 60 px/m) — needed to convert the demo scene's world positions to
-  // the screen coordinates pointer events carry.
-  const TRANSFORM = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: 60 }, 900, 600)
-  function screen(wx: number, wy: number) {
-    return worldToScreen(TRANSFORM, wx, wy)
-  }
-
-  function contactPairs(host: HTMLElement): string[] {
-    const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
-    if (!fieldset) return []
-    return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
-  }
-
-  // Drags whatever body sits at world (from.x, from.y) to world (to.x, to.y).
-  // Snap adjusts the exact resting position, so callers doing a second drag on
-  // an already-snapped body must pass its CURRENT position (see
-  // currentPosition below), never the position it was born at.
-  function dragTo(canvas: Element, from: { x: number; y: number }, to: { x: number; y: number }) {
-    const start = screen(from.x, from.y)
-    const target = screen(to.x, to.y)
-    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x, start.y)))
-    act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
-    act(() => canvas.dispatchEvent(pointerEvent('pointermove', target.x, target.y)))
-    act(() => canvas.dispatchEvent(pointerEvent('pointerup', target.x, target.y)))
-  }
-
-  // Reads the selected body's live x/y off its properties panel (opening "ver
-  // mais" if needed) — the public seam for "where is this body right now".
-  function currentPosition(host: HTMLElement, id: string): { x: number; y: number } {
-    const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === id)
-    if (!bodyPanel) throw new Error(`missing panel for ${id}`)
-    const more = bodyPanel.querySelector(':scope > details') as HTMLDetailsElement | null
-    if (!more) throw new Error(`missing details for ${id}`)
-    if (!more.open) act(() => more.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    return { x: Number(inputForLabel(more, 'x (m)').value), y: Number(inputForLabel(more, 'y (m)').value) }
-  }
-
   it('creates exactly one pair on the pointer-up of a move drag that snaps', () => {
     const host = renderApp()
     const canvas = host.querySelector('canvas')
@@ -348,5 +362,120 @@ describe('snap declara contato (PHY-13)', () => {
 
     const after = contactPairs(host)
     expect(after.some((pair) => pair.includes('caixa'))).toBe(false)
+  })
+})
+
+describe('undo/redo, delete, atalhos (PHY-14)', () => {
+  it('a full drag (several pointermoves) is exactly one undo step', () => {
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+
+    const before = { x: 11, y: 5 } // bola's DEMO_SCENE position — nothing is selected yet, so no panel to read it from
+    dragTo(canvas, before, { x: before.x - 1, y: before.y })
+    expect(currentPosition(host, 'bola')).not.toEqual(before)
+
+    pressKey('z', { ctrlKey: true })
+    expect(currentPosition(host, 'bola')).toEqual(before)
+    // One drag pushed exactly one entry: nothing left to undo.
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('a panel edit (mass) enters the undo stack on its own, separate from the add-body step', () => {
+    const host = renderApp()
+    act(() => findButton(host, 'retângulo')?.click())
+    const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')!
+    const mass = inputForLabel(bodyPanel, 'massa (kg)')
+    expect(mass.value).toBe('1')
+
+    act(() => setNativeInputValue(mass, 5))
+    expect(inputForLabel(bodyPanel, 'massa (kg)').value).toBe('5')
+
+    pressKey('z', { ctrlKey: true })
+    expect(inputForLabel(bodyPanel, 'massa (kg)').value).toBe('1')
+    // The add-body step is still there to undo.
+    expect(findButton(host, '↶')?.disabled).toBe(false)
+  })
+
+  it('creating a new scene clears the undo stack', () => {
+    const host = renderApp()
+    act(() => findButton(host, 'retângulo')?.click())
+    expect(findButton(host, '↶')?.disabled).toBe(false)
+
+    act(() => findButton(host, 'nova cena')?.click())
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it(
+    'undo during playback pauses transport, then restores the doc',
+    async () => {
+      const host = renderApp()
+      act(() => findButton(host, 'retângulo')?.click())
+
+      await act(async () => {
+        findButton(host, '▶ reproduzir')?.click()
+      })
+      for (let i = 0; i < 200 && !findButton(host, '⏸ pausar'); i++) {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 5))
+        })
+      }
+      expect(findButton(host, '⏸ pausar')).toBeDefined()
+
+      pressKey('z', { ctrlKey: true })
+
+      expect(findButton(host, '▶ reproduzir')).toBeDefined()
+      expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(false)
+    },
+    10000,
+  )
+
+  it('Backspace removes the selected body with its dependents (same removal as the trash) and clears the selection', () => {
+    const host = renderApp()
+    act(() => findButton(host, 'retângulo')?.click())
+    const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')!
+    act(() => findButton(bodyPanel.parentElement!, 'adicionar força')?.click())
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.startsWith('forças de'))).toBe(true)
+
+    pressKey('Backspace')
+
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(false)
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.startsWith('forças de'))).toBe(false)
+  })
+
+  it('Delete/Backspace do nothing while focus is in a text field — it edits the field instead', () => {
+    const host = renderApp()
+    act(() => findButton(host, 'retângulo')?.click())
+    const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')!
+    const mass = inputForLabel(bodyPanel, 'massa (kg)')
+    mass.focus()
+
+    pressKey('Backspace')
+
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(true)
+  })
+
+  it('shows a `?` popover listing the shortcuts, closed by Escape', () => {
+    const host = renderApp()
+    expect(host.textContent).not.toContain('Ctrl+Z')
+
+    act(() => findButton(host, '?')?.click())
+    expect(host.textContent).toContain('Ctrl+Z')
+
+    pressKey('Escape')
+    expect(host.textContent).not.toContain('Ctrl+Z')
+  })
+
+  it('↶ and ↷ are disabled until there is something to undo/redo', () => {
+    const host = renderApp()
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+    expect(findButton(host, '↷')?.disabled).toBe(true)
+
+    act(() => findButton(host, 'retângulo')?.click())
+    expect(findButton(host, '↶')?.disabled).toBe(false)
+    expect(findButton(host, '↷')?.disabled).toBe(true)
+
+    pressKey('z', { ctrlKey: true })
+    expect(findButton(host, '↷')?.disabled).toBe(false)
   })
 })
