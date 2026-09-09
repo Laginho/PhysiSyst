@@ -34,6 +34,7 @@ import {
 } from './editor/doc'
 import { bodyAtPoint, worldToLocal } from './editor/hitTest'
 import { resolveContactSnap } from './editor/contactSnap'
+import { pointInTrash, trashRect } from './editor/trash'
 import {
   alphaFromLocal,
   clampAlphaDeg,
@@ -73,6 +74,7 @@ const CANVAS_W = 900
 const CANVAS_H = 600
 const CAMERA: Camera = { centerX: 6, centerY: 4, pixelsPerMeter: 60 }
 const TRANSFORM = makeTransform(CAMERA, CANVAS_W, CANVAS_H)
+const TRASH_RECT = trashRect(CANVAS_W, CANVAS_H)
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -90,12 +92,34 @@ function paint(
   doc: Scene,
   selectedId: string | null,
   states: ReadonlyMap<string, BodyState> | null,
-  opts?: { showGlobal: boolean; contacts?: readonly ContactPoint[] },
+  opts?: { showGlobal: boolean; contacts?: readonly ContactPoint[]; draggingBody?: boolean },
 ): void {
   const view = applyStates(doc, states)
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
   drawGrid(ctx, CAMERA, CANVAS_W, CANVAS_H)
   drawScene(ctx, view, CAMERA, CANVAS_W, CANVAS_H, undefined, selectedId)
+
+  // Trash target: invisible except while a Body is actively being dragged.
+  if (opts?.draggingBody) {
+    const cx = TRASH_RECT.x + TRASH_RECT.w / 2
+    const cy = TRASH_RECT.y + TRASH_RECT.h / 2
+    ctx.save()
+    ctx.fillStyle = '#fdecea'
+    ctx.strokeStyle = '#b00'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.roundRect(TRASH_RECT.x, TRASH_RECT.y, TRASH_RECT.w, TRASH_RECT.h, 6)
+    ctx.fill()
+    ctx.stroke()
+    ctx.font = '20px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#b00'
+    ctx.fillText('🗑', cx, cy)
+    ctx.font = '10px system-ui, sans-serif'
+    ctx.fillText(t('editor.trash'), cx, TRASH_RECT.y - 6)
+    ctx.restore()
+  }
 
   // Vector overlay: global mode draws scene-wide, otherwise selection-only.
   if (opts?.showGlobal) {
@@ -493,6 +517,7 @@ export default function App() {
       paint(ctx, docRef.current, selectedIdRef.current, statesRef.current, {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
+        draggingBody: dragRef.current?.kind === 'move',
       })
   }, [])
 
@@ -763,6 +788,7 @@ export default function App() {
       setSelectedId(hit.id)
       dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y }
       e.currentTarget.setPointerCapture(e.pointerId)
+      repaint() // reveal the trash target immediately, even before the first move
     } else {
       setSelectedId(null)
     }
@@ -824,8 +850,17 @@ export default function App() {
     }
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current
+    if (drag?.kind === 'move') {
+      const { sx, sy } = eventToScreen(e)
+      if (pointInTrash(TRASH_RECT, sx, sy)) {
+        setDoc((d) => removeBodyAndDependents(d, drag.id))
+        setSelectedId(null)
+      }
+    }
     dragRef.current = null
+    repaint() // hide the trash target
   }
 
   /** Palette creation: sensible dynamic defaults at the exact view center. */

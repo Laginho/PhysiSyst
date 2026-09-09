@@ -16,6 +16,7 @@ export const en = {
   'panel.particleMode': 'particle mode — rigid body (lock rotations)',
   'panel.duplicate': 'duplicate',
   'panel.delete': 'delete',
+  'editor.trash': 'trash',
   'panel.selectBodyEmpty': 'select a body',
   'properties.posX': 'x (m)',
   'properties.posY': 'y (m)',
