@@ -1,5 +1,5 @@
 # PHY-13: Snap declara Contato
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -70,3 +70,26 @@ pares com μ = 0.3/0.25 e 0.3/0.2 escritos à mão, e `persistence.test.ts:543`
 afirma esses valores. Não é "o padrão antigo" (o padrão agora é 0/0), são cenas
 autorais — mas se a intenção do critério 2 era que a cena demo também nascesse
 idealizada, isso é outro ticket, fora dos Primary files deste.
+
+#### Stage 2 (2026-09-09) — punch list fechado
+
+Só `src/App.test.ts` mudou; `src/App.tsx`, `contactSnap.ts` e `doc.ts` continuam
+como estavam (produção já estava certa, confirmado pela revisão anterior).
+
+1. `dragCaixaTo` virou `dragTo(canvas, from, to)` — origem explícita — e um
+   novo helper `currentPosition(host, id)` lê x/y do painel de propriedades
+   (abrindo "ver mais" se preciso) para achar onde o corpo está de verdade.
+   Os testes dos critérios 4 e 5 agora reencostam/afastam a partir da posição
+   real pós-snap, não do nascimento.
+2. Novo teste "never creates a Contact mid-drag": pointerdown → pointermove
+   que encosta → pointermove que sai da tolerância → pointerup longe;
+   `contacts` intacto.
+3. Mutate-verify manual (mutação aplicada, suíte rodada, revertida via
+   `git checkout`, nunca commitada):
+   - guarda de duplicado desligada (`if (dup && false)`) → "re-snapping ... is
+     a silent no-op" fica vermelho (par duplicado aparece)
+   - `addContact` movido para dentro do `onPointerMove` (e removido do
+     `onPointerUp`) → "never creates a Contact mid-drag" fica vermelho
+     (Contato criado antes do pointer-up)
+
+Gate verde: `npm test` 406/406, lint, typecheck, build.
