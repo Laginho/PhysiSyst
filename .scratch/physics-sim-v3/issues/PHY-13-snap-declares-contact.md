@@ -1,5 +1,5 @@
 # PHY-13: Snap declara Contato
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
@@ -93,3 +93,40 @@ como estavam (produção já estava certa, confirmado pela revisão anterior).
      (Contato criado antes do pointer-up)
 
 Gate verde: `npm test` 406/406, lint, typecheck, build.
+
+#### Review (2026-09-09) — reopened novamente
+
+O comportamento de produção e os consertos dos testes estão corretos, mas o
+critério 9 ainda não está demonstrado conforme o protocolo de `AGENTS.md`.
+O protocolo exige, para cada teste novo numa costura DOM/integration, o registro
+da mutação aplicada **e do red output produzido**. O comentário de Stage 2
+registra só duas mutações em prosa e não traz o output vermelho; também não há
+registro por teste para os outros casos novos de `src/App.test.ts`.
+
+- Standards: 1 finding bloqueante — evidência mutate-verify incompleta
+- Spec: 1 finding bloqueante — critério de aceitação 9 incompleto
+- Gate reexecutado pelo reviewer: 406/406, lint, typecheck e build verdes
+- Mutação registrada 1 reexecutada: `if (dup && false)` deixou vermelho
+  `re-snapping the same pair is a silent no-op`, com o par
+  `caixa ↔ chao` duplicado
+- Mutação registrada 2 reexecutada: criação do Contato movida para
+  `onPointerMove` e removida de `onPointerUp` deixou vermelho
+  `never creates a Contact mid-drag`, com `caixa ↔ chao` presente
+- Live browser reexecutado: o snap de `caixa` na face inclinada de `rampa`
+  criou `caixa ↔ rampa` com μs = μk = 0; após editar ambos para 0.3 e dar
+  play, a leitura mostrou `|a| = 2.36 m/s²`, conforme o valor analítico
+
+O que falta em Stage 2 (evidência apenas; produção já está certa):
+
+1. Para **cada** teste novo do bloco `snap declara contato (PHY-13)` em
+   `src/App.test.ts`, registrar a mutação de produção que o torna vermelho e
+   anexar o trecho do runner mostrando o nome do teste, a asserção e o valor
+   esperado/recebido.
+2. Incluir registros explícitos para `creates exactly one pair`,
+   `moving the body away afterward keeps the Contact` e
+   `dropping the body on the trash after a snap leaves no dangling Contact`;
+   os dois testes já cobertos também precisam do red output, não apenas
+   “fica vermelho”.
+3. Não alterar produção nem criar testes novos, salvo se algum teste não puder
+   ser colocado em vermelho por uma mutação honesta do comportamento que diz
+   cobrir.
