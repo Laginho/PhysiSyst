@@ -1,5 +1,5 @@
 # PHY-14: Undo/redo, Delete, atalhos e menu `?`
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -44,5 +44,56 @@ Atalhos: Ctrl+Z desfaz · Ctrl+Shift+Z e Ctrl+Y refazem · Delete/Backspace remo
 - `src/editor/shortcuts.test.ts`, na função tecla→ação: cada atalho da tabela, `metaKey` ≡ `ctrlKey`, campo de texto → nulo, tecla desconhecida → nulo (2). Vermelho porque a função não existe.
 - `src/App.test.ts`, no espelho: um passo por arraste (3), uma edição de cada painel na pilha (4), troca de cena limpa a pilha (5), undo durante playback pausa (6), Delete remove com dependentes (7). Vermelhos porque o App ainda não tem pilha nem listener.
 - `src/i18n/i18n.test.ts` continua sendo a paridade (11) — não é teste novo.
+
+## Mutate-verify (App.test.ts, seam DOM/integração)
+
+Cada mutação abaixo foi aplicada em `src/App.tsx`, rodada isoladamente (`npx
+vitest run src/App.test.ts -t "<nome>"`), confirmado vermelho pelo motivo
+certo, depois revertida. `history.test.ts`/`shortcuts.test.ts` chamam a
+função de produção direto — sem registro aqui, por protocolo.
+
+1. **"a full drag (...) is exactly one undo step"** — `if (drag && ...)` em
+   `onPointerUp` virou `if (false && drag && ...)` (nenhum push de
+   histórico no fim do drag). Vermelho: posição pós-Ctrl+Z ficou `{x:10,
+   y:5}` em vez de `{x:11, y:5}` — o Ctrl+Z não tinha o que desfazer.
+2. **"a panel edit (mass) enters the undo stack..."** — `commitDoc` perdeu
+   a linha `setHistory((h) => pushHistory(h, prev))`. Vermelho: massa
+   ficou `5` após Ctrl+Z em vez de voltar a `1`.
+3. **"creating a new scene clears the undo stack"** — `setHistory(clearHistory())`
+   removido do fim de `switchToScene`. Vermelho: botão ↶ continuou
+   habilitado (`false` em vez de `true`) depois de "nova cena".
+4. **"undo during playback pauses..."** — `dispatch({ type: 'pause' })`
+   removido do início de `undo()`. Vermelho: botão de playback ficou
+   `undefined` para `▶ reproduzir` (nunca voltou a pausado).
+5. **"Backspace removes the selected body..."** — `case 'delete':` no
+   switch do listener virou um `break` vazio (sem chamar `deleteSelected`).
+   Vermelho: o fieldset do corpo continuou presente (`true` em vez de
+   `false`) depois do Backspace.
+6. **"Delete/Backspace do nothing while focus is in a text field"** —
+   `inTextField` virou a constante `false`. Vermelho: o fieldset do corpo
+   sumiu (`false` em vez de `true`) mesmo com o foco no campo de massa.
+7. **"shows a `?` popover..."** — `onClick` do botão `?` virou `() => {}`.
+   Vermelho: `host.textContent` não continha mais `'Ctrl+Z'` depois do
+   clique.
+8. **"↶ and ↷ are disabled until there is something..."** — `disabled={!canUndo(history)}`
+   virou `disabled={false}` no botão ↶. Vermelho: `disabled` ficou `false`
+   logo após montar o App, sem nenhuma edição ainda.
+
+## Verificação live em browser (critério 12)
+
+`npm run dev` via preview do editor, localStorage limpo:
+
+- Arrastar um corpo (várias posições de pointermove) e apertar Ctrl+Z:
+  volta exatamente à posição de antes do drag; botão ↶ fica desabilitado.
+- Selecionar um corpo, focar o campo "massa (kg)", apertar Backspace: só
+  o dígito é apagado (o campo volta ao valor controlado), o corpo continua
+  no canvas.
+- Selecionar o corpo (sem foco em campo) e apertar Backspace: o corpo e
+  o contato que dependia dele somem juntos (removeBodyAndDependents).
+- Botão `?`: abre o popover com a tabela de atalhos (só "Ctrl", sem menção
+  a Mac/Cmd); Esc fecha.
+- Tecla Espaço (disparada fora de um campo de texto) alterna
+  reproduzir/pausar; Ctrl+Z durante o playback pausa o transporte antes de
+  restaurar o doc (botão volta a "▶ reproduzir").
 
 ## Comments
