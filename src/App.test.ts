@@ -11,12 +11,22 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const originalGetContext = HTMLCanvasElement.prototype.getContext
 let root: Root | null = null
 
+const originalSetPointerCapture = HTMLCanvasElement.prototype.setPointerCapture
+
 beforeEach(() => {
   document.body.innerHTML = ''
   window.localStorage.clear()
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
     configurable: true,
     value: () => null,
+  })
+  // jsdom has no Pointer Events implementation at all (no constructor, no
+  // capture methods) — stub the capture call so the canvas's onPointerDown
+  // doesn't throw; dispatched events below are plain MouseEvents carrying
+  // clientX/clientY, which is all the app's handlers read.
+  Object.defineProperty(HTMLCanvasElement.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: () => {},
   })
 })
 
@@ -27,7 +37,15 @@ afterEach(() => {
     configurable: true,
     value: originalGetContext,
   })
+  Object.defineProperty(HTMLCanvasElement.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: originalSetPointerCapture,
+  })
 })
+
+function pointerEvent(type: string, x: number, y: number): MouseEvent {
+  return new MouseEvent(type, { bubbles: true, clientX: x, clientY: y })
+}
 
 function renderApp(): HTMLElement {
   const host = document.createElement('div')
@@ -173,5 +191,39 @@ describe('body properties panel', () => {
 
     expect(base.value).toBe('0.05')
     expect(alpha.value).toBe('89.5')
+  })
+})
+
+describe('drag-to-trash', () => {
+  it('dropping the dragged body on the trash target removes it', () => {
+    const host = renderApp()
+    const addRectangle = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'retângulo')
+    act(() => addRectangle?.click())
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(true)
+
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+    // Body spawns at the view center (screen 450,300); drag it onto the
+    // trash target in the canvas's bottom-right corner (screen ~868,568).
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', 450, 300)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', 868, 568)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', 868, 568)))
+
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(false)
+  })
+
+  it('dropping the dragged body anywhere else places it normally', () => {
+    const host = renderApp()
+    const addRectangle = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'retângulo')
+    act(() => addRectangle?.click())
+
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', 450, 300)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointermove', 300, 300)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', 300, 300)))
+
+    const bodyPanel = [...host.querySelectorAll('fieldset')].find((fieldset) => fieldset.querySelector('legend')?.textContent?.trim() === 'retangulo')
+    expect(bodyPanel).toBeDefined()
   })
 })

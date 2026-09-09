@@ -16,6 +16,7 @@ export const ptBR = {
   'panel.particleMode': 'modo partícula — corpo rígido (trava rotações)',
   'panel.duplicate': 'duplicar',
   'panel.delete': 'excluir',
+  'editor.trash': 'lixeira',
   'panel.selectBodyEmpty': 'selecione um corpo',
   'properties.posX': 'x (m)',
   'properties.posY': 'y (m)',
