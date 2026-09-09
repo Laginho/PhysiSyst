@@ -143,22 +143,27 @@ export interface ContactAddResult {
   error: string | null
 }
 
-/** Documented defaults for a newly added pair — frictionless is ABSENCE from this list. */
-export const CONTACT_DEFAULTS = { muS: 0.3, muK: 0.25 } as const
+/** Idealized default for a newly added pair (ADR-0002: realism is opt-in). */
+export const CONTACT_DEFAULTS = { muS: 0, muK: 0 } as const
 
 /**
  * Adds a contact pair under the same HARD rules as the codec, so the UI can
  * never build an unparseable doc: self-pairs, duplicates (same OR reversed
  * order), and dangling references are all REJECTED — rejections return the
- * SAME doc reference plus an error reason.
+ * SAME doc reference plus an error reason. `mu` defaults to CONTACT_DEFAULTS.
  */
-export function addContact(doc: Scene, a: string, b: string): ContactAddResult {
+export function addContact(
+  doc: Scene,
+  a: string,
+  b: string,
+  mu: Pick<Contact, 'muS' | 'muK'> = CONTACT_DEFAULTS,
+): ContactAddResult {
   if (a === b) return { doc, error: 'error.parConsigoMesmo' }
   const ids = new Set(doc.bodies.map((x) => x.id))
   if (!ids.has(a) || !ids.has(b)) return { doc, error: 'error.corpoInexistente' }
   const dup = doc.contacts.some((c) => (c.a === a && c.b === b) || (c.a === b && c.b === a))
   if (dup) return { doc, error: 'error.parDuplicado' }
-  return { doc: { ...doc, contacts: [...doc.contacts, { a, b, ...CONTACT_DEFAULTS }] }, error: null }
+  return { doc: { ...doc, contacts: [...doc.contacts, { a, b, ...mu }] }, error: null }
 }
 
 /** Contacts have no id field — ordered pair (as stored) is their identity. */

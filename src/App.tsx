@@ -491,7 +491,7 @@ export default function App() {
   // Drag interaction: kind + per-kind payload captured at pointer-down.
   // Only Body movement consumes Contact snap; handle drags stay unsnapped.
   const dragRef = useRef<
-    | { kind: 'move'; id: string; offX: number; offY: number }
+    | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null }
     | { kind: 'rotate'; id: string; startAngle: number; startRotation: number }
     | { kind: 'resize' | 'alpha'; id: string }
     | null
@@ -786,7 +786,7 @@ export default function App() {
     const hit = bodyAtPoint(bodies, w)
     if (hit) {
       setSelectedId(hit.id)
-      dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y }
+      dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
     } else {
@@ -807,7 +807,8 @@ export default function App() {
           ...body,
           position: { x: raw.x - drag.offX, y: raw.y - drag.offY },
         }
-        const snapped = resolveContactSnap(proposed, d.bodies, CAMERA.pixelsPerMeter, contactSnapEnabled)
+        const { body: snapped, neighborId } = resolveContactSnap(proposed, d.bodies, CAMERA.pixelsPerMeter, contactSnapEnabled)
+        drag.neighborId = neighborId
         return updateBody(d, drag.id, { position: snapped.position, rotation: snapped.rotation })
       })
       return
@@ -857,6 +858,10 @@ export default function App() {
       if (pointInTrash(TRASH_RECT, sx, sy)) {
         setDoc((d) => removeBodyAndDependents(d, drag.id))
         setSelectedId(null)
+      } else if (drag.neighborId) {
+        // Contact is declared here, on drop, never mid-drag; duplicate pairs
+        // are a silent no-op (addContact's own guard).
+        setDoc((d) => addContact(d, drag.id, drag.neighborId!).doc)
       }
     }
     dragRef.current = null
