@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** complete
+Stage: done
 
 - [x] Dragging a Body reveals the trash target in a canvas corner; it is hidden when no drag is active
 - [x] Dropping the dragged Body on the target removes the Body, its applied forces, and its Contacts

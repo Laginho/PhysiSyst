@@ -4,7 +4,7 @@
 
 **Blocked by:** PHY-01, PHY-02, PHY-03, PHY-04, PHY-05, PHY-06, PHY-07, PHY-08, PHY-09, PHY-10 (all).
 
-**Status:** complete
+Stage: done
 
 - [x] Full acceptance suite green including the `v₀` parabola/range family
 - [x] All four gates green over the entire v2 diff (`test`, `lint`, `typecheck`, `build`)

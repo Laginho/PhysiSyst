@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** complete
+Stage: done
 
 - [x] A Fixed body with mass 0 produces no positive-mass warning
 - [x] A dynamic Body with mass ≤ 0 still warns, and the warning message identifies the Body by id, not array index

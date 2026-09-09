@@ -88,10 +88,7 @@ Um ciclo curto, seis tickets, uma ideia: **tirar o app da pasta `dist/` e coloc�
 
 ### Processo
 - Board local `.scratch/physics-sim-v3/`, uma spec, um arquivo por ticket.
-- Cada ticket: branch `feat/<slug>`, PR contra `main`, CI verde obrigatório, merge commit (não squash).
-- TDD simples: o teste que falha é commitado **antes** da implementação, no mesmo PR.
-- Papéis: Fable escreve spec e tickets. Sonnet (high) implementa. Opus (high) revisa, abre PR e faz merge. Se Opus precisar corrigir código, Fable revisa e faz merge.
-- O implementador marca `Status:` do ticket ao começar e ao abrir PR, e comenta no ticket o que ficou de fora.
+- O loop é a skill `ticket-flow` — ela é a única cópia: estágios, transições de `Stage:`, commit de teste separado, regra de fix pequeno vs. reabrir. Gate, branch base e modelo por estágio estão no bloco `## Bindings do fluxo` do `AGENTS.md`. Nada disso se repete aqui.
 - Mutate-verify (AGENTS.md) continua obrigatório em todo teste de regressão novo.
 
 ### Release mecânico

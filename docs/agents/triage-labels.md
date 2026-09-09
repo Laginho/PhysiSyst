@@ -14,4 +14,4 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 Edit the right-hand column to match whatever vocabulary you actually use.
 
-The loop states layered on top of these (`ready-for-review`, `merged`, `Round: N`) are defined in `loop.md`.
+The loop position is a separate axis and a separate line: `Stage:`, defined by the `ticket-flow` skill. A ticket can be `Status: ready-for-agent` and `Stage: reviewing` at the same time — never fold one into the other.

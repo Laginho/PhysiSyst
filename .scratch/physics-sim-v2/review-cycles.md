@@ -1,3 +1,9 @@
+# Review cycles (v2, historical)
+
+The TEST/MAKE/READ audit trail of the old orchestration, kept as history. Not the
+`ticket-flow` ledger: closed tickets now get a `| Data | ID | Commit |` line in
+`ledger.md` of their board.
+
 | cycle | issue | verdict | culprit | reason |
 | --- | --- | --- | --- | --- |
 | 01 | PHY-05-contact-snap | clean | - | TEST established isolated RED; MAKE and READ passed all four gates with adversarial mutations restored. |
