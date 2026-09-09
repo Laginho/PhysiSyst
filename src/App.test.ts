@@ -466,6 +466,18 @@ describe('undo/redo, delete, atalhos (PHY-14)', () => {
     expect(host.textContent).not.toContain('Ctrl+Z')
   })
 
+  it('Space with a palette button focused creates the body and leaves the transport alone (the button handles the key natively)', () => {
+    const host = renderApp()
+    const paletteButton = findButton(host, 'retângulo')!
+    paletteButton.focus()
+
+    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    act(() => paletteButton.dispatchEvent(event))
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(findButton(host, '▶ reproduzir')).toBeDefined()
+  })
+
   it('↶ and ↷ are disabled until there is something to undo/redo', () => {
     const host = renderApp()
     expect(findButton(host, '↶')?.disabled).toBe(true)

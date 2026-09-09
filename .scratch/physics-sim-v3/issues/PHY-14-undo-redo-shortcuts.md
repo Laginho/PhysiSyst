@@ -1,5 +1,5 @@
 # PHY-14: Undo/redo, Delete, atalhos e menu `?`
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 

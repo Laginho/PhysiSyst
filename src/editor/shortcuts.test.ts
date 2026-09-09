@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { actionForKey } from './shortcuts'
 
 function key(overrides: Partial<Parameters<typeof actionForKey>[0]>) {
-  return actionForKey({ key: '', ctrlKey: false, metaKey: false, shiftKey: false, inTextField: false, ...overrides })
+  return actionForKey({
+    key: '',
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    inTextField: false,
+    targetHandlesKeyNatively: false,
+    ...overrides,
+  })
 }
 
 describe('actionForKey', () => {
@@ -63,5 +71,17 @@ describe('actionForKey', () => {
   it('an unmapped key returns null', () => {
     expect(key({ key: 'q' })).toBeNull()
     expect(key({ key: 'F5' })).toBeNull()
+  })
+
+  it('Space does nothing when the focused element handles it natively (e.g. a button) — lets it activate instead', () => {
+    expect(key({ key: ' ', targetHandlesKeyNatively: true })).toBeNull()
+  })
+
+  it('Space still toggles play/pause when the target does not handle it natively', () => {
+    expect(key({ key: ' ', targetHandlesKeyNatively: false })).toBe('togglePlay')
+  })
+
+  it('a native-activation target does not swallow unrelated shortcuts, like Ctrl+Z', () => {
+    expect(key({ key: 'z', ctrlKey: true, targetHandlesKeyNatively: true })).toBe('undo')
   })
 })
