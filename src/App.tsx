@@ -34,7 +34,7 @@ import {
 } from './editor/doc'
 import { bodyAtPoint, worldToLocal } from './editor/hitTest'
 import { resolveContactSnap } from './editor/contactSnap'
-import { pointInTrash, trashRect } from './editor/trash'
+import { pointInTrash, trashRect, type Rect } from './editor/trash'
 import {
   canRedo,
   canUndo,
@@ -56,7 +56,8 @@ import {
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
 import { drawArrow, drawGrid, drawScene } from './render/draw'
-import { makeTransform, screenToWorld, type Camera } from './render/transform'
+import { makeTransform, pixelsPerMeterForWidth, screenToWorld, type Camera, type ScreenTransform } from './render/transform'
+import { fitCanvas } from './render/fitCanvas'
 import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { getLang, setLang as persistLang, t, type Lang } from './i18n'
@@ -81,11 +82,11 @@ import {
   type Storage,
 } from './persistence'
 
-const CANVAS_W = 900
-const CANVAS_H = 600
-const CAMERA: Camera = { centerX: 6, centerY: 4, pixelsPerMeter: 60 }
-const TRANSFORM = makeTransform(CAMERA, CANVAS_W, CANVAS_H)
-const TRASH_RECT = trashRect(CANVAS_W, CANVAS_H)
+/** Camera/transform/trash-zone for the canvas's current logical size. */
+function geometryFor(width: number, height: number): { camera: Camera; transform: ScreenTransform; trash: Rect } {
+  const camera: Camera = { centerX: 6, centerY: 4, pixelsPerMeter: pixelsPerMeterForWidth(width) }
+  return { camera, transform: makeTransform(camera, width, height), trash: trashRect(width, height) }
+}
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -103,23 +104,25 @@ function paint(
   doc: Scene,
   selectedId: string | null,
   states: ReadonlyMap<string, BodyState> | null,
+  geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: { showGlobal: boolean; contacts?: readonly ContactPoint[]; draggingBody?: boolean },
 ): void {
+  const { camera, transform, trash } = geometry
   const view = applyStates(doc, states)
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-  drawGrid(ctx, CAMERA, CANVAS_W, CANVAS_H)
-  drawScene(ctx, view, CAMERA, CANVAS_W, CANVAS_H, undefined, selectedId)
+  ctx.clearRect(0, 0, transform.width, transform.height)
+  drawGrid(ctx, camera, transform.width, transform.height)
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId)
 
   // Trash target: invisible except while a Body is actively being dragged.
   if (opts?.draggingBody) {
-    const cx = TRASH_RECT.x + TRASH_RECT.w / 2
-    const cy = TRASH_RECT.y + TRASH_RECT.h / 2
+    const cx = trash.x + trash.w / 2
+    const cy = trash.y + trash.h / 2
     ctx.save()
     ctx.fillStyle = '#fdecea'
     ctx.strokeStyle = '#b00'
     ctx.lineWidth = 1.5
     ctx.beginPath()
-    ctx.roundRect(TRASH_RECT.x, TRASH_RECT.y, TRASH_RECT.w, TRASH_RECT.h, 6)
+    ctx.roundRect(trash.x, trash.y, trash.w, trash.h, 6)
     ctx.fill()
     ctx.stroke()
     ctx.font = '20px system-ui, sans-serif'
@@ -128,28 +131,28 @@ function paint(
     ctx.fillStyle = '#b00'
     ctx.fillText('🗑', cx, cy)
     ctx.font = '10px system-ui, sans-serif'
-    ctx.fillText(t('editor.trash'), cx, TRASH_RECT.y - 6)
+    ctx.fillText(t('editor.trash'), cx, trash.y - 6)
     ctx.restore()
   }
 
   // Vector overlay: global mode draws scene-wide, otherwise selection-only.
   if (opts?.showGlobal) {
-    for (const a of weightArrows(doc, states, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#2e7d32', widthPx: 2, headLenPx: 8 })
-    for (const a of initialVelocityArrows(view, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-    for (const a of appliedArrows(view, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#d97742', widthPx: 2, headLenPx: 10 })
-    for (const a of normalArrows(opts.contacts ?? [])) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#1565c0', widthPx: 2, headLenPx: 8 })
+    for (const a of weightArrows(doc, states, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#2e7d32', widthPx: 2, headLenPx: 8 })
+    for (const a of initialVelocityArrows(view, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
+    for (const a of appliedArrows(view, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#d97742', widthPx: 2, headLenPx: 10 })
+    for (const a of normalArrows(opts.contacts ?? [])) drawArrow(ctx, a.from, a.vec, transform, { color: '#1565c0', widthPx: 2, headLenPx: 8 })
   } else {
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      for (const a of initialVelocityArrows(selView, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-      for (const a of appliedArrows(selView, CAMERA.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, TRANSFORM)
+      for (const a of initialVelocityArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
+      for (const a of appliedArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform)
     }
   }
 
   const selected = view.bodies.find((b) => b.id === selectedId)
   if (!selected) return
-  for (const h of getHandles(selected, TRANSFORM)) {
+  for (const h of getHandles(selected, transform)) {
     ctx.save()
     ctx.translate(h.sx, h.sy)
     if (h.kind === 'rotate') {
@@ -384,7 +387,10 @@ function getAppStorage(): Storage {
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasBoxRef = useRef<HTMLDivElement>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
+  const [size, setSize] = useState(() => fitCanvas(900, 600))
+  const { camera, transform, trash: trashRectValue } = geometryFor(size.width, size.height)
   const storageRef = useRef<Storage | null>(null)
   if (!storageRef.current) storageRef.current = getAppStorage()
   const storage = storageRef.current
@@ -538,29 +544,45 @@ export default function App() {
     | null
   >(null)
 
-  // Canvas backing store is sized ONCE: assigning width/height reallocates and
-  // clears the buffer, which a 60fps repaint must not do every frame.
+  const repaint = useCallback(() => {
+    const ctx = ctxRef.current
+    if (ctx)
+      paint(ctx, docRef.current, selectedIdRef.current, statesRef.current, geometryFor(size.width, size.height), {
+        showGlobal: showGlobalRef.current,
+        contacts: contactsRef.current,
+        draggingBody: dragRef.current?.kind === 'move',
+      })
+  }, [size.width, size.height])
+
+  // The container's own size drives the canvas — measured on mount and on
+  // every resize (window resize/maximize, layout changes during playback).
+  useEffect(() => {
+    const box = canvasBoxRef.current
+    if (!box) return
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      setSize(fitCanvas(entry.contentRect.width, entry.contentRect.height))
+    })
+    ro.observe(box)
+    return () => ro.disconnect()
+  }, [])
+
+  // Backing store (and the world<->screen transform derived from it) is
+  // reallocated whenever the logical size changes — a resize legitimately
+  // clears the buffer, so this repaints right after.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const dpr = window.devicePixelRatio || 1
-    canvas.width = CANVAS_W * dpr
-    canvas.height = CANVAS_H * dpr
+    canvas.width = size.width * dpr
+    canvas.height = size.height * dpr
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctxRef.current = ctx
-  }, [])
-
-  const repaint = useCallback(() => {
-    const ctx = ctxRef.current
-    if (ctx)
-      paint(ctx, docRef.current, selectedIdRef.current, statesRef.current, {
-        showGlobal: showGlobalRef.current,
-        contacts: contactsRef.current,
-        draggingBody: dragRef.current?.kind === 'move',
-      })
-  }, [])
+    repaint()
+  }, [size.width, size.height, repaint])
 
   /** Pauses playback and surfaces a world-building failure to the user. */
   const fail = useCallback((e: unknown) => {
@@ -864,7 +886,7 @@ export default function App() {
 
   function eventToWorld(e: React.PointerEvent<HTMLCanvasElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
-    return screenToWorld(TRANSFORM, e.clientX - rect.left, e.clientY - rect.top)
+    return screenToWorld(transform, e.clientX - rect.left, e.clientY - rect.top)
   }
 
   function eventToScreen(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -880,7 +902,7 @@ export default function App() {
 
     // Handles win over body hit-testing while a body is selected.
     if (selected) {
-      const handle = pickHandle(getHandles(selected, TRANSFORM), sx, sy)
+      const handle = pickHandle(getHandles(selected, transform), sx, sy)
       if (handle) {
         e.currentTarget.setPointerCapture(e.pointerId)
         if (handle.kind === 'rotate') {
@@ -922,7 +944,7 @@ export default function App() {
           ...body,
           position: { x: raw.x - drag.offX, y: raw.y - drag.offY },
         }
-        const { body: snapped, neighborId } = resolveContactSnap(proposed, d.bodies, CAMERA.pixelsPerMeter, contactSnapEnabled)
+        const { body: snapped, neighborId } = resolveContactSnap(proposed, d.bodies, camera.pixelsPerMeter, contactSnapEnabled)
         drag.neighborId = neighborId
         return updateBody(d, drag.id, { position: snapped.position, rotation: snapped.rotation })
       })
@@ -975,7 +997,7 @@ export default function App() {
     }
     if (drag?.kind === 'move') {
       const { sx, sy } = eventToScreen(e)
-      if (pointInTrash(TRASH_RECT, sx, sy)) {
+      if (pointInTrash(trashRectValue, sx, sy)) {
         setDoc((d) => removeBodyAndDependents(d, drag.id))
         setSelectedId(null)
       } else if (drag.neighborId) {
@@ -991,7 +1013,7 @@ export default function App() {
   /** Palette creation: sensible dynamic defaults at the exact view center. */
   function addShape(shape: Body['shape']) {
     const prefix = shape === 'rectangle' ? 'retangulo' : shape === 'circle' ? 'bola' : 'cunha'
-    const center = screenToWorld(TRANSFORM, CANVAS_W / 2, CANVAS_H / 2)
+    const center = screenToWorld(transform, size.width / 2, size.height / 2)
     const position = center
     const id = freshId(doc, prefix)
     const common = { id, position, mass: 1, fixed: false, rotation: 0 } as const
@@ -1009,7 +1031,7 @@ export default function App() {
   const warnings = collectWarnings(doc)
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', display: 'grid', placeItems: 'center', gap: 8 }}>
+    <main style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 8, minHeight: '100vh', boxSizing: 'border-box', padding: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <h1 style={{ fontSize: 18, margin: 8 }}>{t('app.title')}</h1>
         <label style={{ fontSize: 12 }}>
@@ -1027,22 +1049,27 @@ export default function App() {
           </select>
         </label>
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <div style={{ display: 'grid', gap: 6 }}>
-          <canvas
-            ref={canvasRef}
-            style={{
-              width: CANVAS_W,
-              height: CANVAS_H,
-              border: '1px solid #999',
-              background: '#fafbfc',
-              touchAction: 'none',
-              cursor: selected ? 'grab' : 'default',
-            }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-          />
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flex: 1, minHeight: 0, width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0, minHeight: 0 }}>
+          <div
+            ref={canvasBoxRef}
+            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}
+          >
+            <canvas
+              ref={canvasRef}
+              style={{
+                width: size.width,
+                height: size.height,
+                border: '1px solid #999',
+                background: '#fafbfc',
+                touchAction: 'none',
+                cursor: selected ? 'grab' : 'default',
+              }}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+            />
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button onClick={togglePlay} style={{ minWidth: 110 }}>
               {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
