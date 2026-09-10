@@ -1054,10 +1054,13 @@ export default function App() {
           </select>
         </label>
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flex: 1, minHeight: 0, width: '100%' }}>
+      <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0, minHeight: 0 }}>
           <div
             ref={canvasBoxRef}
+            // Height comes from the row (stretch), NEVER from the canvas: sizing the
+            // canvas off a box that shrink-wraps it is a feedback loop that grows
+            // the canvas a few px every frame until it overflows.
             style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}
           >
             <canvas
@@ -1153,7 +1156,7 @@ export default function App() {
             <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
           </div>
         </div>
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ display: 'grid', gap: 8, alignSelf: 'flex-start' }}>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"

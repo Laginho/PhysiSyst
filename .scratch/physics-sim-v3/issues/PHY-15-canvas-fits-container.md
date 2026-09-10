@@ -94,6 +94,30 @@ função de produção direto — sem registro aqui, por protocolo.
 - Restaurei para o tamanho normal do preview: cena inteira visível de novo,
   sem distorção, sem erro no console.
 
+## Segunda verificação live (revisão)
+
+Revisão pegou dois problemas que o jsdom não vê, ambos corrigidos:
+
+1. **Backing store borrado**: container mede fracionário (zoom do browser,
+   sobra do flex), `canvas.width` é `unsigned long` e truncava — o browser
+   reamostrava o canvas inteiro. `fitCanvas` agora arredonda para múltiplo de
+   3 (os dois eixos inteiros em 3:2 exato) e o efeito escala pelo backing
+   store que realmente alocou (`round(size*dpr)/size`), não por `dpr`.
+2. **Loop de realimentação de layout** (o grave): a linha tinha
+   `alignItems: 'flex-start'`, então a coluna do canvas não esticava e a caixa
+   observada encolhia em volta do canvas (altura = canvas + 2px de borda).
+   Cada tick do `ResizeObserver` media uma caixa derivada do próprio canvas e
+   crescia mais 3px — medido ao vivo: 900 → 915 → 954 → … até saturar na
+   largura do container, estourando a altura disponível (`scrollHeight` 1008
+   numa viewport de 900). A caixa agora herda a altura da linha (`stretch`,
+   com `alignSelf: 'flex-start'` no painel), independente do canvas.
+
+Reverificado ao vivo com playback rodando, em 1400×900, 1000×700, 1101×777
+(container fracionário) e 760×620 (piso): 3:2 exato, `canvas.width ===
+round(cssWidth * dpr)` nos dois eixos em dpr 1 e dpr 2, estável entre frames
+consecutivos (sem crescimento), círculos continuam círculos, sem erro no
+console. Sem teste jsdom para nenhum dos dois — jsdom não faz layout.
+
 **Critério 7** — Limitação #3 do `FINAL_REPORT.md` ("Window resize during
 playback — canvas backing store sized once at mount; resizing stretches
 rendering until reload") está **resolvida**: o backing store agora é
