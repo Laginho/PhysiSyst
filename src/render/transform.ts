@@ -4,6 +4,14 @@ export interface Camera {
   pixelsPerMeter: number
 }
 
+/** World meters visible across the canvas width, at any canvas size. */
+export const VIEW_WIDTH_METERS = 15
+
+/** Keeps the same world region on screen regardless of canvas size. */
+export function pixelsPerMeterForWidth(width: number): number {
+  return width / VIEW_WIDTH_METERS
+}
+
 export interface ScreenTransform {
   camera: Camera
   width: number

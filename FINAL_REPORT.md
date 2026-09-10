@@ -61,7 +61,7 @@ Highlights:
 
 1. **Elastic collisions deferred to v1.x** — schema has no restitution knob (spec Out-of-Scope); engine default e=0 matches the inelastic case.
 2. **Undeclared-contact friction leak** — scenes mixing declared positive-friction edges with undeclared contacts get approximate (not exact) friction on the undeclared pairs; accepted residual per ADR-0003 addendum with revisit trigger.
-3. **Window resize during playback** — canvas backing store sized once at mount; resizing stretches rendering until reload (T4 deferral, unchanged).
+3. ~~**Window resize during playback** — canvas backing store sized once at mount; resizing stretches rendering until reload (T4 deferral, unchanged).~~ **Resolved in PHY-15**: the canvas measures its container (`ResizeObserver`), re-derives logical size, DPR backing store and the world↔screen transform on every change; pixels-per-metre scales with width so the framing is size-invariant.
 4. **Contact normal arrows are direction-only** (fixed length) — magnitudes would need Rapier EventQueue plumbing judged not cheap on this seam.
 5. **Weight arrows draw at body origin**, not true triangle centroid (offset documented; centroid anchor rule applies to forces).
 6. **Gallery acknowledgement is one-way** — no UI reset path for the first-open gallery in v1 (button remains available).
@@ -79,7 +79,6 @@ Highlights:
 - Restitution knob + elastic-collision acceptance family (schema v2).
 - True-COM weight arrows and general hatch flags (schema additions).
 - Contact-force magnitudes via EventQueue for scaled normal arrows.
-- Resize handling (backing store re-measure) in the polish pass.
 - Gallery reset affordance; pulley bodies (polia terminology already localized).
 - Consider raising the review bar earlier: the hollow-pin pattern (tests passing beside broken/mutated production code) recurred three times (T8/T9/T11) — a standing "mutate-verify your own regression" rule is now de facto and worth formalizing in AGENTS.md.
 

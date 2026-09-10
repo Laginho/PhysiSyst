@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
+import { trashRect } from './editor/trash'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -14,9 +15,31 @@ let root: Root | null = null
 
 const originalSetPointerCapture = HTMLCanvasElement.prototype.setPointerCapture
 
+// jsdom has no ResizeObserver at all. This stub fires its callback synchronously
+// from observe() with whatever `containerSize` the test set beforehand, mirroring
+// the initial-measurement call a real ResizeObserver makes on observe().
+let containerSize = { width: 900, height: 600 }
+class FakeResizeObserver {
+  #cb: ResizeObserverCallback
+  constructor(cb: ResizeObserverCallback) {
+    this.#cb = cb
+  }
+  observe(target: Element) {
+    this.#cb([{ target, contentRect: containerSize } as ResizeObserverEntry], this as unknown as ResizeObserver)
+  }
+  unobserve() {}
+  disconnect() {}
+}
+
 beforeEach(() => {
   document.body.innerHTML = ''
   window.localStorage.clear()
+  containerSize = { width: 900, height: 600 }
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    configurable: true,
+    writable: true,
+    value: FakeResizeObserver,
+  })
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
     configurable: true,
     value: () => null,
@@ -489,5 +512,84 @@ describe('undo/redo, delete, atalhos (PHY-14)', () => {
 
     pressKey('z', { ctrlKey: true })
     expect(findButton(host, '↷')?.disabled).toBe(false)
+  })
+})
+
+describe('canvas fits its container (PHY-15)', () => {
+  it('the same relative click selects the body at that world position, at two container sizes', () => {
+    for (const { width, height } of [
+      { width: 900, height: 600 },
+      { width: 1200, height: 800 },
+    ] as const) {
+      document.body.innerHTML = ''
+      window.localStorage.clear()
+      containerSize = { width, height }
+
+      const host = renderApp()
+      act(() => findButton(host, 'nova cena')?.click()) // demo scene's own bodies would confuse the hit-test below
+      act(() => findButton(host, 'retângulo')?.click())
+      const canvas = host.querySelector('canvas')
+      if (!canvas) throw new Error('missing canvas')
+
+      // Place the body at a known WORLD position through the properties panel's
+      // own x/y (m) fields — world-space, so this doesn't depend on any pixel
+      // transform being correct.
+      const bodyPanel = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')!
+      const more = bodyPanel.querySelector(':scope > details') as HTMLDetailsElement
+      if (!more.open) act(() => more.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      act(() => setNativeInputValue(inputForLabel(more, 'x (m)'), 10))
+      act(() => setNativeInputValue(inputForLabel(more, 'y (m)'), 1))
+
+      // Deselect, away from where the body now sits.
+      act(() => canvas.dispatchEvent(pointerEvent('pointerdown', 2, 2)))
+      expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(false)
+
+      // Reselect with a click at the screen point that world (10, 1) maps to
+      // AT THIS container size — only lands on the body if the camera's
+      // pixels-per-meter actually tracks the current width.
+      const t = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: width / 15 }, width, height)
+      const target = worldToScreen(t, 10, 1)
+      act(() => canvas.dispatchEvent(pointerEvent('pointerdown', target.x, target.y)))
+      expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(true)
+
+      act(() => root?.unmount())
+      root = null
+    }
+  })
+
+  it('dropping on the trash target removes the body, at two container sizes', () => {
+    for (const { width, height } of [
+      { width: 900, height: 600 },
+      { width: 1200, height: 800 },
+    ] as const) {
+      document.body.innerHTML = ''
+      window.localStorage.clear()
+      containerSize = { width, height }
+
+      const host = renderApp()
+      act(() => findButton(host, 'nova cena')?.click()) // demo scene's own bodies would confuse the hit-test below
+      act(() => findButton(host, 'retângulo')?.click())
+      const canvas = host.querySelector('canvas')
+      if (!canvas) throw new Error('missing canvas')
+
+      // addShape spawns at the exact CSS-pixel center of the canvas, whatever
+      // that size actually is — reading it back from the DOM keeps the pickup
+      // point correct even before the canvas itself tracks the container.
+      const spawn = { x: parseFloat(canvas.style.width) / 2, y: parseFloat(canvas.style.height) / 2 }
+      // The trash target this test expects at this container size — only the
+      // real drop zone once the App derives it from the current size instead
+      // of a stale constant.
+      const rect = trashRect(width, height)
+      const trashCenter = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }
+
+      act(() => canvas.dispatchEvent(pointerEvent('pointerdown', spawn.x, spawn.y)))
+      act(() => canvas.dispatchEvent(pointerEvent('pointermove', trashCenter.x, trashCenter.y)))
+      act(() => canvas.dispatchEvent(pointerEvent('pointerup', trashCenter.x, trashCenter.y)))
+
+      expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(false)
+
+      act(() => root?.unmount())
+      root = null
+    }
   })
 })
