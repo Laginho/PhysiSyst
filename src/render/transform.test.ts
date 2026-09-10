@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { makeTransform, screenToWorld, worldToScreen } from './transform'
+import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen } from './transform'
 import { drawGrid, gridSpacing } from './draw'
 
 describe('world<->screen transform', () => {
@@ -56,6 +56,29 @@ describe('world<->screen transform', () => {
     }
   })
 })
+describe('pixelsPerMeterForWidth', () => {
+  it('keeps the same world point at the same screen fraction across canvas widths', () => {
+    const centerX = 6
+    const centerY = 4
+    const worldPoint = { x: 10, y: 1 }
+    const fractions = [900, 1200, 600].map((width) => {
+      const height = (width * 2) / 3
+      const camera = { centerX, centerY, pixelsPerMeter: pixelsPerMeterForWidth(width) }
+      const t = makeTransform(camera, width, height)
+      const s = worldToScreen(t, worldPoint.x, worldPoint.y)
+      return { fx: s.x / width, fy: s.y / height }
+    })
+    for (const f of fractions.slice(1)) {
+      expect(f.fx).toBeCloseTo(fractions[0].fx, 9)
+      expect(f.fy).toBeCloseTo(fractions[0].fy, 9)
+    }
+  })
+
+  it('scales linearly with width', () => {
+    expect(pixelsPerMeterForWidth(1800)).toBeCloseTo(2 * pixelsPerMeterForWidth(900), 9)
+  })
+})
+
 describe('gridSpacing', () => {
   // 1-2-5 ladder against T=40 provably yields px in [T, 2.5*T) = [40, 100).
   it.each([
@@ -83,7 +106,7 @@ describe('drawGrid degenerate-camera guard', () => {
   // screenToWorld divides by ppm, so an invalid camera poisons the grid loop's
   // bounds with +-Infinity. drawGrid must bail out before touching ctx.
   // The stub ctx has no methods: any draw call throws, and vitest's timeout
-  // catches a hang — either way the test fails if the guard is missing.
+  // catches a hang ï¿½ either way the test fails if the guard is missing.
   it.each([0, NaN, Infinity])('returns immediately for ppm %p without drawing', (ppm) => {
     const ctx = {} as unknown as CanvasRenderingContext2D
     expect(() =>
