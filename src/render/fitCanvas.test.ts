@@ -20,6 +20,15 @@ describe('fitCanvas', () => {
     expect(fitCanvas(1200, 800)).toEqual({ width: 1200, height: 800 })
   })
 
+  it('snaps a fractional container to whole pixels on both axes', () => {
+    // Browser zoom / flex leftovers measure fractional; a fractional canvas size
+    // cannot map onto whole device pixels, so the drawing gets resampled.
+    const size = fitCanvas(700.33, 675.5)
+    expect(Number.isInteger(size.width)).toBe(true)
+    expect(Number.isInteger(size.height)).toBe(true)
+    expect(size.width / size.height).toBeCloseTo(3 / 2, 9)
+  })
+
   it('always returns an exact 3:2 ratio', () => {
     for (const [w, h] of [
       [2000, 600],

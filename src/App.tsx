@@ -577,9 +577,14 @@ export default function App() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const dpr = window.devicePixelRatio || 1
-    canvas.width = size.width * dpr
-    canvas.height = size.height * dpr
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // Backing store must be whole device pixels, so scale by what it ACTUALLY
+    // got (w/size.width) rather than by dpr: a fractional dpr would otherwise
+    // draw off the truncated buffer's edge and resample the whole canvas.
+    const w = Math.round(size.width * dpr)
+    const h = Math.round(size.height * dpr)
+    canvas.width = w
+    canvas.height = h
+    ctx.setTransform(w / size.width, 0, 0, h / size.height, 0, 0)
     ctxRef.current = ctx
     repaint()
   }, [size.width, size.height, repaint])
