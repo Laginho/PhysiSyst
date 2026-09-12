@@ -114,3 +114,67 @@ Highlights:
 ## Known Limitations (v2, carried forward from v1 §4 unless noted)
 
 All ten v1 items stand. No new limitations introduced by v2 — the drag-to-trash, contact-snap, and initial-velocity seams reused existing structural-rebuild and dependents-cleanup paths rather than adding new state machinery.
+
+---
+
+# physics-sim v3 — Release digno (desktop)
+
+**Closeout in progress, PHY-17.** Five tickets making the app reachable by a student without Node or git — a public URL, four automated gates, and four first-run gaps closed (snap now declares Contact, undo/redo, a canvas that fits its container, a loading screen with personality) — plus this closeout sweep.
+
+## Scope Delivered (PHY-12–PHY-16)
+
+| Ticket | Deliverable |
+|---|---|
+| PHY-12 Release mechanics | LICENSE MIT, CI (4 gates, Node 22, on PR + push), GitHub Pages deploy via Actions, `base: '/PhysiSyst/'`, `version` 0.3.0 |
+| PHY-13 Snap declares Contact | Snap resolver returns the winning neighbor; Contact created on pointer-up with μs=μk=0 (ADR-0002 default); duplicate pair is a silent no-op; Contact survives the body being dragged away |
+| PHY-14 Undo/redo, Delete, shortcuts | Pure history module (50-entry cap), Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, Delete/Backspace, Space/→/R/Esc, `?` shortcut popover, ↶↷ buttons in the playback bar |
+| PHY-15 Canvas fits its container | `fitCanvas` letterboxes to 3:2 (600px floor), `ResizeObserver`-driven; camera, transform and trash hit-box all derive from the current size instead of mount-time constants |
+| PHY-16 Loading screen | wasm boot fires on mount; overlay rotates 10 pt-BR/EN physics jokes; failure shows a fixed error with a working retry |
+
+## Gate Outcomes
+
+- **459 tests / 27 files, all green** (`npm test`); lint, `tsc --noEmit`, and `vite build` clean (only the pre-existing >500 kB chunk-size advisory).
+- CI green on the latest merge (`7f61cf6`, PHY-16): https://github.com/Laginho/PhysiSyst/actions/runs/34664290774
+- Deploy green on the same commit: https://github.com/Laginho/PhysiSyst/actions/runs/34664315722
+
+**Infrastructure gap found and fixed during this closeout (PHY-17):** GitHub Pages had never actually been enabled on the repository (`has_pages: false`) — every `Deploy` run since PHY-12 failed with `Get Pages site failed`, and `https://laginho.github.io/PhysiSyst/` 404'd. PHY-12's own criterion 7 (record the first green deploy link) was never fulfilled or checked, so this went unnoticed for three merges. Fixed by enabling Pages via `gh api repos/Laginho/PhysiSyst/pages -X POST -f build_type=workflow` and re-running Deploy. Related gap: the whole PHY-16 branch (18 commits, merge included) had been merged to local `main` but never pushed to `origin` — CI/Deploy had literally never run against it. Fixed with `git push`; both are now green on the true latest commit, and the site serves the current build.
+
+## Desktop Manual Pass (D1–D8)
+
+Run against the published site (`https://laginho.github.io/PhysiSyst/`), not localhost. **Six of eight items pass; D4 and D6 are still open** — see "Not yet covered" below.
+
+| Item | Result |
+|---|---|
+| **D1** Cold open | ⚠️ **Partial.** In Chromium: the loading badge shows a joke (pt-BR "Discutindo se g é 9,8 ou 10…", EN "Convincing Schrödinger's cat to cooperate…"), clears when the engine boots, the scene renders, and the console is empty. Edge and Firefox were not exercised. |
+| **D2** Mouse editing | ⚠️ **Pass with one defect.** Palette creates rectangle, ball and wedge; drag, rotate (0 → 0.767 rad), resize (ball r 0.75 → 1.52; wedge base 2 → 3.02), α by handle (30° → 43.5°) and topmost-wins hit-testing all work. Defect: the first drag of an *unselected* body lands ~2 m off — **PHY-18**. |
+| **D3** Snap → Contact → friction | ✅ **Pass.** Snap seats the block flush (perpendicular distance exactly 0.5000 m = half-height) and declares `retangulo ↔ cunha` with μs=μk=0; μ is editable from the panel; dragging the block away keeps the pair. Physics matches the closed form: at α=30°, μk=0.1, measured \|a\| = 4.06 m/s² against `g(sin30° − 0.1·cos30°)` = 4.056, and \|v\| = 1.35 m/s after 20 steps against 1.352 predicted. At μs=0.8 > tan30° = 0.577 the block does not move over 103 steps. |
+| **D4** Playback | ⛔ **Open.** Step, reset, `→` and `R` verified. Play/pause, the speed slider and `Espaço` are unverified — see below. |
+| **D5** Undo/redo/Delete | ✅ **Pass.** Ctrl+Z collapses a whole drag into one undo step, Ctrl+Y redoes, ↶↷ disable at both ends of the stack, Delete removes the body *and* its contacts, the `?` popover opens by button and by `?` and closes by Esc and `?`. Backspace in a numeric field does not delete the body; that it deletes a *digit* could not be confirmed (the automation harness's synthetic Backspace performs no text edit — `shortcuts.ts` returns `null` for `inTextField`, so the code path is right, but it wants a human keystroke). |
+| **D6** Resize | ⛔ **Open** — see below. |
+| **D7** Persistence | ⚠️ **Pass with one defect.** Auto-save, duplicate, export (`cena-3.json`, 911 B, valid) and import (round-tripped a modified `g`) all work; the scene list survives reload; switching scenes clears the undo stack. Defect: reload always reopens the first scene instead of the one being edited — **PHY-19**. |
+| **D8** Language | ✅ **Pass.** pt-BR ↔ EN switches every string including the `?` menu and the loading jokes, `physics-sim:lang` persists the choice, no raw keys reach the screen, and no horizontal overflow. Body ids (`chao`, `rampa`, `bloco`) stay Portuguese in both languages — they are scene data, not UI strings. |
+
+### Not yet covered
+
+**D4 (play/pause, speed, `Espaço`) and D6 (resize) are not verified.** Both are driven by the render loop — playback by `requestAnimationFrame`, the canvas fit by `ResizeObserver` — and the browser pane available to the reviewing session never became visible, so it produced **0 rAF ticks per second**. Measurements taken in that state are worthless: the canvas read 653×436 at 800, 1280 and 1920 px viewports, which looks like a failure to resize but is indistinguishable from `ResizeObserver` simply never being delivered. Nothing here should be read as a verdict on D6. Both items need a live browser, and PHY-17 cannot close until they have one.
+
+### Defects opened by this pass
+
+| Ticket | Defect |
+|---|---|
+| **PHY-18** | Selecting a body renders the inspector, grows the page 784 → 954 px, and shifts the vertically-centred canvas down ~85 px mid-drag; the first drag of an unselected body therefore drops it ~2 m above the cursor. x is always exact, y is off by exactly the layout shift. |
+| **PHY-19** | The active scene id is never persisted (`currentId` initialises to `index[0]`), so reload always reopens Cena 1. Scene contents and the scene list do survive. |
+
+## v1 T12 Mobile Items — `wontfix`
+
+The 10 mobile-touch items from v1's T12 checklist (posted 2026-08-23) are declared `wontfix`: physics-sim's public is the Brazilian desktop student (Windows), and mobile is out of horizon (v3 spec, Out of Scope). T12's 8 desktop items are superseded by D1–D8 above. The original checklist text was posted in conversation and never persisted to a repo file — `.scratch/physics-sim/TASKS.md` and `LOGS.md` record its existence (10 mobile + 8 desktop items) but not the item-by-item wording, so it isn't reproduced here.
+
+## Known Limitations (carried from v1 §4)
+
+All ten v1 items stand, with one change: **#3 (window resize during playback) is resolved by PHY-15** — the canvas now measures its container via `ResizeObserver` and never stretches.
+
+## Next Steps (v4 candidates)
+
+- Constraints: rope → pulley → spring.
+- Restitution (elastic collisions), out of scope since v1.
+- Code-split the Rapier2D wasm bundle (the >500 kB chunk advisory has stood since v1).
