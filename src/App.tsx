@@ -762,42 +762,53 @@ export default function App() {
     [repaint, runSteps],
   )
 
-  /** Boots the WASM world on first use; concurrent callers share one boot. */
+  /**
+   * Boots the WASM world on first use; concurrent callers share one boot.
+   * The overlay's state is driven from HERE, not from the call sites: mount,
+   * play, step and the retry button all boot through this one function, so a
+   * boot any of them starts takes the overlay with it. Driving it from a
+   * single caller left the opaque error panel sitting on top of a world that
+   * had since booted fine.
+   */
   const ensureSim = useCallback((): Promise<Simulator | null> => {
     if (simRef.current) return Promise.resolve(simRef.current)
-    const bootDoc = docRef.current
-    simBootRef.current ??= createSimulator(bootDoc).then(
-      (sim) => {
-        simRef.current = sim
-        builtDocRef.current = bootDoc
-        contactsRef.current = sim.readContacts()
-        // Edits made while WASM was booting land at the next frame boundary.
-        pendingRebuildRef.current = docRef.current !== bootDoc
-        setSimError(null)
-        return sim
-      },
-      () => {
-        // The overlay's fixed message is the only error surface for a boot
-        // failure — no fail(e) here, or the raw exception text would also
-        // show up in the simError side panel at the same time.
-        simBootRef.current = null // let the user fix the scene and retry
-        return null
-      },
-    )
+    if (!simBootRef.current) {
+      const bootDoc = docRef.current
+      setBootState('booting')
+      simBootRef.current = createSimulator(bootDoc).then(
+        (sim) => {
+          simRef.current = sim
+          builtDocRef.current = bootDoc
+          contactsRef.current = sim.readContacts()
+          // Edits made while WASM was booting land at the next frame boundary.
+          pendingRebuildRef.current = docRef.current !== bootDoc
+          setSimError(null)
+          setBootState('ready')
+          return sim
+        },
+        () => {
+          // The overlay's fixed message is the only error surface for a boot
+          // failure — no fail(e) here, or the raw exception text would also
+          // show up in the simError side panel at the same time.
+          simBootRef.current = null // let the user fix the scene and retry
+          setBootState('error')
+          return null
+        },
+      )
+    }
     return simBootRef.current
   }, [])
 
-  /** Boots (or retries) the engine, driving the loading overlay's state. */
-  const bootOnce = useCallback(() => {
-    setBootState('booting')
+  /** Retries a failed boot, restarting the joke rotation from the top. */
+  const retryBoot = useCallback(() => {
     setMessageTick(0)
-    void ensureSim().then((sim) => setBootState(sim ? 'ready' : 'error'))
+    void ensureSim()
   }, [ensureSim])
 
   // Boot starts at mount (T-PHY-16), not at the first play, so playback never
   // waits on it once the student presses play.
   useEffect(() => {
-    bootOnce()
+    void ensureSim()
   }, [])
 
   // Rotates the loading joke every 1.5s while booting; the timer is cleared
@@ -1149,7 +1160,7 @@ export default function App() {
                 }}
               >
                 <div>{t('loading.error')}</div>
-                <button onClick={bootOnce}>{t('loading.retry')}</button>
+                <button onClick={retryBoot}>{t('loading.retry')}</button>
               </div>
             )}
           </div>
