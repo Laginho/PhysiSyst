@@ -796,7 +796,6 @@ export default function App() {
   // waits on it once the student presses play.
   useEffect(() => {
     bootOnce()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Rotates the loading joke every 1.5s while booting; the timer is cleared
