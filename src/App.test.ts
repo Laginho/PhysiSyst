@@ -649,6 +649,10 @@ describe('loading screen (PHY-16)', () => {
 
   it('rotates the message every 1.5s and clears the timer once the sim is ready', async () => {
     vi.useFakeTimers()
+    // A separate low-frequency readout poll runs for the app's whole
+    // lifetime — the assertion below must catch specifically the loading
+    // rotation's own interval being cleared, not just "some timer, somewhere".
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval')
     let resolveBoot!: (sim: Simulator) => void
     vi.mocked(createSimulator).mockImplementationOnce(() => new Promise((resolve) => { resolveBoot = resolve }))
 
@@ -661,13 +665,16 @@ describe('loading screen (PHY-16)', () => {
     expect(afterOneTick).toBeDefined()
     expect(afterOneTick).not.toBe(initial)
 
+    expect(clearSpy).not.toHaveBeenCalled()
+
     await act(async () => {
       resolveBoot(makeFakeSimulator())
       await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(vi.getTimerCount()).toBe(0)
+    expect(clearSpy).toHaveBeenCalled()
+    expect(LOADING_JOKES.some((joke) => host.textContent?.includes(joke))).toBe(false)
   })
 
   it('shows a fixed error with a retry button on boot failure; retry re-attempts the boot', async () => {
