@@ -3,12 +3,40 @@
 import { createElement } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
 import { trashRect } from './editor/trash'
+import { createSimulator, type Simulator } from './sim'
+import { ptBR } from './i18n/pt-BR'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+
+// The real simulator boots real wasm (rapier2d-compat) — fine for the app,
+// but nothing in this file asserts actual physics, only doc/UI state, so a
+// no-op fake removes real-boot timing from every test and lets the loading-
+// screen tests below control exactly when boot resolves/rejects.
+vi.mock('./sim', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./sim')>()),
+  createSimulator: vi.fn(),
+}))
+
+function makeFakeSimulator(): Simulator {
+  return {
+    warnings: [],
+    step: () => {},
+    readStates: () => new Map(),
+    readContacts: () => [],
+    setForceMagnitude: () => {},
+    setGravity: () => {},
+    setForceDirection: () => {},
+    setForceAnchor: () => {},
+    setBodyMass: () => {},
+    replaceScene: () => {},
+  }
+}
+
+const LOADING_JOKES = Array.from({ length: 10 }, (_, i) => ptBR[`loading.msg.${String(i + 1).padStart(2, '0')}` as keyof typeof ptBR])
 
 const originalGetContext = HTMLCanvasElement.prototype.getContext
 let root: Root | null = null
@@ -35,6 +63,8 @@ beforeEach(() => {
   document.body.innerHTML = ''
   window.localStorage.clear()
   containerSize = { width: 900, height: 600 }
+  vi.mocked(createSimulator).mockReset()
+  vi.mocked(createSimulator).mockImplementation(async () => makeFakeSimulator())
   Object.defineProperty(globalThis, 'ResizeObserver', {
     configurable: true,
     writable: true,
@@ -57,6 +87,7 @@ beforeEach(() => {
 afterEach(() => {
   if (root) act(() => root?.unmount())
   root = null
+  vi.useRealTimers()
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
     configurable: true,
     value: originalGetContext,
@@ -591,5 +622,73 @@ describe('canvas fits its container (PHY-15)', () => {
       act(() => root?.unmount())
       root = null
     }
+  })
+})
+
+describe('loading screen (PHY-16)', () => {
+  it('boots the simulator on mount, before any play interaction', () => {
+    renderApp()
+    expect(createSimulator).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the loading overlay while booting, without blocking scene editing', async () => {
+    let resolveBoot!: (sim: Simulator) => void
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise((resolve) => { resolveBoot = resolve }))
+
+    const host = renderApp()
+    expect(LOADING_JOKES.some((joke) => host.textContent?.includes(joke))).toBe(true)
+
+    act(() => findButton(host, 'retângulo')?.click())
+    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(true)
+
+    await act(async () => {
+      resolveBoot(makeFakeSimulator())
+      await Promise.resolve()
+    })
+  })
+
+  it('rotates the message every 1.5s and clears the timer once the sim is ready', async () => {
+    vi.useFakeTimers()
+    let resolveBoot!: (sim: Simulator) => void
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise((resolve) => { resolveBoot = resolve }))
+
+    const host = renderApp()
+    const initial = LOADING_JOKES.find((joke) => host.textContent?.includes(joke))
+    expect(initial).toBeDefined()
+
+    act(() => { vi.advanceTimersByTime(1500) })
+    const afterOneTick = LOADING_JOKES.find((joke) => host.textContent?.includes(joke))
+    expect(afterOneTick).toBeDefined()
+    expect(afterOneTick).not.toBe(initial)
+
+    await act(async () => {
+      resolveBoot(makeFakeSimulator())
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('shows a fixed error with a retry button on boot failure; retry re-attempts the boot', async () => {
+    vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
+
+    const host = renderApp()
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    expect(host.textContent).toContain(ptBR['loading.error'])
+    const retry = findButton(host, ptBR['loading.retry'])
+    expect(retry).toBeDefined()
+
+    vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
+    await act(async () => {
+      retry?.click()
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    expect(createSimulator).toHaveBeenCalledTimes(2)
+    expect(host.textContent).not.toContain(ptBR['loading.error'])
   })
 })
