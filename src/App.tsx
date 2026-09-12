@@ -467,7 +467,8 @@ export default function App() {
   const [stepsTick, setStepsTick] = useState(0)
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting')
   const [messageTick, setMessageTick] = useState(0)
-  const bootSeedRef = useRef(Math.floor(Math.random() * 0x7fffffff))
+  // Lazy initialiser: rolled once for the session, not on every render.
+  const [bootSeed] = useState(() => Math.floor(Math.random() * 0x7fffffff))
   const playbackRef = useRef<PlaybackState>(playback)
   const simRef = useRef<Simulator | null>(null)
   const simBootRef = useRef<Promise<Simulator | null> | null>(null)
@@ -1141,7 +1142,7 @@ export default function App() {
                   pointerEvents: 'none',
                 }}
               >
-                {t(`loading.msg.${String(messageAt(bootSeedRef.current, messageTick, LOADING_MESSAGE_COUNT) + 1).padStart(2, '0')}`)}
+                {t(`loading.msg.${String(messageAt(bootSeed, messageTick, LOADING_MESSAGE_COUNT) + 1).padStart(2, '0')}`)}
               </div>
             )}
             {bootState === 'error' && (

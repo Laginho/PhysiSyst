@@ -1,5 +1,5 @@
 # PHY-16: Tela de carregamento com personalidade
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -16,12 +16,12 @@ Ao abrir o app, o motor de física (wasm) começa a carregar imediatamente, não
 #### Acceptance criteria
 
 1. O boot do simulador é disparado no mount do App (o boot compartilhado e idempotente já existe; só o gatilho muda)
-2. Estado visível "booting" mostra o overlay até o boot resolver; o overlay não bloqueia a edição de cena — o aluno pode montar a cena enquanto a física chega — ❌ **caiu na 2ª revisão (2026-09-11):** o badge durante `booting` está correto; o que cai agora é o overlay de `error` (`inset: 0`, opaco, sem `pointerEvents`), que sobrevive a um boot bem-sucedido disparado por play/passo/atalho — a cena roda por baixo dele e a edição no canvas fica morta sem saída. Ver o bloco de revisão no fim.
+2. Estado visível "booting" mostra o overlay até o boot resolver; o overlay não bloqueia a edição de cena — o aluno pode montar a cena enquanto a física chega — ✅ (caiu nas duas revisões; corrigido na 2ª reabertura, ver o bloco no fim)
 3. 10 chaves `loading.msg.01`…`loading.msg.10` nos dois catálogos, com o texto da tabela da spec (o dono do produto pode cortar; se cortar, o `count` acompanha)
 4. Chaves para a mensagem de erro e o botão "tentar de novo" nos dois catálogos
 5. Função pura `messageAt(seed, tick, count)` → índice: determinística, cobre todos os índices ao longo de `count` ticks, nunca devolve o mesmo índice em dois ticks consecutivos
 6. Rotação a cada 1,5 s via timer que é limpo quando o overlay some
-7. Falha no boot mostra o erro fixo e o botão; clicar reexecuta o boot (o retry já é suportado pelo boot compartilhado) — ❌ **caiu na 2ª revisão (2026-09-11):** a superfície única de erro está certa; o que cai é a saída do estado de erro — só o botão "tentar de novo" move `bootState`, e `togglePlay`/`stepOnce` chamam `ensureSim()` direto, rebootam com sucesso e deixam `bootState` em `error`. Ver o bloco de revisão no fim.
+7. Falha no boot mostra o erro fixo e o botão; clicar reexecuta o boot (o retry já é suportado pelo boot compartilhado) — ✅ (caiu nas duas revisões; corrigido na 2ª reabertura, ver o bloco no fim)
 8. Paridade pt-BR/EN verde em `i18n.test.ts`
 9. Verificação live em browser: recarregar a página mostra o overlay com piada, some quando o motor carrega, e o primeiro play não tem atraso perceptível; simular falha (ex.: bloquear o wasm no devtools) mostra erro e "tentar de novo" funciona
 10. Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
@@ -289,5 +289,89 @@ estado mora só no `bootOnce`, não no boot compartilhado por onde todo mundo pa
   defensável, mas a cobertura de integração daquele caminho saiu.
 - `.claude/launch.json` continua sujo na árvore e fora dos Primary files. Não
   entrou em nenhum commit — não deixar entrar neste ticket.
+
+## Reabertura 2 — correções stage 2 (2026-09-11)
+
+O terceiro achado (critérios 2 e 7, overlay de erro sobrevivendo a um boot
+disparado por play) resolvido na raiz, com teste novo, mutate-verified, e
+reverificação live.
+
+### A causa, e por que os três achados têm a mesma forma
+
+As transições de `bootState` moravam no `bootOnce`, que era só **um** dos
+caminhos de boot. `togglePlay`, `stepOnce` e os atalhos de teclado chamam
+`ensureSim()` direto; depois de uma falha `simBootRef.current` fica `null`,
+então apertar ▶ começava um segundo boot que resolvia com `bootState` ainda em
+`error` — cena rodando atrás de um painel opaco `inset: 0` sem
+`pointerEvents: 'none'`, sem saída.
+
+A transição desceu para dentro do `ensureSim`, por onde os quatro chamadores
+passam: `'booting'` quando um boot de fato começa (o `??=` virou um `if`
+explícito, para saber a diferença entre começar um boot e pegar carona em um já
+em voo), `'ready'`/`'error'` nos braços da promessa. `bootOnce` virou
+`retryBoot` e agora só reinicia a rotação de piadas — o nome também parou de
+mentir (o botão chama mais de uma vez).
+
+Efeito colateral de graça: apertar ▶ depois de uma falha agora volta a mostrar
+a piada em vez de congelar no erro, porque o `'booting'` sai do mesmo lugar.
+
+### Teste novo
+
+`src/App.test.ts`, "leaves the error state when a boot triggered by play
+succeeds": rejeita o primeiro boot, confere a mensagem fixa, então clica **▶
+reproduzir** (não o "tentar de novo") com a segunda tentativa liberada para
+suceder, e afirma `createSimulator` chamado 2×, a mensagem de erro fora da
+página e `loadingOverlay(host)` inexistente — o canvas sem nenhum irmão por
+cima.
+
+Mutate-verify (`npx vitest run src/App.test.ts -t "leaves the error state"`):
+
+1. Removido `setBootState('ready')` do braço de sucesso. Vermelho: o overlay
+   continua na tela depois do boot bem-sucedido —
+   `expected <div …(1)></div> to be undefined`.
+2. Removido `setBootState('error')` do braço de rejeição. Vermelho: a mensagem
+   fixa nunca aparece — `expected '…Convencendo o gato de Schrödinger…' to
+   contain 'não foi possível carregar o motor de física'`.
+
+### Asserção de cobertura apertada (nota da revisão)
+
+`expect(overlay.style.inset).not.toBe('0')` só pegava a shorthand. Agora o
+teste varre `inset/top/right/bottom/left` contra `'0'` **e** `'0px'`: o jsdom
+mantém o `inset` (que ele não suporta) cru em `'0'` mas normaliza as longhands
+para `'0px'`, então checar só uma das grafias deixa a outra passar — a primeira
+versão desta asserção passou com o badge mutado para cobertura total escrita à
+moda longa, e foi refeita por causa disso.
+
+Mutate-verify (`npx vitest run src/App.test.ts -t "without blocking canvas pointer events"`):
+
+1. Badge remontado como cobertura total à moda longa
+   (`top/right/bottom/left: 0`). Vermelho:
+   `expected { edge: 'top', value: '0px' } to not deeply equal …`.
+2. Badge remontado com a shorthand (`inset: 0`). Vermelho:
+   `expected { edge: 'inset', value: '0' } to not deeply equal …`.
+
+### Semente sorteada uma vez (nota da revisão)
+
+`useRef(Math.floor(Math.random() * 0x7fffffff))` re-sorteava a cada render e
+jogava fora. Virou `useState(() => …)` com inicializador preguiçoso: um sorteio
+por sessão, que é o que a spec pede. Sem teste novo — comportamento observável
+idêntico, e a rotação já é coberta pelos testes de `messageAt`.
+
+### Verificação live em browser (critérios 2, 7, 9)
+
+`npm run dev`. Falha de boot simulada por um toggle local e temporário em
+`ensureSim` lido de `sessionStorage` (nunca commitado — `git diff --stat` limpo
+depois da reversão, com o `grep` do toggle voltando 0).
+
+- Com `failBoot=1`, recarregar mostrou só "não foi possível carregar o motor de
+  física" + "tentar de novo".
+- Limpei o toggle e cliquei **▶ reproduzir** (não o retry): a mensagem de erro
+  sumiu da página, o botão virou "⏸ pausar" e o canvas apareceu inteiro e
+  limpo, cena visível — exatamente o que ficava escondido atrás do painel antes.
+
+### Gate
+
+`npm test && npm run lint && npm run typecheck && npm run build` — exit 0,
+459 testes verdes (458 + o novo).
 
 ## Comments
