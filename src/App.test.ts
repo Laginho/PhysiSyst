@@ -3,12 +3,40 @@
 import { createElement } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
 import { trashRect } from './editor/trash'
+import { createSimulator, type Simulator } from './sim'
+import { ptBR } from './i18n/pt-BR'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+
+// The real simulator boots real wasm (rapier2d-compat) — fine for the app,
+// but nothing in this file asserts actual physics, only doc/UI state, so a
+// no-op fake removes real-boot timing from every test and lets the loading-
+// screen tests below control exactly when boot resolves/rejects.
+vi.mock('./sim', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./sim')>()),
+  createSimulator: vi.fn(),
+}))
+
+function makeFakeSimulator(): Simulator {
+  return {
+    warnings: [],
+    step: () => {},
+    readStates: () => new Map(),
+    readContacts: () => [],
+    setForceMagnitude: () => {},
+    setGravity: () => {},
+    setForceDirection: () => {},
+    setForceAnchor: () => {},
+    setBodyMass: () => {},
+    replaceScene: () => {},
+  }
+}
+
+const LOADING_JOKES = Array.from({ length: 10 }, (_, i) => ptBR[`loading.msg.${String(i + 1).padStart(2, '0')}` as keyof typeof ptBR])
 
 const originalGetContext = HTMLCanvasElement.prototype.getContext
 let root: Root | null = null
@@ -35,6 +63,8 @@ beforeEach(() => {
   document.body.innerHTML = ''
   window.localStorage.clear()
   containerSize = { width: 900, height: 600 }
+  vi.mocked(createSimulator).mockReset()
+  vi.mocked(createSimulator).mockImplementation(async () => makeFakeSimulator())
   Object.defineProperty(globalThis, 'ResizeObserver', {
     configurable: true,
     writable: true,
@@ -57,6 +87,7 @@ beforeEach(() => {
 afterEach(() => {
   if (root) act(() => root?.unmount())
   root = null
+  vi.useRealTimers()
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
     configurable: true,
     value: originalGetContext,
@@ -144,6 +175,14 @@ function pressKey(key: string, opts: Partial<KeyboardEventInit> = {}): void {
 
 function findButton(host: HTMLElement, text: string): HTMLButtonElement | undefined {
   return [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
+}
+
+// The loading overlay is the canvas's only sibling in its box — whatever it
+// renders (joke badge or error panel) sits right next to <canvas> in the DOM.
+function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
+  const canvas = host.querySelector('canvas')
+  const box = canvas?.parentElement
+  return [...(box?.children ?? [])].find((el) => el !== canvas) as HTMLElement | undefined
 }
 
 describe('smoke', () => {
@@ -591,5 +630,122 @@ describe('canvas fits its container (PHY-15)', () => {
       act(() => root?.unmount())
       root = null
     }
+  })
+})
+
+describe('loading screen (PHY-16)', () => {
+  it('boots the simulator on mount, before any play interaction', () => {
+    renderApp()
+    expect(createSimulator).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the loading overlay while booting, without blocking canvas pointer events', async () => {
+    let resolveBoot!: (sim: Simulator) => void
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise((resolve) => { resolveBoot = resolve }))
+
+    const host = renderApp()
+    expect(LOADING_JOKES.some((joke) => host.textContent?.includes(joke))).toBe(true)
+
+    // jsdom dispatches pointer events straight at the node you target, with no
+    // real hit-testing — clicking the canvas itself would "work" whether or
+    // not a full-cover overlay sits on top in a real browser. The seam that
+    // actually decides whether the student's clicks reach the canvas is the
+    // overlay's own pointer-events/coverage, so assert on that directly.
+    const overlay = loadingOverlay(host)
+    if (!overlay) throw new Error('missing loading overlay')
+    expect(overlay.style.pointerEvents).toBe('none')
+    // Every edge, not just the `inset` shorthand: a badge that grew back into
+    // a full cover written the long way would sail past a shorthand-only
+    // check. jsdom keeps the unsupported `inset` raw but normalises the
+    // longhands, so both spellings of zero count as covering an edge.
+    for (const edge of ['inset', 'top', 'right', 'bottom', 'left'] as const) {
+      expect({ edge, value: overlay.style[edge] }).not.toEqual({ edge, value: '0' })
+      expect({ edge, value: overlay.style[edge] }).not.toEqual({ edge, value: '0px' })
+    }
+
+    await act(async () => {
+      resolveBoot(makeFakeSimulator())
+      await Promise.resolve()
+    })
+  })
+
+  it('rotates the message every 1.5s and clears the timer once the sim is ready', async () => {
+    vi.useFakeTimers()
+    // A separate low-frequency readout poll runs for the app's whole
+    // lifetime — the assertion below must catch specifically the loading
+    // rotation's own interval being cleared, not just "some timer, somewhere".
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval')
+    let resolveBoot!: (sim: Simulator) => void
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise((resolve) => { resolveBoot = resolve }))
+
+    const host = renderApp()
+    const initial = LOADING_JOKES.find((joke) => host.textContent?.includes(joke))
+    expect(initial).toBeDefined()
+
+    act(() => { vi.advanceTimersByTime(1500) })
+    const afterOneTick = LOADING_JOKES.find((joke) => host.textContent?.includes(joke))
+    expect(afterOneTick).toBeDefined()
+    expect(afterOneTick).not.toBe(initial)
+
+    expect(clearSpy).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveBoot(makeFakeSimulator())
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(clearSpy).toHaveBeenCalled()
+    expect(LOADING_JOKES.some((joke) => host.textContent?.includes(joke))).toBe(false)
+  })
+
+  it('shows a fixed error with a retry button on boot failure; retry re-attempts the boot', async () => {
+    vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
+
+    const host = renderApp()
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    expect(host.textContent).toContain(ptBR['loading.error'])
+    // Exactly one error surface: the overlay's fixed message, never the raw
+    // exception text surfacing again in the simError side panel.
+    expect(host.textContent).not.toContain('boom')
+    const retry = findButton(host, ptBR['loading.retry'])
+    expect(retry).toBeDefined()
+
+    vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
+    await act(async () => {
+      retry?.click()
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    expect(createSimulator).toHaveBeenCalledTimes(2)
+    expect(host.textContent).not.toContain(ptBR['loading.error'])
+  })
+
+  it('leaves the error state when a boot triggered by play succeeds', async () => {
+    vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
+    const host = renderApp()
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+    expect(host.textContent).toContain(ptBR['loading.error'])
+
+    // The student presses play instead of "tentar de novo": that path boots
+    // through the same shared ensureSim, so a success there has to clear the
+    // error overlay too — otherwise the scene runs behind an opaque panel
+    // that never goes away and swallows every canvas pointer event.
+    vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
+    const play = findButton(host, ptBR['playback.play'])
+    if (!play) throw new Error('missing play button')
+    await act(async () => {
+      play.click()
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    expect(createSimulator).toHaveBeenCalledTimes(2)
+    expect(host.textContent).not.toContain(ptBR['loading.error'])
+    expect(loadingOverlay(host)).toBeUndefined()
   })
 })

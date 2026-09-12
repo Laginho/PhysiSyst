@@ -125,4 +125,53 @@ realocado a cada mudança de tamanho do container (`ResizeObserver` + efeito
 que depende de `size.width/size.height`), e o resize verificado ao vivo acima
 não estica nem borra o desenho.
 
+#### Resolution (2026-09-10)
+
+> Bloco reconstruído em 2026-09-11 a partir dos commits, porque o stage 3 de
+> então fechou o ticket sem ele (e sem a linha do ledger, backfillada em
+> `19d39da`). Tudo abaixo sai do histórico do git; nada foi reconstituído de
+> memória. Onde o registro original não existe, está dito.
+
+**Decisão:** merge. O canvas deixou de ser 900×600 fixo: `fitCanvas` decide o
+maior 3:2 que cabe no container (piso de 600px de largura, arredondado a
+múltiplo de 3 para os dois eixos caírem em pixel inteiro), o App observa o
+container com `ResizeObserver`, e transformação, câmera e lixeira passaram a
+derivar do tamanho atual em vez de constantes de módulo. A revisão não bounceou
+o ticket: achou dois defeitos que o jsdom não enxerga e os corrigiu na própria
+branch (ver "Segunda verificação live" acima).
+
+**Arquivos** (`git diff --stat 4671753 3913f79`, fora os de tracker):
+
+- Novo: `src/render/fitCanvas.ts`, `src/render/fitCanvas.test.ts`
+- `src/render/transform.ts`, `src/render/transform.test.ts` — ppm derivada da largura
+- `src/App.tsx` (+85/−58) — `ResizeObserver`, `geometryFor`, backing store por DPR
+- `src/App.test.ts` (+102) — clique relativo e lixeira em dois tamanhos
+- `FINAL_REPORT.md` — limitação #3 marcada como resolvida (critério 7)
+
+**Commits:** `629a226` (teste, vermelho) → `c431f9c`, `3e92e9b` (código) →
+`aa2f383` (docs) → `92e7cd1`, `670c760` (fixes da revisão) → `3913f79` (done).
+
+**Prova vermelho-verde.** O vermelho está fixado pela própria estrutura do
+commit de teste, e dá para conferir hoje sem rodar nada: em `629a226`,
+`src/render/fitCanvas.test.ts` existe mas `src/render/fitCanvas.ts` **não**
+(`git ls-tree -r --name-only 629a226 -- src/render/`), então o import não
+resolve; e `pixelsPerMeterForWidth` não aparece em `transform.ts` nesse commit
+(`git show 629a226:src/render/transform.ts | grep -c pixelsPerMeterForWidth` →
+0), então `transform.test.ts` também não tinha como passar. O verde chega em
+`c431f9c`/`3e92e9b`, que não tocam em arquivo de teste. Os três mutantes de
+`App.tsx` estão registrados na seção "Mutate-verify" acima, com o vermelho de
+cada um.
+
+**Portão.** A saída da execução original não foi registrada — o commit de
+fechamento não a guardou, e não dá para recuperá-la depois do fato. O que dá
+para afirmar: o portão completo (`npm test && npm run lint && npm run typecheck
+&& npm run build`) rodou verde em 2026-09-11, exit 0, na branch
+`phy/PHY-16-loading-screen`, que contém todo o código deste ticket.
+
+**Dois desvios de protocolo, registrados para não se repetirem:** `92e7cd1` é um
+fix de stage 3 que também acrescentou caso novo em `fitCanvas.test.ts` — pela
+regra mecânica do loop, teste novo significa reabrir para o stage 2, não
+corrigir na revisão. E `FINAL_REPORT.md` foi editado sem estar nos Primary
+files (o critério 7 pedia a marcação no comentário do ticket).
+
 ## Comments
