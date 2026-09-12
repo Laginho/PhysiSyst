@@ -1,5 +1,5 @@
 # PHY-16: Tela de carregamento com personalidade
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -147,5 +147,87 @@ comportamento, e ambos precisam de teste novo, então não cabem em fix pequeno.
   joga fora. Inofensivo, mas é ruído.
 - `.claude/launch.json` (entrada `preview`) ficou sujo na árvore e não está nos
   Primary files. Não entrou em nenhum commit — não deixar entrar neste ticket.
+
+## Reabertura — correções stage 2 (2026-09-11)
+
+Os dois achados da revisão (critério 2 e critério 7) resolvidos, com teste
+novo em cada um, mutate-verified, e reverificação live em browser.
+
+### Critério 2 — overlay não bloqueia mais o canvas
+
+Direção escolhida: **overlay não cobre o canvas inteiro.** Enquanto
+`bootState === 'booting'`, a piada aparece num badge pequeno (ancorado no
+topo, `maxWidth: 80%`) em vez do antigo `inset: 0` sobre a caixa toda —
+`pointerEvents: 'none'` nesse badge é seguro precisamente porque ele não
+esconde o canvas por baixo (o cuidado do critério: pointer-events:none
+sozinho, num overlay opaco cobrindo tudo, deixaria o aluno arrastar corpos
+que não enxerga). O estado `error` continua com o overlay cheio, opaco e
+capturando ponteiro — só o botão "tentar de novo" precisa ser clicável, e a
+spec não pede edição de cena durante uma falha de boot.
+
+Teste novo: `App.test.ts`, "shows the loading overlay while booting, without
+blocking canvas pointer events". `canvas.dispatchEvent(...)` não serve para
+provar isto — o jsdom despacha o evento direto no nó alvo, sem hit-testing
+real por posição/z-order, então um clique no `<canvas>` "funcionaria" mesmo
+com um overlay cobrindo tudo num browser de verdade. O teste em vez disso lê
+o próprio nó do overlay (`loadingOverlay(host)`, o único irmão do
+`<canvas>` na caixa) e afirma `style.pointerEvents === 'none'` e
+`style.inset !== '0'` — o mecanismo real que decide, num browser, se o
+clique atravessa até o canvas.
+
+Mutate-verify (`npx vitest run src/App.test.ts -t "without blocking canvas pointer events"`):
+
+1. Removido `pointerEvents: 'none'` do badge. Vermelho:
+   `expected '' to be 'none'`.
+2. Reintroduzido `inset: 0` no badge (badge voltando a cobrir a caixa
+   inteira). Vermelho: `expected '0' not to be '0'`.
+
+### Critério 7 — uma só superfície de erro
+
+Causa raiz: o caminho de rejeição de `ensureSim` chamava `fail(e)`, que
+seta `simError` com o texto cru da exceção — em paralelo à mensagem fixa do
+overlay. Como `simRef.current` só é escrito no braço de sucesso do boot
+(nunca resetado depois), esse caminho de rejeição só é alcançável **antes**
+de qualquer boot bem-sucedido — `playbackRef.current.status` não pode ser
+outra coisa que `'paused'` nesse ponto (nada chama `dispatch({type:'play'})`
+sem um `sim` resolvido). O `advance(..., {type:'pause'})` dentro de `fail`
+era portanto um no-op nesse caminho: a chamada inteira a `fail(e)` foi
+removida do braço de rejeição, deixando o overlay como única superfície.
+
+Teste alterado: `App.test.ts`, "shows a fixed error with a retry button on
+boot failure…" ganhou `expect(host.textContent).not.toContain('boom')`.
+
+Mutate-verify (`npx vitest run src/App.test.ts -t "shows a fixed error with a retry button"`):
+
+1. Reinstalado `fail(e)` no braço de rejeição. Vermelho: o texto cru `'boom'`
+   volta a aparecer via o painel `simError` — `expected '...boom' not to
+   contain 'boom'`.
+
+### Verificação live em browser (critérios 2, 7, 9 — reverificação)
+
+`npm run dev`, mesma técnica de atraso/falha artificial e local em
+`ensureSim` da rodada anterior (nunca commitado — `git diff --stat` limpo
+depois de cada reversão, confirmado acima).
+
+- **Overlay não bloqueia (critério 2)**: com atraso artificial de 4 s,
+  recarregar mostrou o badge "Renormalizando o infinito…" confinado ao topo
+  do canvas. Arrastei um corpo (retângulo) para outra posição enquanto o
+  badge ainda estava visível — o corpo moveu (painel "leitura — retangulo"
+  confirmou a posição nova, (10.06, 9.73) m) e ficou selecionado, prova de
+  que o ponteiro chegou ao canvas por baixo do badge.
+- **Primeiro play instantâneo (critério 9)**: boot completou (badge sumiu
+  do texto da página), cliquei "▶ reproduzir" e o botão virou "⏸ pausar" na
+  mesma interação, sem atraso perceptível.
+- **Uma só superfície de erro (critério 7)**: com o boot forçado a rejeitar
+  sempre, recarregar mostrou só "não foi possível carregar o motor de
+  física" + "tentar de novo" — sem o painel "erro de simulação" e sem o
+  texto cru da exceção (`falha simulada de boot`) em lugar nenhum da
+  página. Cliquei "tentar de novo": mesma superfície única reaparece, sem
+  duplicata.
+
+### Gate
+
+`npm test && npm run lint && npm run typecheck && npm run build` — exit 0,
+458 testes verdes.
 
 ## Comments

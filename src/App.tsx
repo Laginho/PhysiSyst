@@ -776,14 +776,16 @@ export default function App() {
         setSimError(null)
         return sim
       },
-      (e: unknown) => {
+      () => {
+        // The overlay's fixed message is the only error surface for a boot
+        // failure — no fail(e) here, or the raw exception text would also
+        // show up in the simError side panel at the same time.
         simBootRef.current = null // let the user fix the scene and retry
-        fail(e)
         return null
       },
     )
     return simBootRef.current
-  }, [fail])
+  }, [])
 
   /** Boots (or retries) the engine, driving the loading overlay's state. */
   const bootOnce = useCallback(() => {
@@ -1106,7 +1108,32 @@ export default function App() {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
-            {bootState !== 'ready' && (
+            {bootState === 'booting' && (
+              // A small badge, not a full-canvas cover: the student can see
+              // and edit the scene while the engine loads. pointerEvents:
+              // 'none' is only safe to rely on because the badge doesn't hide
+              // the canvas underneath it — an opaque full-cover overlay set
+              // to pointer-events:none would let the student drag bodies
+              // they can't see.
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  maxWidth: '80%',
+                  textAlign: 'center',
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  background: 'rgba(250, 251, 252, 0.92)',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+                  pointerEvents: 'none',
+                }}
+              >
+                {t(`loading.msg.${String(messageAt(bootSeedRef.current, messageTick, LOADING_MESSAGE_COUNT) + 1).padStart(2, '0')}`)}
+              </div>
+            )}
+            {bootState === 'error' && (
               <div
                 style={{
                   position: 'absolute',
@@ -1121,14 +1148,8 @@ export default function App() {
                   background: 'rgba(250, 251, 252, 0.92)',
                 }}
               >
-                {bootState === 'booting' ? (
-                  <div>{t(`loading.msg.${String(messageAt(bootSeedRef.current, messageTick, LOADING_MESSAGE_COUNT) + 1).padStart(2, '0')}`)}</div>
-                ) : (
-                  <>
-                    <div>{t('loading.error')}</div>
-                    <button onClick={bootOnce}>{t('loading.retry')}</button>
-                  </>
-                )}
+                <div>{t('loading.error')}</div>
+                <button onClick={bootOnce}>{t('loading.retry')}</button>
               </div>
             )}
           </div>
