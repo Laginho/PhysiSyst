@@ -1,5 +1,5 @@
 # PHY-16: Tela de carregamento com personalidade
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 
@@ -374,4 +374,99 @@ depois da reversão, com o `grep` do toggle voltando 0).
 `npm test && npm run lint && npm run typecheck && npm run build` — exit 0,
 459 testes verdes (458 + o novo).
 
+#### Resolution (2026-09-11)
+
+**Decisão: aprovado e mergeado.** Stage 3 não mudou nenhuma linha de código —
+merge direto em `main` (`--no-ff`, sem squash), `Stage: done` e a linha do
+ledger neste mesmo commit. Terceira rodada de revisão; os três achados das
+rodadas anteriores estão fechados e nenhum achado novo derruba um critério.
+
+**Portão**, rodado pelo reviewer antes de qualquer leitura de código
+(`npm test && npm run lint && npm run typecheck && npm run build`): exit 0,
+**27 arquivos de teste, 459 testes, todos verdes**; lint, `tsc --noEmit` e
+build limpos (só o aviso pré-existente de chunk > 500 kB).
+
+**Separação dos commits** conferida commit a commit: `ccb8f7c`, `84ba7f0`,
+`ca95d86`, `43a04ef` e `403a3aa` tocam só arquivo de teste (+ o md do ticket);
+`6e877fc`, `22a0d8f`, `b1ffb39`, `d75942f`, `89919d0` e `6b775c2` não tocam
+nenhum arquivo de teste. `.claude/launch.json` continuou sujo na árvore e não
+entrou em commit nenhum — conferido com `git diff-tree` em cada commit da
+branch.
+
+**Mutate-verify reexecutado pelo reviewer.** As 10 mutações registradas neste
+ticket foram reaplicadas uma a uma em `src/App.tsx`, cada uma rodada isolada
+com `-t`, e revertidas (árvore limpa depois de cada uma). Todas voltaram
+vermelhas **pelo motivo exato registrado** — nenhuma ficou verde:
+
+| # | Mutação | Vermelho obtido |
+|---|---|---|
+| 1 | efeito de mount não chama mais o boot | `expected "vi.fn()" to be called 1 times, but got 0 times` |
+| 2 | overlay de `booting` nunca renderiza | `expected false to be true` |
+| 3 | cleanup do timer de rotação removido | `expected "clearInterval" to be called at least once` |
+| 4 | `onClick` do "tentar de novo" vira no-op | `expected "vi.fn()" to be called 2 times, but got 1 times` |
+| 5 | badge perde `pointerEvents: 'none'` | `expected '' to be 'none'` |
+| 6 | badge volta a `inset: 0` (shorthand) | `expected { edge: 'inset', value: '0' } to not deeply equal …` |
+| 7 | badge cobre tudo à moda longa | `expected { edge: 'top', value: '0px' } to not deeply equal …` |
+| 8 | braço de sucesso sem `setBootState('ready')` | `expected <div …(1)></div> to be undefined` |
+| 9 | braço de rejeição sem `setBootState('error')` | `expected '…' to contain 'não foi possível carregar…'` |
+| 10 | `fail(e)` reinstalado no braço de rejeição | `expected '…' not to contain 'boom'` |
+
+Correção no registro, não na evidência: as mutações 1 e 4 estão escritas em
+termos de `bootOnce()`, que o commit `89919d0` renomeou/dissolveu (`retryBoot`
++ a transição dentro de `ensureSim`). Foram reexecutadas contra a forma que a
+branch de fato entrega — o efeito de mount chamando `ensureSim()` e
+`onClick={retryBoot}` — e deram o mesmo vermelho. A evidência vale; só o texto
+envelheceu.
+
+**Critério 9 (verificação live) — por que o registro serve.** A preocupação
+legítima é que a verificação live da Reabertura 1 antecede o refactor final.
+Conferido no diff: `89919d0` mexe só no encanamento do boot mais o nome do
+handler do botão (`onClick={bootOnce}` → `onClick={retryBoot}`); o JSX do badge
+e do painel de erro é **byte a byte idêntico** ao que foi verificado live.
+Os riscos que só o browser pega (timing real do wasm, pintura, hit-test real)
+não mudaram, e o que o refactor mudou — as transições de estado — está preso
+pelas mutações 8 e 9 em jsdom. A Reabertura 2 ainda reverificou live o par
+falha → ▶ play pós-refactor. Critério 9 honestamente atendido; fica só a
+observação de que a perna do botão "tentar de novo" foi reverificada em jsdom,
+não live, depois da renomeação.
+
+**Critérios 1–11: todos atendidos.** Os 10 textos de piada batem com a tabela
+da spec palavra por palavra nos dois catálogos (3); `i18n.test.ts` varre todas
+as chaves, então as 12 novas entram na paridade de graça (4, 8).
+
+**Achados das duas revisões paralelas, adjudicados — nenhum derruba critério:**
+
+- *"O overlay virou badge sem emenda de spec"*: a revisão da 1ª rodada listou
+  três direções aceitáveis e a 2ª delas era exatamente "overlay que não cobre o
+  canvas inteiro". Só a 3ª (assumir que arrastar espera o boot) exigia subir
+  para stage 1. A escolha foi a 2ª — dentro do que a revisão autorizou.
+- *"Critério 2 vale só em `booting`; o overlay de `error` bloqueia"*: o critério
+  tem `booting` como sujeito, e a spec não pede edição de cena durante falha de
+  boot. Desde `89919d0` esse estado também não sobrevive a um boot bem-sucedido
+  — que era o achado da 2ª rodada, agora fechado.
+- *`LOADING_MESSAGE_COUNT` em três lugares / chave dinâmica*: o critério 3
+  assume manutenção manual ("se cortar, o `count` acompanha"). Endossado pelo
+  critério, não é violação — mas é a terceira revisão seguida que anota isso.
+- *`position: 'relative'` na caixa do canvas sem teste nem mutação*: jsdom não
+  tem layout, então não há mutação possível ali; está coberto pela verificação
+  live ("badge confinado ao topo do canvas"). Afeta onde o badge desenha, não
+  se o aluno consegue editar — e as propriedades que decidem isso
+  (`pointerEvents`, cobertura) estão presas pelas mutações 5, 6 e 7.
+- *`messageAt` é mais máquina que o critério 5 pede*, *`vi.mock('./sim')` é de
+  arquivo inteiro*, *`setMessageTick(0)` no retry*: já anotados nas revisões
+  anteriores, nenhum contradiz a spec.
+
 ## Comments
+
+- **(stage 3, 2026-09-11)** Diagnóstico perdido no braço de rejeição do boot.
+  Tirar o `fail(e)` foi certo — era a segunda superfície de erro que a 1ª
+  revisão derrubou —, mas o braço hoje nem liga o parâmetro: a exceção do wasm
+  é engolida inteira, sem `console.error`, então o aluno vê a mensagem fixa e
+  quem for depurar não vê nada. Nenhum critério pede log, então não segurou o
+  merge. Cabe num `CLEAN-*` de uma linha em `src/App.tsx`.
+- **(stage 3, 2026-09-11)** `LOADING_MESSAGE_COUNT` e a aritmética de
+  `loading.msg.NN` seguem manuais, e `t()` cai de volta para a própria chave:
+  se o dono do produto cortar uma piada sem baixar o `count`, o aluno lê
+  `loading.msg.10` cru na tela — invisível para `tsc`, para o lint e para o
+  `i18n.test.ts`. Se stage 1 quiser fechar essa porta, derivar o `count` de
+  `allKeys()` filtrado pelo prefixo resolve num lugar só.
