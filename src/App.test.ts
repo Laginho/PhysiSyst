@@ -716,4 +716,29 @@ describe('loading screen (PHY-16)', () => {
     expect(createSimulator).toHaveBeenCalledTimes(2)
     expect(host.textContent).not.toContain(ptBR['loading.error'])
   })
+
+  it('leaves the error state when a boot triggered by play succeeds', async () => {
+    vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
+    const host = renderApp()
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+    expect(host.textContent).toContain(ptBR['loading.error'])
+
+    // The student presses play instead of "tentar de novo": that path boots
+    // through the same shared ensureSim, so a success there has to clear the
+    // error overlay too — otherwise the scene runs behind an opaque panel
+    // that never goes away and swallows every canvas pointer event.
+    vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
+    const play = findButton(host, ptBR['playback.play'])
+    if (!play) throw new Error('missing play button')
+    await act(async () => {
+      play.click()
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    })
+
+    expect(createSimulator).toHaveBeenCalledTimes(2)
+    expect(host.textContent).not.toContain(ptBR['loading.error'])
+    expect(loadingOverlay(host)).toBeUndefined()
+  })
 })
