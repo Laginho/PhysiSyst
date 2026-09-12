@@ -60,6 +60,7 @@ import { makeTransform, pixelsPerMeterForWidth, screenToWorld, type Camera, type
 import { fitCanvas } from './render/fitCanvas'
 import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
+import { messageAt } from './render/loadingMessage'
 import { getLang, setLang as persistLang, t, type Lang } from './i18n'
 import {
   AUTOSAVE_DELAY_MS,
@@ -81,6 +82,9 @@ import {
   type SceneIndexEntry,
   type Storage,
 } from './persistence'
+
+const LOADING_MESSAGE_COUNT = 10
+const LOADING_MESSAGE_INTERVAL_MS = 1500
 
 /** Camera/transform/trash-zone for the canvas's current logical size. */
 function geometryFor(width: number, height: number): { camera: Camera; transform: ScreenTransform; trash: Rect } {
@@ -461,6 +465,9 @@ export default function App() {
   const [simError, setSimError] = useState<string | null>(null)
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
+  const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting')
+  const [messageTick, setMessageTick] = useState(0)
+  const bootSeedRef = useRef(Math.floor(Math.random() * 0x7fffffff))
   const playbackRef = useRef<PlaybackState>(playback)
   const simRef = useRef<Simulator | null>(null)
   const simBootRef = useRef<Promise<Simulator | null> | null>(null)
@@ -778,6 +785,29 @@ export default function App() {
     return simBootRef.current
   }, [fail])
 
+  /** Boots (or retries) the engine, driving the loading overlay's state. */
+  const bootOnce = useCallback(() => {
+    setBootState('booting')
+    setMessageTick(0)
+    void ensureSim().then((sim) => setBootState(sim ? 'ready' : 'error'))
+  }, [ensureSim])
+
+  // Boot starts at mount (T-PHY-16), not at the first play, so playback never
+  // waits on it once the student presses play.
+  useEffect(() => {
+    bootOnce()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Rotates the loading joke every 1.5s while booting; the timer is cleared
+  // the moment boot leaves 'booting' (ready or error), never ticking an
+  // overlay that is no longer showing a joke.
+  useEffect(() => {
+    if (bootState !== 'booting') return
+    const id = setInterval(() => setMessageTick((t) => t + 1), LOADING_MESSAGE_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [bootState])
+
   // The playback loop. Deliberately thin: the scheduler decides how many
   // TIMESTEPs this frame is worth, this only executes them.
   useEffect(() => {
@@ -1061,7 +1091,7 @@ export default function App() {
             // Height comes from the row (stretch), NEVER from the canvas: sizing the
             // canvas off a box that shrink-wraps it is a feedback loop that grows
             // the canvas a few px every frame until it overflows.
-            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}
+            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
           >
             <canvas
               ref={canvasRef}
@@ -1077,6 +1107,31 @@ export default function App() {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
+            {bootState !== 'ready' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  textAlign: 'center',
+                  padding: 16,
+                  background: 'rgba(250, 251, 252, 0.92)',
+                }}
+              >
+                {bootState === 'booting' ? (
+                  <div>{t(`loading.msg.${String(messageAt(bootSeedRef.current, messageTick, LOADING_MESSAGE_COUNT) + 1).padStart(2, '0')}`)}</div>
+                ) : (
+                  <>
+                    <div>{t('loading.error')}</div>
+                    <button onClick={bootOnce}>{t('loading.retry')}</button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button onClick={togglePlay} style={{ minWidth: 110 }}>
