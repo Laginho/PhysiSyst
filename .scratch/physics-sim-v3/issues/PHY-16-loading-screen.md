@@ -1,5 +1,5 @@
 # PHY-16: Tela de carregamento com personalidade
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
@@ -16,12 +16,12 @@ Ao abrir o app, o motor de física (wasm) começa a carregar imediatamente, não
 #### Acceptance criteria
 
 1. O boot do simulador é disparado no mount do App (o boot compartilhado e idempotente já existe; só o gatilho muda)
-2. Estado visível "booting" mostra o overlay até o boot resolver; o overlay não bloqueia a edição de cena — o aluno pode montar a cena enquanto a física chega
+2. Estado visível "booting" mostra o overlay até o boot resolver; o overlay não bloqueia a edição de cena — o aluno pode montar a cena enquanto a física chega — ❌ **caiu na revisão (2026-09-11):** o overlay é `position: absolute; inset: 0` sobre o `<canvas>` sem `pointerEvents`, então engole `onPointerDown/Move/Up`. Mover, girar, redimensionar, arrastar α, snap, arrastar para a lixeira e selecionar ficam mortos enquanto carrega. Só a paleta e os painéis funcionam, porque ficam fora da caixa do canvas — e é exatamente só isso que o teste "without blocking scene editing" e a verificação live exercitaram.
 3. 10 chaves `loading.msg.01`…`loading.msg.10` nos dois catálogos, com o texto da tabela da spec (o dono do produto pode cortar; se cortar, o `count` acompanha)
 4. Chaves para a mensagem de erro e o botão "tentar de novo" nos dois catálogos
 5. Função pura `messageAt(seed, tick, count)` → índice: determinística, cobre todos os índices ao longo de `count` ticks, nunca devolve o mesmo índice em dois ticks consecutivos
 6. Rotação a cada 1,5 s via timer que é limpo quando o overlay some
-7. Falha no boot mostra o erro fixo e o botão; clicar reexecuta o boot (o retry já é suportado pelo boot compartilhado)
+7. Falha no boot mostra o erro fixo e o botão; clicar reexecuta o boot (o retry já é suportado pelo boot compartilhado) — ❌ **caiu na revisão (2026-09-11):** o caminho de rejeição do `ensureSim` continua chamando `fail(e)`, que seta `simError`. Na falha o aluno vê duas superfícies de erro ao mesmo tempo: a fixa do overlay e o painel `simError` com o texto cru da exceção. A spec pede mensagem "fixa", uma só.
 8. Paridade pt-BR/EN verde em `i18n.test.ts`
 9. Verificação live em browser: recarregar a página mostra o overlay com piada, some quando o motor carrega, e o primeiro play não tem atraso perceptível; simular falha (ex.: bloquear o wasm no devtools) mostra erro e "tentar de novo" funciona
 10. Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
@@ -103,5 +103,49 @@ commits acima.
 Sem teste jsdom para o timing real do boot (jsdom não carrega wasm real) —
 coberto só pela verificação live acima; os testes automatizados cobrem a
 lógica de estado (booting/ready/error) com o `./sim` mockado.
+
+## Revisão stage 3 (2026-09-11) — reaberto
+
+Portão verde (`npm test && npm run lint && npm run typecheck && npm run build`,
+exit 0) e a separação dos commits está correta: `ccb8f7c` é só teste, os commits
+de código não tocam em arquivo de teste, e o log mutate-verify bate com o
+protocolo do `AGENTS.md`. Nada disso é o problema — os dois achados abaixo são de
+comportamento, e ambos precisam de teste novo, então não cabem em fix pequeno.
+
+### O que falta (só isto)
+
+1. **Critério 2 — o overlay bloqueia a edição no canvas.** Ver o ❌ no critério.
+   O teste que diz cobrir isso clica em `retângulo` na paleta, que fica *fora* do
+   overlay: ele passa com o canvas inteiro morto. **Cuidado com o fix óbvio:** só
+   pôr `pointerEvents: 'none'` no overlay deixa o aluno arrastar corpos que ele
+   não enxerga, porque o fundo é `rgba(250, 251, 252, 0.92)` — praticamente
+   opaco. Decidir a direção antes de codar: overlay translúcido de verdade,
+   overlay que não cobre o canvas inteiro, ou assumir que arrastar espera o boot
+   e corrigir o critério. Se a escolha for a terceira, isto vira mudança de
+   critério e sobe para o stage 1, não se resolve aqui.
+   O teste novo tem que exercitar o seam de ponteiro do canvas durante `booting`
+   (não um botão de paleta), e mutate-verify conforme o `AGENTS.md`.
+
+2. **Critério 7 — duas superfícies de erro.** Ver o ❌ no critério. O fix mora em
+   `src/App.tsx` (o par `ensureSim`/`bootOnce`), dentro dos Primary files. O
+   teste `shows a fixed error with a retry button…` precisa passar a afirmar que
+   o texto cru da exceção **não** aparece.
+
+### Notas, não bloqueiam (não viram critério)
+
+- `LOADING_MESSAGE_COUNT = 10` é literal copiado à mão, e o `10` se repete em
+  `App.test.ts`. O critério 3 já assume que isso é manual ("se cortar, o `count`
+  acompanha"), então não é violação — mas derivar o `count` do catálogo mataria
+  a chance de alguém cortar uma piada e o aluno ver `loading.msg.10` cru na tela.
+  `t(\`loading.msg.${…}\`)` é a única chave dinâmica do repo: é o único lugar onde
+  um off-by-one escapa do `tsc` e do `i18n.test.ts`.
+- `bootOnce` faz `setMessageTick(0)` com o mesmo `bootSeedRef`, então todo retry
+  repete a mesma ordem de piadas desde a primeira. A spec sorteia o índice
+  inicial uma vez por sessão, o que o código cumpre; re-sortear no retry seria
+  só simpático.
+- `useRef(Math.floor(Math.random() * 0x7fffffff))` re-sorteia a cada render e
+  joga fora. Inofensivo, mas é ruído.
+- `.claude/launch.json` (entrada `preview`) ficou sujo na árvore e não está nos
+  Primary files. Não entrou em nenhum commit — não deixar entrar neste ticket.
 
 ## Comments
