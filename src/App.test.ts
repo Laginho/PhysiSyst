@@ -177,6 +177,14 @@ function findButton(host: HTMLElement, text: string): HTMLButtonElement | undefi
   return [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 }
 
+// The loading overlay is the canvas's only sibling in its box — whatever it
+// renders (joke badge or error panel) sits right next to <canvas> in the DOM.
+function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
+  const canvas = host.querySelector('canvas')
+  const box = canvas?.parentElement
+  return [...(box?.children ?? [])].find((el) => el !== canvas) as HTMLElement | undefined
+}
+
 describe('smoke', () => {
   it('loads the app module and exports a component', () => {
     expect(typeof App).toBe('function')
@@ -631,15 +639,22 @@ describe('loading screen (PHY-16)', () => {
     expect(createSimulator).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the loading overlay while booting, without blocking scene editing', async () => {
+  it('shows the loading overlay while booting, without blocking canvas pointer events', async () => {
     let resolveBoot!: (sim: Simulator) => void
     vi.mocked(createSimulator).mockImplementationOnce(() => new Promise((resolve) => { resolveBoot = resolve }))
 
     const host = renderApp()
     expect(LOADING_JOKES.some((joke) => host.textContent?.includes(joke))).toBe(true)
 
-    act(() => findButton(host, 'retângulo')?.click())
-    expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(true)
+    // jsdom dispatches pointer events straight at the node you target, with no
+    // real hit-testing — clicking the canvas itself would "work" whether or
+    // not a full-cover overlay sits on top in a real browser. The seam that
+    // actually decides whether the student's clicks reach the canvas is the
+    // overlay's own pointer-events/coverage, so assert on that directly.
+    const overlay = loadingOverlay(host)
+    if (!overlay) throw new Error('missing loading overlay')
+    expect(overlay.style.pointerEvents).toBe('none')
+    expect(overlay.style.inset).not.toBe('0')
 
     await act(async () => {
       resolveBoot(makeFakeSimulator())
@@ -686,6 +701,9 @@ describe('loading screen (PHY-16)', () => {
     })
 
     expect(host.textContent).toContain(ptBR['loading.error'])
+    // Exactly one error surface: the overlay's fixed message, never the raw
+    // exception text surfacing again in the simError side panel.
+    expect(host.textContent).not.toContain('boom')
     const retry = findButton(host, ptBR['loading.retry'])
     expect(retry).toBeDefined()
 
