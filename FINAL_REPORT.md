@@ -114,3 +114,45 @@ Highlights:
 ## Known Limitations (v2, carried forward from v1 §4 unless noted)
 
 All ten v1 items stand. No new limitations introduced by v2 — the drag-to-trash, contact-snap, and initial-velocity seams reused existing structural-rebuild and dependents-cleanup paths rather than adding new state machinery.
+
+---
+
+# physics-sim v3 — Release digno (desktop)
+
+**Closeout in progress, PHY-17.** Five tickets making the app reachable by a student without Node or git — a public URL, four automated gates, and four first-run gaps closed (snap now declares Contact, undo/redo, a canvas that fits its container, a loading screen with personality) — plus this closeout sweep.
+
+## Scope Delivered (PHY-12–PHY-16)
+
+| Ticket | Deliverable |
+|---|---|
+| PHY-12 Release mechanics | LICENSE MIT, CI (4 gates, Node 22, on PR + push), GitHub Pages deploy via Actions, `base: '/PhysiSyst/'`, `version` 0.3.0 |
+| PHY-13 Snap declares Contact | Snap resolver returns the winning neighbor; Contact created on pointer-up with μs=μk=0 (ADR-0002 default); duplicate pair is a silent no-op; Contact survives the body being dragged away |
+| PHY-14 Undo/redo, Delete, shortcuts | Pure history module (50-entry cap), Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, Delete/Backspace, Space/→/R/Esc, `?` shortcut popover, ↶↷ buttons in the playback bar |
+| PHY-15 Canvas fits its container | `fitCanvas` letterboxes to 3:2 (600px floor), `ResizeObserver`-driven; camera, transform and trash hit-box all derive from the current size instead of mount-time constants |
+| PHY-16 Loading screen | wasm boot fires on mount; overlay rotates 10 pt-BR/EN physics jokes; failure shows a fixed error with a working retry |
+
+## Gate Outcomes
+
+- **459 tests / 27 files, all green** (`npm test`); lint, `tsc --noEmit`, and `vite build` clean (only the pre-existing >500 kB chunk-size advisory).
+- CI green on the latest merge (`7f61cf6`, PHY-16): https://github.com/Laginho/PhysiSyst/actions/runs/34664290774
+- Deploy green on the same commit: https://github.com/Laginho/PhysiSyst/actions/runs/34664315722
+
+**Infrastructure gap found and fixed during this closeout (PHY-17):** GitHub Pages had never actually been enabled on the repository (`has_pages: false`) — every `Deploy` run since PHY-12 failed with `Get Pages site failed`, and `https://laginho.github.io/PhysiSyst/` 404'd. PHY-12's own criterion 7 (record the first green deploy link) was never fulfilled or checked, so this went unnoticed for three merges. Fixed by enabling Pages via `gh api repos/Laginho/PhysiSyst/pages -X POST -f build_type=workflow` and re-running Deploy. Related gap: the whole PHY-16 branch (18 commits, merge included) had been merged to local `main` but never pushed to `origin` — CI/Deploy had literally never run against it. Fixed with `git push`; both are now green on the true latest commit, and the site serves the current build.
+
+## Desktop Manual Pass (D1–D8)
+
+Pending — to be executed by the reviewer against the published site (`https://laginho.github.io/PhysiSyst/`), not localhost, before this ticket closes. Results to be recorded here.
+
+## v1 T12 Mobile Items — `wontfix`
+
+The 10 mobile-touch items from v1's T12 checklist (posted 2026-08-23) are declared `wontfix`: physics-sim's public is the Brazilian desktop student (Windows), and mobile is out of horizon (v3 spec, Out of Scope). T12's 8 desktop items are superseded by D1–D8 above. The original checklist text was posted in conversation and never persisted to a repo file — `.scratch/physics-sim/TASKS.md` and `LOGS.md` record its existence (10 mobile + 8 desktop items) but not the item-by-item wording, so it isn't reproduced here.
+
+## Known Limitations (carried from v1 §4)
+
+All ten v1 items stand, with one change: **#3 (window resize during playback) is resolved by PHY-15** — the canvas now measures its container via `ResizeObserver` and never stretches.
+
+## Next Steps (v4 candidates)
+
+- Constraints: rope → pulley → spring.
+- Restitution (elastic collisions), out of scope since v1.
+- Code-split the Rapier2D wasm bundle (the >500 kB chunk advisory has stood since v1).

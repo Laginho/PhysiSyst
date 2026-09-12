@@ -1,5 +1,5 @@
 # PHY-17: Closeout — sweep, passe manual desktop e FINAL_REPORT v3
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-12, PHY-13, PHY-14, PHY-15, PHY-16
 
@@ -43,3 +43,53 @@ Fechar o ciclo com evidência. O gate verde localmente e no CI do último merge.
 Nenhum. Ticket de closeout: a prova é o gate, o passe manual D1–D8 e o relatório. Se um item D vira código, ele vira ticket próprio, com os testes lá.
 
 ## Comments
+
+#### Stage 2 (2026-09-11) — sweep + closeout prep, D1–D8 left for the reviewer
+
+Nenhum arquivo de `src/` tocado (fora dos Primary files, como o ticket manda).
+Este ticket delega o passe manual (critérios 1–8, 10) ao reviewer no site
+publicado — o que segue é o que estava disponível para stage 2 fazer antes
+disso.
+
+**Dois achados de infraestrutura, ambos corrigidos antes de qualquer outra
+coisa (autorizados pelo usuário em chat, por serem mudança de configuração de
+repositório/push para `main`):**
+
+1. GitHub Pages nunca tinha sido habilitado (`gh api repos/Laginho/PhysiSyst
+   --jq .has_pages` → `false`). Toda execução do workflow `Deploy` desde o
+   PHY-12 falhava com `Get Pages site failed`, e o site publicado respondia
+   404. Corrigido com `gh api repos/Laginho/PhysiSyst/pages -X POST -f
+   build_type=workflow`.
+2. O branch local do PHY-16 (18 commits, merge incluído) nunca tinha sido
+   enviado a `origin/main` — `git status` mostrava `ahead 18`. CI/Deploy nunca
+   rodaram sobre esse estado. Corrigido com `git push origin main`.
+
+Depois dos dois fixes, CI e Deploy rodaram verdes sobre o commit real mais
+recente (`7f61cf6`, merge do PHY-16):
+
+- CI: https://github.com/Laginho/PhysiSyst/actions/runs/34664290774
+- Deploy: https://github.com/Laginho/PhysiSyst/actions/runs/34664315722
+- Site publicado confirmado servindo o build atual (verificado em browser:
+  título "physics-sim", botões ↶ ↷ e `?` presentes, confirmando PHY-13/14/16).
+
+**Gate local** (`npm test && npm run lint && npm run typecheck && npm run
+build`), rodado nesta branch: **459 testes / 27 arquivos verdes**, lint limpo,
+`tsc --noEmit` limpo, build ok (só o aviso pré-existente de chunk > 500 kB).
+Critério 9 atendido.
+
+Critério 13 já estava atendido: PHY-12–PHY-16 em `Stage: done`, cada um com
+linha no `ledger.md`.
+
+**FINAL_REPORT.md** ganhou a seção "physics-sim v3": escopo por ticket,
+resultado do gate, os dois achados de infra acima, os 10 itens mobile do T12
+como `wontfix` (com a nota de que o texto original do checklist nunca foi
+persistido em arquivo do repo — só a existência dele em `TASKS.md`/`LOGS.md`
+do v1), limitações conhecidas (as 10 do v1, #3 marcada resolvida pelo PHY-15,
+já assim desde o próprio PHY-15) e os próximos passos de v4. A seção
+"Desktop Manual Pass (D1–D8)" está marcada **pendente** — critérios 1–8 e 10
+ficam para o reviewer preencher com o resultado real no site publicado, e
+criterion 11 (mobile wontfix) já está escrito lá.
+
+O que falta para fechar: passe manual D1–D8 no site publicado, cada ❌ virando
+ticket novo, e o preenchimento do resultado em FINAL_REPORT antes de marcar
+`Stage: done`.
