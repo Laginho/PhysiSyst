@@ -654,7 +654,14 @@ describe('loading screen (PHY-16)', () => {
     const overlay = loadingOverlay(host)
     if (!overlay) throw new Error('missing loading overlay')
     expect(overlay.style.pointerEvents).toBe('none')
-    expect(overlay.style.inset).not.toBe('0')
+    // Every edge, not just the `inset` shorthand: a badge that grew back into
+    // a full cover written the long way would sail past a shorthand-only
+    // check. jsdom keeps the unsupported `inset` raw but normalises the
+    // longhands, so both spellings of zero count as covering an edge.
+    for (const edge of ['inset', 'top', 'right', 'bottom', 'left'] as const) {
+      expect({ edge, value: overlay.style[edge] }).not.toEqual({ edge, value: '0' })
+      expect({ edge, value: overlay.style[edge] }).not.toEqual({ edge, value: '0px' })
+    }
 
     await act(async () => {
       resolveBoot(makeFakeSimulator())
