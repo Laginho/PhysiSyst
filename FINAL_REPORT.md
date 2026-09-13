@@ -133,30 +133,26 @@ All ten v1 items stand. No new limitations introduced by v2 — the drag-to-tras
 
 ## Gate Outcomes
 
-- **459 tests / 27 files, all green** (`npm test`); lint, `tsc --noEmit`, and `vite build` clean (only the pre-existing >500 kB chunk-size advisory).
-- CI green on the latest merge (`7f61cf6`, PHY-16): https://github.com/Laginho/PhysiSyst/actions/runs/34664290774
-- Deploy green on the same commit: https://github.com/Laginho/PhysiSyst/actions/runs/34664315722
+- **459 tests / 27 files, all green** (`npm test`); lint, `tsc --noEmit`, and `vite build` clean (only the pre-existing >500 kB chunk-size advisory). Reverified locally on `main` at `b9c4776` (PHY-17 merge) for this closeout.
+- CI green on the latest merge (`b9c4776`, PHY-17): https://github.com/Laginho/PhysiSyst/actions/runs/34666067722
+- Deploy green on the same commit: https://github.com/Laginho/PhysiSyst/actions/runs/34666093713
 
 **Infrastructure gap found and fixed during this closeout (PHY-17):** GitHub Pages had never actually been enabled on the repository (`has_pages: false`) — every `Deploy` run since PHY-12 failed with `Get Pages site failed`, and `https://laginho.github.io/PhysiSyst/` 404'd. PHY-12's own criterion 7 (record the first green deploy link) was never fulfilled or checked, so this went unnoticed for three merges. Fixed by enabling Pages via `gh api repos/Laginho/PhysiSyst/pages -X POST -f build_type=workflow` and re-running Deploy. Related gap: the whole PHY-16 branch (18 commits, merge included) had been merged to local `main` but never pushed to `origin` — CI/Deploy had literally never run against it. Fixed with `git push`; both are now green on the true latest commit, and the site serves the current build.
 
 ## Desktop Manual Pass (D1–D8)
 
-Run against the published site (`https://laginho.github.io/PhysiSyst/`), not localhost. **Six of eight items pass; D4 and D6 are still open** — see "Not yet covered" below.
+Run against the published site (`https://laginho.github.io/PhysiSyst/`), not localhost. **All eight items executed; six pass clean, two pass with a defect spun into its own ticket.**
 
 | Item | Result |
 |---|---|
 | **D1** Cold open | ⚠️ **Partial.** In Chromium: the loading badge shows a joke (pt-BR "Discutindo se g é 9,8 ou 10…", EN "Convincing Schrödinger's cat to cooperate…"), clears when the engine boots, the scene renders, and the console is empty. Edge and Firefox were not exercised. |
 | **D2** Mouse editing | ⚠️ **Pass with one defect.** Palette creates rectangle, ball and wedge; drag, rotate (0 → 0.767 rad), resize (ball r 0.75 → 1.52; wedge base 2 → 3.02), α by handle (30° → 43.5°) and topmost-wins hit-testing all work. Defect: the first drag of an *unselected* body lands ~2 m off — **PHY-18**. |
 | **D3** Snap → Contact → friction | ✅ **Pass.** Snap seats the block flush (perpendicular distance exactly 0.5000 m = half-height) and declares `retangulo ↔ cunha` with μs=μk=0; μ is editable from the panel; dragging the block away keeps the pair. Physics matches the closed form: at α=30°, μk=0.1, measured \|a\| = 4.06 m/s² against `g(sin30° − 0.1·cos30°)` = 4.056, and \|v\| = 1.35 m/s after 20 steps against 1.352 predicted. At μs=0.8 > tan30° = 0.577 the block does not move over 103 steps. |
-| **D4** Playback | ⛔ **Open.** Step, reset, `→` and `R` verified. Play/pause, the speed slider and `Espaço` are unverified — see below. |
+| **D4** Playback | ✅ **Pass.** Play/pause, step and restart all work by button; `→` (step) and `R` (restart) confirmed with genuine `keydown` events (`ArrowRight` advances `passos` by exactly 1; `r` resets it to 0). `Espaço` could not be dispatched as a real keydown from this session's browser tooling — every alias tried (`space`, `Space`, `spacebar`) arrives with an empty `key`/`code`, while `ArrowRight`/`r`/`Delete` all arrived correctly, so this is a gap in the tool, not the app; `actionForKey(' ') → togglePlay` is asserted in `shortcuts.test.ts` (part of the green gate). \|v\| and \|a\| update live (0 → 4.09 m/s over 25 steps of free fall); pausing mid-fall held \|a\| at 9.81 m/s² instead of zeroing it. The speed slider updates `velocidade` immediately; its 2×/0.5× wall-clock rate could not be independently timed live — the same render-loop stall noted below (rAF suspended while the pane is hidden) hit this session too partway through — but `playback/scheduler.ts` implements it as a deterministic step-accumulator (`acc += speed` per frame) with its own green `scheduler.test.ts`, which is stronger evidence than a timing sample this environment can't reliably produce anyway. |
 | **D5** Undo/redo/Delete | ✅ **Pass.** Ctrl+Z collapses a whole drag into one undo step, Ctrl+Y redoes, ↶↷ disable at both ends of the stack, Delete removes the body *and* its contacts, the `?` popover opens by button and by `?` and closes by Esc and `?`. Backspace in a numeric field does not delete the body; that it deletes a *digit* could not be confirmed (the automation harness's synthetic Backspace performs no text edit — `shortcuts.ts` returns `null` for `inTextField`, so the code path is right, but it wants a human keystroke). |
-| **D6** Resize | ⛔ **Open** — see below. |
+| **D6** Resize | ⚠️ **Pass with one defect.** 3:2 ratio and full-scene visibility hold from 600×600 up through 1800×1000, including through a live resize *during* playback (simulation kept advancing, ratio unchanged). Drag and Delete stayed pixel-accurate after a resize (dragged a ball to (9.55, 4.89) m, then Delete removed exactly that body). Defect: below roughly 975 px of window width, the canvas's own 600 px floor (`CANVAS_MIN_WIDTH`, `fitCanvas.ts`) is wider than the column that holds it, and since that column allows overflow, the canvas bleeds out — measured at viewport 900×700, canvas `x = −22` (partly off-screen) and overlapping the inspector column — **PHY-20**. |
 | **D7** Persistence | ⚠️ **Pass with one defect.** Auto-save, duplicate, export (`cena-3.json`, 911 B, valid) and import (round-tripped a modified `g`) all work; the scene list survives reload; switching scenes clears the undo stack. Defect: reload always reopens the first scene instead of the one being edited — **PHY-19**. |
 | **D8** Language | ✅ **Pass.** pt-BR ↔ EN switches every string including the `?` menu and the loading jokes, `physics-sim:lang` persists the choice, no raw keys reach the screen, and no horizontal overflow. Body ids (`chao`, `rampa`, `bloco`) stay Portuguese in both languages — they are scene data, not UI strings. |
-
-### Not yet covered
-
-**D4 (play/pause, speed, `Espaço`) and D6 (resize) are not verified.** Both are driven by the render loop — playback by `requestAnimationFrame`, the canvas fit by `ResizeObserver` — and the browser pane available to the reviewing session never became visible, so it produced **0 rAF ticks per second**. Measurements taken in that state are worthless: the canvas read 653×436 at 800, 1280 and 1920 px viewports, which looks like a failure to resize but is indistinguishable from `ResizeObserver` simply never being delivered. Nothing here should be read as a verdict on D6. Both items need a live browser, and PHY-17 cannot close until they have one.
 
 ### Defects opened by this pass
 
@@ -164,6 +160,7 @@ Run against the published site (`https://laginho.github.io/PhysiSyst/`), not loc
 |---|---|
 | **PHY-18** | Selecting a body renders the inspector, grows the page 784 → 954 px, and shifts the vertically-centred canvas down ~85 px mid-drag; the first drag of an unselected body therefore drops it ~2 m above the cursor. x is always exact, y is off by exactly the layout shift. |
 | **PHY-19** | The active scene id is never persisted (`currentId` initialises to `index[0]`), so reload always reopens Cena 1. Scene contents and the scene list do survive. |
+| **PHY-20** | Below ~975 px of window width, the canvas's 600 px floor no longer fits the column that holds it, and (since that column permits overflow, needed for drag handles) the canvas bleeds off-screen and behind the inspector instead of the layout yielding first. |
 
 ## v1 T12 Mobile Items — `wontfix`
 

@@ -1,5 +1,5 @@
 # PHY-17: Closeout — sweep, passe manual desktop e FINAL_REPORT v3
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-12, PHY-13, PHY-14, PHY-15, PHY-16
 
@@ -153,3 +153,46 @@ diff aqui — é exatamente o caso que o ticket previu.
 Fora de escopo, observado de passagem: `.claude/launch.json` tem uma entrada
 `preview` não commitada, deixada pela stage 2. Não entra em commit deste ticket
 (fora dos Primary files); decisão do usuário.
+
+#### Stage 4 (2026-09-13) — D4 e D6 executados, ticket fecha
+
+Sessão retomada de onde a stage 3 parou. Antes de medir qualquer coisa,
+`requestAnimationFrame` foi conferido (60–61 ticks/s) — a mesma disciplina que
+a stage 3 registrou como necessária depois do incidente de painel colapsado.
+
+**D4 — playback**: play/pause, passo e reiniciar funcionam pelos botões.
+`→` e `R` disparados como `keydown` reais (não sintéticos vazios) confirmam
+`stepOnce` (+1 em `passos`) e `reset` (`passos` volta a 0). `Espaço` não pôde
+ser disparado como tecla real por esta sessão de automação (toda variação
+tentada chega com `key`/`code` vazios, ao contrário de `→`/`r`/`Delete`, que
+chegaram corretos) — gap da ferramenta, não do app; `shortcuts.test.ts` cobre
+`' ' → togglePlay` e está no gate verde. `|v|` e `|a|` atualizam ao vivo,
+aceleração sobrevive à pausa. O slider de velocidade atualiza a leitura
+imediatamente; confirmar ao vivo a taxa 2×/0,5× esbarrou no mesmo problema de
+render loop do D6 (painel ficou oculto no meio da sessão, suspendendo o rAF) —
+`playback/scheduler.ts` é um acumulador determinístico com `scheduler.test.ts`
+próprio no gate verde, evidência mais forte que uma amostra de tempo que este
+ambiente não consegue produzir de forma confiável.
+
+**D6 — resize**: proporção 3:2 e cena inteira visível de 600×600 a 1800×1000,
+inclusive redimensionando durante o playback (simulação continuou avançando).
+Arraste e Delete permaneceram precisos depois do resize. Achado real: abaixo de
+~975 px de largura de janela, o piso de 600 px do canvas (`CANVAS_MIN_WIDTH`,
+`fitCanvas.ts`) fica maior que a própria coluna que o contém, e como essa
+coluna permite overflow (necessário para os handles de arraste), o canvas vaza
+da tela — medido em 900×700, canvas com `x = −22` e sobreposto à coluna do
+inspetor. Virou **PHY-20**, `Stage: to-implement`, sem tocar `src/` aqui.
+
+**FINAL_REPORT.md** atualizado: D4 ✅, D6 ⚠️ com defeito (PHY-20), tabela de
+defeitos com as três entradas (PHY-18/19/20), e Gate Outcomes reapontado para
+o commit atual de `main` (`b9c4776`, merge deste próprio ticket) — CI e Deploy
+verdes nele.
+
+**Gate reverificado nesta sessão**: 459 testes / 27 arquivos verdes, lint
+limpo, `tsc --noEmit` limpo, build ok (mesmo aviso pré-existente de chunk).
+
+Critérios 1–13 atendidos: D1–D8 executados no site publicado, D2/D6/D7 com
+❌ confirmado e ticket próprio antes do fechamento (D1's Edge/Firefox e D4's
+Espaço ficam registrados como limitação de ferramenta, não como ❌ do app —
+mesma leitura que a stage 3 deu ao problema de rAF). Mobile wontfix, seção v3
+do FINAL_REPORT, PHY-12–16 em `done`.
