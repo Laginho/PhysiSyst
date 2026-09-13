@@ -58,9 +58,10 @@ import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
 import { drawArrow, drawGrid, drawScene } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, type Camera, type ScreenTransform } from './render/transform'
 import { fitCanvas } from './render/fitCanvas'
+import { messageAt } from './render/loadingMessage'
 import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
-import { getLang, setLang as persistLang, t, type Lang } from './i18n'
+import { allKeys, getLang, setLang as persistLang, t, type Lang } from './i18n'
 import {
   AUTOSAVE_DELAY_MS,
   DebouncedSaver,
@@ -87,6 +88,9 @@ function geometryFor(width: number, height: number): { camera: Camera; transform
   const camera: Camera = { centerX: 6, centerY: 4, pixelsPerMeter: pixelsPerMeterForWidth(width) }
   return { camera, transform: makeTransform(camera, width, height), trash: trashRect(width, height) }
 }
+
+/** Jokes shown while WASM boots — counted off the catalog so cutting one there is enough. */
+const LOADING_COUNT = allKeys().filter((k) => k.startsWith('loading.msg.')).length
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -459,6 +463,10 @@ export default function App() {
    */
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
+  /** WASM boot, started on mount so the first play is instant; drives the overlay. */
+  const [boot, setBoot] = useState<'booting' | 'ready' | 'failed'>('booting')
+  const [loadingSeed] = useState(() => Math.floor(Math.random() * LOADING_COUNT))
+  const [loadingTick, setLoadingTick] = useState(0)
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
   const playbackRef = useRef<PlaybackState>(playback)
@@ -767,16 +775,29 @@ export default function App() {
         // Edits made while WASM was booting land at the next frame boundary.
         pendingRebuildRef.current = docRef.current !== bootDoc
         setSimError(null)
+        setBoot('ready')
         return sim
       },
       (e: unknown) => {
         simBootRef.current = null // let the user fix the scene and retry
         fail(e)
+        setBoot('failed')
         return null
       },
     )
     return simBootRef.current
   }, [fail])
+
+  useEffect(() => {
+    void ensureSim()
+  }, [ensureSim])
+
+  // Joke rotation, only while the overlay is up.
+  useEffect(() => {
+    if (boot !== 'booting') return
+    const id = setInterval(() => setLoadingTick((n) => n + 1), 1500)
+    return () => clearInterval(id)
+  }, [boot])
 
   // The playback loop. Deliberately thin: the scheduler decides how many
   // TIMESTEPs this frame is worth, this only executes them.
@@ -1061,7 +1082,7 @@ export default function App() {
             // Height comes from the row (stretch), NEVER from the canvas: sizing the
             // canvas off a box that shrink-wraps it is a feedback loop that grows
             // the canvas a few px every frame until it overflows.
-            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}
+            style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}
           >
             <canvas
               ref={canvasRef}
@@ -1077,6 +1098,50 @@ export default function App() {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
+            {boot !== 'ready' && (
+              // Sits over the canvas but lets every pointer event through: the
+              // student keeps composing the scene while physics is on its way.
+              <div
+                role={boot === 'booting' ? 'status' : 'alert'}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  margin: 'auto',
+                  width: size.width,
+                  height: size.height,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 12,
+                  padding: 24,
+                  boxSizing: 'border-box',
+                  textAlign: 'center',
+                  fontSize: 18,
+                  fontStyle: 'italic',
+                  color: boot === 'booting' ? '#555' : '#b00',
+                  background: 'rgba(250, 251, 252, 0.75)',
+                  pointerEvents: 'none',
+                }}
+              >
+                {boot === 'booting' ? (
+                  t(`loading.msg.${String(messageAt(loadingSeed, loadingTick, LOADING_COUNT) + 1).padStart(2, '0')}`)
+                ) : (
+                  <>
+                    <span>{t('loading.error')}</span>
+                    <button
+                      style={{ pointerEvents: 'auto' }}
+                      onClick={() => {
+                        setBoot('booting')
+                        void ensureSim()
+                      }}
+                    >
+                      {t('loading.retry')}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button onClick={togglePlay} style={{ minWidth: 110 }}>
