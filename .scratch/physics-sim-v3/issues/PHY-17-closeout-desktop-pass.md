@@ -1,6 +1,6 @@
 # PHY-17: Closeout — sweep, passe manual desktop e FINAL_REPORT v3
 Stage: done
-Status: ready-for-agent
+Status: closed
 Blocked by: PHY-12, PHY-13, PHY-14, PHY-15, PHY-16
 
 - Primary files:
@@ -196,3 +196,33 @@ Critérios 1–13 atendidos: D1–D8 executados no site publicado, D2/D6/D7 com
 Espaço ficam registrados como limitação de ferramenta, não como ❌ do app —
 mesma leitura que a stage 3 deu ao problema de rAF). Mobile wontfix, seção v3
 do FINAL_REPORT, PHY-12–16 em `done`.
+
+#### Resolution (2026-09-13)
+
+**Verdict: Approve.**
+
+Reviewed on `main` at `93f5441`, independently of the stage 3/4 sessions:
+
+- **Gate** rerun here: 459 tests / 27 files green, `eslint .` clean, `tsc --noEmit`
+  clean, `vite build` ok (only the pre-existing >500 kB chunk advisory).
+  CI run 34764873537 and Deploy run 34764902227 green on this commit;
+  `https://laginho.github.io/PhysiSyst/` responds 200.
+- **Spec axis**: criteria 9–13 verified against the files — FINAL_REPORT v3 section
+  present with all eight D rows filled, defect table PHY-18/19/20 with matching
+  `Stage: to-implement` tickets, mobile `wontfix` with reason, PHY-12–16 `done`
+  with ledger lines, Gate Outcomes pointing at a real `main` commit. Criteria 1–8
+  accepted as recorded in the report: D3, D5, D8 pass; D2, D6, D7 pass with a
+  defect each, ticketed before closing (criterion 10); D4 passes with two
+  sub-items (Espaço, 2×/0,5× timing) resting on unit tests due to tool limits.
+- **Standards axis**: only Primary files touched, no `src/` diff, every ❌ carries
+  measured numbers, tool limitations labelled as such instead of reported ✅.
+
+**Accepted limitation**: D1 was exercised in Chromium only; Edge and Firefox were
+not run. Accepted under criterion 10's "❌ explicitly accepted as limitation"
+clause — no engine-specific code exists in `src/`, and the public target is
+Windows desktop where Chromium/Edge share an engine.
+
+**Process notes for the board** (no action on this ticket): the branch was merged
+by local `git merge` rather than PR, before an Approve verdict, and closed by
+commits directly on `main`. Outcome is sound; trail is now completed by this block.
+Same merge habit applies to PHY-14–16.
