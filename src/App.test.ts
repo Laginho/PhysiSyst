@@ -3,10 +3,25 @@
 import { createElement } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
 import { trashRect } from './editor/trash'
+import { ptBR } from './i18n/pt-BR'
+import type { Simulator } from './sim'
+
+// The WASM boot is the one async seam in App. Mocked so each test decides when
+// (and whether) the engine comes up; by default it never does, which also keeps
+// every other test here free of real Rapier init and post-unmount state updates.
+const simMock = vi.hoisted(() => ({
+  createSimulator: vi.fn<(typeof import('./sim'))['createSimulator']>(),
+  real: null as (typeof import('./sim'))['createSimulator'] | null,
+}))
+vi.mock('./sim', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('./sim')>()
+  simMock.real = mod.createSimulator
+  return { ...mod, createSimulator: simMock.createSimulator }
+})
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -34,6 +49,8 @@ class FakeResizeObserver {
 beforeEach(() => {
   document.body.innerHTML = ''
   window.localStorage.clear()
+  simMock.createSimulator.mockReset()
+  simMock.createSimulator.mockImplementation(() => new Promise<Simulator>(() => {}))
   containerSize = { width: 900, height: 600 }
   Object.defineProperty(globalThis, 'ResizeObserver', {
     configurable: true,
@@ -432,6 +449,7 @@ describe('undo/redo, delete, atalhos (PHY-14)', () => {
   it(
     'undo during playback pauses transport, then restores the doc',
     async () => {
+      simMock.createSimulator.mockImplementation(simMock.real!) // this one really plays
       const host = renderApp()
       act(() => findButton(host, 'retângulo')?.click())
 
@@ -591,5 +609,90 @@ describe('canvas fits its container (PHY-15)', () => {
       act(() => root?.unmount())
       root = null
     }
+  })
+})
+
+describe('tela de carregamento (PHY-16)', () => {
+  const FAKE_SIM = { readContacts: () => [] } as unknown as Simulator
+  const JOKES = Object.entries(ptBR)
+    .filter(([k]) => k.startsWith('loading.msg.'))
+    .map(([, v]) => v as string)
+
+  /** Next boot resolves/rejects only when the test says so. */
+  function deferredBoot() {
+    const d: { resolve: (s: Simulator) => void; reject: (e: unknown) => void } = { resolve: () => {}, reject: () => {} }
+    simMock.createSimulator.mockImplementationOnce(
+      () =>
+        new Promise<Simulator>((res, rej) => {
+          d.resolve = res
+          d.reject = rej
+        }),
+    )
+    return d
+  }
+
+  const overlayOf = (host: HTMLElement) => host.querySelector<HTMLElement>('[role="status"]')
+
+  afterEach(() => vi.useRealTimers())
+
+  it('dispara o boot do motor no mount, sem clicar em reproduzir (critério 1)', () => {
+    renderApp()
+    expect(simMock.createSimulator).toHaveBeenCalledTimes(1)
+  })
+
+  it('o overlay mostra uma piada do catálogo e não bloqueia a edição da cena (critério 2)', () => {
+    const host = renderApp()
+    const overlay = overlayOf(host)
+    expect(overlay).not.toBeNull()
+    expect(JOKES.length).toBe(10)
+    expect(JOKES).toContain(overlay?.textContent?.trim())
+    // Pointer events pass straight through to the canvas underneath.
+    expect(overlay?.style.pointerEvents).toBe('none')
+
+    act(() => findButton(host, 'nova cena')?.click())
+    act(() => findButton(host, 'retângulo')?.click())
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+    const before = currentPosition(host, 'retangulo')
+    dragTo(canvas, before, { x: before.x + 3, y: before.y })
+    expect(currentPosition(host, 'retangulo').x).toBeCloseTo(before.x + 3, 1)
+    expect(overlayOf(host)).not.toBeNull() // still booting the whole time
+  })
+
+  it('a piada troca a cada 1,5 s e o timer é limpo quando o motor fica pronto (critério 6)', async () => {
+    vi.useFakeTimers()
+    const boot = deferredBoot()
+    const host = renderApp()
+    const first = overlayOf(host)?.textContent?.trim()
+    expect(JOKES).toContain(first)
+
+    act(() => vi.advanceTimersByTime(1499))
+    expect(overlayOf(host)?.textContent?.trim()).toBe(first)
+    act(() => vi.advanceTimersByTime(1))
+    const second = overlayOf(host)?.textContent?.trim()
+    expect(JOKES).toContain(second)
+    expect(second).not.toBe(first)
+
+    const timersWhileBooting = vi.getTimerCount()
+    await act(async () => boot.resolve(FAKE_SIM))
+    expect(overlayOf(host)).toBeNull()
+    expect(vi.getTimerCount()).toBe(timersWhileBooting - 1)
+  })
+
+  it('falha no boot mostra o erro fixo e "tentar de novo" refaz o boot (critério 7)', async () => {
+    const boot = deferredBoot()
+    const host = renderApp()
+    await act(async () => boot.reject(new Error('wasm blocked')))
+
+    expect(overlayOf(host)).toBeNull()
+    const alert = host.querySelector<HTMLElement>('[role="alert"]')
+    expect(alert?.textContent).toContain(ptBR['loading.error' as keyof typeof ptBR])
+    const retry = findButton(host, ptBR['loading.retry' as keyof typeof ptBR])
+    expect(retry).toBeDefined()
+
+    act(() => retry?.click())
+    expect(simMock.createSimulator).toHaveBeenCalledTimes(2)
+    expect(overlayOf(host)).not.toBeNull() // back to booting
+    expect(host.querySelector('[role="alert"]')).toBeNull()
   })
 })

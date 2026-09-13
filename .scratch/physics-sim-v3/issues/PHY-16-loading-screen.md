@@ -1,5 +1,5 @@
 # PHY-16: Tela de carregamento com personalidade
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 
