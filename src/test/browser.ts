@@ -260,12 +260,18 @@ export async function openBrowserSession(width: number): Promise<BrowserSession>
  */
 export async function withBrowserSession<T>(width: number, timeoutMs: number, scenario: (session: BrowserSession) => Promise<T>): Promise<T> {
   const session = await openBrowserSession(width)
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
       scenario(session),
-      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('browser scenario timed out')), timeoutMs)),
+      new Promise<never>((_resolve, reject) => {
+        // Cleared in the finally: a live timer would hold the event loop open
+        // for the rest of timeoutMs after a scenario that finished early.
+        timer = setTimeout(() => reject(new Error('browser scenario timed out')), timeoutMs)
+      }),
     ])
   } finally {
+    clearTimeout(timer)
     await session.close()
   }
 }
