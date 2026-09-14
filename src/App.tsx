@@ -1097,14 +1097,17 @@ export default function App() {
           </select>
         </label>
       </div>
-      <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+      {/* Let the viewport allocate the row, independently of either column's
+          intrinsic content size (including the canvas's previous size). */}
+      <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, width: '100%', contain: 'size' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0, minHeight: 0 }}>
           <div
             ref={canvasBoxRef}
             // Height comes from the row (stretch), NEVER from the canvas: sizing the
             // canvas off a box that shrink-wraps it is a feedback loop that grows
             // the canvas a few px every frame until it overflows.
-            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
+            // Keep the scene at the top of the available canvas area.
+            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
           >
             <canvas
               ref={canvasRef}
@@ -1243,7 +1246,11 @@ export default function App() {
             <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
           </div>
         </div>
-        <div style={{ display: 'grid', gap: 8, alignSelf: 'flex-start' }}>
+        {/* The row sets the panel height; excess content scrolls independently.
+            The width is fixed because the panel's content width changes with the
+            selection and the canvas rectangle must not follow it: without it the
+            canvas narrows 15 px at 1280 on selection and the PHY-18 tests fail. */}
+        <div style={{ display: 'grid', gap: 8, width: 270, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"

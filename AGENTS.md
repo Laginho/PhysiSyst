@@ -37,3 +37,5 @@ Which chat runs which stage is `docs/agents/loop.md`; the per-chat model and eff
 - Models: stage 1 fable, stage 2 sonnet, stage 3 opus
 
 Branches are named `phy/PHY-NN-<slug>` off the base branch.
+
+The gate needs a Chromium on the machine. Some layout tests serve the app with Vite and measure real geometry in a headless browser, because jsdom computes no layout. `CHROME_BIN` points at the executable when it sits outside the standard paths; with no browser those tests fail loudly instead of skipping.
