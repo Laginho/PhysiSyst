@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -162,3 +162,49 @@ Red antes da correção: `npx vitest run src/App.test.ts -t PHY-18`:
 **2 failed, 2 passed, 28 skipped**. Na caixa 1600×600, selecionar alterou
 900×600 para 1332×888; arraste sem seleção terminou em
 (7.351351351351351, 6.972972972972974), contra (~8, 6) com seleção.
+
+#### Stage 2 — correção da reabertura (2026-09-13)
+
+Pendências dos critérios 1, 2, 3 e 5 implementadas; marcas da revisão acima
+preservadas como histórico para a próxima etapa 3.
+
+- Red: `9609ed8`, somente testes e ticket. Commit de produção não altera testes.
+- Linha com `contain: size` recebe o espaço do viewport sem crescer pelo tamanho
+  intrínseco das colunas/canvas. Inspetor com contenção, largura de 270 px,
+  stretch e rolagem própria; canvas permanece ancorado no topo.
+- Nenhuma alteração em `fitCanvas.ts` ou na aritmética dos handlers de arraste.
+- FakeResizeObserver reentrega mudanças após pointerdown; o espelho conta os
+  controles realmente renderizados, em vez de atribuir alturas por shape.
+
+Mutate-verify em `src/App.tsx`, comando `npx vitest run src/App.test.ts -t PHY-18`:
+
+| Teste / largura da caixa | Mutação | Saída vermelha |
+|---|---|---|
+| geometria / 1600 | contenção do inspetor `size` → `none` | 1332×888, esperado 900×600; left 134, esperado 350 |
+| arraste / 1600 | contenção do inspetor `size` → `none` | (7.351351351351351, 6.972972972972974), esperado (~8, 6) |
+| geometria / 900 | contenções `size` → `none` e âncora `flex-start` → `center` | top 144, esperado 0 |
+| arraste / 900 | contenções `size` → `none` e âncora `flex-start` → `center` | (8, 8.4), esperado (8, 6) |
+
+Primeira mutação: **2 failed, 2 passed, 28 skipped**. Segunda: **4 failed,
+28 skipped**, incluindo novamente as duas falhas em 1600. Mutações removidas.
+
+Validação adicional no Chromium real, DOM/getBoundingClientRect:
+
+- 1920×1080: caixa 1611×960 e canvas 1442×962 (inclui borda de 1 px),
+  dimensões estáveis com inspetores de retângulo, cunha e bola renderizados.
+  Medição feita antes do ajuste final da largura do inspetor de 250 para 270 px.
+- 2560×700, largura final do inspetor: caixa 2231×580, canvas 872×582
+  (conteúdo 870×580, 3:2), retângulo `{left:695.5, top:48, width:872,
+  height:582}` idêntico sem seleção e após clique direto na bola.
+  Inspetor `clientWidth === scrollWidth === 255`: sem rolagem horizontal.
+- Screenshot confirmou cena inteira visível e rolagem vertical do inspetor.
+  A contenção da linha foi necessária também para eliminar realimentação do
+  tamanho intrínseco do canvas, observada no navegador durante a implementação.
+
+Limite: o arraste comparativo usa handlers reais sob jsdom; o passe no navegador
+confere layout e seleção, não repete esse arraste. O espelho continua uma
+aproximação de layout, complementada pelas medições reais acima.
+
+Verificação focada: **2 arquivos, 38 testes passaram**. Gate completo exit 0:
+**27 arquivos, 463 testes passaram**, lint, typecheck e build verdes.
+Aviso de bundle >500 kB permanece pré-existente. Pronto para etapa 3.
