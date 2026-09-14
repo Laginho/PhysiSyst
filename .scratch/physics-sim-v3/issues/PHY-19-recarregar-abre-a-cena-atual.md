@@ -1,5 +1,5 @@
 # PHY-19: Recarregar a página volta para a cena em que eu estava
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 
@@ -147,3 +147,68 @@ sobrevive). Os demais mantêm o veredito do Review 1.
     # Test Files 1 passed, Tests 4 passed | 32 skipped — sub-suíte PHY-19
     npm test && npm run lint && npm run typecheck && npm run build
     # 27 arquivos, 471 testes, lint/typecheck/build limpos
+
+#### Resolution (2026-09-14)
+
+**Aprovado e mergeado** — PR #4, merge commit `261dafd`. Revisão em dois eixos
+(Standards + Spec) em sub-agentes separados, mais reexecução própria da mutação
+que reabriu o ticket no Review 1.
+
+**Critérios:** 6/6 ✅. O critério 2, que o Review 1 derrubou pela metade, agora
+está inteiro: a mutação 3 morre. O critério 4 fica ✅ com a nota do Review 1
+reinterpretada — o critério pede literalmente que excluir "deixa a chave em um
+estado que o critério 3 cobre", e o handler de exclusão não limpa
+`CURRENT_SCENE_KEY`, então o id órfão é exatamente o que a checagem de
+pertinência absorve. O teste passar sob a mutação 2 é o comportamento pedido,
+não um buraco na cobertura.
+
+**Mutate-verify reexecutado pelo reviewer.** Mutação 3 aplicada sozinha em
+`src/App.tsx:446`, `loadSceneOrBlank(storage, currentId)` →
+`loadSceneOrBlank(storage, res.index[0]!.id)`:
+
+    Tests  2 failed | 34 passed (36)
+    AssertionError: expected '…' to contain 'marca-cena-3'
+    AssertionError: expected '…' to contain 'marca-cena-2'
+
+O `textContent` recebido mostra `marca-cena-1` carregado enquanto o picker diz
+`cena-2` — a divergência que a suíte anterior deixava passar. Revertida com
+`git checkout --`, árvore limpa conferida antes do gate.
+
+Correção de número: o Attempt 2 registra esta mutação como
+`Tests 2 failed | 1 passed (36)`, que é uma rodada filtrada por `-t`. O número
+real do arquivo inteiro é `2 failed | 34 passed (36)`. O vermelho é o mesmo; só
+o denominador estava filtrado.
+
+**Correção do reviewer** (`bd5b8f1`, comentário apenas, dentro dos Primary
+files, sem teste novo): o JSDoc de `loadCurrentSceneId` agora diz por que a
+função recebe o índice em vez de carregá-lo, ao contrário de todas as outras do
+módulo — o único chamador já tem um `loadIndexResult` e não pode reler, porque
+em `kind: 'corrupt'` não há índice contra o qual checar pertinência.
+
+**Notas não aplicadas** (nenhuma bloqueante):
+
+- O `catch {}` vazio em `saveCurrentSceneId` não é outlier — acompanha
+  `ackGallery`, a mesma família de flag de preferência. A família que devolve
+  warning (`saveIndex`, `saveScene`) é para payload de cena, que o App mostra
+  via `setStorageWarning`. Perder um cursor em silêncio é o tier certo.
+- `setSelectValue` repete a dança de descriptor-setter de `setNativeInputValue`,
+  e `window.localStorage as unknown as PersistStorage` aparece 3× em
+  `src/App.test.ts`. Deixados: mexer em teste recém-verificado depois do
+  mutate-verify invalidaria a evidência registrada, por ganho cosmético.
+- `CURRENT_SCENE_KEY` guarda um id, não uma cena; `currentSceneId` leria mais
+  verdadeiro. A chave de storage já é superfície de compatibilidade.
+- O teste de exclusão checa só o valor do picker, não o conteúdo recarregado.
+  Comportamento correto, teste que não prende a própria carga útil.
+
+**Arquivos:** `src/App.tsx` (9 linhas de produção), `src/persistence/index.ts`
+(17 + o JSDoc), `src/App.test.ts`, `src/persistence/persistence.test.ts`.
+Nenhum arquivo fora dos Primary files.
+
+**Gate**, em árvore limpa depois de reverter a mutação:
+
+    npm test && npm run lint && npm run typecheck && npm run build
+    Test Files  27 passed (27)
+         Tests  471 passed (471)
+    lint, typecheck e build limpos
+
+CI do PR (`gates`): pass em 41s.
