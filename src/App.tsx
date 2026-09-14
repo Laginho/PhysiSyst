@@ -441,6 +441,8 @@ export default function App() {
     }
     if (res.kind === 'corrupt') return blankScene()
     if (res.index.length === 0) return blankScene()
+    // Reads `currentId` from the initializer above — load-bearing declaration
+    // order: this useState must stay below the one that sets `currentId`.
     const { scene } = loadSceneOrBlank(storage, currentId)
     return scene
   })
