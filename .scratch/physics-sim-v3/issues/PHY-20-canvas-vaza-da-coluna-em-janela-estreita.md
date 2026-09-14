@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
@@ -118,3 +118,81 @@ um ticket à parte (o padrão já existe no `describe` do PHY-18).
 Gate verde: `npm test && npm run lint && npm run typecheck && npm run build`
 (472 testes; um timeout solto em `simulator.test.ts` reproduziu-se isolado
 como passou, falha não relacionada a este ticket).
+
+### Stage 3 — revisão (2026-09-14): reaberto
+
+Gate verde confirmado (472/472, lint, typecheck e build limpos), mas gate verde
+não é o contrato — os critérios são. Medi a geometria real no Chromium com o
+mesmo harness CDP do PHY-18 (`src/App.test.ts:668`), Vite servindo o app,
+`Emulation.setDeviceMetricsOverride` em 14 larguras, `getBoundingClientRect()`
+lido depois de 8 frames idênticos consecutivos. **O empilhamento não conserta o
+vazamento: ele o gira 90°.** O canvas deixou de passar por cima do inspetor pela
+direita e passou a passar por cima dele por baixo, em *todas* as larguras
+empilhadas.
+
+Causa: na linha empilhada (`flexDirection: 'column'`), o inspetor continua com
+`flexShrink: 0` e passa a ter altura de conteúdo (~944 px) maior que a própria
+linha (936 px). Não sobra espaço, e a coluna do canvas (`flex: 1, minHeight: 0`)
+encolhe até **zero**. O canvas, de 402 px de altura, fica dentro de uma caixa de
+0 px com `overflow: 'visible'` — desenha por cima do inspetor inteiro. Medido:
+
+| viewport | `flexDirection` | coluna do canvas | canvas | inspetor | intersecta? |
+|---|---|---|---|---|---|
+| 1400 | row | 1071×936 | 1073×716 @ x 15 | x 1099–1369 | não |
+| 950 | row | 621×936 | 623×416 @ x 15 | x 649–919 | não |
+| 900 | column | 853×**0** | 602×402 @ y 64–466 | y 76–1020 | **sim** |
+| 700 | column | 653×**0** | 602×402 @ y 64–466 | y 76–1020 | **sim** |
+| 600 | column | 553×**0** | 602×402 @ **x −8,5** | y 76–1020 | **sim** |
+| 360 | column | 313×**0** | 602×402 @ **x −128,5** | y 76–1039 | **sim** |
+
+Screenshot em 900 px confirma a olho: o canvas cobre a galeria de cenas, os
+botões `nova cena`/`excluir cena`/`exportar .json` e metade do painel de leitura.
+
+Critérios:
+
+1. ❌ O layout muda abaixo de 882 px, mas não "antes que o canvas ultrapasse sua
+   coluna" — ele ultrapassa do mesmo jeito, agora no eixo vertical (coluna de
+   0 px de altura contra canvas de 402 px).
+2. ❌ Os retângulos do canvas e da coluna do inspetor se intersectam em **toda**
+   largura empilhada medida (900, 882, 881, 850, 800, 700, 620, 600, 500, 400,
+   360), tanto no carregamento quanto no redimensionamento sem reload.
+3. ❌ Abaixo de ~610 px o canvas sai do viewport pela esquerda (`left = −8,5` em
+   600; `−128,5` em 360). O piso de 600 px da `fitCanvas` continua maior que a
+   coluna, e o `justifyContent: 'center'` da caixa reparte o excedente pelos dois
+   lados — o scroll horizontal da página que aparece aí não alcança a metade
+   esquerda, porque `left` negativo não é rolável.
+4. ✅ Sem regressão: 1920/1400/1000/950 continuam 3:2 (aspecto 1.500), dentro do
+   viewport e sem sobreposição; os testes de PHY-15/PHY-18 seguem verdes.
+5. ❌ O mutate-verify registrado é real, mas protege um proxy que não implica os
+   critérios. A inferência do stage 2 — "`flexDirection: 'column'` empilha os
+   blocos, o que por construção do flexbox impede compartilhar uma linha
+   horizontal" — é falsa: um item flex que colapsa a zero e tem
+   `overflow: visible` volta a ocupar o espaço do irmão. Foi exatamente o que
+   aconteceu. Nenhuma mutação que colapse a coluna do canvas teria ficado
+   vermelha, porque nenhum assert olha altura nem sobreposição.
+6. ✅ Gate verde (472/472, lint, typecheck, build).
+
+Fica para o stage 2 (a direção de empilhar está certa; o estado empilhado é que
+nunca foi dimensionado):
+
+- Dar altura ao estado empilhado. O inspetor não pode ser `flexShrink: 0` quando
+  a linha é coluna — ou ele ganha `flexShrink: 1` com `minHeight` próprio e
+  `overflowY: 'auto'`, ou a linha inteira passa a rolar verticalmente e a coluna
+  do canvas ganha altura definida (`flexBasis` da altura do canvas, ou
+  `flexShrink: 0` no lado do canvas em vez do inspetor).
+- Resolver o piso abaixo de ~632 px de viewport, que é o caso que sobra depois
+  disso: com a coluna medindo `viewport − 32`, `Math.max(CANVAS_MIN_WIDTH, …)`
+  ainda nasce maior que o pai. Se a decisão for scroll horizontal, a caixa do
+  canvas precisa de `justifyContent: 'flex-start'` e um ancestral com
+  `overflowX: 'auto'`, senão o excedente da esquerda fica inalcançável.
+- **O teste precisa medir, não inferir.** Critérios 2 e 3 são geométricos e o
+  jsdom não os enxerga; o harness Chromium do PHY-18 já existe no mesmo arquivo e
+  aceita uma largura por parâmetro. Um caso que asserta
+  `canvas.right <= innerWidth && canvas.left >= 0` e ausência de interseção com o
+  retângulo do inspetor, em ~3 larguras empilhadas, é o que teria pego isto.
+  Mantenha também o teste jsdom da histerese: a lógica de limiar dele está
+  correta e o mutate-verify dela é válido.
+- A histerese em si está certa e pode ficar: empilhado a caixa mede a linha
+  inteira `W`, lado a lado mede `W − 282`, então os dois ramos cruzam no mesmo
+  `W = 882` e o estado converge. O sweep 1400→500→1400 sem reload não oscilou em
+  nenhum passo (`settled` em todas as 15 medidas).
