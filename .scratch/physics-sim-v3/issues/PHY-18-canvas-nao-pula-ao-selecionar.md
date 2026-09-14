@@ -390,3 +390,26 @@ Registrado, sem bloquear:
   continua sendo assunto do PHY-20.
 
 Código mudou nesta etapa, então vai por PR e para aqui.
+
+#### Stage 3 — revisão do PR (2026-09-13): a largura do inspetor é prova, não política
+
+A revisão em dois eixos do PR #3 recomendou tirar `width: 270, flexShrink: 0`
+do inspetor (`src/App.tsx:1250`) por ser "política horizontal do PHY-20" sem
+mutação que a sustentasse. A mutação foi feita nesta passada e derruba a
+recomendação:
+
+| mutação em `src/App.tsx`, a partir do HEAD | `npx vitest run src/App.test.ts -t PHY-18` |
+|---|---|
+| nenhuma | 4 passed, 28 skipped |
+| remover `width: 270, flexShrink: 0` do inspetor | **4 failed** — geometria/1280: canvas `width 893`, esperado `908`; geometria/1920: `x 60.48`, esperado `67.98`; arraste/1280: `x 8.16`, esperado `8.00`; arraste/1920: `x 8.08`, esperado `8.00` |
+
+Sem largura fixa, a largura intrínseca do inspetor muda quando um corpo é
+selecionado (sem seleção há só um checkbox; com seleção, fieldsets), a coluna
+do canvas estreita 15 px e o ppm muda no meio do arraste — o erro passa para
+**x**. A largura fixa é a metade horizontal do critério 1, e agora está
+mutate-verified como as demais linhas. O que fica para o PHY-20 é o valor
+(270) e quem cede em janela estreita, não a existência da largura fixa.
+
+Correção desta passada: só o comentário acima da linha, que dizia apenas
+"altura" e induziu a leitura errada. Gate reexecutado: exit 0, **27 arquivos,
+463 testes**, lint, typecheck e build limpos. `git diff --check` limpo.

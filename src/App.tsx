@@ -1246,7 +1246,10 @@ export default function App() {
             <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
           </div>
         </div>
-        {/* The row sets the panel height; excess content scrolls independently. */}
+        {/* The row sets the panel height; excess content scrolls independently.
+            The width is fixed because the panel's content width changes with the
+            selection and the canvas rectangle must not follow it: without it the
+            canvas narrows 15 px at 1280 on selection and the PHY-18 tests fail. */}
         <div style={{ display: 'grid', gap: 8, width: 270, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
           <label style={{ fontSize: 14 }}>
             <input
