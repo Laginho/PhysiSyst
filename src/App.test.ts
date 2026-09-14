@@ -149,6 +149,13 @@ function sceneSelect(host: HTMLElement): HTMLSelectElement {
   return select
 }
 
+function setSelectValue(select: HTMLSelectElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  if (!setter) throw new Error('HTMLSelectElement.value setter is unavailable')
+  setter.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 // Drags whatever body sits at world (from.x, from.y) to world (to.x, to.y).
 // Snap adjusts the exact resting position, so callers doing a second drag on
 // an already-snapped body must pass its CURRENT position (see
@@ -970,6 +977,21 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const host = renderApp()
     expect(sceneSelect(host).value).toBe('cena-1')
+  })
+
+  it('trocar de cena persiste a nova cena como atual — reload abre a escolhida, não a primeira', () => {
+    seedThreeScenes()
+
+    const host = renderApp()
+    expect(sceneSelect(host).value).toBe('cena-1')
+    act(() => setSelectValue(sceneSelect(host), 'cena-2'))
+    expect(sceneSelect(host).value).toBe('cena-2')
+
+    act(() => root?.unmount())
+    root = null
+
+    const reopened = renderApp()
+    expect(sceneSelect(reopened).value).toBe('cena-2')
   })
 
   it('excluir a cena atual e reinicializar abre a primeira do índice restante, sem tela quebrada', () => {
