@@ -1,5 +1,5 @@
 # PHY-19: Recarregar a página volta para a cena em que eu estava
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -108,3 +108,42 @@ presa por teste nenhum.
   load-bearing.
 
 Fora de escopo daqui: nada. Os arquivos Primary já cobrem tudo acima.
+
+#### Attempt 2 (2026-09-14) — fecha o achado do Review 1
+
+`seedThreeScenes` (`src/App.test.ts`) agora grava um corpo extra único por
+cena (`marca-<id>`) em vez de `blankScene()` nas três, e os dois testes que
+reabrem/trocam de cena passam a checar `host.textContent` por esse marcador,
+além do valor do `<select>`. Nenhuma mudança de produção — o loader já lia
+`currentId` corretamente; faltava só o teste capaz de provar isso.
+
+**Mutate-verify (as três, reexecutadas nesta sessão contra o teste atual):**
+
+1. `currentId` init (`src/App.tsx:435`) → `res.index[0]?.id ?? 'cena-1'`
+   (dropa `loadCurrentSceneId`).
+   🔴 `Tests 3 failed | 1 passed (36)`.
+2. `saveCurrentSceneId(storage, id)` removido de `switchToScene`
+   (`src/App.tsx:515` antes da mudança).
+   🔴 `Tests 1 failed | 3 passed (36)` — o teste de exclusão segue verde sob
+   esta mutação (nota do critério 4 acima, inalterada: comportamento correto,
+   teste que não prende a própria carga útil).
+3. `doc` init (`src/App.tsx:444`) → `loadSceneOrBlank(storage, res.index[0]!.id)`.
+   🔴 **Agora morre**: `Tests 2 failed | 1 passed (36)` — as duas asserções de
+   `marca-cena-N` caem, exatamente a mutação que a suíte anterior deixava
+   passar.
+
+Todas as três revertidas antes da próxima; suíte completa depois de reverter:
+`Test Files 27 passed (27) / Tests 471 passed (471)`.
+
+Comentário adicionado em `src/App.tsx` (init de `doc`) sobre a ordem
+load-bearing dos dois `useState`.
+
+**Critérios, revisitados:** 5 agora ✅ (mutação registrada e fechada, nenhuma
+sobrevive). Os demais mantêm o veredito do Review 1.
+
+**Verification:**
+
+    npx vitest run src/App.test.ts src/persistence/persistence.test.ts
+    # Test Files 1 passed, Tests 4 passed | 32 skipped — sub-suíte PHY-19
+    npm test && npm run lint && npm run typecheck && npm run build
+    # 27 arquivos, 471 testes, lint/typecheck/build limpos
