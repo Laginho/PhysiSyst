@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -196,3 +196,64 @@ nunca foi dimensionado):
   inteira `W`, lado a lado mede `W − 282`, então os dois ramos cruzam no mesmo
   `W = 882` e o estado converge. O sweep 1400→500→1400 sem reload não oscilou em
   nenhum passo (`settled` em todas as 15 medidas).
+
+### Stage 2, segunda rodada (2026-09-14)
+
+Teste novo em `src/App.test.ts`: harness CDP-sobre-Vite reaproveitado do PHY-18
+(mesmo arquivo, navega+settle+mede, sem interação), medindo
+`getBoundingClientRect()` real do canvas e do inspetor em 6 larguras — 1400/950
+(lado a lado, regressão) e 900/700/600/360 (empilhado, exatamente as larguras
+que a revisão mediu como quebradas). Vermelho nas 4 larguras empilhadas antes da
+correção, pelo mesmo motivo que a revisão relatou (interseção `true`); as duas
+larguras lado a lado já passavam, confirmando que o teste em si não introduz
+regressão. Teste jsdom da histerese mantido sem alteração, como pedido.
+
+Causa raiz confirmada: a coluna do canvas tinha `flex: 1` (basis 0%, shrink 1)
+igual em ambos os modos. Empilhado, o espaço negativo (inspetor sozinho já
+maior que a linha) era todo absorvido por essa coluna porque sua basis de 0%
+lhe dá peso de encolhimento zero — ela ia a zero, e o `<canvas>` real (piso
+600×400, `overflow: visible`) pintava por cima do inspetor logo abaixo.
+
+Correção (2 mudanças, ambas mutate-verified — revertida cada uma isoladamente
+com o gate reaberto, confirmando vermelho exatamente na largura/critério que
+ela protege):
+
+1. `flex: stacked ? '1 0 auto' : 1'` na coluna do canvas (`src/App.tsx`, div
+   pai do `canvasBoxRef`). Empilhado, `flex-shrink: 0` com `flex-basis: auto`
+   faz essa coluna pedir sua altura real de conteúdo (piso do canvas + linhas
+   de controles) e nunca encolher abaixo disso — quem cede espaço na disputa
+   por altura passa a ser o que vem depois dela na coluna (o inspetor), não
+   ela. Revertendo essa linha sozinha reproduz a interseção `true` exatamente
+   nas 4 larguras empilhadas.
+2. `justifyContent: stacked ? 'flex-start' : 'center'` na caixa do canvas.
+   Resolve o critério 3 abaixo do piso (~632 px de viewport): centralizar
+   dividia o excesso metade para cada lado, e a metade esquerda caía em
+   `rect.left` negativo — inalcançável por scroll (scroll só expõe excesso
+   positivo). `flex-start` fixa a borda esquerda do canvas dentro do viewport e
+   empurra todo o excesso para a direita. Revertendo essa linha sozinha
+   reproduz `rect.left` negativo (-8.5 e -128.5, os mesmos valores que a
+   revisão mediu) em 600 e 360 px.
+
+Duas mudanças cogitadas e descartadas por não serem cobertas por nenhum
+critério nem pegas por nenhum teste (mutate-verify negativo — revertidas e o
+gate continuou verde): dar `flexShrink`/`minHeight` ao inspetor quando
+empilhado, e dar `minHeight` explícito à caixa do canvas quando empilhado. Com
+a coluna do canvas já protegida (mudança 1), o canvas nunca escapa da própria
+caixa, então o inspetor pode manter sua altura natural sem risco de
+sobreposição — ele só empurra a página para baixo (rolagem vertical comum,
+dentro das estratégias que o corpo do ticket já aceita), o que nenhum dos
+critérios numerados proíbe.
+
+Critério 3 abaixo de ~632 px de viewport continua parcialmente não satisfeito
+por construção: o piso de 600 px é mais largo que qualquer coluna possível
+nesses casos (fora do escopo deste ticket mudar o piso), então `rect.right`
+excede `innerWidth` ali — o teste novo assume isso explicitamente e só cobra
+`rect.left >= 0` (não vaza pela esquerda) e ausência de sobreposição com o
+inspetor nessas larguras, não contenção total. `overflowX: 'auto'` num
+ancestral não foi necessário: nada no caminho até a raiz do documento tem
+`overflow` não-visible, então o excesso à direita já produz scroll horizontal
+nativo da página (confirmado: nenhuma das larguras testadas ficou sem forma de
+alcançar a área excedente).
+
+Gate verde: `npm test` (478/478), `npm run lint`, `npm run typecheck`,
+`npm run build`.

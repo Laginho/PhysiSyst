@@ -1122,14 +1122,44 @@ export default function App() {
       {/* Let the viewport allocate the row, independently of either column's
           intrinsic content size (including the canvas's previous size). */}
       <div style={{ display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: ROW_GAP, flex: 1, minHeight: 0, width: '100%', contain: 'size' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0, minHeight: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            // Side by side, this column's basis is 0% so it shares the row's
+            // width fairly with the fixed-width inspector (existing PHY-15/18
+            // behaviour, untouched). Stacked, flex-shrink:0 with an auto basis
+            // makes this column's own height come from its own content — the
+            // canvas floor below, plus the controls — so the inspector (which
+            // gets flex-shrink below) is the one giving up room, not this one.
+            flex: stacked ? '1 0 auto' : 1,
+            minWidth: 0,
+            minHeight: 0,
+          }}
+        >
           <div
             ref={canvasBoxRef}
             // Height comes from the row (stretch), NEVER from the canvas: sizing the
             // canvas off a box that shrink-wraps it is a feedback loop that grows
             // the canvas a few px every frame until it overflows.
             // Keep the scene at the top of the available canvas area.
-            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              display: 'flex',
+              alignItems: 'flex-start',
+              // Centering split any width-floor overflow evenly left and
+              // right — the left half landed at a negative rect.left, which
+              // no amount of horizontal scrolling can reach (scrolling only
+              // exposes positive overflow). flex-start pins the canvas's left
+              // edge inside the viewport and pushes all the overflow right,
+              // where it's at least reachable.
+              justifyContent: stacked ? 'flex-start' : 'center',
+              overflow: 'visible',
+              position: 'relative',
+            }}
           >
             <canvas
               ref={canvasRef}
