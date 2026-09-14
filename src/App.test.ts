@@ -633,6 +633,73 @@ describe('canvas fits its container (PHY-15)', () => {
   })
 })
 
+describe('selection keeps the canvas stationary (PHY-18)', () => {
+  // jsdom has no layout engine. Supply the missing flex cross-axis geometry,
+  // reading the REAL rendered wrapper's alignment on every measurement. The
+  // inspector heights are fixtures, not a second implementation of App: they
+  // exercise the measured 170px growth and unequal shape-panel heights.
+  function mirrorLayout(host: HTMLElement, preselected = false): HTMLCanvasElement {
+    const canvas = host.querySelector('canvas')!
+    const origin = preselected && getComputedStyle(canvas.parentElement!).alignItems === 'center' ? 85 : 0
+    vi.spyOn(canvas, 'getBoundingClientRect').mockImplementation(() => {
+      const panel = [...host.querySelectorAll('fieldset')].find((f) =>
+        ['caixa', 'rampa', 'bola'].includes(f.querySelector('legend')?.textContent?.trim() ?? ''),
+      )
+      const id = panel?.querySelector('legend')?.textContent?.trim()
+      const extraHeight = id === 'caixa' ? 170 : id === 'rampa' ? 230 : id === 'bola' ? 130 : 0
+      const alignment = getComputedStyle(canvas.parentElement!).alignItems
+      expect(['center', 'flex-start']).toContain(alignment)
+      const top = (alignment === 'center' ? extraHeight / 2 : 0) - origin
+      return new DOMRect(0, top, parseFloat(canvas.style.width), parseFloat(canvas.style.height))
+    })
+    return canvas
+  }
+
+  function selectAt(canvas: HTMLCanvasElement, x: number, y: number) {
+    const point = screen(x, y)
+    const rect = canvas.getBoundingClientRect()
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', point.x + rect.left, point.y + rect.top)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', point.x + rect.left, point.y + rect.top)))
+  }
+
+  it('keeps the same 3:2 rectangle through rectangle, triangle, circle and empty selection', () => {
+    const host = renderApp()
+    const canvas = mirrorLayout(host)
+    const before = canvas.getBoundingClientRect().toJSON()
+    expect(before).toMatchObject({ width: 900, height: 600 })
+
+    for (const [id, x, y] of [['caixa', 9, 3], ['rampa', 3.5, 0.2], ['bola', 11, 5]] as const) {
+      selectAt(canvas, x, y)
+      expect([...host.querySelectorAll('legend')].some((legend) => legend.textContent?.trim() === id)).toBe(true)
+      expect(canvas.getBoundingClientRect().toJSON()).toEqual(before)
+    }
+    selectAt(canvas, 0, 8)
+    expect([...host.querySelectorAll('legend')].some((legend) => legend.textContent?.trim() === 'bola')).toBe(false)
+    expect(canvas.getBoundingClientRect().toJSON()).toEqual(before)
+  })
+
+  it('drops at the same world position with and without selection before pointerdown', () => {
+    const positions: { x: number; y: number }[] = []
+    for (const preselected of [false, true]) {
+      const host = renderApp()
+      const canvas = host.querySelector('canvas')!
+      if (preselected) selectAt(canvas, 9, 3)
+      // Translate each fixture's initial canvas origin to (0, 0), so both
+      // runs start with the body under the very same screen point.
+      mirrorLayout(host, preselected)
+      // Identical screen points in both runs; only prior selection differs.
+      dragTo(canvas, { x: 9, y: 3 }, { x: 8, y: 6 })
+      positions.push(currentPosition(host, 'caixa'))
+      act(() => root?.unmount())
+      root = null
+      host.remove()
+      window.localStorage.clear()
+    }
+    expect(positions[0]).toEqual(positions[1])
+    expect(positions[0]).toEqual({ x: 8, y: 6 })
+  })
+})
+
 describe('loading screen (PHY-16)', () => {
   it('boots the simulator on mount, before any play interaction', () => {
     renderApp()

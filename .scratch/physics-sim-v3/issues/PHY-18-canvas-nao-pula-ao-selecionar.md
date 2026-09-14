@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 
@@ -60,3 +60,9 @@ arraste e deixa a cena pulando.
 ## Comments
 
 Aberto pelo passe manual desktop do PHY-17 (D2), no site publicado.
+
+Implementação nesta sessão GPT-6 autorizada pelo usuário como exceção ao binding Sonnet.
+Red inicial: `npx vitest run src/App.test.ts -t PHY-18`: 2 failed, 28 skipped.
+Geometria: top 85 recebido, 0 esperado. Arraste: (8, 7.416666666666666)
+sem seleção prévia versus (8, 6) com seleção prévia. O espelho de layout do
+jsdom lê `alignItems` do wrapper real; eventos usam os handlers reais do App.
