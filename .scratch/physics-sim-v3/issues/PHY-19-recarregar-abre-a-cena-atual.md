@@ -1,5 +1,5 @@
 # PHY-19: Recarregar a página volta para a cena em que eu estava
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
@@ -49,3 +49,62 @@ valor corrompido) cai na primeira da lista, que é o comportamento de hoje.
 ## Comments
 
 Aberto pelo passe manual desktop do PHY-17 (D7), no site publicado.
+
+#### Review 1 (2026-09-14) — reaberto
+
+Gate verde e o código está certo. O que cai é a cobertura: o mutate-verify não
+estava registrado no ticket, e ao rodá-lo o reviewer encontrou **uma mutação
+sobrevivente** — a metade do critério 2 que carrega o conteúdo da cena não está
+presa por teste nenhum.
+
+**Critérios**
+
+1. ✅ `switchToScene` é o funil único de troca (escolha manual, nova, duplicar,
+   importar, e o fallback do excluir — `src/App.tsx:1284,1302,1314,1335,1337,1377,1426,1440`),
+   e é lá que `saveCurrentSceneId` grava, sob `physics-sim:currentScene`.
+2. ⚠️ **Metade.** O `<select>` abre a cena persistida (preso pela mutação 1),
+   mas o `doc` — o conteúdo que aparece no canvas — não é verificado por
+   nenhuma asserção. Ver mutação 3.
+3. ✅ Preso por teste de chamada direta em `persistence.test.ts` (fora do
+   índice → null; não-string → null; ausente → null).
+4. ✅ O comportamento existe, por duas vias: `switchToScene(next[0]!.id)` grava
+   o novo id, e mesmo que não gravasse a checagem de pertinência ao índice do
+   critério 3 cobre a chave velha. Mas o teste de exclusão em `App.test.ts`
+   passa verde sob a mutação 2 — ele nunca chega a testar a própria carga
+   útil. Teste fraco, comportamento correto; anotado, não bloqueia.
+5. ❌ **Cai.** Sem registro de mutação no ticket (o `AGENTS.md` pede a mutação
+   e o vermelho por teste em seam DOM; a linha do run-log é exatamente a
+   "promessa de que a checagem rodou" que o protocolo recusa), e a mutação 3
+   sobrevive à suíte inteira.
+6. ✅ `npm test && npm run lint && npm run typecheck && npm run build` — 27
+   arquivos, 471 testes, todos verdes, build ok.
+
+**Mutate-verify reexecutado pelo reviewer.** Cada mutação aplicada sozinha em
+`src/App.tsx`, revertida antes da seguinte:
+
+1. `currentId` init (`src/App.tsx:435`) → `res.index[0]?.id ?? 'cena-1'`
+   (dropa `loadCurrentSceneId`).
+   🔴 3 testes: `expected 'cena-1' to be 'cena-3'`, `'cena-1' to be 'cena-2'`
+   (×2). `Tests 3 failed | 1 passed`.
+2. `saveCurrentSceneId(storage, id)` removido de `switchToScene`
+   (`src/App.tsx:515`).
+   🔴 1 teste: `expected 'cena-1' to be 'cena-2'` na troca de cena.
+   `Tests 1 failed | 3 passed` — o teste de exclusão fica **verde**, daí a nota
+   do critério 4.
+3. `doc` init (`src/App.tsx:444`) → `loadSceneOrBlank(storage, res.index[0]!.id)`,
+   isto é, o picker mostra a cena persistida e o canvas carrega a primeira.
+   🟢 **SOBREVIVE**: `Test Files 27 passed (27) / Tests 471 passed (471)`.
+
+**O que falta (só isto)**
+
+- Uma asserção que mate a mutação 3: com índice de três cenas e a terceira
+  marcada como atual, o documento aberto tem de ser o **conteúdo** da terceira.
+  Hoje `seedThreeScenes` grava `blankScene()` nas três, então as cenas são
+  indistinguíveis por construção — semear conteúdo diferente por cena (um corpo
+  identificável em cada) é parte do trabalho.
+- Registrar as mutações neste ticket, incluindo a nova, conforme o `AGENTS.md`.
+- Enquanto o `doc` init lê `currentId` do escopo do init de cima, vale uma linha
+  de comentário dizendo que a ordem das duas declarações `useState` é
+  load-bearing.
+
+Fora de escopo daqui: nada. Os arquivos Primary já cobrem tudo acima.
