@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 

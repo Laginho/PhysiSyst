@@ -877,6 +877,146 @@ describe('canvas coluna nunca vaza para o inspetor (PHY-20)', () => {
   })
 })
 
+describe('canvas nunca sobrepõe o inspetor nem vaza do viewport, medido em Chromium (PHY-20)', () => {
+  // jsdom does no real layout, so the hysteresis test above can only check
+  // that stacking flips the right CSS properties — not whether the stacked
+  // layout actually avoids overlap. That needs a real layout engine: same
+  // CDP-over-Vite harness as PHY-18 (src/App.test.ts:668), trimmed to just
+  // navigate, settle, and measure — no interaction needed here.
+  const browserScenario = String.raw`
+    import { access, mkdtemp, rm } from 'node:fs/promises';
+    import { tmpdir } from 'node:os';
+    import { join } from 'node:path';
+    import { spawn } from 'node:child_process';
+    import { createServer } from 'vite';
+
+    const [width] = process.argv.slice(1);
+    const candidates = [process.env.CHROME_BIN,
+      'C:/Program Files/Google/Chrome/Application/chrome.exe',
+      'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+      '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean);
+    let executable;
+    for (const candidate of candidates) {
+      try { await access(candidate); executable = candidate; break; } catch {}
+    }
+    if (!executable) throw new Error('PHY-20 requires Chromium: set CHROME_BIN to its executable');
+    const profile = await mkdtemp(join(tmpdir(), 'phy-20-'));
+    const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+    let browser;
+    try {
+      await server.listen();
+      browser = spawn(executable, ['--headless=new', '--no-first-run', '--no-default-browser-check',
+        '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+        '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'],
+        { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+      const endpoint = await new Promise((resolve, reject) => {
+        let logs = '';
+        browser.stderr.on('data', chunk => {
+          logs += chunk.toString();
+          const match = logs.match(/DevTools listening on (ws:\/\/\S+)/);
+          if (match) resolve(match[1]);
+        });
+        browser.on('error', reject);
+        browser.on('exit', code => reject(new Error('Chromium exited ' + code + ': ' + logs)));
+      });
+      const socket = new WebSocket(endpoint);
+      await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+      let sequence = 0;
+      const pending = new Map();
+      socket.onmessage = event => {
+        const message = JSON.parse(event.data);
+        const callback = pending.get(message.id);
+        if (callback) {
+          pending.delete(message.id);
+          message.error ? callback.reject(new Error(JSON.stringify(message.error))) : callback.resolve(message.result);
+        }
+      };
+      socket.onclose = () => { for (const callback of pending.values()) callback.reject(new Error('Chromium disconnected')); };
+      const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+        const id = ++sequence;
+        pending.set(id, { resolve, reject });
+        socket.send(JSON.stringify({ id, method, params, sessionId }));
+      });
+      const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+      const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+      const page = (method, params) => send(method, params, sessionId);
+      await page('Emulation.setDeviceMetricsOverride', { width: Number(width), height: 700, deviceScaleFactor: 1, mobile: false });
+      const evaluate = async expression => {
+        const result = await page('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+        if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+        return result.result.value;
+      };
+      // Same 8-consecutive-frame settle proof as PHY-18: a stacked layout
+      // that never converges must fail loudly, not read as a stable rect.
+      const settle = () => evaluate(
+        "new Promise((resolve, reject) => { let previous = '', same = 0, frames = 0; " +
+        "function sample() { const canvas = document.querySelector('canvas'); " +
+        "const value = canvas && JSON.stringify(canvas.getBoundingClientRect().toJSON()); " +
+        "same = value && value === previous ? same + 1 : 0; previous = value; " +
+        "if (same >= 8) resolve(); else if (++frames > 120) reject(new Error('canvas geometry did not settle')); " +
+        "else requestAnimationFrame(sample); } requestAnimationFrame(sample); })");
+      await page('Page.navigate', { url: server.resolvedUrls.local[0] });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluate("Boolean(document.querySelector('canvas'))")) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      await settle();
+      const output = await evaluate(
+        "(() => { const canvas = document.querySelector('canvas'); " +
+        "const row = canvas.parentElement.parentElement.parentElement; " +
+        "const inspector = row.children[1]; " +
+        "return { canvas: canvas.getBoundingClientRect().toJSON(), " +
+        "inspector: inspector.getBoundingClientRect().toJSON(), innerWidth: window.innerWidth }; })()");
+      process.stdout.write(JSON.stringify(output));
+    } finally {
+      if (browser && browser.exitCode === null) {
+        const exited = new Promise(resolve => browser.once('exit', resolve));
+        browser.kill();
+        await exited;
+      }
+      await server.close();
+      await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  `
+
+  async function runBrowser(width: number): Promise<string> {
+    // Node APIs stay outside the browser app's TS type surface.
+    const moduleName = 'node:child_process'
+    const { execFile } = await import(/* @vite-ignore */ moduleName)
+    return new Promise((resolve, reject) => {
+      execFile('node', ['--input-type=module', '-e', browserScenario, String(width)],
+        { timeout: 25000, windowsHide: true },
+        (error: Error | null, stdout: string, stderr: string) => {
+          if (error) reject(new Error(stderr || error.message.split('\n')[0]))
+          else resolve(stdout)
+        })
+    })
+  }
+
+  type Rect = { left: number; right: number; top: number; bottom: number }
+  const intersects = (a: Rect, b: Rect): boolean => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+
+  it.each([1400, 950, 900, 700])('canvas cabe inteiramente na viewport e não sobrepõe o inspetor em %ipx', async (width) => {
+    const { canvas, inspector, innerWidth } = JSON.parse(await runBrowser(width)) as { canvas: Rect; inspector: Rect; innerWidth: number }
+    expect(intersects(canvas, inspector)).toBe(false)
+    expect(canvas.left).toBeGreaterThanOrEqual(0)
+    expect(canvas.right).toBeLessThanOrEqual(innerWidth)
+  }, 30000)
+
+  // Below ~632px (CANVAS_MIN_WIDTH plus main's horizontal padding), the
+  // 600px floor is wider than any column layout can offer — fitCanvas's
+  // floor is out of this ticket's scope (see ticket body). The canvas
+  // legitimately spills past the viewport's right edge there. What must
+  // still hold: it never spills left (unreachable by scrolling right) and
+  // never overlaps the inspector.
+  it.each([600, 360])('abaixo do piso o canvas nunca sobrepõe o inspetor nem vaza pela esquerda em %ipx', async (width) => {
+    const { canvas, inspector } = JSON.parse(await runBrowser(width)) as { canvas: Rect; inspector: Rect; innerWidth: number }
+    expect(intersects(canvas, inspector)).toBe(false)
+    expect(canvas.left).toBeGreaterThanOrEqual(0)
+  }, 30000)
+})
+
 describe('loading screen (PHY-16)', () => {
   it('boots the simulator on mount, before any play interaction', () => {
     renderApp()
