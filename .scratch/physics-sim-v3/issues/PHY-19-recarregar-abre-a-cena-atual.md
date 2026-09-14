@@ -1,5 +1,5 @@
 # PHY-19: Recarregar a página volta para a cena em que eu estava
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 

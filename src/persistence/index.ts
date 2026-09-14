@@ -176,6 +176,10 @@ export function deleteScene(storage: Storage, id: string): SceneIndexEntry[] | {
 /**
  * Id no longer in the index (deleted scene, storage from another machine,
  * corrupted value) falls back to null — callers open the first of the index.
+ *
+ * Takes the index instead of loading it, unlike its neighbours here: the only
+ * caller is App's init, which already holds a `loadIndexResult` and must not
+ * re-read — on `kind: 'corrupt'` there is no index to check membership against.
  */
 export function loadCurrentSceneId(storage: Storage, index: readonly SceneIndexEntry[]): string | null {
   const raw = storage.getItem(CURRENT_SCENE_KEY)
