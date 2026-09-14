@@ -87,3 +87,5 @@ Revisão do PHY-18 (2026-09-13): o PHY-18 foi reaberto e a correção dele vai m
 na mesma linha de duas colunas (`src/App.tsx`, ~1100–1245) para tirar a altura da
 linha das mãos do inspetor. `fitCanvas.ts` ficou explicitamente fora do escopo do
 PHY-18 para não colidir com este ticket. Fazer o PHY-18 primeiro evita retrabalho.
+
+- 2026-09-14 Attempt 1 failed: exit 0. Log tail: Let me know which way to take criterion 3 and I'll act on it. /
