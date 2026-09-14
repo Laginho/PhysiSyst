@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: reviewing
+Stage: to-merge
 Status: ready-for-agent
 Blocked by: none
 
@@ -43,9 +43,9 @@ arraste e deixa a cena pulando.
 1. ✅ (2026-09-13, medido em navegador na 2ª revisão) Selecionar um corpo não muda a posição nem o tamanho do retângulo do canvas: `getBoundingClientRect()` do canvas é igual antes e depois da seleção, com o inspetor renderizado
 2. ✅ (2026-09-13, medido em navegador na 2ª revisão) Trocar a seleção entre corpos de shapes diferentes (retângulo ↔ cunha ↔ bola, inspetores de alturas diferentes) também não move o canvas
 3. ✅ (2026-09-13, medido em navegador na 2ª revisão) Um arraste que começa em um corpo **não selecionado** larga o corpo na mesma posição de mundo que o mesmo arraste em um corpo **já selecionado** — a seleção deixa de ser um estado que muda o resultado do arraste
-4. A cena inteira continua visível e o canvas continua 3:2 depois da mudança de layout (não regredir o PHY-15)
-5. ✅ (2026-09-13, terceira implementação, evidência abaixo) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
-6. Gate verde
+4. ✅ (2026-09-13, 3ª revisão) A cena inteira continua visível e o canvas continua 3:2 depois da mudança de layout (não regredir o PHY-15)
+5. ✅ (2026-09-13, terceira implementação, reverificado na 3ª revisão) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
+6. ✅ (2026-09-13, 3ª revisão) Gate verde
 
 #### Verification
 
@@ -331,3 +331,62 @@ local dos testes foi autorizada fora desse sandbox, preservando o sandbox do Chr
   desta alteração.
 
 Pronto para etapa 3 na branch existente `phy/PHY-18-canvas-estavel`.
+
+#### Stage 3 — revisão (2026-09-13): aprovado, segue para PR
+
+Decisão: **aprovar**. Os dois bloqueios da revisão anterior estão fechados, e
+fechados por medição. Reverifiquei cada um contra o HEAD entregue, porque a
+tabela da etapa 2 foi medida antes de `6ca9030` tirar a contenção do painel.
+
+| mutação em `src/App.tsx`, a partir do HEAD | `npx vitest run src/App.test.ts -t PHY-18` |
+|---|---|
+| nenhuma | 4 passed, 28 skipped |
+| remover `contain: 'size'` da linha (`:1102`) | **1 failed** — `expected 1126 to be less than or equal to 1080` |
+| `contain: 'size'` → `'strict'` na linha | 4 passed |
+| `alignItems: 'flex-start'` → `'center'` no wrapper (`:1110`) | 4 passed |
+| arquivo inteiro no estado anterior à branch (`9bc8534`) | **4 failed** |
+
+A última linha é a que fecha o critério 5: contra o código que este ticket
+descreve como quebrado, o arraste sem seleção prévia larga em **y = 7.13** em vez
+de 6 — o mesmo erro de ~2 m medido no site publicado. O teste enxerga o bug de
+verdade, em navegador de verdade, e não uma palavra-chave de CSS.
+
+Bloqueio 1 (contenção da linha sem teste): fechado. Só o caso de 1920 a enxerga,
+mas um enxergar basta. Bloqueio 2 (oráculo tautológico): fechado —
+`grep -nE 'alignItems|contain|overflowY|getComputedStyle' src/App.test.ts` não
+acha nada no bloco do PHY-18, e o remédio equivalente `strict` fica verde.
+
+Critério 6: gate reexecutado nesta revisão, em árvore limpa — exit 0,
+**27 arquivos, 463 testes**, lint, typecheck e build limpos (aviso de bundle
+pré-existente). `git diff --check` limpo.
+
+Correções feitas nesta revisão (cabem nos Primary files, não pedem teste novo):
+
+- `FakeResizeObserver.targets` ficava escrito e nunca lido depois que `deliver`
+  saiu; o mapa e o corpo do `disconnect` foram removidos (`ef08f6f`).
+- `AGENTS.md` passa a dizer que o gate exige Chromium. A exigência estava só no
+  corpo deste ticket, e o gate é binding do repo: quem rodasse o comando
+  documentado numa máquina sem navegador levava 4 falhas sem explicação.
+
+Registrado, sem bloquear:
+
+- **Risco de CI, ainda não verificável daqui.** `.github/workflows/ci.yml` roda
+  `npm test` em `ubuntu-latest`. O Chrome existe nessa imagem, mas o sandbox de
+  namespaces do Ubuntu costuma barrar `--headless=new` sem `--no-sandbox`. É
+  exatamente o que o CI do PR responde; se quebrar, o conserto é um argumento
+  condicionado a `process.env.CI`.
+- `alignItems: 'flex-start'` (`src/App.tsx:1110`) já não sustenta critério nenhum:
+  com a linha contida, `center` passa nos quatro testes. Virou escolha cosmética
+  (onde o canvas fica quando sobra altura), e o comentário acima dela já diz isso.
+  Fica por ser escolha, não por ser prova.
+- O `settle()` entre `mousePressed` e o primeiro `mouseMoved` espera o layout
+  parar — justamente o salto que o ticket descreve. Pega o deslocamento constante
+  (a tabela acima prova), mas um salto entre dois `mousemove` passaria dormindo.
+- Os dois viewports do harness têm 1080 de altura; o colapso da linha em janela
+  baixa (1280×360) continua só medido à mão na revisão anterior.
+- Formato do harness (string não tipada, arquivo com `@vitest-environment jsdom`,
+  cópia dos números da câmera demo, órfãos no timeout): virou **PHY-21**.
+- `width: 270, flexShrink: 0` segue sendo política horizontal sem critério aqui;
+  continua sendo assunto do PHY-20.
+
+Código mudou nesta etapa, então vai por PR e para aqui.
