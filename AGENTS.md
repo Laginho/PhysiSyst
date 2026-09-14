@@ -22,8 +22,6 @@ Every regression test must be verified by mutating the production code it target
 
 At a DOM or integration seam the check leaves evidence: the ticket records, per new test, the mutation applied and the red output it produced. Green beside unmutated code is not evidence, and a promise that the check ran is not either — a harness can quietly stop touching the thing under test while every assertion still passes. A test that calls the changed function directly needs no record; the red commit already pins it.
 
-**The mutation must land on a line the test file does not mention textually.** Mutating the string the test reads (`alignItems`, `contain`, a class name) only proves the test reads that string: red is guaranteed and worth nothing. If no such mutation exists, the test observes the fix rather than the behaviour — rewrite the test. This one is settled with `grep`, not judgement, and the agent that wrote both the test and the fix is exactly the one who cannot see it by feel.
-
 ## The loop
 
 The build loop is the `ticket-flow` skill, and that skill is its only copy — nothing in this repo restates it. Three stages, one ticket at a time, each fired by hand in a clean session: stage 1 specifies, stage 2 implements test-first, stage 3 reviews and merges.
