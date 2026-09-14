@@ -48,21 +48,15 @@ const originalSetPointerCapture = HTMLCanvasElement.prototype.setPointerCapture
 // the initial-measurement call a real ResizeObserver makes on observe().
 let containerSize = { width: 900, height: 600 }
 class FakeResizeObserver {
-  static targets = new Map<Element, FakeResizeObserver>()
   #cb: ResizeObserverCallback
   constructor(cb: ResizeObserverCallback) {
     this.#cb = cb
   }
   observe(target: Element) {
-    FakeResizeObserver.targets.set(target, this)
     this.#cb([{ target, contentRect: containerSize } as ResizeObserverEntry], this as unknown as ResizeObserver)
   }
   unobserve() {}
-  disconnect() {
-    for (const [target, observer] of FakeResizeObserver.targets) {
-      if (observer === this) FakeResizeObserver.targets.delete(target)
-    }
-  }
+  disconnect() {}
 }
 
 beforeEach(() => {
