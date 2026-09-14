@@ -48,15 +48,26 @@ const originalSetPointerCapture = HTMLCanvasElement.prototype.setPointerCapture
 // the initial-measurement call a real ResizeObserver makes on observe().
 let containerSize = { width: 900, height: 600 }
 class FakeResizeObserver {
+  static targets = new Map<Element, FakeResizeObserver>()
   #cb: ResizeObserverCallback
   constructor(cb: ResizeObserverCallback) {
     this.#cb = cb
   }
   observe(target: Element) {
+    FakeResizeObserver.targets.set(target, this)
     this.#cb([{ target, contentRect: containerSize } as ResizeObserverEntry], this as unknown as ResizeObserver)
   }
+  static deliver(target: Element, width: number, height: number) {
+    const observer = this.targets.get(target)
+    if (!observer) throw new Error('unobserved canvas container')
+    observer.#cb([{ target, contentRect: new DOMRect(0, 0, width, height) } as ResizeObserverEntry], observer as unknown as ResizeObserver)
+  }
   unobserve() {}
-  disconnect() {}
+  disconnect() {
+    for (const [target, observer] of FakeResizeObserver.targets) {
+      if (observer === this) FakeResizeObserver.targets.delete(target)
+    }
+  }
 }
 
 beforeEach(() => {
@@ -634,61 +645,79 @@ describe('canvas fits its container (PHY-15)', () => {
 })
 
 describe('selection keeps the canvas stationary (PHY-18)', () => {
-  // jsdom has no layout engine. Supply the missing flex cross-axis geometry,
-  // reading the REAL rendered wrapper's alignment on every measurement. The
-  // inspector heights are fixtures, not a second implementation of App: they
-  // exercise the measured 170px growth and unequal shape-panel heights.
-  function mirrorLayout(host: HTMLElement, preselected = false): HTMLCanvasElement {
+  // jsdom cannot measure CSS layout. Approximate intrinsic inspector height
+  // from its rendered controls (including expanded details), then deliver box
+  // changes through the real App ResizeObserver. This is a layout fixture,
+  // not browser proof; no shape-specific heights or mocked fitCanvas results.
+  function mirrorLayout(host: HTMLElement) {
     const canvas = host.querySelector('canvas')!
-    const origin = preselected && getComputedStyle(canvas.parentElement!).alignItems === 'center' ? 85 : 0
+    const box = canvas.parentElement!
+    const inspector = box.parentElement!.nextElementSibling as HTMLElement
+    const controlHeight = () => [...inspector.querySelectorAll('label, button, select, legend, summary')]
+      .filter((element) => !element.closest('details:not([open])') || element.tagName === 'SUMMARY').length * 24
+    const initialHeight = controlHeight()
+    let boxHeight = containerSize.height
+    const flush = () => {
+      const contained = getComputedStyle(inspector).contain.split(' ').includes('size')
+      boxHeight = containerSize.height + (contained ? 0 : Math.max(0, controlHeight() - initialHeight))
+      act(() => FakeResizeObserver.deliver(box, containerSize.width, boxHeight))
+    }
     vi.spyOn(canvas, 'getBoundingClientRect').mockImplementation(() => {
-      const panel = [...host.querySelectorAll('fieldset')].find((f) =>
-        ['caixa', 'rampa', 'bola'].includes(f.querySelector('legend')?.textContent?.trim() ?? ''),
-      )
-      const id = panel?.querySelector('legend')?.textContent?.trim()
-      const extraHeight = id === 'caixa' ? 170 : id === 'rampa' ? 230 : id === 'bola' ? 130 : 0
-      const alignment = getComputedStyle(canvas.parentElement!).alignItems
-      expect(['center', 'flex-start']).toContain(alignment)
-      const top = (alignment === 'center' ? extraHeight / 2 : 0) - origin
-      return new DOMRect(0, top, parseFloat(canvas.style.width), parseFloat(canvas.style.height))
+      const width = parseFloat(canvas.style.width)
+      const height = parseFloat(canvas.style.height)
+      const top = getComputedStyle(box).alignItems === 'center' ? (boxHeight - height) / 2 : 0
+      return new DOMRect((containerSize.width - width) / 2, top, width, height)
     })
-    return canvas
+    return { canvas, flush }
   }
 
   function selectAt(canvas: HTMLCanvasElement, x: number, y: number) {
-    const point = screen(x, y)
     const rect = canvas.getBoundingClientRect()
+    const point = worldToScreen(makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: rect.width / 15 }, rect.width, rect.height), x, y)
     act(() => canvas.dispatchEvent(pointerEvent('pointerdown', point.x + rect.left, point.y + rect.top)))
     act(() => canvas.dispatchEvent(pointerEvent('pointerup', point.x + rect.left, point.y + rect.top)))
   }
 
-  it('keeps the same 3:2 rectangle through rectangle, triangle, circle and empty selection', () => {
+  it.each([900, 1600])('keeps the same 3:2 rectangle through rectangle, triangle, circle and empty selection at box width %i', (width) => {
+    containerSize = { width, height: 600 }
     const host = renderApp()
-    const canvas = mirrorLayout(host)
+    const { canvas, flush } = mirrorLayout(host)
     const before = canvas.getBoundingClientRect().toJSON()
     expect(before).toMatchObject({ width: 900, height: 600 })
 
     for (const [id, x, y] of [['caixa', 9, 3], ['rampa', 3.5, 0.2], ['bola', 11, 5]] as const) {
       selectAt(canvas, x, y)
+      flush()
       expect([...host.querySelectorAll('legend')].some((legend) => legend.textContent?.trim() === id)).toBe(true)
       expect(canvas.getBoundingClientRect().toJSON()).toEqual(before)
     }
     selectAt(canvas, 0, 8)
+    flush()
     expect([...host.querySelectorAll('legend')].some((legend) => legend.textContent?.trim() === 'bola')).toBe(false)
     expect(canvas.getBoundingClientRect().toJSON()).toEqual(before)
   })
 
-  it('drops at the same world position with and without selection before pointerdown', () => {
+  it.each([900, 1600])('drops at the same world position with and without selection before pointerdown at box width %i', (width) => {
     const positions: { x: number; y: number }[] = []
     for (const preselected of [false, true]) {
+      containerSize = { width, height: 600 }
       const host = renderApp()
-      const canvas = host.querySelector('canvas')!
-      if (preselected) selectAt(canvas, 9, 3)
-      // Translate each fixture's initial canvas origin to (0, 0), so both
-      // runs start with the body under the very same screen point.
-      mirrorLayout(host, preselected)
-      // Identical screen points in both runs; only prior selection differs.
-      dragTo(canvas, { x: 9, y: 3 }, { x: 8, y: 6 })
+      const { canvas, flush } = mirrorLayout(host)
+      if (preselected) {
+        selectAt(canvas, 9, 3)
+        flush()
+      }
+      // Same screen displacement, relative to the body at pickup. Resize
+      // delivery after pointerdown models selection changing the layout.
+      const rect = canvas.getBoundingClientRect()
+      const transform = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: rect.width / 15 }, rect.width, rect.height)
+      const start = worldToScreen(transform, 9, 3)
+      const target = worldToScreen(transform, 8, 6)
+      act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x + rect.left, start.y + rect.top)))
+      flush()
+      for (const type of ['pointermove', 'pointermove', 'pointerup']) {
+        act(() => canvas.dispatchEvent(pointerEvent(type, target.x + rect.left, target.y + rect.top)))
+      }
       positions.push(currentPosition(host, 'caixa'))
       act(() => root?.unmount())
       root = null

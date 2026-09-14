@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 
@@ -152,3 +152,13 @@ build ok (aviso de bundle > 500 kB, pré-existente). Critério 6 ✅.
 
 A correção continua na branch `phy/PHY-18-canvas-estavel`; o commit `81aa8fe`
 fica como está.
+
+#### Stage 2 — retomada (2026-09-13)
+
+Usuário autorizou novamente a implementação com o modelo desta sessão.
+O espelho agora mede controles presentes no DOM do inspetor e reentrega a
+geometria ao ResizeObserver real do App depois da seleção. Sem alturas por shape.
+Red antes da correção: `npx vitest run src/App.test.ts -t PHY-18`:
+**2 failed, 2 passed, 28 skipped**. Na caixa 1600×600, selecionar alterou
+900×600 para 1332×888; arraste sem seleção terminou em
+(7.351351351351351, 6.972972972972974), contra (~8, 6) com seleção.
