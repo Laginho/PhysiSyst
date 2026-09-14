@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 
@@ -280,3 +280,38 @@ Menores, para a mesma passada (não bloqueiam sozinhos):
 
 Não regrediu: PHY-15 e `fitCanvas` verdes. O trabalho continua na branch
 `phy/PHY-18-canvas-estavel`; os commits existentes ficam como estão.
+
+#### Stage 2 — terceira implementação: prova em navegador (2026-09-13)
+
+Usuário autorizou implementar neste modelo. O escopo reaberto é o critério 5.
+Os quatro testes de geometria/arraste em `src/App.test.ts` agora executam o App
+real, servido pelo Vite, no Chromium headless com perfil temporário isolado.
+Usam `getBoundingClientRect`, ResizeObserver nativo e eventos de mouse CDP.
+Não há espelho de CSS, alturas inventadas, inspeção de estilos ou navegação
+por aninhamento de wrappers. Viewports: 1280×1080 e 1920×1080.
+O teste de geometria verifica também 3:2 e a cena dentro da altura visível.
+
+Como a produção já estava corrigida nesta reabertura, o vermelho foi obtido
+por mutações temporárias de produção antes deste commit exclusivo de testes e
+metadados; as mutações não entram no commit de testes.
+
+Comando de todas as provas: `npx vitest run src/App.test.ts -t PHY-18`.
+
+| Teste | Mutação aplicada em `src/App.tsx` | Vermelho observado |
+|---|---|---|
+| geometria / 1920 | somente remover a contenção da linha | `expected 1126 to be less than or equal to 1080`: canvas estabiliza fora do viewport; **1 failed, 3 passed, 28 skipped** |
+| geometria / 1280 | remover contenções da linha/painel, trocar rolagem do painel para visible e âncora do canvas para center (layout original) | top 397.046875, esperado 226; bottom 1033.046875, esperado 862 |
+| geometria / 1920 | mesmo layout original | bottom 1126 > 1080 |
+| arraste / 1280 | mesmo layout original | y 8.697900429132986 sem seleção, contra 6.000000192539925 com seleção |
+| arraste / 1920 | mesmo layout original | y 7.132517688679245 sem seleção, contra 6 com seleção |
+
+Layout original: **4 failed, 28 skipped**. Falhas de asserção, não de infraestrutura.
+Busca `rg -n 'alignItems|\bcontain\b|overflowY' src/App.test.ts`: nenhum resultado.
+As propriedades das linhas mutadas não são mencionadas textualmente pelos testes.
+Remover somente a contenção do painel: **4 passed, 28 skipped**; ela é redundante
+com a linha contida e a rolagem própria e será removida da produção.
+
+Requisito de execução: Node com WebSocket nativo e Chromium instalado; `CHROME_BIN`
+pode indicar o executável em CI. Falta de navegador falha explicitamente, sem skip.
+Neste ambiente, o sandbox de processos encerra o GPU do Chromium; a execução
+local dos testes foi autorizada fora desse sandbox, preservando o sandbox do Chrome.

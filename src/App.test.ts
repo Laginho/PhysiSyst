@@ -57,11 +57,6 @@ class FakeResizeObserver {
     FakeResizeObserver.targets.set(target, this)
     this.#cb([{ target, contentRect: containerSize } as ResizeObserverEntry], this as unknown as ResizeObserver)
   }
-  static deliver(target: Element, width: number, height: number) {
-    const observer = this.targets.get(target)
-    if (!observer) throw new Error('unobserved canvas container')
-    observer.#cb([{ target, contentRect: new DOMRect(0, 0, width, height) } as ResizeObserverEntry], observer as unknown as ResizeObserver)
-  }
   unobserve() {}
   disconnect() {
     for (const [target, observer] of FakeResizeObserver.targets) {
@@ -645,88 +640,187 @@ describe('canvas fits its container (PHY-15)', () => {
 })
 
 describe('selection keeps the canvas stationary (PHY-18)', () => {
-  // jsdom cannot measure CSS layout. Approximate intrinsic inspector height
-  // from its rendered controls (including expanded details), then deliver box
-  // changes through the real App ResizeObserver. This is a layout fixture,
-  // not browser proof; no shape-specific heights or mocked fitCanvas results.
-  function mirrorLayout(host: HTMLElement) {
-    const canvas = host.querySelector('canvas')!
-    const box = canvas.parentElement!
-    const inspector = box.parentElement!.nextElementSibling as HTMLElement
-    const controlHeight = () => [...inspector.querySelectorAll('label, button, select, legend, summary')]
-      .filter((element) => !element.closest('details:not([open])') || element.tagName === 'SUMMARY').length * 24
-    const initialHeight = controlHeight()
-    let boxHeight = containerSize.height
-    const flush = () => {
-      const contained = getComputedStyle(inspector).contain.split(' ').includes('size')
-      boxHeight = containerSize.height + (contained ? 0 : Math.max(0, controlHeight() - initialHeight))
-      act(() => FakeResizeObserver.deliver(box, containerSize.width, boxHeight))
+  // The layout and drag seams need a layout engine: jsdom cannot measure them.
+  // Run the real Vite app in a fresh headless Chromium profile. CDP over a local socket
+  // avoids a browser-driver dependency and does not attach to the user's browser.
+  // CI may provide CHROME_BIN; a missing browser fails rather than skips proof.
+  const browserScenario = String.raw`
+    import { spawn } from 'node:child_process';
+    import { access, mkdtemp, rm } from 'node:fs/promises';
+    import { tmpdir } from 'node:os';
+    import { join } from 'node:path';
+    import { createServer } from 'vite';
+
+    const [scenario, width] = process.argv.slice(1);
+    const candidates = [process.env.CHROME_BIN,
+      'C:/Program Files/Google/Chrome/Application/chrome.exe',
+      'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+      '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean);
+    let executable;
+    for (const candidate of candidates) {
+      try { await access(candidate); executable = candidate; break; } catch {}
     }
-    vi.spyOn(canvas, 'getBoundingClientRect').mockImplementation(() => {
-      const width = parseFloat(canvas.style.width)
-      const height = parseFloat(canvas.style.height)
-      const top = getComputedStyle(box).alignItems === 'center' ? (boxHeight - height) / 2 : 0
-      return new DOMRect((containerSize.width - width) / 2, top, width, height)
+    if (!executable) throw new Error('PHY-18 requires Chromium: set CHROME_BIN to its executable');
+    const profile = await mkdtemp(join(tmpdir(), 'phy-18-'));
+    const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+    let browser;
+    try {
+      await server.listen();
+      browser = spawn(executable, ['--headless=new', '--no-first-run', '--no-default-browser-check',
+        '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+        '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'],
+        { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+      const endpoint = await new Promise((resolve, reject) => {
+        let logs = '';
+        browser.stderr.on('data', chunk => {
+          logs += chunk.toString();
+          const match = logs.match(/DevTools listening on (ws:\/\/\S+)/);
+          if (match) resolve(match[1]);
+        });
+        browser.on('error', reject);
+        browser.on('exit', code => reject(new Error('Chromium exited ' + code + ': ' + logs)));
+      });
+      const socket = new WebSocket(endpoint);
+      await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+      let sequence = 0;
+      const pending = new Map();
+      socket.onmessage = event => {
+        const message = JSON.parse(event.data);
+        const callback = pending.get(message.id);
+        if (callback) {
+          pending.delete(message.id);
+          message.error ? callback.reject(new Error(JSON.stringify(message.error))) : callback.resolve(message.result);
+        }
+      };
+      socket.onclose = () => { for (const callback of pending.values()) callback.reject(new Error('Chromium disconnected')); };
+      const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+        const id = ++sequence;
+        pending.set(id, { resolve, reject });
+        socket.send(JSON.stringify({ id, method, params, sessionId }));
+      });
+      const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+      const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+      const page = (method, params) => send(method, params, sessionId);
+      await page('Emulation.setDeviceMetricsOverride', { width: Number(width), height: 1080, deviceScaleFactor: 1, mobile: false });
+      const evaluate = async expression => {
+        const result = await page('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+        if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+        return result.result.value;
+      };
+      const rect = () => evaluate("document.querySelector('canvas').getBoundingClientRect().toJSON()");
+      // Sample across animation frames. A feedback loop must fail to settle,
+      // not be mistaken for a stable rectangle after a single ResizeObserver tick.
+      const settle = () => evaluate(
+        "new Promise((resolve, reject) => { let previous = '', same = 0, frames = 0; " +
+        "function sample() { const canvas = document.querySelector('canvas'); " +
+        "const value = canvas && JSON.stringify(canvas.getBoundingClientRect().toJSON()); " +
+        "same = value && value === previous ? same + 1 : 0; previous = value; " +
+        "if (same >= 8) resolve(); else if (++frames > 120) reject(new Error('canvas geometry did not settle')); " +
+        "else requestAnimationFrame(sample); } requestAnimationFrame(sample); })");
+      const reset = async () => {
+        await page('Page.navigate', { url: server.resolvedUrls.local[0] });
+        for (let attempt = 0; attempt < 100; attempt++) {
+          if (await evaluate("Boolean(document.querySelector('canvas'))")) break;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        await evaluate('localStorage.clear()');
+        await settle();
+      };
+      const point = (rectangle, x, y) => {
+        // Demo camera spans 15 m horizontally, centered at (6, 4).
+        // Canvas has a one-pixel border; coordinates follow the public view.
+        const ppm = (rectangle.width - 2) / 15;
+        return { x: rectangle.left + (rectangle.width - 2) / 2 + (x - 6) * ppm,
+          y: rectangle.top + (rectangle.height - 2) / 2 - (y - 4) * ppm };
+      };
+      const mouse = (type, point) => page('Input.dispatchMouseEvent', {
+        type, ...point, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+      const select = async (x, y) => {
+        const position = point(await rect(), x, y);
+        await mouse('mousePressed', position);
+        await mouse('mouseReleased', position);
+        await settle();
+      };
+      const selected = () => evaluate("[...document.querySelectorAll('legend')].map(el => el.textContent.trim())");
+      await reset();
+      let output;
+      if (scenario === 'geometry') {
+        const before = await rect();
+        const selections = [];
+        for (const [id, x, y] of [['caixa', 9, 3], ['rampa', 3.5, 0.2], ['bola', 11, 5], [null, 0, 8]]) {
+          await select(x, y);
+          selections.push({ id, legends: await selected(), rectangle: await rect() });
+        }
+        output = { before, selections };
+      } else {
+        const positions = [];
+        for (const preselected of [false, true]) {
+          if (preselected) { await reset(); await select(9, 3); }
+          const before = await rect();
+          const start = point(before, 9, 3), target = point(before, 8, 6);
+          await mouse('mousePressed', start);
+          await settle();
+          await mouse('mouseMoved', target);
+          await mouse('mouseMoved', target);
+          await mouse('mouseReleased', target);
+          positions.push(await evaluate(
+            "(() => { const panel = [...document.querySelectorAll('fieldset')].find(el => el.querySelector('legend')?.textContent.trim() === 'caixa'); " +
+            "if (!panel) throw new Error('missing caixa panel'); " +
+            "const read = label => Number([...panel.querySelectorAll('label')].find(el => el.textContent.trim() === label).querySelector('input').value); " +
+            "return { x: read('x (m)'), y: read('y (m)') }; })()"));
+        }
+        output = positions;
+      }
+      process.stdout.write(JSON.stringify(output));
+    } finally {
+      if (browser && browser.exitCode === null) {
+        const exited = new Promise(resolve => browser.once('exit', resolve));
+        browser.kill();
+        await exited;
+      }
+      await server.close();
+      await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  `
+
+  async function runBrowser(scenario: string, width: number): Promise<string> {
+    // Node APIs stay outside the browser app's TS type surface.
+    const moduleName = 'node:child_process'
+    const { execFile } = await import(/* @vite-ignore */ moduleName)
+    return new Promise((resolve, reject) => {
+      execFile('node', ['--input-type=module', '-e', browserScenario, scenario, String(width)],
+        { timeout: 25000, windowsHide: true },
+        (error: Error | null, stdout: string, stderr: string) => {
+          if (error) reject(new Error(stderr || error.message.split('\n')[0]))
+          else resolve(stdout)
+        })
     })
-    return { canvas, flush }
   }
 
-  function selectAt(canvas: HTMLCanvasElement, x: number, y: number) {
-    const rect = canvas.getBoundingClientRect()
-    const point = worldToScreen(makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: rect.width / 15 }, rect.width, rect.height), x, y)
-    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', point.x + rect.left, point.y + rect.top)))
-    act(() => canvas.dispatchEvent(pointerEvent('pointerup', point.x + rect.left, point.y + rect.top)))
-  }
-
-  it.each([900, 1600])('keeps the same 3:2 rectangle through rectangle, triangle, circle and empty selection at box width %i', (width) => {
-    containerSize = { width, height: 600 }
-    const host = renderApp()
-    const { canvas, flush } = mirrorLayout(host)
-    const before = canvas.getBoundingClientRect().toJSON()
-    expect(before).toMatchObject({ width: 900, height: 600 })
-
-    for (const [id, x, y] of [['caixa', 9, 3], ['rampa', 3.5, 0.2], ['bola', 11, 5]] as const) {
-      selectAt(canvas, x, y)
-      flush()
-      expect([...host.querySelectorAll('legend')].some((legend) => legend.textContent?.trim() === id)).toBe(true)
-      expect(canvas.getBoundingClientRect().toJSON()).toEqual(before)
+  it.each([1280, 1920])('keeps the same 3:2 rectangle through all selections in Chromium at viewport width %i', async (width) => {
+    const { before, selections } = JSON.parse(await runBrowser('geometry', width)) as {
+      before: { width: number; height: number; top: number; bottom: number }
+      selections: { id: string | null; legends: string[]; rectangle: object }[]
     }
-    selectAt(canvas, 0, 8)
-    flush()
-    expect([...host.querySelectorAll('legend')].some((legend) => legend.textContent?.trim() === 'bola')).toBe(false)
-    expect(canvas.getBoundingClientRect().toJSON()).toEqual(before)
-  })
-
-  it.each([900, 1600])('drops at the same world position with and without selection before pointerdown at box width %i', (width) => {
-    const positions: { x: number; y: number }[] = []
-    for (const preselected of [false, true]) {
-      containerSize = { width, height: 600 }
-      const host = renderApp()
-      const { canvas, flush } = mirrorLayout(host)
-      if (preselected) {
-        selectAt(canvas, 9, 3)
-        flush()
-      }
-      // Same screen displacement, relative to the body at pickup. Resize
-      // delivery after pointerdown models selection changing the layout.
-      const rect = canvas.getBoundingClientRect()
-      const transform = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: rect.width / 15 }, rect.width, rect.height)
-      const start = worldToScreen(transform, 9, 3)
-      const target = worldToScreen(transform, 8, 6)
-      act(() => canvas.dispatchEvent(pointerEvent('pointerdown', start.x + rect.left, start.y + rect.top)))
-      flush()
-      for (const type of ['pointermove', 'pointermove', 'pointerup']) {
-        act(() => canvas.dispatchEvent(pointerEvent(type, target.x + rect.left, target.y + rect.top)))
-      }
-      positions.push(currentPosition(host, 'caixa'))
-      act(() => root?.unmount())
-      root = null
-      host.remove()
-      window.localStorage.clear()
+    expect(before.width).toBeGreaterThan(100)
+    expect(before.top).toBeGreaterThanOrEqual(0)
+    expect(before.bottom).toBeLessThanOrEqual(1080)
+    expect((before.width - 2) / (before.height - 2)).toBeCloseTo(1.5, 2)
+    for (const { id, legends, rectangle } of selections) {
+      if (id) expect(legends).toContain(id)
+      else expect(legends).not.toContain('bola')
+      expect(rectangle).toEqual(before)
     }
+  }, 30000)
+
+  it.each([1280, 1920])('drops at the same world position with and without prior selection in Chromium at viewport width %i', async (width) => {
+    const positions = JSON.parse(await runBrowser('drag', width)) as { x: number; y: number }[]
+    expect(positions).toHaveLength(2)
     expect(positions[0]).toEqual(positions[1])
-    expect(positions[0]).toEqual({ x: 8, y: 6 })
-  })
+    expect(positions[0].x).toBeCloseTo(8, 2)
+    expect(positions[0].y).toBeCloseTo(6, 2)
+  }, 30000)
 })
 
 describe('loading screen (PHY-16)', () => {
