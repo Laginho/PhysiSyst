@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: to-review
+Stage: to-merge
 Status: ready-for-agent
 Blocked by: none
 
@@ -257,3 +257,105 @@ alcançar a área excedente).
 
 Gate verde: `npm test` (478/478), `npm run lint`, `npm run typecheck`,
 `npm run build`.
+
+### Stage 3 — revisão (2026-09-14): needs your call
+
+Não repeti a medição do stage 2 — medi de novo por conta própria, com uma sonda
+CDP-sobre-Vite escrita nesta sessão (independente do harness do teste), varrendo
+13 larguras sem reload, `settle` de 8 frames idênticos antes de cada leitura, e
+medindo além do inspetor: interseção do canvas com **todo** elemento interativo
+da página (`button, input, select, textarea, a[href]`), `scrollWidth`/
+`scrollHeight` do documento, e `elementFromPoint` no centro do canvas.
+
+Varredura descendente 1920→360 e ascendente 360→1920, sem reload:
+
+| viewport | direção | canvas (x,y,w,h) | inspetor (x,y,w,h) | intersecta? | choques |
+|---|---|---|---|---|---|
+| 1920 | row | 376,64,872,582 | 1619,64,270,636 | não | nenhum |
+| 1400 | row | 116,64,872,582 | 1099,64,270,636 | não | nenhum |
+| 1000 | row | 15,64,674,450 | 699,64,270,636 | não | nenhum |
+| 950 | row | 15,64,623,416 | 649,64,270,636 | não | nenhum |
+| 900 | column | 16,64,854,570 | 16,702,853,944 | não | nenhum |
+| 883 | column | 16,64,839,560 | 16,692,836,944 | não | nenhum |
+| 882 | column | 16,64,836,558 | 16,690,835,944 | não | nenhum |
+| 881 | column | 16,64,836,558 | 16,690,834,944 | não | nenhum |
+| 800 | column | 16,64,755,504 | 16,636,753,944 | não | nenhum |
+| 700 | column | 16,64,656,438 | 16,570,653,944 | não | nenhum |
+| 620 | column | 16,64,602,402 | 16,562,573,944 | não | nenhum |
+| 600 | column | 16,64,602,402 | 16,562,553,944 | não | nenhum |
+| 500 | column | 16,64,602,402 | 16,562,453,944 | não | nenhum |
+| 360 | column | 16,64,602,402 | 16,593,313,963 | não | nenhum |
+
+O vazamento de 90° que reabriu o ticket sumiu: a coluna do canvas nunca mais
+mede 0 px de altura, e o inspetor passa a começar exatamente onde o conteúdo
+dela termina. As 14 medidas assentaram (nenhuma estourou o limite de frames), e
+1400 medido no passo 1 e de novo no passo 13 deu retângulo idêntico — a
+histerese converge nos dois sentidos, não só descendo.
+
+Mutate-verify refeito por mim, cada mutação isolada com o gate reaberto:
+
+| mutação | resultado |
+|---|---|
+| `flex: stacked ? '1 0 auto' : 1` → `flex: 1` | 4 vermelhos: interseção `true` em 900/700/600/360; 1400/950 seguem verdes |
+| `justifyContent: stacked ? 'flex-start' : 'center'` → `'center'` | 2 vermelhos: `rect.left` −8,5 em 600 e −128,5 em 360 — os mesmos números da revisão anterior |
+| histerese colapsada num limiar só | 3 vermelhos: o teste jsdom (`'row'` onde devia ser `'column'`) **e** 900/700 no Chromium, porque o layout passa a oscilar e nunca assenta |
+
+A terceira não estava pedida e é a mais informativa: prova que a histerese é
+carga, não enfeite, e que o `settle` de 8 frames do harness realmente falha alto
+quando o layout não converge.
+
+Critérios:
+
+1. ✅ O layout empilha em ~914 px de viewport, antes que a coluna do canvas caia
+   abaixo do piso, e nessa transição o canvas nunca ultrapassa a própria coluna
+   em nenhum dos dois eixos.
+2. ✅ Nenhuma interseção em 14 larguras, nos dois sentidos da varredura — e
+   ampliando o critério para todos os elementos interativos da página (botões de
+   cena, inputs, selects, links), não só a coluna do inspetor: zero choques.
+   `elementFromPoint` no centro do canvas retorna `CANVAS` em todas.
+3. ⚠️ Satisfeito de 620 px de viewport para cima. Abaixo disso `rect.left` é 16
+   (nunca negativo, que era o caso insalvável), mas `rect.right` é 618 contra
+   `innerWidth` 600/500/360 — o canvas sai pela direita. **É a parte que precisa
+   da sua decisão** (abaixo).
+4. ✅ Sem regressão: aspecto 1,498 (o arredondamento para múltiplo de 3) em todas
+   as 14 larguras; 1920/1400/1000/950 lado a lado com a mesma geometria de antes;
+   478/478 testes verdes, incluindo os de PHY-15 e PHY-18.
+5. ✅ Mutate-verify real e ligado aos critérios, não a um proxy — os testes agora
+   medem `getBoundingClientRect()` em Chromium, que é a falha do round anterior,
+   corrigida. O teste jsdom de histerese foi mantido e continua mordendo.
+6. ✅ Gate verde: `npm test` (478/478), `npm run lint`, `npm run typecheck`,
+   `npm run build`.
+
+Correção aplicada pela revisão (pequena, dentro dos Primary files, sem teste
+novo): o comentário em `src/App.tsx` na coluna do canvas afirmava que o inspetor
+"gets flex-shrink below" — ele continua `flexShrink: 0`, como o próprio stage 2
+registrou ao descartar essa mudança. Comentário reescrito para descrever o que o
+código faz: nenhuma das duas colunas encolhe quando empilhadas, a linha
+transborda para baixo e a página rola.
+
+#### O que precisa da sua decisão
+
+O critério 3, como está escrito (`rect.right <= window.innerWidth` em toda
+largura), é **insatisfazível** dentro do escopo deste ticket. Abaixo de ~620 px
+de viewport nenhuma coluna possível tem 600 px, e mudar `CANVAS_MIN_WIDTH` o
+corpo do ticket põe fora de escopo. Ao mesmo tempo o corpo lista "dar scroll
+horizontal à página" entre as estratégias aceitas — e scroll horizontal implica,
+por definição, `rect.right > innerWidth`. Os dois textos não podem valer juntos.
+
+O que a implementação entrega abaixo de 620 px: o excedente todo vai para a
+direita (`scrollWidth` 618 ≥ `rect.right` 618, confirmado: alcançável rolando),
+o canvas nunca sai pela esquerda, e não cobre nada. Ou seja, a estratégia que o
+corpo aceita, executada corretamente.
+
+Duas saídas, ambas suas:
+
+- **Aceitar** — o critério 3 vira "não vaza pela esquerda e todo excedente é
+  alcançável por scroll", que é o que o corpo do ticket sempre quis dizer.
+  Merge, e a reformulação do critério fica registrada aqui.
+- **Não aceitar** — então o alvo real é o piso de 600 px, e isso é um ticket
+  novo de stage 1 (tornar `CANVAS_MIN_WIDTH` responsivo, ou dar zoom/scroll
+  interno ao canvas), não um reopen deste.
+
+Não reabri para o stage 2 porque não há trabalho de stage 2 possível: nenhuma
+mudança de layout dentro dos Primary files satisfaz o critério 3 com o piso
+fixo em 600.

@@ -1131,8 +1131,10 @@ export default function App() {
             // width fairly with the fixed-width inspector (existing PHY-15/18
             // behaviour, untouched). Stacked, flex-shrink:0 with an auto basis
             // makes this column's own height come from its own content — the
-            // canvas floor below, plus the controls — so the inspector (which
-            // gets flex-shrink below) is the one giving up room, not this one.
+            // canvas floor below, plus the controls. Neither column shrinks
+            // when stacked, so the row simply overflows downwards and the page
+            // scrolls; what matters is that this one never collapses under the
+            // canvas it contains, which is what painted it over the inspector.
             flex: stacked ? '1 0 auto' : 1,
             minWidth: 0,
             minHeight: 0,
