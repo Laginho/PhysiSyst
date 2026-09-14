@@ -4,6 +4,7 @@ import type { Body, Scene } from '../scene/types'
 export const INDEX_KEY = 'physics-sim:scenes'
 export const SCENE_KEY_PREFIX = 'physics-sim:scene:'
 export const GALLERY_ACK_KEY = 'physics-sim:galleryAck'
+export const CURRENT_SCENE_KEY = 'physics-sim:currentScene'
 export const AUTOSAVE_DELAY_MS = 400
 
 export function isGalleryAcked(storage: Storage): boolean {
@@ -170,6 +171,26 @@ export function deleteScene(storage: Storage, id: string): SceneIndexEntry[] | {
   if (idxWarn) return { reason: idxWarn }
   removeScene(storage, id)
   return next
+}
+
+/**
+ * Id no longer in the index (deleted scene, storage from another machine,
+ * corrupted value) falls back to null — callers open the first of the index.
+ *
+ * Takes the index instead of loading it, unlike its neighbours here: the only
+ * caller is App's init, which already holds a `loadIndexResult` and must not
+ * re-read — on `kind: 'corrupt'` there is no index to check membership against.
+ */
+export function loadCurrentSceneId(storage: Storage, index: readonly SceneIndexEntry[]): string | null {
+  const raw = storage.getItem(CURRENT_SCENE_KEY)
+  if (typeof raw !== 'string') return null
+  return index.some((e) => e.id === raw) ? raw : null
+}
+
+export function saveCurrentSceneId(storage: Storage, id: string): void {
+  try {
+    storage.setItem(CURRENT_SCENE_KEY, id)
+  } catch {}
 }
 
 export function touchScene(storage: Storage, id: string, now = Date.now()): string | null {

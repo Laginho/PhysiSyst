@@ -9,6 +9,8 @@ import { makeTransform, worldToScreen } from './render/transform'
 import { trashRect } from './editor/trash'
 import { createSimulator, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
+import { blankScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import type { Scene } from './scene/types'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -137,6 +139,22 @@ function contactPairs(host: HTMLElement): string[] {
   const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
   if (!fieldset) return []
   return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
+}
+
+// The scene picker's own <select> — the app renders more than one <select>
+// (velocity mode, force endpoints), so this finds it by its fieldset legend.
+function sceneSelect(host: HTMLElement): HTMLSelectElement {
+  const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === ptBR['scenes.title'])
+  const select = fieldset?.querySelector('select')
+  if (!select) throw new Error('missing scene select')
+  return select
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  if (!setter) throw new Error('HTMLSelectElement.value setter is unavailable')
+  setter.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
 // Drags whatever body sits at world (from.x, from.y) to world (to.x, to.y).
@@ -931,5 +949,86 @@ describe('loading screen (PHY-16)', () => {
     expect(createSimulator).toHaveBeenCalledTimes(2)
     expect(host.textContent).not.toContain(ptBR['loading.error'])
     expect(loadingOverlay(host)).toBeUndefined()
+  })
+})
+
+describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
+  // Each scene gets its own extra body (`marca-<id>`) so a test can tell
+  // which scene's *content* loaded into the canvas, not just which id the
+  // <select> reports — the two are set by different code paths.
+  function markedScene(id: string): Scene {
+    const scene = blankScene()
+    return {
+      ...scene,
+      bodies: [...scene.bodies, { shape: 'circle', radius: 0.5, id: `marca-${id}`, fixed: true, mass: 0, position: { x: 1, y: 1 }, rotation: 0 }],
+    }
+  }
+
+  function seedThreeScenes(): SceneIndexEntry[] {
+    const storage = window.localStorage as unknown as PersistStorage
+    const entries: SceneIndexEntry[] = [
+      { id: 'cena-1', name: 'Cena 1', updatedAt: 1 },
+      { id: 'cena-2', name: 'Cena 2', updatedAt: 2 },
+      { id: 'cena-3', name: 'Cena 3', updatedAt: 3 },
+    ]
+    saveIndex(storage, entries)
+    for (const e of entries) saveScene(storage, e.id, markedScene(e.id))
+    return entries
+  }
+
+  it('com a terceira cena marcada como atual no storage, a inicialização abre a terceira', () => {
+    seedThreeScenes()
+    saveCurrentSceneId(window.localStorage as unknown as PersistStorage, 'cena-3')
+
+    const host = renderApp()
+    expect(sceneSelect(host).value).toBe('cena-3')
+    // Pins the *content* half of criterion 2 — the canvas doc, not only the
+    // <select>, must be the persisted scene's.
+    expect(host.textContent).toContain('marca-cena-3')
+    expect(host.textContent).not.toContain('marca-cena-1')
+  })
+
+  it('sem marca de cena atual, a inicialização abre a primeira do índice (comportamento atual)', () => {
+    seedThreeScenes()
+
+    const host = renderApp()
+    expect(sceneSelect(host).value).toBe('cena-1')
+  })
+
+  it('trocar de cena persiste a nova cena como atual — reload abre a escolhida, não a primeira', () => {
+    seedThreeScenes()
+
+    const host = renderApp()
+    expect(sceneSelect(host).value).toBe('cena-1')
+    act(() => setSelectValue(sceneSelect(host), 'cena-2'))
+    expect(sceneSelect(host).value).toBe('cena-2')
+
+    act(() => root?.unmount())
+    root = null
+
+    const reopened = renderApp()
+    expect(sceneSelect(reopened).value).toBe('cena-2')
+    expect(reopened.textContent).toContain('marca-cena-2')
+    expect(reopened.textContent).not.toContain('marca-cena-1')
+  })
+
+  it('excluir a cena atual e reinicializar abre a primeira do índice restante, sem tela quebrada', () => {
+    const storage = window.localStorage as unknown as PersistStorage
+    const entries: SceneIndexEntry[] = [
+      { id: 'cena-1', name: 'Cena 1', updatedAt: 1 },
+      { id: 'cena-2', name: 'Cena 2', updatedAt: 2 },
+    ]
+    saveIndex(storage, entries)
+    for (const e of entries) saveScene(storage, e.id, blankScene())
+    saveCurrentSceneId(storage, 'cena-2')
+
+    const host = renderApp()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    act(() => findButton(host, ptBR['scenes.delete'])?.click())
+    act(() => root?.unmount())
+    root = null
+
+    const reopened = renderApp()
+    expect(sceneSelect(reopened).value).toBe('cena-1')
   })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   AUTOSAVE_DELAY_MS,
+  CURRENT_SCENE_KEY,
   DebouncedSaver,
   blankScene,
   classifyImport,
@@ -10,11 +11,13 @@ import {
   exportScene,
   importScene,
   isDirty,
+  loadCurrentSceneId,
   loadIndex,
   loadIndexResult,
   loadScene,
   loadSceneOrBlank,
   nextCenaName,
+  saveCurrentSceneId,
   saveIndex,
   saveScene,
   sceneKey,
@@ -143,6 +146,40 @@ describe('index + scene CRUD', () => {
     expect(r2.entry.id).toBe('cena-1')
     expect(loadScene(s, 'cena-1')).toEqual(blankScene())
     expect(loadIndex(s)).toHaveLength(1)
+  })
+})
+
+describe('cena atual persiste entre reloads (PHY-19)', () => {
+  it('grava e lê o id da cena atual', () => {
+    const s = memStorage()
+    const index: SceneIndexEntry[] = [
+      { id: 'cena-1', name: 'Cena 1', updatedAt: 1 },
+      { id: 'cena-2', name: 'Cena 2', updatedAt: 2 },
+    ]
+    saveCurrentSceneId(s, 'cena-2')
+    expect(loadCurrentSceneId(s, index)).toBe('cena-2')
+  })
+
+  it('sem chave persistida → null', () => {
+    const s = memStorage()
+    const index: SceneIndexEntry[] = [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }]
+    expect(loadCurrentSceneId(s, index)).toBeNull()
+  })
+
+  it('id persistido fora do índice (cena excluída) → null, sem lançar', () => {
+    const s = memStorage()
+    const index: SceneIndexEntry[] = [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }]
+    saveCurrentSceneId(s, 'cena-9')
+    expect(() => loadCurrentSceneId(s, index)).not.toThrow()
+    expect(loadCurrentSceneId(s, index)).toBeNull()
+  })
+
+  it('valor corrompido (não-string) → null, sem lançar', () => {
+    const s = memStorage()
+    const index: SceneIndexEntry[] = [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }]
+    s.map.set(CURRENT_SCENE_KEY, 42 as unknown as string)
+    expect(() => loadCurrentSceneId(s, index)).not.toThrow()
+    expect(loadCurrentSceneId(s, index)).toBeNull()
   })
 })
 

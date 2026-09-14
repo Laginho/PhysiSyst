@@ -72,9 +72,11 @@ import {
   duplicateScene as duplicatePersistedScene,
   exportScene,
   importScene,
+  loadCurrentSceneId,
   loadIndex,
   loadIndexResult,
   loadSceneOrBlank,
+  saveCurrentSceneId,
   saveIndex,
   saveScene,
   shouldShowGallery,
@@ -430,7 +432,7 @@ export default function App() {
       return 'cena-1'
     }
     if (res.kind === 'corrupt') return 'cena-1'
-    return res.index[0]?.id ?? 'cena-1'
+    return loadCurrentSceneId(storage, res.index) ?? res.index[0]?.id ?? 'cena-1'
   })
   const [doc, setDoc] = useState<Scene>(() => {
     const res = loadIndexResult(storage)
@@ -439,7 +441,9 @@ export default function App() {
     }
     if (res.kind === 'corrupt') return blankScene()
     if (res.index.length === 0) return blankScene()
-    const { scene } = loadSceneOrBlank(storage, res.index[0]!.id)
+    // Reads `currentId` from the initializer above — load-bearing declaration
+    // order: this useState must stay below the one that sets `currentId`.
+    const { scene } = loadSceneOrBlank(storage, currentId)
     return scene
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -510,6 +514,7 @@ export default function App() {
       lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
       setSceneIndex(loadIndex(storage))
       setCurrentId(id)
+      saveCurrentSceneId(storage, id)
       setDoc(scene)
       setSelectedId(null)
       setImportError(null)
