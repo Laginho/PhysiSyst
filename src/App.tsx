@@ -1246,9 +1246,8 @@ export default function App() {
             <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
           </div>
         </div>
-        {/* Size containment excludes inspector content from the row's intrinsic
-            size; stretch gives it the row height, with its own scrolling. */}
-        <div style={{ display: 'grid', gap: 8, width: 270, flexShrink: 0, contain: 'size', overflowY: 'auto', alignContent: 'start' }}>
+        {/* The row sets the panel height; excess content scrolls independently. */}
+        <div style={{ display: 'grid', gap: 8, width: 270, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"

@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -44,7 +44,7 @@ arraste e deixa a cena pulando.
 2. ✅ (2026-09-13, medido em navegador na 2ª revisão) Trocar a seleção entre corpos de shapes diferentes (retângulo ↔ cunha ↔ bola, inspetores de alturas diferentes) também não move o canvas
 3. ✅ (2026-09-13, medido em navegador na 2ª revisão) Um arraste que começa em um corpo **não selecionado** larga o corpo na mesma posição de mundo que o mesmo arraste em um corpo **já selecionado** — a seleção deixa de ser um estado que muda o resultado do arraste
 4. A cena inteira continua visível e o canvas continua 3:2 depois da mudança de layout (não regredir o PHY-15)
-5. ❌ (2026-09-13, ver 2ª revisão) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
+5. ✅ (2026-09-13, terceira implementação, evidência abaixo) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
 6. Gate verde
 
 #### Verification
@@ -315,3 +315,19 @@ Requisito de execução: Node com WebSocket nativo e Chromium instalado; `CHROME
 pode indicar o executável em CI. Falta de navegador falha explicitamente, sem skip.
 Neste ambiente, o sandbox de processos encerra o GPU do Chromium; a execução
 local dos testes foi autorizada fora desse sandbox, preservando o sandbox do Chrome.
+#### Stage 2 — entrega da terceira implementação (2026-09-13)
+
+- Testes e evidência vermelha: `1a5976e`. O commit seguinte não modifica testes.
+- Produção: removida somente a contenção redundante do painel; a linha continua
+  com contenção de tamanho, o canvas ancorado no topo e o painel com rolagem própria.
+- Mutação equivalente `size` → `strict` somente na linha, já sem contenção do
+  painel: **4 passed, 28 skipped**. O teste aceita a solução equivalente.
+- Todas as mutações revertidas antes do gate; `fitCanvas` e handlers intactos.
+- Gate `npm test && npm run lint && npm run typecheck && npm run build`: exit 0,
+  **27 arquivos, 463 testes passaram**, lint e typecheck sem erros, build concluído.
+  Aviso de bundle >500 kB é pré-existente. `git diff --check` limpo.
+- Mantida a largura do painel já aprovada visualmente: esta retomada fecha apenas
+  o critério 5; política horizontal e limpezas menores não bloqueantes ficam fora
+  desta alteração.
+
+Pronto para etapa 3 na branch existente `phy/PHY-18-canvas-estavel`.
