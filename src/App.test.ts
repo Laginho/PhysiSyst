@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
+import { CANVAS_MIN_WIDTH } from './render/fitCanvas'
 import { trashRect } from './editor/trash'
 import { createSimulator, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
@@ -49,10 +50,17 @@ const originalSetPointerCapture = HTMLCanvasElement.prototype.setPointerCapture
 // from observe() with whatever `containerSize` the test set beforehand, mirroring
 // the initial-measurement call a real ResizeObserver makes on observe().
 let containerSize = { width: 900, height: 600 }
+// Set by the constructor of whichever FakeResizeObserver instance App creates
+// last, so a test can fire a SECOND callback by hand — mirroring the follow-up
+// measurement a real ResizeObserver sends once a layout change (e.g. stacking
+// the columns) actually resizes the box it watches, which this stub otherwise
+// never does on its own (it only fires once, synchronously, from observe()).
+let lastResizeObserverCallback: ResizeObserverCallback | null = null
 class FakeResizeObserver {
   #cb: ResizeObserverCallback
   constructor(cb: ResizeObserverCallback) {
     this.#cb = cb
+    lastResizeObserverCallback = cb
   }
   observe(target: Element) {
     this.#cb([{ target, contentRect: containerSize } as ResizeObserverEntry], this as unknown as ResizeObserver)
@@ -65,6 +73,7 @@ beforeEach(() => {
   document.body.innerHTML = ''
   window.localStorage.clear()
   containerSize = { width: 900, height: 600 }
+  lastResizeObserverCallback = null
   vi.mocked(createSimulator).mockReset()
   vi.mocked(createSimulator).mockImplementation(async () => makeFakeSimulator())
   Object.defineProperty(globalThis, 'ResizeObserver', {
@@ -833,6 +842,39 @@ describe('selection keeps the canvas stationary (PHY-18)', () => {
     expect(positions[0].x).toBeCloseTo(8, 2)
     expect(positions[0].y).toBeCloseTo(6, 2)
   }, 30000)
+})
+
+describe('canvas coluna nunca vaza para o inspetor (PHY-20)', () => {
+  it('empilha as colunas quando a coluna do canvas mediria menos que o piso, e desempilha quando volta a caber', () => {
+    // Squeeze: side-by-side with the fixed-width inspector, this column would
+    // measure below CANVAS_MIN_WIDTH — exactly the case that used to let the
+    // canvas float past its own column onto the inspector's.
+    containerSize = { width: 550, height: 500 }
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+    const row = canvas.parentElement?.parentElement?.parentElement as HTMLElement
+    const inspector = row.children[1] as HTMLElement
+
+    expect(row.style.flexDirection).toBe('column')
+    expect(inspector.style.width).toBe('100%')
+
+    // Mirrors the follow-up measurement a real ResizeObserver sends once
+    // stacking actually resizes the box: freed from sharing the row with the
+    // inspector, it now measures wider than the floor, but still not enough
+    // to fit both columns side by side — stays stacked.
+    act(() => lastResizeObserverCallback?.([{ contentRect: { width: 820, height: 500 } } as ResizeObserverEntry], null as unknown as ResizeObserver))
+    expect(row.style.flexDirection).toBe('column')
+    expect(parseFloat(canvas.style.width)).toBeGreaterThan(CANVAS_MIN_WIDTH)
+    expect(parseFloat(canvas.style.width)).toBeLessThanOrEqual(820)
+
+    // Wide enough that both columns fit side by side without the canvas
+    // column dropping below the floor — un-stacks.
+    act(() => lastResizeObserverCallback?.([{ contentRect: { width: 1400, height: 500 } } as ResizeObserverEntry], null as unknown as ResizeObserver))
+    expect(row.style.flexDirection).toBe('row')
+    expect(inspector.style.width).toBe('270px')
+    expect(parseFloat(canvas.style.width)).toBeLessThanOrEqual(1400)
+  })
 })
 
 describe('loading screen (PHY-16)', () => {
