@@ -1,10 +1,10 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
 - Primary files:
-  - `src/App.tsx` (a linha `display: flex` que põe coluna do canvas e coluna do inspetor lado a lado, ~1100, e o wrapper `alignItems: 'center'` do canvas, ~1107)
+  - `src/App.tsx` (a linha `display: flex` que põe coluna do canvas e coluna do inspetor lado a lado, ~1100, o wrapper do canvas, ~1107, e a coluna direita `alignSelf: 'flex-start'`, ~1245 — a altura dela é o que empurra a linha). Fora do escopo: `src/render/fitCanvas.ts`, que é Primary file do PHY-20
   - `src/App.test.ts`
 
 #### What to build
@@ -40,11 +40,11 @@ arraste e deixa a cena pulando.
 
 #### Acceptance criteria
 
-1. Selecionar um corpo não muda a posição nem o tamanho do retângulo do canvas: `getBoundingClientRect()` do canvas é igual antes e depois da seleção, com o inspetor renderizado
-2. Trocar a seleção entre corpos de shapes diferentes (retângulo ↔ cunha ↔ bola, inspetores de alturas diferentes) também não move o canvas
-3. Um arraste que começa em um corpo **não selecionado** larga o corpo na mesma posição de mundo que o mesmo arraste em um corpo **já selecionado** — a seleção deixa de ser um estado que muda o resultado do arraste
+1. ❌ (2026-09-13, ver revisão) Selecionar um corpo não muda a posição nem o tamanho do retângulo do canvas: `getBoundingClientRect()` do canvas é igual antes e depois da seleção, com o inspetor renderizado
+2. ❌ (2026-09-13, ver revisão) Trocar a seleção entre corpos de shapes diferentes (retângulo ↔ cunha ↔ bola, inspetores de alturas diferentes) também não move o canvas
+3. ❌ (2026-09-13, ver revisão) Um arraste que começa em um corpo **não selecionado** larga o corpo na mesma posição de mundo que o mesmo arraste em um corpo **já selecionado** — a seleção deixa de ser um estado que muda o resultado do arraste
 4. A cena inteira continua visível e o canvas continua 3:2 depois da mudança de layout (não regredir o PHY-15)
-5. Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
+5. ⚠ parcial (2026-09-13, ver revisão) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
 6. Gate verde
 
 #### Verification
@@ -89,3 +89,66 @@ Limite da verificação: geometria exercitada pelo espelho de layout aprovado no
 ticket, pois jsdom não calcula flex layout; não houve passe em navegador real
 nesta etapa. O espelho lê o estilo do DOM de produção a cada medição e os testes
 de PHY-15/fitCanvas continuam verdes. Pronto para a etapa 3.
+
+#### Stage 3 — revisão (2026-09-13): reaberto
+
+Decisão: **reabrir**. A âncora `alignItems: 'flex-start'` está certa e fica, mas
+resolve só metade do problema: ela impede o canvas de ser **recentrado**, não
+impede a linha de **crescer**. A altura da linha continua sendo a do conteúdo da
+coluna do inspetor — o princípio que o próprio ticket enuncia ("a altura da linha
+não pode depender do conteúdo da coluna do inspetor") continua violado.
+
+Consequência: onde o canvas é limitado pela **altura** (`containerHeight * 1.5 <
+containerWidth` em `fitCanvas`), selecionar um corpo faz a caixa crescer, o
+`ResizeObserver` (`src/App.tsx:568`) redispara e o canvas **muda de tamanho**. O
+ppm muda no meio do arraste, então agora **x também erra**, não só y.
+
+Medido no navegador (Chromium, dev server, cena demo). A pane não estava
+desenhando, então o `ResizeObserver` real não entregava; os números abaixo são a
+geometria da caixa lida por `getBoundingClientRect()` (layout síncrono, confiável
+mesmo sem paint) com `fitCanvas()` aplicado em cima — não a leitura do
+`canvas.style`:
+
+| viewport | caixa antes | canvas antes | caixa depois de selecionar | canvas depois |
+|---|---|---|---|---|
+| 1920×1080 | 1546×960 | **1440×960** (limitado pela altura) | 1546×1264 (`caixa`) | **1545×1030** |
+| 2560×700 | 2186×888 | **1332×888** (limitado pela altura) | 2186×1264 (`bola`) | **1896×1264** |
+| 1600×900 | 1226×888 | 1226×817 (limitado pela largura) | 1226×1264 | 1226×817 — ok |
+
+Uma janela 1920×1080 maximizada, a resolução de desktop mais comum, cai no caso
+quebrado. A medição manual do PHY-17 (D2) pegou só o caso limitado pela largura,
+que é onde a correção funciona.
+
+O que falta:
+
+1. Critérios 1, 2 e 3 em viewport limitada pela altura. O caminho é um dos outros
+   dois que o ticket já lista: dar à coluna direita altura própria com scroll, ou
+   reservar a altura — algo que faça a altura da linha parar de depender do
+   inspetor. `fitCanvas.ts` não deve ser tocado aqui (PHY-20 é dono dele).
+2. Um teste que **enxergue tamanho**, não só posição. Os dois testes novos são
+   cegos para este bug por construção: `mirrorLayout` devolve
+   `parseFloat(canvas.style.width)` como largura, e `FakeResizeObserver`
+   (`src/App.test.ts:50`) dispara uma vez só, no `observe()`, com um
+   `containerSize` fixo. Nenhuma mudança de altura da caixa chega ao `fitCanvas`
+   nos testes. O seam é fazer o fake reentregar quando a altura espelhada muda.
+3. Critério 5 fica ⚠ parcial pelo mesmo motivo: a mutação aplicada
+   (`flex-start` → `center`) é exatamente a única string de produção que o
+   espelho lê, então o vermelho prova que o espelho lê `alignItems`, não que o
+   canvas fica parado. `extraHeight` (170/230/130) é inventado pelo teste e nunca
+   lido do inspetor renderizado.
+
+Menores, para a mesma passada (não bloqueiam sozinhos):
+
+- `const origin = preselected && … ? 85 : 0` — o nome não diz o que guarda e `85`
+  é `170 / 2` repetido à mão duas linhas abaixo do 170.
+- `[...host.querySelectorAll('fieldset')].find(f => f.querySelector('legend')…)`
+  aparece três vezes neste bloco e já existia em quatro outros pontos do arquivo
+  (`currentPosition`, `contactPairs`, PHY-15). Cabe um `panelFor(host, id)`.
+
+Não regrediu: PHY-15 e `fitCanvas` continuam verdes; a cena segue 3:2 e visível
+(critério 4 ✅). Gate na revisão: `npm test && npm run lint && npm run typecheck
+&& npm run build`, exit 0 — **27 arquivos, 461 testes**, lint e tipos limpos,
+build ok (aviso de bundle > 500 kB, pré-existente). Critério 6 ✅.
+
+A correção continua na branch `phy/PHY-18-canvas-estavel`; o commit `81aa8fe`
+fica como está.

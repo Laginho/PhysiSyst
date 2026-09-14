@@ -82,3 +82,8 @@ medidos com `resize_window` em três larguras (900/950/1000 px) e
 a mesma classe de medida inválida que travou a sessão anterior (aquela tinha 0
 tick de `requestAnimationFrame`; esta teve 60/61 ticks por segundo,
 confirmados antes de cada leitura).
+
+Revisão do PHY-18 (2026-09-13): o PHY-18 foi reaberto e a correção dele vai mexer
+na mesma linha de duas colunas (`src/App.tsx`, ~1100–1245) para tirar a altura da
+linha das mãos do inspetor. `fitCanvas.ts` ficou explicitamente fora do escopo do
+PHY-18 para não colidir com este ticket. Fazer o PHY-18 primeiro evita retrabalho.
