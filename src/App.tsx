@@ -1104,7 +1104,8 @@ export default function App() {
             // Height comes from the row (stretch), NEVER from the canvas: sizing the
             // canvas off a box that shrink-wraps it is a feedback loop that grows
             // the canvas a few px every frame until it overflows.
-            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
+            // Anchor the canvas so a taller inspector cannot move it mid-drag.
+            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
           >
             <canvas
               ref={canvasRef}

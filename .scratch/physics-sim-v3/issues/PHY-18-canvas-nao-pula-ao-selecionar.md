@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -66,3 +66,26 @@ Red inicial: `npx vitest run src/App.test.ts -t PHY-18`: 2 failed, 28 skipped.
 Geometria: top 85 recebido, 0 esperado. Arraste: (8, 7.416666666666666)
 sem seleção prévia versus (8, 6) com seleção prévia. O espelho de layout do
 jsdom lê `alignItems` do wrapper real; eventos usam os handlers reais do App.
+
+#### Stage 2 — implementação (2026-09-13)
+
+- Commit red: `f51f8aa` (somente testes e metadados deste ticket).
+- `src/App.tsx`: wrapper do canvas ancorado com `alignItems: 'flex-start'`.
+- Mutação aplicada após o verde: restaurar `alignItems: 'center'` no wrapper
+  real de produção e executar `npx vitest run src/App.test.ts -t PHY-18`.
+
+| Teste novo em `src/App.test.ts` | Saída vermelha com a mutação |
+|---|---|
+| keeps the same 3:2 rectangle through rectangle, triangle, circle and empty selection | `top: 85` / `bottom: 685`, esperados `top: 0` / `bottom: 600` |
+| drops at the same world position with and without selection before pointerdown | recebido `{ x: 8, y: 7.416666666666666 }`, esperado `{ x: 8, y: 6 }` |
+
+Resultado da mutação: **2 failed, 28 skipped**. Mutação removida antes do gate.
+Verificação focada: **2 arquivos, 36 testes passaram**.
+Gate: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0;
+**27 arquivos, 461 testes passaram**, lint e tipos sem erros, build concluído.
+Vite emitiu aviso de bundle acima de 500 kB.
+
+Limite da verificação: geometria exercitada pelo espelho de layout aprovado no
+ticket, pois jsdom não calcula flex layout; não houve passe em navegador real
+nesta etapa. O espelho lê o estilo do DOM de produção a cada medição e os testes
+de PHY-15/fitCanvas continuam verdes. Pronto para a etapa 3.
