@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 
@@ -40,11 +40,11 @@ arraste e deixa a cena pulando.
 
 #### Acceptance criteria
 
-1. ❌ (2026-09-13, ver revisão) Selecionar um corpo não muda a posição nem o tamanho do retângulo do canvas: `getBoundingClientRect()` do canvas é igual antes e depois da seleção, com o inspetor renderizado
-2. ❌ (2026-09-13, ver revisão) Trocar a seleção entre corpos de shapes diferentes (retângulo ↔ cunha ↔ bola, inspetores de alturas diferentes) também não move o canvas
-3. ❌ (2026-09-13, ver revisão) Um arraste que começa em um corpo **não selecionado** larga o corpo na mesma posição de mundo que o mesmo arraste em um corpo **já selecionado** — a seleção deixa de ser um estado que muda o resultado do arraste
+1. ✅ (2026-09-13, medido em navegador na 2ª revisão) Selecionar um corpo não muda a posição nem o tamanho do retângulo do canvas: `getBoundingClientRect()` do canvas é igual antes e depois da seleção, com o inspetor renderizado
+2. ✅ (2026-09-13, medido em navegador na 2ª revisão) Trocar a seleção entre corpos de shapes diferentes (retângulo ↔ cunha ↔ bola, inspetores de alturas diferentes) também não move o canvas
+3. ✅ (2026-09-13, medido em navegador na 2ª revisão) Um arraste que começa em um corpo **não selecionado** larga o corpo na mesma posição de mundo que o mesmo arraste em um corpo **já selecionado** — a seleção deixa de ser um estado que muda o resultado do arraste
 4. A cena inteira continua visível e o canvas continua 3:2 depois da mudança de layout (não regredir o PHY-15)
-5. ⚠ parcial (2026-09-13, ver revisão) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
+5. ❌ (2026-09-13, ver 2ª revisão) Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
 6. Gate verde
 
 #### Verification
@@ -208,3 +208,75 @@ aproximação de layout, complementada pelas medições reais acima.
 Verificação focada: **2 arquivos, 38 testes passaram**. Gate completo exit 0:
 **27 arquivos, 463 testes passaram**, lint, typecheck e build verdes.
 Aviso de bundle >500 kB permanece pré-existente. Pronto para etapa 3.
+
+#### Stage 3 — revisão (2026-09-13): reaberto (2ª vez)
+
+Decisão: **reabrir**, e só pelo critério 5. A correção de produção está certa e
+esta revisão a verificou em navegador real; o que não se sustenta é o valor de
+prova dos testes.
+
+Medições desta revisão (Chromium, dev server, viewport 1920×1080 — exatamente o
+caso limitado pela altura que a revisão anterior mostrou quebrado), retângulo do
+canvas por `getBoundingClientRect()`:
+
+| ação | retângulo do canvas |
+|---|---|
+| sem seleção | `{left: 90.5, top: 64, width: 1442, height: 962}` |
+| selecionar `caixa` | idêntico |
+| selecionar `bola` | idêntico |
+| desselecionar | idêntico |
+
+`document.body.scrollHeight` ficou 1080 (= viewport) em todas elas, e o inspetor
+rola sozinho (`clientHeight` 1016 contra `scrollHeight` 1358 com a bola
+selecionada) em vez de crescer a linha. Arraste de `caixa` **sem seleção
+prévia**, de (9, 3) para (8, 6): leitura final **(8.00, 6.00) m**, exato.
+Em 1280×360 a linha recebe 296 px e não colapsa.
+
+Critérios 1, 2, 3 e 4 ✅. Critério 6 ✅: gate desta revisão exit 0, **27 arquivos,
+463 testes**, lint, typecheck e build limpos (aviso de bundle > 500 kB,
+pré-existente).
+
+Critério 5 ❌, por duas verificações feitas aqui:
+
+1. **O `contain: 'size'` da linha (`src/App.tsx:1102`) não tem teste nenhum.**
+   Removê-lo e rodar `npx vitest run src/App.test.ts -t PHY-18` dá **4 passed**.
+   A tabela da etapa 2 conta "contenções `size` → `none`" como uma mutação só;
+   as duas declarações são independentes e só a do inspetor é vista pelos testes.
+   Ou um teste enxerga essa linha, ou ela sai — a etapa 2 afirma que ela era
+   necessária no navegador, então o caminho é provar isso.
+2. **O oráculo do espelho continua sendo a própria string da correção.**
+   `flush()` decide se a caixa cresce lendo
+   `getComputedStyle(inspector).contain.split(' ').includes('size')`
+   (`src/App.test.ts:661`). Troquei `contain: 'size'` por `contain: 'strict'` —
+   superconjunto que contém `size` e corrige o bug igual ou melhor no navegador —
+   e os testes ficaram **2 failed, 2 passed**. Os outros dois remédios que o
+   próprio ticket lista ("reservar a altura, ou dar à coluna direita altura
+   própria com scroll") também ficariam vermelhos. O teste afirma uma palavra-chave
+   de CSS, não geometria parada: é a circularidade da revisão anterior, movida de
+   `alignItems` para `contain`. Caminho: o espelho decidir a contribuição do
+   inspetor por uma regra (contenção de tamanho **ou** altura definida com rolagem
+   própria), não por uma string literal.
+
+O encanamento novo fica: `FakeResizeObserver.deliver` + `flush` resolvem o resto
+do item 2 da revisão anterior — em 1600 a mudança de caixa chega ao `fitCanvas` e
+o teste enxerga **tamanho**, não só posição.
+
+Menores, para a mesma passada (não bloqueiam sozinhos):
+
+- `width: 270, flexShrink: 0` (`src/App.tsx:1251`) é política de largura, e o
+  contrato deste ticket é altura. Medido em 900×700: coluna do canvas com 571 px,
+  contra os 526 px que o PHY-20 mediu antes — não piorou, melhorou. Ainda assim
+  quem cede primeiro na horizontal é decisão do PHY-20; manter aqui só com um
+  critério que justifique.
+- `controlHeight()` (`src/App.test.ts:656`) devolve `length * 24`: o nome diz
+  altura, o valor é contagem de controles.
+- `canvas.parentElement.parentElement.nextElementSibling` (`src/App.test.ts:653`)
+  prende o espelho ao aninhamento exato do `App`; um wrapper a mais faz o espelho
+  medir o elemento errado calado, em vez de falhar.
+- `makeTransform({ centerX: 6, centerY: 4, … })` repetido em `:676` e `:713`, com
+  `TRANSFORM` já definido em `:142`.
+- `panelFor(host, id)` continua pendente da revisão anterior.
+- Vocabulário: o código novo diz *inspector*, o resto do arquivo diz *painel*.
+
+Não regrediu: PHY-15 e `fitCanvas` verdes. O trabalho continua na branch
+`phy/PHY-18-canvas-estavel`; os commits existentes ficam como estão.
