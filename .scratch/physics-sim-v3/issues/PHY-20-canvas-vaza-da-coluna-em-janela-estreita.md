@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 
@@ -89,3 +89,5 @@ linha das mãos do inspetor. `fitCanvas.ts` ficou explicitamente fora do escopo 
 PHY-18 para não colidir com este ticket. Fazer o PHY-18 primeiro evita retrabalho.
 
 - 2026-09-14 Attempt 1 failed: exit 0. Log tail: Let me know which way to take criterion 3 and I'll act on it. /
+
+- 2026-09-14 Attempt 2 failed: exit 0; blocked after two attempts. Log tail: ... (no scroll state to fix). / - **B. Collapse/scroll the inspector** — inspector shrinks or becomes internally scrollable so the canvas column keeps ≥600px. Also deterministic, but needs a decision on how the inspector collapses (icon rail? hidden behind a toggle?) which isn't specified anywhere. / - **C. Horizontal scroll on the whole page** — canvas keeps its 600px floor, page becomes wider than the viewport, user scrolls to see the rest. This is the one that clashes with criterion 3: `getBoundingClientRect()` values depend on scroll position, so "never partially outside the viewport" would only hold *after* scrolling to it — the test would need to assume or force a scroll position, which is a shakier, less deterministic assertion than A or B. /  / My read: **A (stack columns)** is the cleanest fit for criterion 3 as literally written, and cheapest to test with the existing `FakeResizeObserver`. But it's your call on the actual UX — do you want the inspector to disappear below the canvas on narrow windows, or would you rather it collapse/scroll in place (B)? C seems hard to reconcile with criterion 3 unless you want to loosen that criterion's wording instead. /  / Which way should I take it? /
