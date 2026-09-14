@@ -10,6 +10,7 @@ import { trashRect } from './editor/trash'
 import { createSimulator, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { blankScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import type { Scene } from './scene/types'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -952,6 +953,17 @@ describe('loading screen (PHY-16)', () => {
 })
 
 describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
+  // Each scene gets its own extra body (`marca-<id>`) so a test can tell
+  // which scene's *content* loaded into the canvas, not just which id the
+  // <select> reports — the two are set by different code paths.
+  function markedScene(id: string): Scene {
+    const scene = blankScene()
+    return {
+      ...scene,
+      bodies: [...scene.bodies, { shape: 'circle', radius: 0.5, id: `marca-${id}`, fixed: true, mass: 0, position: { x: 1, y: 1 }, rotation: 0 }],
+    }
+  }
+
   function seedThreeScenes(): SceneIndexEntry[] {
     const storage = window.localStorage as unknown as PersistStorage
     const entries: SceneIndexEntry[] = [
@@ -960,7 +972,7 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
       { id: 'cena-3', name: 'Cena 3', updatedAt: 3 },
     ]
     saveIndex(storage, entries)
-    for (const e of entries) saveScene(storage, e.id, blankScene())
+    for (const e of entries) saveScene(storage, e.id, markedScene(e.id))
     return entries
   }
 
@@ -970,6 +982,10 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const host = renderApp()
     expect(sceneSelect(host).value).toBe('cena-3')
+    // Pins the *content* half of criterion 2 — the canvas doc, not only the
+    // <select>, must be the persisted scene's.
+    expect(host.textContent).toContain('marca-cena-3')
+    expect(host.textContent).not.toContain('marca-cena-1')
   })
 
   it('sem marca de cena atual, a inicialização abre a primeira do índice (comportamento atual)', () => {
@@ -992,6 +1008,8 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const reopened = renderApp()
     expect(sceneSelect(reopened).value).toBe('cena-2')
+    expect(reopened.textContent).toContain('marca-cena-2')
+    expect(reopened.textContent).not.toContain('marca-cena-1')
   })
 
   it('excluir a cena atual e reinicializar abre a primeira do índice restante, sem tela quebrada', () => {
