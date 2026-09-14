@@ -1,5 +1,5 @@
 # PHY-18: Selecionar um corpo não pode mover o canvas debaixo do cursor
-Stage: to-merge
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 
@@ -413,3 +413,26 @@ mutate-verified como as demais linhas. O que fica para o PHY-20 é o valor
 Correção desta passada: só o comentário acima da linha, que dizia apenas
 "altura" e induziu a leitura errada. Gate reexecutado: exit 0, **27 arquivos,
 463 testes**, lint, typecheck e build limpos. `git diff --check` limpo.
+
+#### Resolution (2026-09-13)
+
+Decisão: **merged** — PR #3, merge commit `bdefc1c` em `main`.
+
+Arquivos: `src/App.tsx` (linha de duas colunas com `contain: 'size'`, canvas
+ancorado no topo, inspetor com largura fixa e rolagem própria), `src/App.test.ts`
+(quatro testes PHY-18 no Chromium headless via CDP, 1280 e 1920), `AGENTS.md`
+(o gate exige Chromium). `src/render/fitCanvas.ts` intocado (PHY-20).
+
+Prova red-green: contra o código anterior à branch (`9bc8534`) os quatro testes
+falham — arraste sem seleção prévia larga em y = 7.13 em vez de 6, o mesmo erro
+de ~2 m medido no site publicado. Mutações individuais registradas nas revisões
+acima: remover `contain: 'size'` da linha → 1 failed; remover a largura fixa do
+inspetor → 4 failed; `size` → `strict` → 4 passed (remédio equivalente aceito).
+
+Gate: local exit 0 (27 arquivos, 463 testes, lint, typecheck, build) e CI do PR
+verde em `ubuntu-latest` com os quatro testes de Chromium executados, não
+pulados. Critérios 1–6 ✅.
+
+Pendências fora deste ticket: valor da largura do inspetor e quem cede em janela
+estreita (PHY-20); formato do harness de navegador (PHY-21); `alignItems:
+'flex-start'` continua escolha cosmética sem critério.
