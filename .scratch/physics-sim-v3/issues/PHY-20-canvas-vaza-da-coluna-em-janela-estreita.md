@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 
@@ -87,3 +87,34 @@ Revisão do PHY-18 (2026-09-13): o PHY-18 foi reaberto e a correção dele vai m
 na mesma linha de duas colunas (`src/App.tsx`, ~1100–1245) para tirar a altura da
 linha das mãos do inspetor. `fitCanvas.ts` ficou explicitamente fora do escopo do
 PHY-18 para não colidir com este ticket. Fazer o PHY-18 primeiro evita retrabalho.
+
+### Stage 2 (2026-09-14)
+
+`fitCanvas.ts` não mudou — a integração é toda em `src/App.tsx`: abaixo de
+`CANVAS_MIN_WIDTH` a linha de duas colunas passa a `flexDirection: 'column'`
+(inspetor cede e desce) em vez de deixar o piso da `fitCanvas` desenhar o
+canvas maior que a coluna. A decisão de empilhar usa histerese (empilha
+abaixo de `CANVAS_MIN_WIDTH`; só desempilha acima de
+`CANVAS_MIN_WIDTH + INSPECTOR_WIDTH + ROW_GAP`) porque um único limiar
+oscila: a mesma caixa medida cheia (empilhado) sempre cruza de volta o
+limiar de desempilhar, e medida espremida (lado a lado) sempre cruza de
+volta o de empilhar — nenhum estado converge.
+
+Teste novo em `src/App.test.ts` (`FakeResizeObserver`, sem Chromium, como
+pedido). Mutate-verified:
+- Colapsar a histerese num único limiar (`width < CANVAS_MIN_WIDTH` nos dois
+  ramos): vermelho no segundo passo (820 px desempilhava quando devia
+  continuar empilhado).
+- Fixar `flexDirection: 'row'` (nunca empilha): vermelho no primeiro
+  assert (`row.style.flexDirection` continuava `'row'`).
+
+jsdom não faz layout de verdade, então os critérios 2–3 (sem sobreposição,
+sem sair do viewport) são verificados estruturalmente — `flexDirection:
+'column'` empilha os blocos, o que por construção do flexbox impede
+compartilhar uma linha horizontal — e não por `getBoundingClientRect()`
+como no PHY-18. Prova geométrica em Chromium real, se necessária, fica para
+um ticket à parte (o padrão já existe no `describe` do PHY-18).
+
+Gate verde: `npm test && npm run lint && npm run typecheck && npm run build`
+(472 testes; um timeout solto em `simulator.test.ts` reproduziu-se isolado
+como passou, falha não relacionada a este ticket).
