@@ -162,6 +162,13 @@ Run against the published site (`https://laginho.github.io/PhysiSyst/`), not loc
 | **PHY-19** | The active scene id is never persisted (`currentId` initialises to `index[0]`), so reload always reopens Cena 1. Scene contents and the scene list do survive. |
 | **PHY-20** | Below ~975 px of window width, the canvas's 600 px floor no longer fits the column that holds it, and (since that column permits overflow, needed for drag handles) the canvas bleeds off-screen and behind the inspector instead of the layout yielding first. |
 
+All three were fixed after this report was written (2026-09-13/14): PHY-18 and
+PHY-19 merged 2026-09-13/14; PHY-20 merged 2026-09-15 by stacking the columns
+below ~914 px, with acceptance criterion 3 reworded to "never bleeds left, any
+right-hand excess is reachable by page scroll" since the 600 px floor cannot fit
+a viewport narrower than ~620 px. PHY-21 (2026-09-14) moved the Chromium test
+harness into `src/test/browser.ts`. Details in `.scratch/physics-sim-v3/`.
+
 ## v1 T12 Mobile Items — `wontfix`
 
 The 10 mobile-touch items from v1's T12 checklist (posted 2026-08-23) are declared `wontfix`: physics-sim's public is the Brazilian desktop student (Windows), and mobile is out of horizon (v3 spec, Out of Scope). T12's 8 desktop items are superseded by D1–D8 above. The original checklist text was posted in conversation and never persisted to a repo file — `.scratch/physics-sim/TASKS.md` and `LOGS.md` record its existence (10 mobile + 8 desktop items) but not the item-by-item wording, so it isn't reproduced here.
