@@ -1,5 +1,5 @@
 # PHY-20: Canvas vaza da própria coluna e fica atrás do inspetor em janela estreita
-Stage: to-merge
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 
@@ -53,8 +53,11 @@ cima de outro elemento.
 2. Em nenhuma largura de janela o canvas se sobrepõe a outro elemento
    interativo (inspetor, botões de cena): `getBoundingClientRect()` do canvas
    e da coluna do inspetor nunca se intersectam
-3. Em nenhuma largura de janela o canvas fica parcialmente fora do viewport
-   (`rect.left >= 0` e `rect.right <= window.innerWidth`)
+3. Em nenhuma largura de janela o canvas vaza pela esquerda (`rect.left >= 0`),
+   e abaixo de ~620 px de viewport — onde nenhuma coluna cabe o piso de 600 px —
+   todo excedente à direita é alcançável por scroll da página. *(Reformulado em
+   2026-09-15 na Resolution; a versão original exigia `rect.right <= innerWidth`
+   em toda largura, insatisfazível com `CANVAS_MIN_WIDTH` fixo.)*
 4. O canvas continua 3:2 e a cena inteira visível nas larguras onde já
    funcionava (não regredir PHY-15/PHY-18)
 5. Testes de regressão mutate-verified conforme o protocolo do `AGENTS.md`
@@ -359,3 +362,21 @@ Duas saídas, ambas suas:
 Não reabri para o stage 2 porque não há trabalho de stage 2 possível: nenhuma
 mudança de layout dentro dos Primary files satisfaz o critério 3 com o piso
 fixo em 600.
+
+#### Resolution (2026-09-15)
+
+Aprovado e mergeado. Decisão do humano sobre o critério 3: **aceitar** a
+reformulação proposta pela revisão — "não vaza pela esquerda e todo excedente é
+alcançável por scroll". O piso de 600 px permanece fixo; torná-lo responsivo (ou
+dar zoom/scroll interno ao canvas) fica para um ticket de stage 1 se algum dia
+importar.
+
+Ao mergear, `main` já trazia o PHY-21 (harness de navegador em
+`src/test/browser.ts`). A cópia inline do harness que este branch carregava em
+`src/App.test.ts` foi descartada e os seis casos de Chromium passaram para
+`src/App.browser.test.ts` via `withBrowserSession`, com um `evaluate()` a mais na
+sessão para ler geometria arbitrária da página. O teste jsdom de histerese
+continua em `src/App.test.ts`.
+
+Gate verde após o merge: `npm test` (478/478), `npm run lint`,
+`npm run typecheck`, `npm run build`.
