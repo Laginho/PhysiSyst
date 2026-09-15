@@ -51,3 +51,38 @@ describe('selection keeps the canvas stationary (PHY-18)', () => {
     expect(positions[0].y).toBeCloseTo(6, 2)
   }, 30000)
 })
+
+describe('canvas nunca sobrepõe o inspetor nem vaza do viewport (PHY-20)', () => {
+  // jsdom does no real layout, so App.test.ts can only check that stacking
+  // flips the right CSS properties. Whether the stacked layout actually avoids
+  // overlap needs a layout engine — measured here in Chromium.
+  type Box = { left: number; right: number; top: number; bottom: number }
+  const intersects = (a: Box, b: Box): boolean => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  const measure = (width: number) => withBrowserSession(width, 25000, async (session) => {
+    await session.reset()
+    return session.evaluate<{ canvas: Box; inspector: Box; innerWidth: number }>(
+      "(() => { const canvas = document.querySelector('canvas'); " +
+      "const row = canvas.parentElement.parentElement.parentElement; " +
+      "return { canvas: canvas.getBoundingClientRect().toJSON(), " +
+      "inspector: row.children[1].getBoundingClientRect().toJSON(), innerWidth: window.innerWidth }; })()",
+    )
+  })
+
+  it.each([1400, 950, 900, 700])('canvas cabe inteiramente na viewport e não sobrepõe o inspetor em %ipx', async (width) => {
+    const { canvas, inspector, innerWidth } = await measure(width)
+    expect(intersects(canvas, inspector)).toBe(false)
+    expect(canvas.left).toBeGreaterThanOrEqual(0)
+    expect(canvas.right).toBeLessThanOrEqual(innerWidth)
+  }, 30000)
+
+  // Below ~632px (CANVAS_MIN_WIDTH plus main's horizontal padding) no column
+  // layout can hold the 600px floor, and the floor is out of this ticket's
+  // scope. The canvas legitimately spills past the right edge there
+  // (reachable by scrolling). What must still hold: never spills left, never
+  // overlaps the inspector. Criterion 3 was reworded to this on 2026-09-15.
+  it.each([600, 360])('abaixo do piso o canvas nunca sobrepõe o inspetor nem vaza pela esquerda em %ipx', async (width) => {
+    const { canvas, inspector } = await measure(width)
+    expect(intersects(canvas, inspector)).toBe(false)
+    expect(canvas.left).toBeGreaterThanOrEqual(0)
+  }, 30000)
+})

@@ -29,6 +29,8 @@ export interface BrowserSession {
   /** Navigates to a fresh load of the app, with storage cleared and layout settled. */
   reset(): Promise<void>
   rect(): Promise<Rect>
+  /** Runs `expression` in the page and returns its JSON value. */
+  evaluate<T>(expression: string): Promise<T>
   /** World coordinates, converted with the app's own camera. */
   select(worldX: number, worldY: number): Promise<void>
   selectedLegends(): Promise<string[]>
@@ -250,7 +252,7 @@ export async function openBrowserSession(width: number): Promise<BrowserSession>
 
   const readBoxPosition = () => evaluate<Point>(READ_BOX_POSITION_SCRIPT)
 
-  return { reset, rect, select, selectedLegends, drag, readBoxPosition, close: cleanup }
+  return { reset, rect, evaluate, select, selectedLegends, drag, readBoxPosition, close: cleanup }
 }
 
 /**

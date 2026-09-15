@@ -57,7 +57,7 @@ import {
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
 import { drawArrow, drawGrid, drawScene } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, type Camera, type ScreenTransform } from './render/transform'
-import { fitCanvas } from './render/fitCanvas'
+import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
@@ -391,11 +391,24 @@ function getAppStorage(): Storage {
   return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) }
 }
 
+// Fixed width of the inspector column plus the row's gap between columns —
+// the room the canvas column gives up when the two sit side by side.
+const INSPECTOR_WIDTH = 270
+const ROW_GAP = 12
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasBoxRef = useRef<HTMLDivElement>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
   const [size, setSize] = useState(() => fitCanvas(900, 600))
+  // Below CANVAS_MIN_WIDTH, the canvas column stacks above/below the inspector
+  // instead of sharing the row, so fitCanvas's floor never draws the canvas
+  // wider than the column that contains it. Hysteresis (stack below the floor,
+  // unstack only once there's room for the floor AND the inspector) keeps the
+  // two thresholds apart — a single shared one would oscillate every frame: the
+  // stacked box measures the full row, which clears "unstack", so it unstacks
+  // and immediately measures the squeezed width again, which re-triggers "stack".
+  const [stacked, setStacked] = useState(false)
   const { camera, transform, trash: trashRectValue } = geometryFor(size.width, size.height)
   const storageRef = useRef<Storage | null>(null)
   if (!storageRef.current) storageRef.current = getAppStorage()
@@ -575,7 +588,11 @@ export default function App() {
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
-      setSize(fitCanvas(entry.contentRect.width, entry.contentRect.height))
+      const width = entry.contentRect.width
+      setStacked((wasStacked) =>
+        wasStacked ? width < CANVAS_MIN_WIDTH + INSPECTOR_WIDTH + ROW_GAP : width < CANVAS_MIN_WIDTH,
+      )
+      setSize(fitCanvas(width, entry.contentRect.height))
     })
     ro.observe(box)
     return () => ro.disconnect()
@@ -1104,15 +1121,47 @@ export default function App() {
       </div>
       {/* Let the viewport allocate the row, independently of either column's
           intrinsic content size (including the canvas's previous size). */}
-      <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, width: '100%', contain: 'size' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0, minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: stacked ? 'column' : 'row', gap: ROW_GAP, flex: 1, minHeight: 0, width: '100%', contain: 'size' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            // Side by side, this column's basis is 0% so it shares the row's
+            // width fairly with the fixed-width inspector (existing PHY-15/18
+            // behaviour, untouched). Stacked, flex-shrink:0 with an auto basis
+            // makes this column's own height come from its own content — the
+            // canvas floor below, plus the controls. Neither column shrinks
+            // when stacked, so the row simply overflows downwards and the page
+            // scrolls; what matters is that this one never collapses under the
+            // canvas it contains, which is what painted it over the inspector.
+            flex: stacked ? '1 0 auto' : 1,
+            minWidth: 0,
+            minHeight: 0,
+          }}
+        >
           <div
             ref={canvasBoxRef}
             // Height comes from the row (stretch), NEVER from the canvas: sizing the
             // canvas off a box that shrink-wraps it is a feedback loop that grows
             // the canvas a few px every frame until it overflows.
             // Keep the scene at the top of the available canvas area.
-            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflow: 'visible', position: 'relative' }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              display: 'flex',
+              alignItems: 'flex-start',
+              // Centering split any width-floor overflow evenly left and
+              // right — the left half landed at a negative rect.left, which
+              // no amount of horizontal scrolling can reach (scrolling only
+              // exposes positive overflow). flex-start pins the canvas's left
+              // edge inside the viewport and pushes all the overflow right,
+              // where it's at least reachable.
+              justifyContent: stacked ? 'flex-start' : 'center',
+              overflow: 'visible',
+              position: 'relative',
+            }}
           >
             <canvas
               ref={canvasRef}
@@ -1255,7 +1304,7 @@ export default function App() {
             The width is fixed because the panel's content width changes with the
             selection and the canvas rectangle must not follow it: without it the
             canvas narrows 15 px at 1280 on selection and the PHY-18 tests fail. */}
-        <div style={{ display: 'grid', gap: 8, width: 270, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 8, width: stacked ? '100%' : INSPECTOR_WIDTH, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
