@@ -1,5 +1,5 @@
 # PHY-23: Tracer — corda sobre uma polia fixa
-Stage: to-review
+Stage: to-merge
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -86,3 +86,15 @@ The routing test and the other codec rejections were red before the code existed
 **Live browser check** (criterion 11). Headless Chromium drove the real Vite app at 1280 px with a throwaway script, not committed. It imported an Atwood JSON (3 kg / 2 kg, pulley r = 0.4 on a fixed ceiling) through the real "importar" file input, with no import error. The canvas showed the ceiling, the pulley (circle + axle) and the rope as two vertical legs joined by the arc over the top. After clicking "▶ reproduzir" and waiting 0.7 s, `m_a` (the heavy one) had moved down and `m_b` up, both by about 32 px, with the rope still wrapping the pulley. The drawing has no strut between the pulley and its mount, which the minimal drawing does not ask for.
 
 **Gate:** `npm test` 29 files, 526 tests passed; `npm run lint` clean; `npm run typecheck` clean; `npm run build` ok (the >500 kB chunk warning is the known one PHY-32 owns).
+
+### Stage 3 (2026-09-24) — review
+
+Verdict: Approve
+
+Two axes, both sub-agents plus my own read of the rope code. No fix commit of my own; `Review: human`, so the PR waits.
+
+**Spec.** All 14 criteria met. 1 is met as *absent-optional* collections (`scene.pulleys ?? []`), not literal `[]`: deliberate, follows the `particleMode`/`vx`/`vy` precedent, documented in `types.ts`, and the literal form would break byte-stable `isDirty` and two `toStrictEqual` suites outside Primary files. **This is the one decision to glance at before merging.** 2: every listed rejection has a codec check and a test. 4–6: test tolerances match the criteria (2%, 5%, 1 mm), `T` checked on every sample of the 1 s window. 11 reproduced here, not accepted from the report: headless Chromium, Atwood 3/2 kg imported through the real file input, no import error; ceiling, pulley (circle + axle) and rope (two legs + arc over the top) drawn; after 0.7 s of play `m_a` down and `m_b` up by the same ~32 px. 14 re-run: 29 files, 526 tests, lint, typecheck, build all green. Outside Primary files only the one `readConstraints: () => []` line in `App.test.ts` that criterion 7's interface change forces. Extra rejections (duplicate ids, unknown `kind`, pulley `mass`) are stricter than the spec, lifted by PHY-24/25 which own `codec.ts`.
+
+**Standards.** No documented-standard breach. Judgement calls, none blocking, all candidates for one `CLEAN-*` ticket: `step()` still inlines the rotation `bodyPointToWorld` now provides; `pullRope`/`correctRope` share a prologue; `new Map(scene.bodies…)` is built in four places and `scenePath` rebuilds it per rope in `drawRopes`; `RopeFrame.length` (current) vs `RopeBinding.length` (fixed `L`) share a word for opposite roles; `drawRopes` also draws pulleys. No unit test pins `drawRopes` — the ticket asked for the live check (11) instead, which is what was done.
+
+**Found outside this ticket, filed as PHY-34.** `resetForces` does not clear the torque `addForceAtPoint` adds, so torque accumulates step after step for any anchor off the COM: measured ω = 40.4 rad/s after 1 s where τ/I·t = 3 rad/s. Pre-existing on applied forces; the rope inherits it for off-COM ends, which none of this ticket's families have. Fix is one line but needs a regression test, so not a stage-3 fix. Comment left on PHY-24.
