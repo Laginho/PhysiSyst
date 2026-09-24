@@ -1,5 +1,5 @@
 # CLEAN-03: ADR-0004 descreve a predição por posição e o fator de subpasso ganha teste
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
