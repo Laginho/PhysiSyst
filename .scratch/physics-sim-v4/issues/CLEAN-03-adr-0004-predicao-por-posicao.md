@@ -1,5 +1,5 @@
 # CLEAN-03: ADR-0004 descreve a predição por posição e o fator de subpasso ganha teste
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -55,3 +55,20 @@ Etapa 3 (2026-09-24). O teste novo copiava o laço de varredura do irmão `loop 
 | `pullRope`: `const phi = 1` | `Tests 1 failed \| 19 passed (20)`; `AssertionError: expected 0.011633209588792104 to be less than or equal to 0.001` — só o teste fundido |
 
 Revertida depois. O ADR também recuperou a linha de tolerâncias do PHY-23 (2%, 5%, 1 mm) que o commit de docs tinha apagado.
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Findings (review de `805edd5`, `2238867`, diff completo lido):
+
+- Standards: o teste novo duplicava o laço de varredura do irmão `loop with v_top² > gL` (mesma cena, mesmo laço de ângulo, só a grandeza medida mudava). Corrigido pelo review em `7bd650b`: uma asserção a mais no teste irmão, o teste duplicado removido. Sem outra violação; ADR e comentário de `src/scene/index.ts` conferidos linha a linha contra `pullRope`/`correctRope`/`ropeAllowance` (`simulator.ts:521-552`) e contra o que `codec.ts` rejeita hoje.
+- Spec: o commit de docs apagou a linha de tolerâncias do PHY-23 (2% Atwood, 5% mesa, 1 mm) sem repô-la. Recuperada em `7bd650b`. As linhas novas da tabela Measured (pêndulo, polia móvel, dois pontos fixos, folga) não estão nos `## Comments` do PHY-24, só a da volta; a etapa 2 as remediu com sondas descartadas, e o review não as reconferiu.
+- Critérios 1–5: ✅. Diff só em Primary files. Commit de teste (`805edd5`) só toca `acceptance.test.ts` e o ticket; o commit de código (`2238867`) não toca testes.
+- Sem linha `Proxy decided`.
+
+Red-green: mutação `const phi = 1` em `pullRope` refeita pelo review antes e depois da fusão dos testes — `1 failed | 20 passed (21)` e `1 failed | 19 passed (20)`, `expected 0.011633209588792104 to be less than or equal to 0.001`, só o teste da volta. Revertida.
+
+Gate em `7bd650b`: 29 arquivos, 541/541 testes, lint, typecheck, build (aviso de chunk > 500 kB, pré-existente).
+
+Merge: `b7495f1` em `sweatshop/2026-09-24-1853`.
