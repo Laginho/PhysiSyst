@@ -1,5 +1,5 @@
 # CLEAN-04: ADR-0004 descreve a corda em pedaços da polia com massa; resíduos do PHY-25 fora dos Primary files
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -48,3 +48,18 @@ O PHY-25 trocou o mecanismo da corda quando uma polia do caminho tem massa sem t
   - (4) Os discos entram no reset: `resetForces` ao lado do `resetTorques` já existente. Bit a bit: hash SHA-256 de `readStates` + `readConstraints` em 120 passos de Atwood `M = 2` e da polia móvel `M = 2`, com um `replaceScene` com carry no passo 40 — `6f0f0d86…2117d` antes e depois da mudança; com `resetTorques` removido, `d82770e2…fef28` (o hash enxerga o disco). `npx vitest run src/scene/codec.test.ts src/sim`: 156 passed.
   - (5) `CONTEXT.md`: `grip`/`piece`/`share` descartados como termos de domínio (vocabulário do solver, definido no ADR-0004), listados em _Avoid_ da Polia; a entrada ganha o fato de domínio: a corda não desliza na polia com massa e a tração difere de cada lado.
   - (6) Gate: 29 arquivos, 549/549 testes; lint, typecheck limpos; build ✓ (aviso de chunk > 500 kB, pré-existente).
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Stage 3 review of `c922372` (one commit, no test files touched; the ticket asks for none). Every claim of the new ADR section was checked against `src/sim/simulator.ts`:
+
+- ✅ 1 — ADR-0004: intro says `step()` dispatches on `rope.grips.length`; section "Pulleys with mass (PHY-25)" matches the code (disk `lockTranslations` + `setGravityScale(0)`, ball collider `setMass(M)` group 0, mount collider `setMassProperties(M, 0, 0)` at the anchor, `share` starting at `arc.sweep / 2`, `wrapAngle` and the < π ceiling, `K` matrix via `ropeInvMass(p, a)`, `tautTensions`/`solveLinear`, `rope.tension = max`, `regrip` on carry). The scalar-path paragraph cites PHY-25 criterion 4. Measured table gains the three PHY-25 families plus the bit-for-bit row.
+- ✅ 2 — `src/scene/index.ts` header now states the codec rule as `codec.ts:200-203` enforces it (optional, finite, ≥ 0).
+- ✅ 3 — `correctPieces` carries a `ponytail:` marker pointing at `correctRope`; ADR Consequences say so.
+- ✅ 4 — disks get `resetForces` next to `resetTorques`, with the comment on why (translation locked). Stage 2 recorded the SHA-256 hash of 120 steps unchanged before/after. `src/scene/codec.test.ts src/sim` green inside the full gate.
+- ✅ 5 — `CONTEXT.md`: `grip`/`piece`/`share` placed under _Avoid_ of Pulley with the pointer to ADR-0004; the domain fact (no slip, tension differs per side) added to the entry.
+- ✅ 6 — Gate on the branch tip: 29 files, 549/549 tests; lint and typecheck clean; build ✓ (pre-existing chunk-size warning).
+
+Primary files respected; no proxy decisions. Rebase not needed (branch sat on the session tip). Merged `--no-ff` into `sweatshop/2026-09-24-1853` as `bafb035`.
