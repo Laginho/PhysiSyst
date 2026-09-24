@@ -13,7 +13,7 @@ import {
   weightArrows,
 } from './overlay'
 import type { BodyState, ContactPoint } from '../sim/simulator'
-import { TIMESTEP } from '../sim/simulator'
+import { TIMESTEP } from '../sim/timestep'
 
 const PPM = 60
 

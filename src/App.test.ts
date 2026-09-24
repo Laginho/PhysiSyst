@@ -773,9 +773,7 @@ describe('loading screen (PHY-16)', () => {
     vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
 
     const host = renderApp()
-    await act(async () => {
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    await settleSimImport()
 
     expect(host.textContent).toContain(ptBR['loading.error'])
     // Exactly one error surface: the overlay's fixed message, never the raw
@@ -785,10 +783,8 @@ describe('loading screen (PHY-16)', () => {
     expect(retry).toBeDefined()
 
     vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
-    await act(async () => {
-      retry?.click()
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    act(() => retry?.click())
+    await settleSimImport()
 
     expect(createSimulator).toHaveBeenCalledTimes(2)
     expect(host.textContent).not.toContain(ptBR['loading.error'])
@@ -797,9 +793,7 @@ describe('loading screen (PHY-16)', () => {
   it('leaves the error state when a boot triggered by play succeeds', async () => {
     vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
     const host = renderApp()
-    await act(async () => {
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    await settleSimImport()
     expect(host.textContent).toContain(ptBR['loading.error'])
 
     // The student presses play instead of "tentar de novo": that path boots
@@ -809,10 +803,8 @@ describe('loading screen (PHY-16)', () => {
     vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
     const play = findButton(host, ptBR['playback.play'])
     if (!play) throw new Error('missing play button')
-    await act(async () => {
-      play.click()
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    act(() => play.click())
+    await settleSimImport()
 
     expect(createSimulator).toHaveBeenCalledTimes(2)
     expect(host.textContent).not.toContain(ptBR['loading.error'])
