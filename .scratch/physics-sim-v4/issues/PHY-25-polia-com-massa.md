@@ -34,3 +34,5 @@ Uma polia pode ter massa `M` (disco, `I = ½MR²`). A corda não desliza nela, e
 - `src/sim/acceptance.test.ts`: Atwood com polia de massa, polia móvel com massa, carry angular (2, 3, 5). Vermelho porque o simulador ignora `mass` da polia.
 
 ## Comments
+
+Proxy decided: criterion 3 test amended, m₂ 1 → 2 — the m₂ = 1 counterweight passes the fixed pulley's axle at step 89, before the window closes; closed forms and tolerance unchanged. (Stage 2, 2026-09-24. Probe with the production simulator at m₂ = 1: a_load = −2.943 m/s² and T = 15.696 N from step 0, both the closed forms; counterweight y = 9.493 at step 88, 9.645 at step 89, segments jump to [123, 173, 173] N. Amended test red with the simulator ignoring the pulley mass: `expected 1.592534120423453 to be less than or equal to 0.021021428571428573` — the load goes up.)
