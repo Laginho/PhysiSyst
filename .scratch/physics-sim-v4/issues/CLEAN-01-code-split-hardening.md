@@ -1,5 +1,5 @@
 # CLEAN-01: Endurecer o code-split do Rapier
-Stage: to-implement
+Stage: reviewing
 Status: needs-triage
 Blocked by: PHY-32
 Review: agent
@@ -10,6 +10,7 @@ Review: agent
   - `src/sim/simulator.ts` (só remover o reexport de `TIMESTEP`)
   - `eslint.config.js` (`no-restricted-imports` para import de valor de `**/sim` fora de `src/sim/**`)
   - `src/App.test.ts` (só os dois testes de falha de boot: trocar o loop de 5 microtasks por `settleSimImport()`)
+  - `src/render/overlay.test.ts` (só a linha do import de `TIMESTEP`, que passa a vir de `../sim/timestep`)
 
 #### What to build
 
@@ -21,8 +22,8 @@ Três pontas soltas da revisão do PHY-32, nenhuma dentro dos Primary files daqu
 
 #### Acceptance criteria
 
-1. Com `assets/sim-*.js` bloqueado no `vite preview`, a página recarrega sozinha em vez de mostrar o painel de erro com um "tentar de novo" que nunca funciona
-2. `import { TIMESTEP } from '../sim'` num arquivo de `src/playback/` falha no `npm run lint`; dentro de `src/sim/` e em `import type` continua permitido
+1. Com `assets/sim-*.js` bloqueado no `vite preview`, a página recarrega sozinha uma vez em vez de mostrar o painel de erro com um "tentar de novo" que nunca funciona; uma segunda falha em menos de 10 s mostra o painel (sem loop de reload), e "tentar de novo" depois da janela recarrega. Uma falha passageira (bloqueio retirado após a primeira) termina com o simulador de pé
+2. `import { TIMESTEP } from '../sim'` num arquivo de produção de `src/playback/` falha no `npm run lint`; dentro de `src/sim/`, em `import type` e em arquivos `*.test.ts(x)` continua permitido
 3. `src/sim/index.ts` exporta `TIMESTEP` de `./timestep`; `simulator.ts` não reexporta mais
 4. Os cinco testes de `loading screen (PHY-16)` esperam o import dinâmico pelo mesmo `settleSimImport()`; mutação `void ensureSim()` comentado deixa os cinco vermelhos
 5. Gate verde
@@ -40,3 +41,36 @@ Três pontas soltas da revisão do PHY-32, nenhuma dentro dos Primary files daqu
 - 2026-09-24 Aberto pela revisão do PHY-32 (stage 3). Os três itens ficaram fora dos Primary files do PHY-32; a regra mecânica do loop manda reabrir ou parquear, e nenhum deles é o que o PHY-32 pediu.
 
 - 2026-09-24 Attempt 1 failed: exit 0. Log tail: ...en shows the error panel, and clicking "tentar de novo" after the 10 seconds reloads it. If `sessionStorage` isn't available, it doesn't reload at all. / - **Test files are exempt from the lint rule.** Several tests outside `src/sim` import values from it, tests never end up in the entry chunk, and changing them was outside the ticket's file list. / - **`src/render/overlay.test.ts` was changed, one line.** Removing the re-export broke its import, so it now imports `TIMESTEP` from `../sim/timestep`. I added that file to the ticket's file list for that line only. /  / **Still needed from you:** a run of the live check at `C:\Users\Lage\AppData\Local\Temp\claude\D--Desktop-Projects-PhysiSyst\4541c328-b1fd-46ac-a193-7e5a02d50f7c\scratchpad\clean01-live.mjs`. It starts `vite preview` and headless Chrome, blocks `assets/sim-*.js`, and checks the reload count, the retry after the 10 seconds, and recovery from a one-off failure. Approve it here, or run it yourself: /  / ``` / node "C:\Users\Lage\AppData\Local\Temp\claude\D--Desktop-Projects-PhysiSyst\4541c328-b1fd-46ac-a193-7e5a02d50f7c\scratchpad\clean01-live.mjs" / ``` /  / Once it passes, I'll record the output in the ticket and commit `Stage: to-review`. /
+
+- 2026-09-24 Attempt 2 (stage 2). Attempt 1 left no branch or code, only its live-check script; redone from scratch on `phy/CLEAN-01-code-split-hardening`.
+
+- Proxy decided: `overlay.test.ts:16` imports `TIMESTEP` from `../sim/timestep`, file joins Primary files for that line — removing the reexport (criterion 3) breaks exactly that one import, and `accelerationTracker.ts` already uses `../sim/timestep`.
+- Proxy decided: the lint rule exempts `*.test.ts(x)` — tests never enter the Vite build graph; rewriting five test files outside Primary files protects nothing. Folded into criterion 2.
+- Proxy decided: guarded reload (sessionStorage timestamp, 10 s window, no `preventDefault`, no reload if sessionStorage throws) — a naive listener reload-loops forever while the chunk is unreachable; `preventDefault` would resolve the import to `undefined` and crash the `.then`. Folded into criterion 1.
+
+- Mutation record, criterion 4 (`src/App.test.ts`, `loading screen (PHY-16)`, all four 5-microtask loops replaced by `settleSimImport()`, the retry/play clicks included since they re-issue `import('./sim')`). Unmutated: 5 passed. Mutation: mount effect's `void ensureSim()` commented out in `src/App.tsx`. Output:
+
+      × boots the simulator on mount, before any play interaction
+      × shows the loading overlay while booting, without blocking canvas pointer events
+      × rotates the message every 1.5s and clears the timer once the sim is ready
+      × shows a fixed error with a retry button on boot failure; retry re-attempts the boot
+      × leaves the error state when a boot triggered by play succeeds
+      AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+      TypeError: resolveBoot is not a function   (×2)
+      AssertionError: expected '…' to contain 'não foi possível carregar o motor de …'   (×2)
+      Tests  5 failed | 28 skipped (33)
+
+- Criterion 2, lint output against a throwaway `src/playback/probe.ts` (deleted before commit) holding `import { TIMESTEP } from '../sim'`, `import { createSimulator } from '../sim/simulator'`, `import type { Simulator } from '../sim'` and `import { TIMESTEP } from '../sim/timestep'`, linted alongside `src/App.tsx`, `src/sim/acceptance.test.ts`, `src/playback/integration.test.ts`:
+
+      src\playback\probe.ts
+        1:1  error  '../sim' import is restricted from being used by a pattern. …  @typescript-eslint/no-restricted-imports
+        2:1  error  '../sim/simulator' import is restricted from being used by a pattern. …  @typescript-eslint/no-restricted-imports
+      ✖ 2 problems (2 errors, 0 warnings)
+
+  The type import, `sim/timestep`, the tests and `App.tsx` (its dynamic `import('./sim')`) stay clean. The rule is `@typescript-eslint/no-restricted-imports` (the core rule has no `allowTypeImports`).
+
+- Criterion 1, **live check NOT run.** The unattended session cannot run `node` on the script without a permission prompt nobody is there to answer (attempt 1 died on the same wall). Static evidence from `dist/assets/index-*.js`: the sim import is wrapped as `Vn(async()=>{…await import('./sim-*.js')…},[])`, and `Vn` ends in `e().catch(i)`, where `i` dispatches the cancelable `vite:preloadError` and rethrows; the `main.tsx` listener is in the same chunk. The script is kept at `.scratch/physics-sim-v4/CLEAN-01-live.mjs` (vite preview on :4179 + headless Chrome, `CHROME_BIN` honoured; needs `npm run build` first). Expected output: `A persistent block: loads=2 errorPanel=true`, `A retry after window: newLoads=1 errorPanel=true`, `A retry inside window: newLoads=0 errorPanel=true`, `B transient: loads=2 errorPanel=false canvasNoError=true`. Run it with:
+
+      node .scratch/physics-sim-v4/CLEAN-01-live.mjs
+
+- Gate (`npm test && npm run lint && npm run typecheck && npm run build`): 28 files, 478 tests passed; lint clean; tsc clean; build `index-*.js` 257.89 kB, `sim-*.js` 2,120.89 kB (the >500 kB warning is the sim chunk, as before).
