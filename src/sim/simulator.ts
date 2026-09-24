@@ -695,8 +695,12 @@ class RapierSimulator implements Simulator {
     }
     for (const rigid of touched) rigid.resetForces(true)
     // resetForces leaves torques, and a disk is driven by nothing else. The
-    // bodies still keep theirs across steps until PHY-34.
-    for (const disk of this.disks.values()) disk.resetTorques(true)
+    // bodies still keep theirs across steps until PHY-34. A disk's force moves
+    // nothing (translation locked); it is cleared so it does not pile up.
+    for (const disk of this.disks.values()) {
+      disk.resetForces(true)
+      disk.resetTorques(true)
+    }
     for (const binding of this.forces.values()) {
       const p = binding.rigid.translation()
       const r = binding.rigid.rotation()
@@ -880,6 +884,7 @@ class RapierSimulator implements Simulator {
     const now = piecePulls(rope, frame)
     const lengths = pieceLengths(rope, frame.path, shares)
     const K = now.map((a) => now.map((p) => ropeInvMass(p, a)))
+    // ponytail: the same chord-velocity projection as correctRope, same energy drain and upgrade path.
     const b = now.map((piece, k) => {
       const v = piece.map(({ rigid, p }) => (rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }))
       return (lengtheningRate(piece, v) - ropeAllowance(lengths[k]! - rope.pieces[k]!.length)) / TIMESTEP

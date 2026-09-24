@@ -15,8 +15,8 @@
  *
  * Pulleys and rope constraints (PHY-23) HARD-reject dangling body/pulley
  * references, duplicate ids and radius <= 0, a rope with no pulley whose ends
- * share a body, and the same pulley twice in a row in `via`. Until PHY-25 they
- * also reject a pulley mass.
+ * share a body, and the same pulley twice in a row in `via`. A pulley mass is
+ * optional; when present it must be finite and >= 0 (PHY-25).
  */
 export { collectWarnings, parse, serialize, SceneParseError } from './codec'
 export { bodyPointToWorld, ropePath, scenePath } from './ropePath'

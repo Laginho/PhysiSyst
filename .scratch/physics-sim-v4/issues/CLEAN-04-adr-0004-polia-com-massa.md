@@ -1,5 +1,5 @@
 # CLEAN-04: ADR-0004 descreve a corda em pedaços da polia com massa; resíduos do PHY-25 fora dos Primary files
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -41,3 +41,10 @@ O PHY-25 trocou o mecanismo da corda quando uma polia do caminho tem massa sem t
 ## Comments
 
 - 2026-09-24 Aberto pelo review do PHY-25 (stage 3). Os itens 1 e 2 estavam anotados pela etapa 2 em `## Comments` do PHY-25 como fora dos Primary files; nenhum é critério daquele ticket, então o PHY-25 fechou como está.
+- 2026-09-24 Stage 2 feito. Sem commit de teste (o ticket não pede nenhum), então `implementing` não aparece: o único commit leva direto a `to-review`.
+  - (1) ADR-0004: introdução diz que `step()` despacha em `rope.grips.length`; nova seção "Pulleys with mass (PHY-25)" (disco, grips/pieces, share e o teto < π, `K` matriz + `tautTensions`, torques, carry/`regrip`) e o parágrafo sobre por que o caminho escalar fica separado (critério 4 do PHY-25, bit a bit); Consequences corrigem "single iteration" (pedaços de uma corda juntos, cordas entre si não) e "no collider" (colisores do disco em grupo 0). Tabela Measured ganha as famílias do PHY-25, medidas com o simulador de produção (probe descartável, mesmas cenas de `acceptance.test.ts`, janela de 60 passos após 30): Atwood `M = 2` `a` −0,001%, `T₁`/`T₂` 0,016%/0,015%, path 0,074 mm; com carry −0,002%, 0,013%/0,014%, 0,074 mm; polia móvel `M = 2`, `m₂ = 2`: `a` −0,003%, `T` da perna do contrapeso 0,029%, path 0,006 mm. Os números não estavam nos Comments do PHY-25 (lá só há saídas de mutação), por isso a medição.
+  - (2) `src/scene/index.ts`: a massa da polia é opcional, finita e ≥ 0.
+  - (3) `correctPieces`: `ponytail:` apontando para o de `correctRope`.
+  - (4) Os discos entram no reset: `resetForces` ao lado do `resetTorques` já existente. Bit a bit: hash SHA-256 de `readStates` + `readConstraints` em 120 passos de Atwood `M = 2` e da polia móvel `M = 2`, com um `replaceScene` com carry no passo 40 — `6f0f0d86…2117d` antes e depois da mudança; com `resetTorques` removido, `d82770e2…fef28` (o hash enxerga o disco). `npx vitest run src/scene/codec.test.ts src/sim`: 156 passed.
+  - (5) `CONTEXT.md`: `grip`/`piece`/`share` descartados como termos de domínio (vocabulário do solver, definido no ADR-0004), listados em _Avoid_ da Polia; a entrada ganha o fato de domínio: a corda não desliza na polia com massa e a tração difere de cada lado.
+  - (6) Gate: 29 arquivos, 549/549 testes; lint, typecheck limpos; build ✓ (aviso de chunk > 500 kB, pré-existente).
