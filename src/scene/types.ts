@@ -74,6 +74,40 @@ export interface Contact {
   muK: number
 }
 
+/**
+ * A circle a rope wraps, mounted at `anchor` on a Body (same body-local,
+ * origin-relative contract as AppliedForce.anchor). On a fixed body it is a
+ * fixed pulley. Massless by default; `mass` is the disk realism option.
+ */
+export interface Pulley {
+  id: string
+  bodyId: string
+  anchor: Vec2
+  radius: number
+  mass?: number
+}
+
+/** One end of a constraint: a point on a Body, body-local and origin-relative. */
+export interface ConstraintEnd {
+  bodyId: string
+  anchor: Vec2
+}
+
+/**
+ * Ideal rope from `a` to `b` over the pulleys in `via`, in order. Its length
+ * is never stored: it is the path length at the document's poses, so a rope
+ * always starts taut (ADR-0004).
+ */
+export interface Rope {
+  id: string
+  kind: 'rope'
+  a: ConstraintEnd
+  b: ConstraintEnd
+  via: string[]
+}
+
+export type Constraint = Rope
+
 export interface Scene {
   version: number
   constants: {
@@ -88,4 +122,11 @@ export interface Scene {
   bodies: Body[]
   forces: AppliedForce[]
   contacts: Contact[]
+  /**
+   * Additive-optional like constants.particleMode: absent means none, and
+   * absence survives reparse so documents without them round-trip
+   * byte-stably. Read them as `scene.pulleys ?? []`.
+   */
+  pulleys?: Pulley[]
+  constraints?: Constraint[]
 }

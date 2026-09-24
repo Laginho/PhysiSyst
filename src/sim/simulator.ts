@@ -1,5 +1,6 @@
 import * as RAPIER from '@dimforge/rapier2d-compat'
-import type { Scene } from '../scene'
+import { bodyPointToWorld, ropePath, scenePath } from '../scene'
+import type { Scene, Vec2 } from '../scene'
 import { TIMESTEP } from './timestep'
 
 export interface BodyState {
@@ -16,11 +17,23 @@ export interface ContactPoint {
   normal: { x: number; y: number }
 }
 
+export interface RopeState {
+  id: string
+  kind: 'rope'
+  /** Tension over the last step, N. 0 while slack. */
+  tension: number
+  slack: boolean
+}
+
+export type ConstraintState = RopeState
+
 export interface Simulator {
   readonly warnings: readonly string[]
   step(): void
   readStates(): Map<string, BodyState>
   readContacts(): ContactPoint[]
+  /** One entry per document constraint, in document order (PHY-23). */
+  readConstraints(): ConstraintState[]
   setForceMagnitude(forceId: string, magnitude: number): void
   /** Live gravity edit (T7/M2): affects integration from the next step on, no rebuild. */
   setGravity(g: number): void
@@ -52,6 +65,100 @@ interface ForceBinding {
   anchorLocal: { x: number; y: number }
   directionRad: number
   magnitude: number
+}
+
+interface PointBinding {
+  rigid: RAPIER.RigidBody
+  anchorLocal: Vec2
+}
+
+interface RopeBinding {
+  id: string
+  a: PointBinding
+  b: PointBinding
+  via: Array<PointBinding & { radius: number }>
+  /** L: the path length at the DOCUMENT poses, fixed for the world's life. */
+  length: number
+  tension: number
+  /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
+  residual: number
+  /** This step's tension minus the warm start. */
+  predicted: number
+  slack: boolean
+}
+
+/** Fraction of a rope's stretch pulled back per step. */
+const ROPE_BETA = 0.2
+
+interface RopeFrame {
+  pa: Vec2
+  pb: Vec2
+  /** Unit directions from each end along its leg: the way the rope pulls that end. */
+  ua: Vec2
+  ub: Vec2
+  length: number
+}
+
+function worldPoint(p: PointBinding): Vec2 {
+  return bodyPointToWorld({ position: p.rigid.translation(), rotation: p.rigid.rotation() }, p.anchorLocal)
+}
+
+function unit(from: Vec2, to: Vec2): Vec2 {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const d = Math.hypot(dx, dy)
+  return d === 0 ? { x: 0, y: 0 } : { x: dx / d, y: dy / d }
+}
+
+function ropeFrame(rope: RopeBinding): RopeFrame {
+  const pa = worldPoint(rope.a)
+  const pb = worldPoint(rope.b)
+  const path = ropePath(
+    pa,
+    pb,
+    rope.via.map((p) => ({ center: worldPoint(p), radius: p.radius })),
+  )
+  return {
+    pa,
+    pb,
+    ua: unit(pa, path.segments[0]!.to),
+    ub: unit(pb, path.segments.at(-1)!.from),
+    length: path.length,
+  }
+}
+
+/** Inverse effective mass of a body for a unit pull `u` at world point `p`. */
+function pullInvMass(rigid: RAPIER.RigidBody, p: Vec2, u: Vec2): number {
+  if (!rigid.isDynamic()) return 0
+  const m = rigid.effectiveInvMass()
+  const com = rigid.worldCom()
+  const arm = (p.x - com.x) * u.y - (p.y - com.y) * u.x
+  return u.x * u.x * m.x + u.y * u.y * m.y + rigid.effectiveWorldInvInertia() * arm * arm
+}
+
+/**
+ * Velocity of world point `p` at the END of the coming step if only gravity
+ * and the forces already added this step acted (no contacts, no rope yet).
+ */
+function freePointVelocity(rigid: RAPIER.RigidBody, p: Vec2, gravity: Vec2): Vec2 {
+  if (!rigid.isDynamic()) return { x: 0, y: 0 }
+  const v = rigid.linvel()
+  const w = rigid.angvel()
+  const m = rigid.effectiveInvMass()
+  const f = rigid.userForce()
+  const gs = rigid.gravityScale()
+  const w1 = w + TIMESTEP * rigid.userTorque() * rigid.effectiveWorldInvInertia()
+  const com = rigid.worldCom()
+  return {
+    x: v.x + TIMESTEP * (gs * gravity.x + f.x * m.x) - w1 * (p.y - com.y),
+    y: v.y + TIMESTEP * (gs * gravity.y + f.y * m.y) + w1 * (p.x - com.x),
+  }
+}
+
+function pullRate(rigid: RAPIER.RigidBody, p: Vec2, u: Vec2): number {
+  if (!rigid.isDynamic()) return 0
+  const v = rigid.velocityAtPoint(p)
+  return u.x * v.x + u.y * v.y
 }
 
 /**
@@ -217,6 +324,7 @@ class RapierSimulator implements Simulator {
   private bodies = new Map<string, RAPIER.RigidBody>()
   private colliders = new Map<string, RAPIER.Collider>()
   private forces = new Map<string, ForceBinding>()
+  private ropes: RopeBinding[] = []
   private readonly _warnings: string[] = []
   private particleMode = false
 
@@ -226,6 +334,7 @@ class RapierSimulator implements Simulator {
     this.bodies = built.bodies
     this.colliders = built.colliders
     this.forces = built.forces
+    this.ropes = built.ropes
     this.particleMode = built.particleMode
     this._warnings.push(...built.warnings)
   }
@@ -241,6 +350,7 @@ class RapierSimulator implements Simulator {
     bodies: Map<string, RAPIER.RigidBody>
     colliders: Map<string, RAPIER.Collider>
     forces: Map<string, ForceBinding>
+    ropes: RopeBinding[]
     warnings: string[]
     particleMode: boolean
   } {
@@ -249,6 +359,7 @@ class RapierSimulator implements Simulator {
     const bodies = new Map<string, RAPIER.RigidBody>()
     const colliders = new Map<string, RAPIER.Collider>()
     const forces = new Map<string, ForceBinding>()
+    const ropes: RopeBinding[] = []
 
     // If anything below throws (e.g. mass<=0), the LOCAL candidate world is
     // freed before rethrow: no WASM leak on repeated invalid rebuilds.
@@ -288,21 +399,49 @@ class RapierSimulator implements Simulator {
           magnitude: force.magnitude,
         })
       }
+
+      // Ropes (ADR-0004): L comes from the DOCUMENT poses, never from the
+      // rigid bodies — replaceScene applies any carry only after this build,
+      // so a carried rebuild keeps the rope length the scene started with.
+      const pulleys = new Map((scene.pulleys ?? []).map((p) => [p.id, p]))
+      const point = (bodyId: string, anchorLocal: Vec2): PointBinding => {
+        const rigid = bodies.get(bodyId)
+        if (!rigid) throw new Error(`constraint references missing body '${bodyId}'`)
+        return { rigid, anchorLocal }
+      }
+      for (const rope of scene.constraints ?? []) {
+        const path = scenePath(scene, rope)
+        if (!path) throw new Error(`rope '${rope.id}' has a dangling reference`)
+        ropes.push({
+          id: rope.id,
+          a: point(rope.a.bodyId, rope.a.anchor),
+          b: point(rope.b.bodyId, rope.b.anchor),
+          via: rope.via.map((id) => {
+            const pulley = pulleys.get(id)!
+            return { ...point(pulley.bodyId, pulley.anchor), radius: pulley.radius }
+          }),
+          length: path.length,
+          tension: 0,
+          residual: 0,
+          predicted: 0,
+          slack: false,
+        })
+      }
     } catch (e) {
       world.free()
       throw e
     }
-    return { world, bodies, colliders, forces, warnings, particleMode: scene.constants.particleMode === true }
+    return { world, bodies, colliders, forces, ropes, warnings, particleMode: scene.constants.particleMode === true }
   }
 
   step(): void {
     const touched = new Set<RAPIER.RigidBody>()
-    for (const binding of this.forces.values()) {
-      if (!touched.has(binding.rigid)) {
-        touched.add(binding.rigid)
-        binding.rigid.resetForces(true)
-      }
+    for (const binding of this.forces.values()) touched.add(binding.rigid)
+    for (const rope of this.ropes) {
+      touched.add(rope.a.rigid)
+      touched.add(rope.b.rigid)
     }
+    for (const rigid of touched) rigid.resetForces(true)
     for (const binding of this.forces.values()) {
       const p = binding.rigid.translation()
       const r = binding.rigid.rotation()
@@ -318,7 +457,66 @@ class RapierSimulator implements Simulator {
         true,
       )
     }
+    for (const rope of this.ropes) this.pullRope(rope)
     this.world.step()
+    for (const rope of this.ropes) this.correctRope(rope)
+  }
+
+  /**
+   * Rope, before the step (ADR-0004): the tension that makes the free motion
+   * end the step at exactly L — closing a slack gap in one step at most, or
+   * pulling back a fraction of a stretch — plus last step's residual. Applied
+   * as a force, so Rapier's contact and friction solve sees it.
+   */
+  private pullRope(rope: RopeBinding): void {
+    const f = ropeFrame(rope)
+    const k = pullInvMass(rope.a.rigid, f.pa, f.ua) + pullInvMass(rope.b.rigid, f.pb, f.ub)
+    if (k === 0) {
+      rope.tension = rope.residual = rope.predicted = 0
+      return
+    }
+    const g = this.world.gravity
+    const va = freePointVelocity(rope.a.rigid, f.pa, g)
+    const vb = freePointVelocity(rope.b.rigid, f.pb, g)
+    const lengthening = -(f.ua.x * va.x + f.ua.y * va.y + f.ub.x * vb.x + f.ub.y * vb.y)
+    const c = f.length - rope.length
+    const allowed = c < 0 ? -c / TIMESTEP : (-ROPE_BETA * c) / TIMESTEP
+    rope.predicted = (lengthening - allowed) / (TIMESTEP * k)
+    rope.tension = Math.max(0, rope.predicted + rope.residual)
+    if (rope.tension === 0) return
+    rope.a.rigid.addForceAtPoint({ x: rope.tension * f.ua.x, y: rope.tension * f.ua.y }, f.pa, true)
+    rope.b.rigid.addForceAtPoint({ x: rope.tension * f.ub.x, y: rope.tension * f.ub.y }, f.pb, true)
+  }
+
+  /**
+   * Rope, after the step: contacts made the prediction wrong by some amount,
+   * so an impulse along the rope removes whatever lengthening remains beyond
+   * what the slack allows. The tension it implies becomes the reading, and
+   * the part the prediction missed warm-starts the next step.
+   */
+  private correctRope(rope: RopeBinding): void {
+    const f = ropeFrame(rope)
+    const k = pullInvMass(rope.a.rigid, f.pa, f.ua) + pullInvMass(rope.b.rigid, f.pb, f.ub)
+    if (k === 0) {
+      rope.slack = true
+      return
+    }
+    const lengthening = -(pullRate(rope.a.rigid, f.pa, f.ua) + pullRate(rope.b.rigid, f.pb, f.ub))
+    const c = f.length - rope.length
+    const allowed = c < 0 ? -c / TIMESTEP : 0
+    const corrected = Math.max(0, rope.tension + (lengthening - allowed) / (TIMESTEP * k))
+    const impulse = (corrected - rope.tension) * TIMESTEP
+    if (impulse !== 0) {
+      rope.a.rigid.applyImpulseAtPoint({ x: impulse * f.ua.x, y: impulse * f.ua.y }, f.pa, true)
+      rope.b.rigid.applyImpulseAtPoint({ x: impulse * f.ub.x, y: impulse * f.ub.y }, f.pb, true)
+    }
+    rope.tension = corrected
+    rope.residual = corrected > 0 ? corrected - rope.predicted : 0
+    rope.slack = corrected === 0
+  }
+
+  readConstraints(): ConstraintState[] {
+    return this.ropes.map((r) => ({ id: r.id, kind: 'rope', tension: r.tension, slack: r.slack }))
   }
 
   readStates(): Map<string, BodyState> {
@@ -452,6 +650,7 @@ class RapierSimulator implements Simulator {
     this.bodies = next.bodies
     this.colliders = next.colliders
     this.forces = next.forces
+    this.ropes = next.ropes
     this._warnings.length = 0
     this._warnings.push(...next.warnings)
     this.particleMode = next.particleMode
