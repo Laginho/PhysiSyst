@@ -1,4 +1,4 @@
-import type { Body, Vec2 } from '../scene'
+import { bodyPointToWorld, type Body, type Scene, type Spring, type Vec2 } from '../scene'
 
 /** World point -> body-LOCAL frame: inverse of translate(position)·rotate(rotation). */
 function toLocal(body: Body, w: Vec2): Vec2 {
@@ -38,6 +38,31 @@ export function pointInBody(body: Body, w: Vec2): boolean {
 export function bodyAtPoint(bodies: Body[], w: Vec2): Body | null {
   for (let i = bodies.length - 1; i >= 0; i--) {
     if (pointInBody(bodies[i], w)) return bodies[i]
+  }
+  return null
+}
+
+function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const lengthSquared = dx * dx + dy * dy
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+/**
+ * Topmost spring whose anchor-to-anchor segment passes within `tolerance`
+ * meters of a world point, at the poses the scene holds. Ropes are not hit.
+ */
+export function springAtPoint(scene: Scene, w: Vec2, tolerance: number): Spring | null {
+  const bodies = new Map(scene.bodies.map((b) => [b.id, b]))
+  const constraints = scene.constraints ?? []
+  for (let i = constraints.length - 1; i >= 0; i--) {
+    const c = constraints[i]
+    if (c.kind !== 'spring') continue
+    const a = bodies.get(c.a.bodyId)
+    const b = bodies.get(c.b.bodyId)
+    if (a && b && distanceToSegment(w, bodyPointToWorld(a, c.a.anchor), bodyPointToWorld(b, c.b.anchor)) <= tolerance) return c
   }
   return null
 }
