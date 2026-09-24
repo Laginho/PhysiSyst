@@ -59,8 +59,8 @@ An ideal constraint between two anchored bodies, optionally passing over a seque
 _Avoid_: string, cable, thread; "pendulum" as an element
 
 **Pulley** (polia):
-A circle of given radius mounted at an anchor on a body; ropes wrap it. On a fixed body it is a fixed pulley, on a dynamic body a movable one. Massless and frictionless by default; mass (a disk) is a realism option.
-_Avoid_: wheel, sheave
+A circle of given radius mounted at an anchor on a body; ropes wrap it. On a fixed body it is a fixed pulley, on a dynamic body a movable one. Massless and frictionless by default; mass (a disk) is a realism option. The rope does not slip on a pulley with mass: the pulley turns with it, and the tension differs on each side.
+_Avoid_: wheel, sheave; grip, piece, share (the simulator's words for how it solves a pulley with mass, defined in ADR-0004, not domain terms)
 
 **Spring** (mola):
 A constraint between two anchored bodies with stiffness `k`, natural length `x₀` and damping `c` (default 0). `x` is the current anchor distance and `Δx = x − x₀`; the spring stores `x₀`, so dragging a body changes `Δx`. Massless by default; mass is a realism option.
