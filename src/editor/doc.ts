@@ -83,16 +83,26 @@ export function duplicateBody(doc: Scene, id: string): DuplicateResult {
 /**
  * Doc-level delete for M1 (before T6's dependent management): removing a body
  * strips every force anchored to it and every contact touching it IN THE SAME
- * EDIT, so the document can never hold dangling references.
+ * EDIT, so the document can never hold dangling references. PHY-23: also the
+ * pulleys mounted on it, the ropes tied to it, and the ropes passing over
+ * those pulleys. Absent collections stay absent.
  */
 export function removeBodyAndDependents(doc: Scene, id: string): Scene {
   if (!doc.bodies.some((b) => b.id === id)) return doc
-  return {
+  const next: Scene = {
     ...doc,
     bodies: doc.bodies.filter((b) => b.id !== id),
     forces: doc.forces.filter((f) => f.bodyId !== id),
     contacts: doc.contacts.filter((c) => c.a !== id && c.b !== id),
   }
+  const lostPulleys = new Set((doc.pulleys ?? []).filter((p) => p.bodyId === id).map((p) => p.id))
+  if (doc.pulleys) next.pulleys = doc.pulleys.filter((p) => !lostPulleys.has(p.id))
+  if (doc.constraints) {
+    next.constraints = doc.constraints.filter(
+      (c) => c.a.bodyId !== id && c.b.bodyId !== id && !c.via.some((p) => lostPulleys.has(p)),
+    )
+  }
+  return next
 }
 
 // ---------- T6: forces, contacts, constants ----------

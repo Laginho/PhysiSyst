@@ -12,16 +12,27 @@
  *   collectWarnings(scene) to list them: g <= 0, dynamic mass <= 0 (Fixed
  *   bodies exempt — mass 0 is legitimate for them; messages name the Body
  *   by id), negative force magnitude, negative friction coefficients.
+ *
+ * Pulleys and rope constraints (PHY-23) HARD-reject dangling body/pulley
+ * references, duplicate ids and radius <= 0. Until PHY-24/25 they also
+ * reject a rope not over exactly one pulley, a pulley on a dynamic body and
+ * a pulley mass.
  */
 export { collectWarnings, parse, serialize, SceneParseError } from './codec'
+export { bodyPointToWorld, ropePath, scenePath } from './ropePath'
+export type { PathPulley, RopeArc, RopePath, RopeSegment } from './ropePath'
 export { SCENE_VERSION } from './types'
 export type {
   AppliedForce,
   Body,
   CircleGeometry,
+  Constraint,
+  ConstraintEnd,
   Contact,
   Geometry,
+  Pulley,
   RectangleGeometry,
+  Rope,
   Scene,
   TriangleGeometry,
   Vec2,
