@@ -1,5 +1,5 @@
 # PHY-25: Polia com massa (Realism option)
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-24
 Review: agent

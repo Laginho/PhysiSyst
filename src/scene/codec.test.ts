@@ -651,11 +651,8 @@ describe('PHY-23: pulleys and rope constraints', () => {
       mutate: (d) => void (d['pulleys'] as Doc[]).push({ ...pulley0(d) }),
       expected: "pulleys[1]: duplicate pulley id 'p'",
     },
-    {
-      name: 'pulley mass (realism option lands in PHY-25)',
-      mutate: (d) => void (pulley0(d)['mass'] = 1),
-      expected: /pulleys\[0\]: pulley mass is not supported yet/,
-    },
+    { name: 'pulley mass negative (PHY-25)', mutate: (d) => void (pulley0(d)['mass'] = -1), expected: 'pulleys[0]: mass must be a non-negative finite number' },
+    { name: 'pulley mass not a number (PHY-25)', mutate: (d) => void (pulley0(d)['mass'] = '2'), expected: 'pulleys[0]: mass must be a non-negative finite number' },
     {
       name: 'rope end a on a missing body',
       mutate: (d) => void ((rope0(d)['a'] as Doc)['bodyId'] = 'ghost'),
@@ -737,6 +734,9 @@ describe('PHY-23: pulleys and rope constraints', () => {
       ;(d['pulleys'] as Doc[]).push({ id: 'm', bodyId: 'b', anchor: { x: 0, y: 0 }, radius: 0.1 })
       rope0(d)['via'] = ['m', 'p']
     } },
+    // PHY-25: the disk realism option. Absent stays absent (round-trip above).
+    { name: 'a pulley with mass 0', mutate: (d) => void (pulley0(d)['mass'] = 0) },
+    { name: 'a pulley with mass', mutate: (d) => void (pulley0(d)['mass'] = 2) },
   ]
 
   it.each(acceptances)('accepts: $name', ({ mutate }) => {

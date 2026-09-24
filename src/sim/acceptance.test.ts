@@ -472,8 +472,12 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
   it('the constraint readout lists every rope by id, taut with T > 0 once the scene runs', async () => {
     const sim = await createSimulator(atwoodScene(3, 2))
     sim.step()
-    expect(sim.readConstraints()).toStrictEqual([{ id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false }])
+    expect(sim.readConstraints()).toStrictEqual([
+      { id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false, segments: [expect.any(Number), expect.any(Number)] },
+    ])
     expect(tension(sim).tension).toBeGreaterThan(0)
+    // PHY-25: over a massless pulley every segment reads the one T.
+    expect(tension(sim).segments).toStrictEqual([tension(sim).tension, tension(sim).tension])
   })
 
   it('replaceScene with carry keeps the document length L, not the length at the carried poses', async () => {
@@ -730,6 +734,152 @@ describe('acceptance: general rope (PHY-24)', () => {
     expect(Math.abs(dvB - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.02 * aClosed)
     for (const t of tensions) expect(Math.abs(t - tClosed)).toBeLessThanOrEqual(0.02 * tClosed)
     expect(maxLengthError).toBeLessThan(0.001)
+  })
+})
+
+/**
+ * PHY-25: a pulley with mass is a disk, I = ½MR², and the rope does not slip
+ * on it. Closed forms written before running, from energy: the disk spins at
+ * ω = v/R, so it adds ½Iω² = ¼Mv², M/2 to the inertia the rope drives. Every
+ * scene goes through the codec first.
+ */
+describe('acceptance: pulley with mass (PHY-25)', () => {
+  type Sim = Awaited<ReturnType<typeof createSimulator>>
+  const load = (scene: Scene): Promise<Sim> => createSimulator(parse(scene))
+  const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda')!
+  const R = 0.25
+  const TOP = { x: 0, y: 0.2 }
+  const CM = { x: 0, y: 0 }
+  const WINDOW = 60 * TIMESTEP
+  const massOf = (M: number | undefined) => (M === undefined ? {} : { mass: M })
+
+  function atwoodScene(m1: number, m2: number, M?: number): Scene {
+    return {
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: m1, position: { x: -R, y: 2 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'b', fixed: false, mass: m2, position: { x: R, y: 1 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      pulleys: [{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: -0.75 }, radius: R, ...massOf(M) }],
+      constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: TOP }, b: { bodyId: 'b', anchor: TOP }, via: ['p'] }],
+    }
+  }
+
+  // PHY-24's movable pulley, now with mass M on the disk riding the load:
+  // ceiling → under the disk → up over a massless fixed pulley → counterweight.
+  function movableScene(m: number, M: number | undefined, m2: number): Scene {
+    return {
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 10 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.3, height: 0.3, id: 'carga', fixed: false, mass: m, position: { x: 0, y: 4 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'contrapeso', fixed: false, mass: m2, position: { x: 0.75, y: 3 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      pulleys: [
+        { id: 'movel', bodyId: 'carga', anchor: CM, radius: R, ...massOf(M) },
+        { id: 'fixa', bodyId: 'teto', anchor: { x: 0.5, y: -0.5 }, radius: R },
+      ],
+      constraints: [
+        { id: 'corda', kind: 'rope', a: { bodyId: 'teto', anchor: { x: -0.25, y: 0 } }, b: { bodyId: 'contrapeso', anchor: CM }, via: ['movel', 'fixa'] },
+      ],
+    }
+  }
+
+  it('Atwood over a fixed pulley of mass M: a = (m₁−m₂)g/(m₁+m₂+M/2), T₁ = m₁(g−a), T₂ = m₂(g+a) per segment, within 3%', async () => {
+    const m1 = 3
+    const m2 = 2
+    const M = 2
+    const aClosed = ((m1 - m2) * G) / (m1 + m2 + M / 2)
+    const t1Closed = m1 * (G - aClosed)
+    const t2Closed = m2 * (G + aClosed)
+    const sim = await load(atwoodScene(m1, m2, M))
+    for (let i = 0; i < 30; i++) sim.step()
+    const s1 = sim.readStates()
+    const segments: number[][] = []
+    for (let i = 0; i < 60; i++) {
+      sim.step()
+      segments.push(rope(sim).segments)
+    }
+    const s2 = sim.readStates()
+    const dvA = s2.get('a')!.linvel.y - s1.get('a')!.linvel.y
+    const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
+    expect(Math.abs(-dvA - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
+    expect(Math.abs(dvB - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
+    // Segment 0 runs from end a (m₁) to the pulley, segment 1 on to end b (m₂).
+    for (const [t1, t2] of segments) {
+      expect(Math.abs(t1! - t1Closed)).toBeLessThanOrEqual(0.03 * t1Closed)
+      expect(Math.abs(t2! - t2Closed)).toBeLessThanOrEqual(0.03 * t2Closed)
+    }
+    expect(rope(sim).slack).toBe(false)
+  })
+
+  it('movable pulley of mass M on a load m, counterweight m₂: a = g(m + M − 2m₂)/(m + 3M/2 + 4m₂) within 3%', async () => {
+    // With y up, 2y_load + y_counterweight is constant; the disk spins at
+    // ω = v_load/R (the ceiling leg is still), and its weight rides the load.
+    const m = 3
+    const M = 2
+    const m2 = 1
+    const aLoad = (-G * (m + M - 2 * m2)) / (m + 1.5 * M + 4 * m2)
+    const tCounterweight = m2 * (G - 2 * aLoad)
+    const sim = await load(movableScene(m, M, m2))
+    for (let i = 0; i < 30; i++) sim.step()
+    const s1 = sim.readStates()
+    const segments: number[][] = []
+    for (let i = 0; i < 60; i++) {
+      sim.step()
+      segments.push(rope(sim).segments)
+    }
+    const s2 = sim.readStates()
+    const dvLoad = s2.get('carga')!.linvel.y - s1.get('carga')!.linvel.y
+    const dvCounterweight = s2.get('contrapeso')!.linvel.y - s1.get('contrapeso')!.linvel.y
+    expect(Math.abs(dvLoad - aLoad * WINDOW)).toBeLessThanOrEqual(0.03 * Math.abs(aLoad) * WINDOW)
+    expect(Math.abs(dvCounterweight + 2 * aLoad * WINDOW)).toBeLessThanOrEqual(0.03 * 2 * Math.abs(aLoad) * WINDOW)
+    // Three legs; the fixed pulley is massless, so its two legs read the same T.
+    for (const s of segments) {
+      expect(s).toHaveLength(3)
+      expect(Math.abs(s[2]! - tCounterweight)).toBeLessThanOrEqual(0.03 * tCounterweight)
+    }
+  })
+
+  it.each([
+    { name: 'Atwood 3 / 2 kg', scene: (M?: number) => atwoodScene(3, 2, M) },
+    { name: 'movable pulley 3 kg / 1 kg', scene: (M?: number) => movableScene(3, M, 1) },
+  ])('$name: mass 0 runs bit for bit like no mass', async ({ scene }) => {
+    const ideal = await load(scene())
+    const zero = await load(scene(0))
+    for (let i = 0; i < 90; i++) {
+      ideal.step()
+      zero.step()
+      expect(zero.readStates()).toStrictEqual(ideal.readStates())
+      expect(zero.readConstraints()).toStrictEqual(ideal.readConstraints())
+    }
+  })
+
+  it('replaceScene with carry keeps the disk spinning: the blocks carry on at the closed-form a, no jolt (3%)', async () => {
+    const m1 = 3
+    const m2 = 2
+    const M = 2
+    const aClosed = ((m1 - m2) * G) / (m1 + m2 + M / 2)
+    const scene = atwoodScene(m1, m2, M)
+    const sim = await load(scene)
+    for (let i = 0; i < 30; i++) sim.step()
+    // Mid-motion at ~0.8 m/s: a disk rebuilt at rest would have to be spun up
+    // by the rope in one step, taking ~1/6 of the blocks' speed with it.
+    const s1 = sim.readStates()
+    sim.replaceScene(parse(scene), s1)
+    for (let i = 0; i < 60; i++) sim.step()
+    const s2 = sim.readStates()
+    const dvA = s2.get('a')!.linvel.y - s1.get('a')!.linvel.y
+    const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
+    expect(Math.abs(-dvA - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
+    expect(Math.abs(dvB - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
   })
 })
 
