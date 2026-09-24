@@ -1,5 +1,5 @@
 import { SCENE_VERSION } from './types'
-import type { AppliedForce, Body, Contact, Scene } from './types'
+import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Pulley, Scene } from './types'
 
 export class SceneParseError extends Error {
   constructor(message: string) {
@@ -184,9 +184,66 @@ function parseContact(
   return { a, b, muS: reqFinite(c, 'muS', where), muK: reqFinite(c, 'muK', where) }
 }
 
+const PULLEY_KEYS = ['id', 'bodyId', 'anchor', 'radius', 'mass'] as const
+
+function parsePulley(raw: unknown, i: number, bodies: ReadonlyMap<string, Body>): Pulley {
+  const where = `pulleys[${i}]`
+  if (!isObject(raw)) fail(`${where} must be a JSON object`)
+  const p = raw
+  checkKeys(p, PULLEY_KEYS, `in ${where}`)
+  // Temporary until PHY-25 (disk realism option) and PHY-24 (movable pulleys).
+  if ('mass' in p) fail(`${where}: pulley mass is not supported yet`)
+
+  const id = reqString(p, 'id', where)
+  const bodyId = reqString(p, 'bodyId', where)
+  const mount = bodies.get(bodyId)
+  if (!mount) fail(`${where}: references missing body '${bodyId}'`)
+  if (!mount.fixed) fail(`${where}: pulley on dynamic body '${bodyId}' is not supported yet`)
+  return { id, bodyId, anchor: parseVec2(p['anchor'], `${where}: anchor.`), radius: reqPositive(p, 'radius', where) }
+}
+
+function parseEnd(raw: unknown, key: 'a' | 'b', where: string, bodies: ReadonlyMap<string, Body>): ConstraintEnd {
+  const path = `${where}.${key}`
+  if (!isObject(raw)) fail(`${path} must be a JSON object`)
+  checkKeys(raw, ['bodyId', 'anchor'], `in ${path}`)
+  const bodyId = reqString(raw, 'bodyId', path)
+  if (!bodies.has(bodyId)) fail(`${where}: ${key} references missing body '${bodyId}'`)
+  return { bodyId, anchor: parseVec2(raw['anchor'], `${path}: anchor.`) }
+}
+
+const ROPE_KEYS = ['id', 'kind', 'a', 'b', 'via'] as const
+
+function parseConstraint(
+  raw: unknown,
+  i: number,
+  bodies: ReadonlyMap<string, Body>,
+  pulleyIds: ReadonlySet<string>,
+): Constraint {
+  const where = `constraints[${i}]`
+  if (!isObject(raw)) fail(`${where} must be a JSON object`)
+  const c = raw
+  const kind = c['kind']
+  if (kind !== 'rope') fail(`${where}: unknown kind '${String(kind)}'`)
+  checkKeys(c, ROPE_KEYS, `in ${where}`)
+
+  const id = reqString(c, 'id', where)
+  const a = parseEnd(c['a'], 'a', where, bodies)
+  const b = parseEnd(c['b'], 'b', where, bodies)
+  const viaRaw = c['via']
+  if (!Array.isArray(viaRaw) || !viaRaw.every((v): v is string => typeof v === 'string' && v !== '')) {
+    fail(`${where}: via must be an array of pulley ids`)
+  }
+  for (const pid of viaRaw) {
+    if (!pulleyIds.has(pid)) fail(`${where}: via references missing pulley '${pid}'`)
+  }
+  // Temporary until PHY-24 generalizes the rope (pendulum, pulleys in series).
+  if (viaRaw.length !== 1) fail(`${where}: a rope must pass over exactly one pulley for now`)
+  return { id, kind, a, b, via: [...viaRaw] }
+}
+
 export function parse(json: unknown): Scene {
   if (!isObject(json)) fail('scene must be a JSON object')
-  checkKeys(json, ['version', 'constants', 'bodies', 'forces', 'contacts'], 'at scene root')
+  checkKeys(json, ['version', 'constants', 'bodies', 'forces', 'contacts', 'pulleys', 'constraints'], 'at scene root')
   reqKey(json, 'version', 'at scene root')
   reqKey(json, 'constants', 'at scene root')
   reqKey(json, 'bodies', 'at scene root')
@@ -241,13 +298,39 @@ export function parse(json: unknown): Scene {
     forces.push(f)
   }
 
-  return {
+  const scene: Scene = {
     version,
     constants: particleMode !== undefined ? { g, particleMode } : { g },
     bodies,
     forces,
     contacts,
   }
+
+  // Pulleys and constraints are additive-optional (PHY-23): parsed only when
+  // present and appended after contacts, so documents without them keep
+  // their exact bytes. Ids are structural addresses, duplicates HARD reject.
+  const bodyById = new Map(bodies.map((b) => [b.id, b]))
+  const pulleyIds = new Set<string>()
+  if ('pulleys' in json) {
+    const pulleyRaws = reqArray(json, 'pulleys')
+    scene.pulleys = pulleyRaws.map((raw, i) => {
+      const p = parsePulley(raw, i, bodyById)
+      if (pulleyIds.has(p.id)) fail(`pulleys[${i}]: duplicate pulley id '${p.id}'`)
+      pulleyIds.add(p.id)
+      return p
+    })
+  }
+  if ('constraints' in json) {
+    const constraintRaws = reqArray(json, 'constraints')
+    const constraintIds = new Set<string>()
+    scene.constraints = constraintRaws.map((raw, i) => {
+      const c = parseConstraint(raw, i, bodyById, pulleyIds)
+      if (constraintIds.has(c.id)) fail(`constraints[${i}]: duplicate constraint id '${c.id}'`)
+      constraintIds.add(c.id)
+      return c
+    })
+  }
+  return scene
 }
 
 export function serialize(scene: Scene): unknown {
