@@ -1,5 +1,5 @@
 # CLEAN-01: Endurecer o code-split do Rapier
-Stage: to-review
+Stage: reviewing
 Status: needs-triage
 Blocked by: PHY-32
 Review: agent

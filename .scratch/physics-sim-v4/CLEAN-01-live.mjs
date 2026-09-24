@@ -10,7 +10,9 @@ const URL = `http://127.0.0.1:${PORT}/`
 const CHROME = process.env.CHROME_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const preview = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: ROOT, shell: true, stdio: 'ignore' })
+// Drop inherited npm_* vars: under `npm exec`/`npx` they make the nested npx fail with EUSAGE.
+const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('npm_')))
+const preview = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: ROOT, shell: true, stdio: 'ignore', env })
 const profile = mkdtempSync(join(tmpdir(), 'clean01-'))
 const chrome = spawn(CHROME, ['--headless=new', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] })
 const endpoint = await new Promise((resolve) => {
