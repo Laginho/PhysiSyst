@@ -296,7 +296,7 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
 const SPRING_ZIGS = 10
 
 /**
- * A spring (PHY-26) as a zigzag between its anchors: a straight lead at each
+ * A spring (PHY-26) as a zigzag between its anchors: a straight tail at each
  * end and a fixed number of zigs, so stretching spreads them and compressing
  * packs them. Width in screen px, so it reads the same at any zoom.
  */
@@ -308,17 +308,17 @@ function drawSpring(ctx: CanvasRenderingContext2D, from: { x: number; y: number 
   const ux = dx / length
   const uy = dy / length
   const half = 7 / ppm
-  const lead = 0.15 * length
-  const pitch = (length - 2 * lead) / SPRING_ZIGS
+  const tail = 0.15 * length
+  const pitch = (length - 2 * tail) / SPRING_ZIGS
   ctx.beginPath()
   ctx.moveTo(from.x, from.y)
-  ctx.lineTo(from.x + lead * ux, from.y + lead * uy)
+  ctx.lineTo(from.x + tail * ux, from.y + tail * uy)
   for (let i = 0; i < SPRING_ZIGS; i++) {
-    const along = lead + (i + 0.5) * pitch
+    const along = tail + (i + 0.5) * pitch
     const side = i % 2 === 0 ? half : -half
     ctx.lineTo(from.x + along * ux - side * uy, from.y + along * uy + side * ux)
   }
-  ctx.lineTo(to.x - lead * ux, to.y - lead * uy)
+  ctx.lineTo(to.x - tail * ux, to.y - tail * uy)
   ctx.lineTo(to.x, to.y)
   ctx.stroke()
 }

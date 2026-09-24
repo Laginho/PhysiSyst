@@ -34,6 +34,7 @@ export type {
   RectangleGeometry,
   Rope,
   Scene,
+  Spring,
   TriangleGeometry,
   Vec2,
 } from './types'

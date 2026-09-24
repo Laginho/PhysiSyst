@@ -1,5 +1,5 @@
 # CLEAN-05: ADR-0004 e spec dizem que a mola usa a junta do Rapier; resíduos do PHY-26 fora dos Primary files
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -42,3 +42,15 @@ O PHY-26 implementou a mola pelo gancho de forças (`pushSpring`, com a força t
 ## Comments
 
 - 2026-09-24 Aberto pelo review do PHY-26 (stage 3). Nenhum item é critério daquele ticket, então o PHY-26 fechou como está.
+
+### Stage 2 (2026-09-24)
+
+No test commit: the ticket names none, and no change is observable (CLEAN-04 precedent). One commit, no test file touched.
+
+1. ADR-0004 gains `## Springs (PHY-26)`: `pushSpring`'s own force at both ends, pushed after the applied forces and before the ropes, the `(1 − φ)Δt` lead from the same `substepFactor`, the readout without lead, and the numbers that ruled out Rapier's spring joint (0.0297 m of 0.1 m lost in 5 periods, 2.05% equilibrium, 4 and 2 peaks of 5). The Consequences line about the joint is gone; in its place, that the lead shares the rope's Rapier-substepping assumption.
+2. `spec.md` line 125: the spring is our force, pointing at the ADR section.
+3. `Spring` and `SpringState` exported. The tests keep their `Extract<…>` (optional in the criterion, and stage 2 does not touch tests in a code commit).
+4. `freePoint` and `correctPieces` call `pointVelocity`. **The ticket says `pullPieces`, but the inline ternary is in `correctPieces`** (`pullPieces` has none; `correctRope` skips fixed bodies with `continue`, a different shape, left alone). Same file, same one line the ticket means. `npx vitest run src/sim src/scene`: 5 files, 193/193, same as before.
+5. `drawSpring`'s `lead` → `tail` (and the doc comment's "straight lead").
+
+**Gate:** `npm test` 29 files, 585/585; lint clean; typecheck clean; build OK (the pre-existing >500 kB chunk warning).
