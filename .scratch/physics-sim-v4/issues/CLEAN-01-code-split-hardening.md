@@ -1,5 +1,5 @@
 # CLEAN-01: Endurecer o code-split do Rapier
-Stage: reviewing
+Stage: done
 Status: needs-triage
 Blocked by: PHY-32
 Review: agent
@@ -74,3 +74,31 @@ Três pontas soltas da revisão do PHY-32, nenhuma dentro dos Primary files daqu
       node .scratch/physics-sim-v4/CLEAN-01-live.mjs
 
 - Gate (`npm test && npm run lint && npm run typecheck && npm run build`): 28 files, 478 tests passed; lint clean; tsc clean; build `index-*.js` 257.89 kB, `sim-*.js` 2,120.89 kB (the >500 kB warning is the sim chunk, as before).
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Merged into `sweatshop/2026-09-24-1506` as `26cde93` (`--no-ff`). Ticket branch `phy/CLEAN-01-code-split-hardening`: `7cd608f` (tests), `4cf6c7e` (code), `ea2e8bb` (stage-3 fix).
+
+**Findings (Standards axis):** no documented-standard breach. One convention departure fixed in stage 3: the `sessionStorage` key was a bare literal; every other storage key in `src/` carries the `physics-sim:` prefix (`src/i18n/index.ts`, `src/persistence/index.ts`). Now `PRELOAD_RELOAD_KEY = 'physics-sim:preloadReloadAt'` in `src/main.tsx`. Judgement calls left alone: the lint regex `(^|/)sim(/(index|simulator))?$` would also flag an unrelated `**/sim` folder (none exists) and misses `../sim/index.ts` with an explicit extension (the repo never writes that); the listener fires for any preload failure, CSS included, and `sim` is the only runtime dynamic import today.
+
+**Findings (Spec axis):** criteria 2, 3, 4 verified against the code, not the diff — all five `loading screen (PHY-16)` tests wait via `settleSimImport()`; no remaining value import of `TIMESTEP` from `sim/simulator`; `main.tsx` matches the proxy-decided design (timestamp, 10 s window, no `preventDefault`, no reload when storage throws). Vite's `__vitePreload` wraps the `import('./sim')` even with an empty deps array and dispatches `vite:preloadError` before rethrowing, so the listener sees the failure. The lint rule also bans `sim/index` and `sim/simulator`, slightly wider than "`**/sim`" in the ticket; that is the file that imports Rapier, kept. Stage 2 recorded three `Proxy decided` lines (overlay.test.ts import, test-file lint exemption, guarded reload); all three are followed.
+
+**Criterion 1, live check (the evidence stage 2 could not produce).** First run under `npm exec` was invalid: inherited `npm_config_*` vars made the script's nested `npx vite preview` exit with EUSAGE, so Chrome measured a connection-refused page (`loads=1 errorPanel=false`). Fixed in the script (`ea2e8bb`, strips `npm_*` from the preview env). Against the final build:
+
+      A persistent block: loads=2 errorPanel=true
+      A retry after window: newLoads=1 errorPanel=true
+      A retry inside window: newLoads=0 errorPanel=true
+      B transient: loads=2 errorPanel=false canvasNoError=true
+
+Mutation (listener registered on `vite:preloadError-MUTATED`, rebuilt):
+
+      A persistent block: loads=1 errorPanel=true
+      A retry after window: newLoads=0 errorPanel=true
+      A retry inside window: newLoads=0 errorPanel=true
+      B transient: loads=1 errorPanel=true canvasNoError=false
+
+**Gate** on the merged tree (`npm test && npm run lint && npm run typecheck && npm run build`): 28 files, 478 tests passed; eslint clean; tsc clean; build `index-*.js` 257.90 kB, `sim-*.js` 2,120.89 kB.
+
+**Files:** `src/main.tsx`, `src/sim/index.ts`, `src/sim/simulator.ts`, `eslint.config.js`, `src/App.test.ts`, `src/render/overlay.test.ts`, `.scratch/physics-sim-v4/CLEAN-01-live.mjs`.
