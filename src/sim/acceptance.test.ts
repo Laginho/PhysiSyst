@@ -875,12 +875,24 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     // by the rope in one step, taking ~1/6 of the blocks' speed with it.
     const s1 = sim.readStates()
     sim.replaceScene(parse(scene), s1)
-    for (let i = 0; i < 60; i++) sim.step()
+    const segments: number[][] = []
+    for (let i = 0; i < 60; i++) {
+      sim.step()
+      segments.push(rope(sim).segments)
+    }
     const s2 = sim.readStates()
     const dvA = s2.get('a')!.linvel.y - s1.get('a')!.linvel.y
     const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
     expect(Math.abs(-dvA - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
     expect(Math.abs(dvB - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
+    // The disk has turned since the document: each piece keeps its length
+    // across the rebuild, so neither is yanked taut nor let slack.
+    const t1Closed = m1 * (G - aClosed)
+    const t2Closed = m2 * (G + aClosed)
+    for (const [t1, t2] of segments) {
+      expect(Math.abs(t1! - t1Closed)).toBeLessThanOrEqual(0.03 * t1Closed)
+      expect(Math.abs(t2! - t2Closed)).toBeLessThanOrEqual(0.03 * t2Closed)
+    }
   })
 })
 
