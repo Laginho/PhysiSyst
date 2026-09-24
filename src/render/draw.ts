@@ -249,8 +249,8 @@ export function drawScene(
  */
 function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransform, ppm: number, style: DrawStyle): void {
   const pulleys = scene.pulleys ?? []
-  const ropes = scene.constraints ?? []
-  if (pulleys.length === 0 && ropes.length === 0) return
+  const constraints = scene.constraints ?? []
+  if (pulleys.length === 0 && constraints.length === 0) return
   const origin = worldToScreen(t, 0, 0)
   ctx.save()
   ctx.translate(origin.x, origin.y)
@@ -272,14 +272,14 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
     ctx.fillStyle = style.dynamicStroke
     ctx.fill()
   }
-  for (const rope of ropes) {
-    if (rope.kind === 'spring') {
-      const a = bodies.get(rope.a.bodyId)
-      const b = bodies.get(rope.b.bodyId)
-      if (a && b) drawSpring(ctx, bodyPointToWorld(a, rope.a.anchor), bodyPointToWorld(b, rope.b.anchor), ppm)
+  for (const constraint of constraints) {
+    if (constraint.kind === 'spring') {
+      const a = bodies.get(constraint.a.bodyId)
+      const b = bodies.get(constraint.b.bodyId)
+      if (a && b) drawSpring(ctx, bodyPointToWorld(a, constraint.a.anchor), bodyPointToWorld(b, constraint.b.anchor), ppm)
       continue
     }
-    const path = scenePath(scene, rope)
+    const path = scenePath(scene, constraint)
     if (!path) continue
     ctx.beginPath()
     path.segments.forEach((s, i) => {

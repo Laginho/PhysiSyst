@@ -1,5 +1,5 @@
 # PHY-26: Mola ideal — k, x₀, amortecimento
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-23
 Review: agent

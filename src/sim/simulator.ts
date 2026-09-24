@@ -698,19 +698,20 @@ class RapierSimulator implements Simulator {
         }
         disks.set(pulley.id, disk)
       }
-      for (const [index, rope] of (scene.constraints ?? []).entries()) {
-        if (rope.kind === 'spring') {
+      for (const [index, constraint] of (scene.constraints ?? []).entries()) {
+        if (constraint.kind === 'spring') {
           springs.push({
-            id: rope.id,
+            id: constraint.id,
             index,
-            a: point(rope.a.bodyId, rope.a.anchor),
-            b: point(rope.b.bodyId, rope.b.anchor),
-            k: rope.k,
-            x0: rope.x0,
-            c: rope.c ?? 0,
+            a: point(constraint.a.bodyId, constraint.a.anchor),
+            b: point(constraint.b.bodyId, constraint.b.anchor),
+            k: constraint.k,
+            x0: constraint.x0,
+            c: constraint.c ?? 0,
           })
           continue
         }
+        const rope = constraint
         const path = scenePath(scene, rope)
         if (!path) throw new Error(`rope '${rope.id}' has a dangling reference`)
         const binding: RopeBinding = {
