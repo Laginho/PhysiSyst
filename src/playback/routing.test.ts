@@ -4,7 +4,7 @@
  * records + g) or needs a carried structural rebuild. Table-driven per PLAN.
  */
 import { describe, expect, it } from 'vitest'
-import type { Scene } from '../scene'
+import type { Rope, Scene } from '../scene'
 import type { Simulator } from '../sim'
 import { applyLiveOps, routeDocChange } from './routing'
 
@@ -256,7 +256,7 @@ describe('PHY-23: pulleys and constraints route structural', () => {
     ['pulley anchor moved', roped(), editRoped((s) => void (s.pulleys![0]!.anchor = { x: 1.5, y: 3 }))],
     ['rope removed', roped(), editRoped((s) => void s.constraints!.pop())],
     ['rope end anchor moved', roped(), editRoped((s) => void (s.constraints![0]!.a.anchor = { x: 0.1, y: 0 }))],
-    ['rope via changed', roped(), editRoped((s) => void (s.constraints![0]!.via = []))],
+    ['rope via changed', roped(), editRoped((s) => void ((s.constraints![0] as Rope).via = []))],
   ])('%s -> structural', (_name, prev, next) => {
     expect(routeDocChange(prev, next).kind).toBe('structural')
   })

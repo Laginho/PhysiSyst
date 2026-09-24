@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { ropePath, scenePath } from './ropePath'
-import type { Scene, Vec2 } from './types'
+import type { Rope, Scene, Vec2 } from './types'
 
 const EPS = 1e-9
 
@@ -90,7 +90,7 @@ describe('scenePath: rope path from document poses', () => {
   }
 
   it('resolves anchors in each body frame and the pulley on its mount', () => {
-    const path = scenePath(scene, scene.constraints![0]!)!
+    const path = scenePath(scene, scene.constraints![0] as Rope)!
     expectPoint(path.segments[0]!.from, { x: -0.25, y: 2.2 })
     expectPoint(path.segments[0]!.to, { x: -0.25, y: 5.25 })
     expectPoint(path.segments[1]!.from, { x: 0.25, y: 5.25 })
@@ -99,7 +99,7 @@ describe('scenePath: rope path from document poses', () => {
   })
 
   it('returns null when a reference dangles', () => {
-    const rope = { ...scene.constraints![0]!, via: ['ghost'] }
+    const rope = { ...(scene.constraints![0] as Rope), via: ['ghost'] }
     expect(scenePath(scene, rope)).toBeNull()
   })
 })
@@ -193,8 +193,8 @@ describe('scenePath follows a movable pulley (PHY-24)', () => {
   })
 
   it('the path is wrapped on the pulley at its mount body pose, and moves with it', () => {
-    const at4 = scenePath(scene(4), scene(4).constraints![0]!)!
-    const at3 = scenePath(scene(3), scene(3).constraints![0]!)!
+    const at4 = scenePath(scene(4), scene(4).constraints![0] as Rope)!
+    const at3 = scenePath(scene(3), scene(3).constraints![0] as Rope)!
     expectPoint(at4.arcs[0]!.center, { x: 0, y: 4 })
     expectPoint(at3.arcs[0]!.center, { x: 0, y: 3 })
     expectPoint(at3.segments[0]!.to, { x: -0.25, y: 3 })
