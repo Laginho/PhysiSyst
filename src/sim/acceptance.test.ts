@@ -348,6 +348,156 @@ describe('acceptance: perfectly-inelastic 1D collision', () => {
   })
 })
 
+/**
+ * PHY-23 rope tracer. Both families hang from one pulley on a fixed body.
+ * Closed forms written before running; rope length along the path is also
+ * computed in closed form from the figure (vertical legs, horizontal leg,
+ * wrapped arc), independent of the simulator's own geometry code.
+ */
+describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
+  const R = 0.25
+  const PULLEY_Y = 5.25
+  const HALF = 0.2 // blocks are 0.4 × 0.4; anchors sit mid top face
+
+  function atwoodScene(m1: number, m2: number): Scene {
+    return {
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: m1, position: { x: -R, y: 2 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'b', fixed: false, mass: m2, position: { x: R, y: 1 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      pulleys: [{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: -0.75 }, radius: R }],
+      constraints: [
+        { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0, y: HALF } }, b: { bodyId: 'b', anchor: { x: 0, y: HALF } }, via: ['p'] },
+      ],
+    }
+  }
+
+  // Both legs hang vertically below the pulley's side tangent points.
+  function atwoodLength(ya: number, yb: number): number {
+    return PULLEY_Y - (ya + HALF) + Math.PI * R + (PULLEY_Y - (yb + HALF))
+  }
+
+  const tension = (sim: Awaited<ReturnType<typeof createSimulator>>) => sim.readConstraints().find((c) => c.id === 'corda')!
+
+  it.each([
+    { m1: 3, m2: 2 },
+    { m1: 2.5, m2: 1.5 },
+  ])('Atwood m1=$m1 m2=$m2: a = (m1−m2)g/(m1+m2), T = 2m1m2g/(m1+m2), rope length held', async ({ m1, m2 }) => {
+    const aClosed = ((m1 - m2) * G) / (m1 + m2)
+    const tClosed = (2 * m1 * m2 * G) / (m1 + m2)
+    const sim = await createSimulator(atwoodScene(m1, m2))
+    const L = atwoodLength(2, 1)
+    let maxLengthError = 0
+    const tick = (): void => {
+      sim.step()
+      const s = sim.readStates()
+      maxLengthError = Math.max(maxLengthError, Math.abs(atwoodLength(s.get('a')!.position.y, s.get('b')!.position.y) - L))
+    }
+    for (let i = 0; i < 30; i++) tick()
+    const s1 = sim.readStates()
+    const tensions: number[] = []
+    for (let i = 0; i < 60; i++) {
+      tick()
+      tensions.push(tension(sim).tension)
+    }
+    const s2 = sim.readStates()
+    const dvA = s2.get('a')!.linvel.y - s1.get('a')!.linvel.y
+    const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
+    // Heavier block down, lighter up, both at the same |a|; window = 1 s.
+    expect(Math.abs(-dvA - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.02 * aClosed)
+    expect(Math.abs(dvB - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.02 * aClosed)
+    for (const t of tensions) expect(Math.abs(t - tClosed)).toBeLessThanOrEqual(0.02 * tClosed)
+    expect(tension(sim).slack).toBe(false)
+    expect(maxLengthError).toBeLessThan(0.001)
+  })
+
+  it.each([
+    { m1: 2, m2: 1, muK: 0.2 },
+    { m1: 2, m2: 1, muK: 0.1 },
+  ])('block on table m1=$m1 pulled by hanging m2=$m2, muK=$muK: a = (m2 − muK m1)g/(m1+m2), T = m2(g − a)', async ({ m1, m2, muK }) => {
+    const aClosed = ((m2 - muK * m1) * G) / (m1 + m2)
+    const tClosed = m2 * (G - aClosed)
+    // Table top at y = 0, right edge at x = 4. Pulley (r = 0.2) past the edge
+    // at (4.2, 0), so the rope leaves the block horizontally at y = 0.2, wraps
+    // a quarter turn and drops to the hanging block clear of the table.
+    const r = 0.2
+    const HB = 0.15 // hanging block is 0.3 × 0.3
+    const sim = await createSimulator({
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 8, height: 1, id: 'mesa', fixed: true, mass: 0, position: { x: 0, y: -0.5 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: m1, position: { x: -2, y: 0.2 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.3, height: 0.3, id: 'b', fixed: false, mass: m2, position: { x: 4.4, y: -1.5 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [{ a: 'mesa', b: 'a', muS: muK, muK }],
+      pulleys: [{ id: 'p', bodyId: 'mesa', anchor: { x: 4.2, y: 0.5 }, radius: r }],
+      constraints: [
+        { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0.2, y: 0 } }, b: { bodyId: 'b', anchor: { x: 0, y: HB } }, via: ['p'] },
+      ],
+    })
+    const pathLength = (xa: number, yb: number): number => 4.2 - (xa + 0.2) + (Math.PI / 2) * r + (0 - (yb + HB))
+    const L = pathLength(-2, -1.5)
+    let maxLengthError = 0
+    const tick = (): void => {
+      sim.step()
+      const s = sim.readStates()
+      maxLengthError = Math.max(maxLengthError, Math.abs(pathLength(s.get('a')!.position.x, s.get('b')!.position.y) - L))
+    }
+    for (let i = 0; i < 30; i++) tick()
+    const s1 = sim.readStates()
+    const tensions: number[] = []
+    for (let i = 0; i < 60; i++) {
+      tick()
+      tensions.push(tension(sim).tension)
+    }
+    const s2 = sim.readStates()
+    const dvA = s2.get('a')!.linvel.x - s1.get('a')!.linvel.x
+    const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
+    expect(Math.abs(dvA - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.05 * aClosed)
+    expect(Math.abs(-dvB - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.05 * aClosed)
+    for (const t of tensions) expect(Math.abs(t - tClosed)).toBeLessThanOrEqual(0.05 * tClosed)
+    // The block stays on the table: the rope pulls along it, never lifts it.
+    expect(Math.abs(s2.get('a')!.position.y - 0.2)).toBeLessThan(0.005)
+    expect(maxLengthError).toBeLessThan(0.001)
+  })
+
+  it('the constraint readout lists every rope by id, taut with T > 0 once the scene runs', async () => {
+    const sim = await createSimulator(atwoodScene(3, 2))
+    sim.step()
+    expect(sim.readConstraints()).toStrictEqual([{ id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false }])
+    expect(tension(sim).tension).toBeGreaterThan(0)
+  })
+
+  it('replaceScene with carry keeps the document length L, not the length at the carried poses', async () => {
+    const scene = atwoodScene(3, 2)
+    const L = atwoodLength(2, 1)
+    const sim = await createSimulator(scene)
+    for (let i = 0; i < 30; i++) sim.step()
+    // Carry mid-motion with the heavy block lifted 10 cm: at the carried poses
+    // the path is 10 cm shorter than the document's L. A rope rebuilt from the
+    // carried poses would be taut at once; the document's rope is slack until
+    // the blocks close that gap, then holds L again.
+    const carry = sim.readStates()
+    const a = carry.get('a')!
+    carry.set('a', { ...a, position: { x: a.position.x, y: a.position.y + 0.1 } })
+    sim.replaceScene(scene, carry)
+    sim.step()
+    expect(tension(sim).slack).toBe(true)
+    expect(tension(sim).tension).toBe(0)
+    for (let i = 0; i < 60; i++) sim.step()
+    const s = sim.readStates()
+    expect(tension(sim).slack).toBe(false)
+    expect(Math.abs(atwoodLength(s.get('a')!.position.y, s.get('b')!.position.y) - L)).toBeLessThan(0.001)
+  })
+})
+
 describe('acceptance: force anchor semantics (origin-relative contract)', () => {
   // Pins the BODY-ORIGIN-relative anchor contract documented in types.ts:
   // a triangle's frame origin is its alpha-corner vertex while its COM sits

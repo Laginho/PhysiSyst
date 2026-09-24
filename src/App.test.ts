@@ -30,6 +30,7 @@ function makeFakeSimulator(): Simulator {
     step: () => {},
     readStates: () => new Map(),
     readContacts: () => [],
+    readConstraints: () => [],
     setForceMagnitude: () => {},
     setGravity: () => {},
     setForceDirection: () => {},
