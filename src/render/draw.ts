@@ -243,13 +243,14 @@ export function drawScene(
 
 /**
  * Pulleys as outlined circles with an axle dot, ropes as their tangent legs
- * plus the arc wrapped on each pulley (PHY-23). Drawn in world meters under
- * one y-flipped transform, so canvas arc angles are the path's own angles.
+ * plus the arc wrapped on each pulley (PHY-23), springs as zigzags (PHY-26).
+ * Drawn in world meters under one y-flipped transform, so canvas arc angles
+ * are the path's own angles.
  */
 function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransform, ppm: number, style: DrawStyle): void {
   const pulleys = scene.pulleys ?? []
-  const ropes = scene.constraints ?? []
-  if (pulleys.length === 0 && ropes.length === 0) return
+  const constraints = scene.constraints ?? []
+  if (pulleys.length === 0 && constraints.length === 0) return
   const origin = worldToScreen(t, 0, 0)
   ctx.save()
   ctx.translate(origin.x, origin.y)
@@ -271,8 +272,14 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
     ctx.fillStyle = style.dynamicStroke
     ctx.fill()
   }
-  for (const rope of ropes) {
-    const path = scenePath(scene, rope)
+  for (const constraint of constraints) {
+    if (constraint.kind === 'spring') {
+      const a = bodies.get(constraint.a.bodyId)
+      const b = bodies.get(constraint.b.bodyId)
+      if (a && b) drawSpring(ctx, bodyPointToWorld(a, constraint.a.anchor), bodyPointToWorld(b, constraint.b.anchor), ppm)
+      continue
+    }
+    const path = scenePath(scene, constraint)
     if (!path) continue
     ctx.beginPath()
     path.segments.forEach((s, i) => {
@@ -284,6 +291,36 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
     ctx.stroke()
   }
   ctx.restore()
+}
+
+const SPRING_ZIGS = 10
+
+/**
+ * A spring (PHY-26) as a zigzag between its anchors: a straight lead at each
+ * end and a fixed number of zigs, so stretching spreads them and compressing
+ * packs them. Width in screen px, so it reads the same at any zoom.
+ */
+function drawSpring(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }, ppm: number): void {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+  if (length === 0) return
+  const ux = dx / length
+  const uy = dy / length
+  const half = 7 / ppm
+  const lead = 0.15 * length
+  const pitch = (length - 2 * lead) / SPRING_ZIGS
+  ctx.beginPath()
+  ctx.moveTo(from.x, from.y)
+  ctx.lineTo(from.x + lead * ux, from.y + lead * uy)
+  for (let i = 0; i < SPRING_ZIGS; i++) {
+    const along = lead + (i + 0.5) * pitch
+    const side = i % 2 === 0 ? half : -half
+    ctx.lineTo(from.x + along * ux - side * uy, from.y + along * uy + side * ux)
+  }
+  ctx.lineTo(to.x - lead * ux, to.y - lead * uy)
+  ctx.lineTo(to.x, to.y)
+  ctx.stroke()
 }
 
 export interface ArrowStyle {

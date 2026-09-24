@@ -183,6 +183,25 @@ describe('PHY-23: removeBodyAndDependents with pulleys and ropes', () => {
     expect(next).not.toHaveProperty('pulleys')
     expect(next).not.toHaveProperty('constraints')
   })
+
+  // PHY-26: springs s1 (c1–a) and s2 (b–c) beside the two ropes.
+  const SPRUNG: Scene = {
+    ...ROPED,
+    constraints: [
+      ...ROPED.constraints!,
+      { id: 's1', kind: 'spring', a: end('c1'), b: end('a'), k: 40, x0: 1 },
+      { id: 's2', kind: 'spring', a: end('b'), b: end('c'), k: 40, x0: 1, c: 0.5 },
+    ],
+  }
+
+  it.each([
+    ['a', ['r2', 's2']],
+    ['c1', ['r2', 's2']],
+    ['c', ['r1', 's1']],
+    ['b', ['s1']],
+  ])('removing %s removes the springs tied to it and keeps the rest', (id, left) => {
+    expect(removeBodyAndDependents(SPRUNG, id).constraints!.map((c) => c.id)).toEqual(left)
+  })
 })
 // ---------- T6: forces, contacts, constants ----------
 

@@ -1,5 +1,5 @@
 import { SCENE_VERSION } from './types'
-import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Pulley, Scene } from './types'
+import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Pulley, Scene, Spring } from './types'
 
 export class SceneParseError extends Error {
   constructor(message: string) {
@@ -215,6 +215,23 @@ function parseEnd(raw: unknown, key: 'a' | 'b', where: string, bodies: ReadonlyM
 }
 
 const ROPE_KEYS = ['id', 'kind', 'a', 'b', 'via'] as const
+const SPRING_KEYS = ['id', 'kind', 'a', 'b', 'k', 'x0', 'c'] as const
+
+function parseSpring(s: Record<string, unknown>, where: string, bodies: ReadonlyMap<string, Body>): Spring {
+  checkKeys(s, SPRING_KEYS, `in ${where}`)
+  const id = reqString(s, 'id', where)
+  const a = parseEnd(s['a'], 'a', where, bodies)
+  const b = parseEnd(s['b'], 'b', where, bodies)
+  if (a.bodyId === b.bodyId) fail(`${where}: a spring must join two different bodies`)
+  const spring: Spring = { id, kind: 'spring', a, b, k: reqPositive(s, 'k', where), x0: reqPositive(s, 'x0', where) }
+  // Damping is optional like a pulley's mass: absent = 0, and absence survives reparse.
+  if ('c' in s) {
+    const c = s['c']
+    if (!isFiniteNumber(c) || c < 0) fail(`${where}: c must be a non-negative finite number`)
+    spring.c = c
+  }
+  return spring
+}
 
 function parseConstraint(
   raw: unknown,
@@ -226,6 +243,7 @@ function parseConstraint(
   if (!isObject(raw)) fail(`${where} must be a JSON object`)
   const c = raw
   const kind = c['kind']
+  if (kind === 'spring') return parseSpring(c, where, bodies)
   if (kind !== 'rope') fail(`${where}: unknown kind '${String(kind)}'`)
   checkKeys(c, ROPE_KEYS, `in ${where}`)
 

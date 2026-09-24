@@ -30,7 +30,16 @@ export interface RopeState {
   segments: number[]
 }
 
-export type ConstraintState = RopeState
+export interface SpringState {
+  id: string
+  kind: 'spring'
+  /** Δx = x − x₀, m: + stretched, − compressed. */
+  dx: number
+  /** F_el at each end, N: k·Δx + c·ẋ, + pulling the ends together. Equal while the spring is massless. */
+  force: { a: number; b: number }
+}
+
+export type ConstraintState = RopeState | SpringState
 
 export interface Simulator {
   readonly warnings: readonly string[]
@@ -78,8 +87,20 @@ interface PointBinding {
   anchorLocal: Vec2
 }
 
+interface SpringBinding {
+  id: string
+  /** Position in the document's constraints, for the readout's order. */
+  index: number
+  a: PointBinding
+  b: PointBinding
+  k: number
+  x0: number
+  c: number
+}
+
 interface RopeBinding {
   id: string
+  index: number
   a: PointBinding
   b: PointBinding
   via: Array<PointBinding & { radius: number }>
@@ -258,6 +279,29 @@ function freePointVelocity(rigid: RAPIER.RigidBody, p: Vec2, gravity: Vec2): Vec
 function freePoint(rigid: RAPIER.RigidBody, p: Vec2, v: Vec2, phi: number): Vec2 {
   const v0 = rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }
   return { x: p.x + TIMESTEP * (v0.x + phi * (v.x - v0.x)), y: p.y + TIMESTEP * (v0.y + phi * (v.y - v0.y)) }
+}
+
+function pointVelocity(rigid: RAPIER.RigidBody, p: Vec2): Vec2 {
+  return rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }
+}
+
+/**
+ * The spring's axis, Δx and F_el = kΔx + c·ẋ with its ends `lead` seconds
+ * ahead of where they are, each moving on at its velocity now.
+ */
+function springAt(s: SpringBinding, lead = 0) {
+  const now = [worldPoint(s.a), worldPoint(s.b)] as const
+  const v = [pointVelocity(s.a.rigid, now[0]), pointVelocity(s.b.rigid, now[1])] as const
+  const [pa, pb] = now.map((p, i) => ({ x: p.x + lead * v[i]!.x, y: p.y + lead * v[i]!.y }))
+  const u = unit(pa!, pb!)
+  const dx = Math.hypot(pb!.x - pa!.x, pb!.y - pa!.y) - s.x0
+  const rate = (v[1].x - v[0].x) * u.x + (v[1].y - v[0].y) * u.y
+  return { now, u, dx, force: s.k * dx + s.c * rate }
+}
+
+function readSpring(s: SpringBinding): SpringState {
+  const { dx, force } = springAt(s)
+  return { id: s.id, kind: 'spring', dx, force: { a: force, b: force } }
 }
 
 function wrapAngle(a: number): number {
@@ -540,6 +584,7 @@ class RapierSimulator implements Simulator {
   private colliders = new Map<string, RAPIER.Collider>()
   private forces = new Map<string, ForceBinding>()
   private ropes: RopeBinding[] = []
+  private springs: SpringBinding[] = []
   /** The disks of pulleys with mass, by pulley id (PHY-25). */
   private disks = new Map<string, RAPIER.RigidBody>()
   private readonly _warnings: string[] = []
@@ -552,6 +597,7 @@ class RapierSimulator implements Simulator {
     this.colliders = built.colliders
     this.forces = built.forces
     this.ropes = built.ropes
+    this.springs = built.springs
     this.disks = built.disks
     this.particleMode = built.particleMode
     this._warnings.push(...built.warnings)
@@ -569,6 +615,7 @@ class RapierSimulator implements Simulator {
     colliders: Map<string, RAPIER.Collider>
     forces: Map<string, ForceBinding>
     ropes: RopeBinding[]
+    springs: SpringBinding[]
     disks: Map<string, RAPIER.RigidBody>
     warnings: string[]
     particleMode: boolean
@@ -579,6 +626,7 @@ class RapierSimulator implements Simulator {
     const colliders = new Map<string, RAPIER.Collider>()
     const forces = new Map<string, ForceBinding>()
     const ropes: RopeBinding[] = []
+    const springs: SpringBinding[] = []
     const disks = new Map<string, RAPIER.RigidBody>()
 
     // If anything below throws (e.g. mass<=0), the LOCAL candidate world is
@@ -650,11 +698,25 @@ class RapierSimulator implements Simulator {
         }
         disks.set(pulley.id, disk)
       }
-      for (const rope of scene.constraints ?? []) {
+      for (const [index, constraint] of (scene.constraints ?? []).entries()) {
+        if (constraint.kind === 'spring') {
+          springs.push({
+            id: constraint.id,
+            index,
+            a: point(constraint.a.bodyId, constraint.a.anchor),
+            b: point(constraint.b.bodyId, constraint.b.anchor),
+            k: constraint.k,
+            x0: constraint.x0,
+            c: constraint.c ?? 0,
+          })
+          continue
+        }
+        const rope = constraint
         const path = scenePath(scene, rope)
         if (!path) throw new Error(`rope '${rope.id}' has a dangling reference`)
         const binding: RopeBinding = {
           id: rope.id,
+          index,
           a: point(rope.a.bodyId, rope.a.anchor),
           b: point(rope.b.bodyId, rope.b.anchor),
           via: rope.via.map((id) => {
@@ -684,7 +746,7 @@ class RapierSimulator implements Simulator {
       world.free()
       throw e
     }
-    return { world, bodies, colliders, forces, ropes, disks, warnings, particleMode: scene.constants.particleMode === true }
+    return { world, bodies, colliders, forces, ropes, springs, disks, warnings, particleMode: scene.constants.particleMode === true }
   }
 
   step(): void {
@@ -693,6 +755,7 @@ class RapierSimulator implements Simulator {
     for (const rope of this.ropes) {
       for (const point of [rope.a, ...rope.via, rope.b]) touched.add(point.rigid)
     }
+    for (const s of this.springs) touched.add(s.a.rigid).add(s.b.rigid)
     for (const rigid of touched) rigid.resetForces(true)
     // resetForces leaves torques, and a disk is driven by nothing else. The
     // bodies still keep theirs across steps until PHY-34. A disk's force moves
@@ -716,6 +779,7 @@ class RapierSimulator implements Simulator {
         true,
       )
     }
+    for (const s of this.springs) this.pushSpring(s)
     for (const rope of this.ropes) {
       if (rope.grips.length) this.pullPieces(rope)
       else this.pullRope(rope)
@@ -802,6 +866,20 @@ class RapierSimulator implements Simulator {
     rope.tension = corrected
     rope.residual = corrected > 0 ? corrected - rope.predicted : 0
     rope.slack = corrected === 0
+  }
+
+  /**
+   * Spring (PHY-26), before the step and before the ropes, so their
+   * prediction sees it: F_el along the axis at both ends. Rapier's spring
+   * joint loses ~30% of the amplitude in 5 periods, so the force is ours.
+   * A constant force over Rapier's substeps moves a body φ of the Euler
+   * distance, which alone would pump energy in; taking the force (1 − φ)Δt
+   * ahead makes the step area-preserving for a linear spring.
+   */
+  private pushSpring(s: SpringBinding): void {
+    const { now, u, force } = springAt(s, (1 - this.substepFactor()) * TIMESTEP)
+    if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: force * u.x, y: force * u.y }, now[0], true)
+    if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -force * u.x, y: -force * u.y }, now[1], true)
   }
 
   private substepFactor(): number {
@@ -929,7 +1007,14 @@ class RapierSimulator implements Simulator {
   }
 
   readConstraints(): ConstraintState[] {
-    return this.ropes.map((r) => ({ id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r) }))
+    const read: Array<[number, ConstraintState]> = [
+      ...this.ropes.map((r): [number, ConstraintState] => [
+        r.index,
+        { id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r) },
+      ]),
+      ...this.springs.map((s): [number, ConstraintState] => [s.index, readSpring(s)]),
+    ]
+    return read.sort(([i], [j]) => i - j).map(([, state]) => state)
   }
 
   readStates(): Map<string, BodyState> {
@@ -1067,6 +1152,7 @@ class RapierSimulator implements Simulator {
     this.colliders = next.colliders
     this.forces = next.forces
     this.ropes = next.ropes
+    this.springs = next.springs
     this.disks = next.disks
     this._warnings.length = 0
     this._warnings.push(...next.warnings)
