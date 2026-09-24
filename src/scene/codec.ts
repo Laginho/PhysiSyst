@@ -191,13 +191,18 @@ function parsePulley(raw: unknown, i: number, bodies: ReadonlyMap<string, Body>)
   if (!isObject(raw)) fail(`${where} must be a JSON object`)
   const p = raw
   checkKeys(p, PULLEY_KEYS, `in ${where}`)
-  // Temporary until PHY-25 (disk realism option).
-  if ('mass' in p) fail(`${where}: pulley mass is not supported yet`)
 
   const id = reqString(p, 'id', where)
   const bodyId = reqString(p, 'bodyId', where)
   if (!bodies.has(bodyId)) fail(`${where}: references missing body '${bodyId}'`)
-  return { id, bodyId, anchor: parseVec2(p['anchor'], `${where}: anchor.`), radius: reqPositive(p, 'radius', where) }
+  const pulley: Pulley = { id, bodyId, anchor: parseVec2(p['anchor'], `${where}: anchor.`), radius: reqPositive(p, 'radius', where) }
+  // The disk realism option (PHY-25): absent = 0, and absence survives reparse.
+  if ('mass' in p) {
+    const mass = p['mass']
+    if (!isFiniteNumber(mass) || mass < 0) fail(`${where}: mass must be a non-negative finite number`)
+    pulley.mass = mass
+  }
+  return pulley
 }
 
 function parseEnd(raw: unknown, key: 'a' | 'b', where: string, bodies: ReadonlyMap<string, Body>): ConstraintEnd {
