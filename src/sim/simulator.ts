@@ -2,8 +2,6 @@ import * as RAPIER from '@dimforge/rapier2d-compat'
 import type { Scene } from '../scene'
 import { TIMESTEP } from './timestep'
 
-export { TIMESTEP }
-
 export interface BodyState {
   position: { x: number; y: number }
   rotation: number

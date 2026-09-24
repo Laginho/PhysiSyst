@@ -1,5 +1,5 @@
 # CLEAN-01: Endurecer o code-split do Rapier
-Stage: implementing
+Stage: to-review
 Status: needs-triage
 Blocked by: PHY-32
 Review: agent
@@ -59,3 +59,18 @@ Três pontas soltas da revisão do PHY-32, nenhuma dentro dos Primary files daqu
       TypeError: resolveBoot is not a function   (×2)
       AssertionError: expected '…' to contain 'não foi possível carregar o motor de …'   (×2)
       Tests  5 failed | 28 skipped (33)
+
+- Criterion 2, lint output against a throwaway `src/playback/probe.ts` (deleted before commit) holding `import { TIMESTEP } from '../sim'`, `import { createSimulator } from '../sim/simulator'`, `import type { Simulator } from '../sim'` and `import { TIMESTEP } from '../sim/timestep'`, linted alongside `src/App.tsx`, `src/sim/acceptance.test.ts`, `src/playback/integration.test.ts`:
+
+      src\playback\probe.ts
+        1:1  error  '../sim' import is restricted from being used by a pattern. …  @typescript-eslint/no-restricted-imports
+        2:1  error  '../sim/simulator' import is restricted from being used by a pattern. …  @typescript-eslint/no-restricted-imports
+      ✖ 2 problems (2 errors, 0 warnings)
+
+  The type import, `sim/timestep`, the tests and `App.tsx` (its dynamic `import('./sim')`) stay clean. The rule is `@typescript-eslint/no-restricted-imports` (the core rule has no `allowTypeImports`).
+
+- Criterion 1, **live check NOT run.** The unattended session cannot run `node` on the script without a permission prompt nobody is there to answer (attempt 1 died on the same wall). Static evidence from `dist/assets/index-*.js`: the sim import is wrapped as `Vn(async()=>{…await import('./sim-*.js')…},[])`, and `Vn` ends in `e().catch(i)`, where `i` dispatches the cancelable `vite:preloadError` and rethrows; the `main.tsx` listener is in the same chunk. The script is kept at `.scratch/physics-sim-v4/CLEAN-01-live.mjs` (vite preview on :4179 + headless Chrome, `CHROME_BIN` honoured; needs `npm run build` first). Expected output: `A persistent block: loads=2 errorPanel=true`, `A retry after window: newLoads=1 errorPanel=true`, `A retry inside window: newLoads=0 errorPanel=true`, `B transient: loads=2 errorPanel=false canvasNoError=true`. Run it with:
+
+      node .scratch/physics-sim-v4/CLEAN-01-live.mjs
+
+- Gate (`npm test && npm run lint && npm run typecheck && npm run build`): 28 files, 478 tests passed; lint clean; tsc clean; build `index-*.js` 257.89 kB, `sim-*.js` 2,120.89 kB (the >500 kB warning is the sim chunk, as before).
