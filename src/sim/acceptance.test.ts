@@ -1033,8 +1033,9 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     const k = 40
     const c = 0.8
     const sim = await load(horizontalScene(m, k, X_EQ - 0.1, c))
-    // Compressed at rest: Δx = −0.1 before any step, F_el pushes the ends apart.
-    expect(spring(sim)).toStrictEqual({ id: 'mola', kind: 'spring', dx: expect.closeTo(-0.1, 9), force: { a: expect.closeTo(-4, 9), b: expect.closeTo(-4, 9) } })
+    // Compressed at rest: Δx = −0.1 before any step, F_el pushes the ends
+    // apart. Rapier keeps poses in f32, so the document's 0.1 reads back to ~1e-8.
+    expect(spring(sim)).toStrictEqual({ id: 'mola', kind: 'spring', dx: expect.closeTo(-0.1, 6), force: { a: expect.closeTo(-4, 5), b: expect.closeTo(-4, 5) } })
     let stretched = false
     for (let i = 0; i < 90; i++) {
       sim.step()
