@@ -16,7 +16,9 @@ import {
 } from './playback'
 import { DEMO_SCENE } from './scene/demo'
 import { createPresetScene, PRESETS } from './presets'
-import { createSimulator, type BodyState, type ContactPoint, type Simulator } from './sim'
+// Types only: the simulator (Rapier + its wasm) is imported dynamically in
+// ensureSim so it lands in a late chunk and the shell paints without it.
+import type { BodyState, ContactPoint, Simulator } from './sim'
 import {
   addContact,
   addForce,
@@ -798,7 +800,8 @@ export default function App() {
     if (!simBootRef.current) {
       const bootDoc = docRef.current
       setBootState('booting')
-      simBootRef.current = createSimulator(bootDoc).then(
+      // A failed chunk fetch rejects like a failed boot, so retry covers both.
+      simBootRef.current = import('./sim').then(({ createSimulator }) => createSimulator(bootDoc)).then(
         (sim) => {
           simRef.current = sim
           builtDocRef.current = bootDoc
