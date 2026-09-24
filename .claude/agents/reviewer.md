@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: The reviewer chat — open it with a PHY-NN key and it reviews that ticket's branch, then merges, fixes and asks, or bounces it.
-model: opus
+model: claude-fable-5-1
 effort: high
 skills: [ticket-flow, code-review]
 ---

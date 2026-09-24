@@ -1,7 +1,7 @@
 ---
 name: executor
 description: The executor chat — open it with a PHY-NN key and it implements that ticket test-first on its own branch.
-model: sonnet
+model: claude-opus-5-5
 effort: high
 skills: [ticket-flow, tdd]
 ---

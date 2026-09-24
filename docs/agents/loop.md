@@ -12,8 +12,8 @@ The ticket is the contract, the commit is the handoff.
 | --- | --- | --- | --- |
 | standup | sonnet / medium | `/standup` | none — board + git state, names the next ticket |
 | planner | fable / high | "let's build a new feature" | stage 1 (`grill-me` → `to-spec` → `to-tickets`) |
-| executor | sonnet / high | `PHY-NN` | stage 2 (`tdd`) |
-| reviewer | opus / high | `PHY-NN` | stage 3 (`code-review`) |
+| executor | opus 5.5 / high | `PHY-NN` | stage 2 (`tdd`) |
+| reviewer | fable 5.1 / high | `PHY-NN` | stage 3 (`code-review`) |
 | debug | opus / high | a symptom | none — `/diagnosing-bugs`, files tickets |
 
 Agent cards in `.claude/agents/` pin the model and effort for each — pick the
