@@ -1,5 +1,5 @@
 # PHY-23: Tracer — corda sobre uma polia fixa
-Stage: to-review
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -55,7 +55,3 @@ Schema (spec, seção Schema): `pulleys: { id, bodyId, anchor, radius, mass? }[]
 - `src/editor/doc.test.ts`: dependentes (10). Vermelho porque a remoção não conhece polias nem cordas.
 
 ## Comments
-
-- 2026-09-24 Review ended at to-review (exit 0); branch phy/PHY-23-tracer-corda-sobre-polia-fixa holds the review; left for a human
-
-- 2026-09-24 Foreman: back to `to-review`. Not a question for anyone: the review backgrounded the gate and the headless session ended with it (ticket-flow now forbids background commands, `901d6c3`).
