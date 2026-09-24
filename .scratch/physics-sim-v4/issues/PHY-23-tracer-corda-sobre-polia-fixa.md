@@ -1,5 +1,5 @@
 # PHY-23: Tracer — corda sobre uma polia fixa
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -100,3 +100,28 @@ Two axes, both sub-agents plus my own read of the rope code. No fix commit of my
 **Found outside this ticket, filed as PHY-34.** `resetForces` does not clear the torque `addForceAtPoint` adds, so torque accumulates step after step for any anchor off the COM: measured ω = 40.4 rad/s after 1 s where τ/I·t = 3 rad/s. Pre-existing on applied forces; the rope inherits it for off-COM ends, which none of this ticket's families have. Fix is one line but needs a regression test, so not a stage-3 fix. Comment left on PHY-24.
 
 - 2026-09-24 Foreman: back to `to-review`. The review approved it but took the no-session flow (PR #7 against `main`, `to-merge`) while `sweatshop/2026-09-24-1506` was open; the reviewer card named `main` as the base, fixed in `dbfc90b`. Re-review merges into the session.
+
+- 2026-09-24 Foreman (on the session branch, before the rebase): back to `to-review` once more, because an earlier review attempt backgrounded the gate and the headless session ended with it (ticket-flow now forbids background commands, `901d6c3`).
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+The stage-3 review above (commit `1d796f4` after rebase) stands: all 14 criteria met, criterion 11 reproduced in headless Chromium, PHY-34 filed for the pre-existing torque-reset bug. This session redid only what the flow required: rebase onto the session branch, gate in the foreground, merge into the session.
+
+**Rebase onto `sweatshop/2026-09-24-1506`.** Two conflicts, both resolved without changing behaviour: the ticket file itself (branch version kept at each replayed commit, the session's Foreman note restored above), and the import header of `src/sim/simulator.ts`, where PHY-32/CLEAN-01 had moved `TIMESTEP` into `src/sim/timestep.ts`. Kept the session's `import { TIMESTEP } from './timestep'` plus the branch's scene imports; the branch's local `export const TIMESTEP` was dropped so `src/sim/index.ts` stays the single export. Commit separation checked after the rebase: the test commit (`82058eb`) touches only `*.test.ts` and the ticket; the code commit (`1fca41e`) touches no test file.
+
+**Red-green.** Test commit red for the recorded reasons (Scene without `pulleys`/`constraints`, missing `ropePath` module, simulator ignoring ropes, router blind to the new collections, removal blind to pulleys and ropes); green from the code commit on. Mutation table under Stage 2 above, seven mutations, each with the red it produced.
+
+**Gate on the rebased branch (foreground):**
+
+    npm test        29 files, 526 tests passed (526)
+    npm run lint    clean
+    npm run typecheck  clean
+    npm run build   index-*.js 262.35 kB, sim-*.js 2,123.61 kB (known >500 kB warning, PHY-32)
+
+**Files:** `src/scene/types.ts`, `src/scene/codec.ts`, `src/scene/ropePath.ts`, `src/scene/index.ts`, `src/sim/simulator.ts`, `src/sim/index.ts`, `src/playback/routing.ts`, `src/editor/doc.ts`, `src/render/draw.ts`, `docs/adr/0004-rope-as-own-constraint-around-world-step.md`, and their tests; one line in `src/App.test.ts`.
+
+**Merged** into the session branch with `--no-ff` (`cd46211`). PR #7 against `main` was the no-session flow taken by mistake and is closed; the driver opens the session PR.
+
+**Note.** The `/code-review` skill invoked this session reviewed the wrong range (CLEAN-01 and PHY-32 files, none in this diff); its findings went under `## Comments` on CLEAN-01 rather than here.
