@@ -1,5 +1,6 @@
 import type { Scene } from '../scene'
-import { TIMESTEP, type BodyState } from '../sim'
+import type { BodyState } from '../sim'
+import { TIMESTEP } from '../sim/timestep'
 import { computeAcceleration } from '../render/overlay'
 
 export interface AccelerationReadout {

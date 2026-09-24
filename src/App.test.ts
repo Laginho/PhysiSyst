@@ -121,6 +121,13 @@ function renderApp(): HTMLElement {
   return host
 }
 
+/** App imports the simulator dynamically (PHY-32): wait for that import so `createSimulator` has been called. */
+async function settleSimImport(): Promise<void> {
+  await act(async () => {
+    await vi.dynamicImportSettled()
+  })
+}
+
 function inputForLabel(panel: Element, labelText: string): HTMLInputElement {
   const label = [...panel.querySelectorAll('label')].find((candidate) => candidate.textContent?.trim() === labelText)
   const input = label?.querySelector('input')
@@ -694,8 +701,9 @@ describe('canvas coluna nunca vaza para o inspetor (PHY-20)', () => {
 })
 
 describe('loading screen (PHY-16)', () => {
-  it('boots the simulator on mount, before any play interaction', () => {
+  it('boots the simulator on mount, before any play interaction', async () => {
     renderApp()
+    await settleSimImport()
     expect(createSimulator).toHaveBeenCalledTimes(1)
   })
 
@@ -723,6 +731,7 @@ describe('loading screen (PHY-16)', () => {
       expect({ edge, value: overlay.style[edge] }).not.toEqual({ edge, value: '0px' })
     }
 
+    await settleSimImport()
     await act(async () => {
       resolveBoot(makeFakeSimulator())
       await Promise.resolve()
@@ -749,6 +758,7 @@ describe('loading screen (PHY-16)', () => {
 
     expect(clearSpy).not.toHaveBeenCalled()
 
+    await settleSimImport()
     await act(async () => {
       resolveBoot(makeFakeSimulator())
       await Promise.resolve()
