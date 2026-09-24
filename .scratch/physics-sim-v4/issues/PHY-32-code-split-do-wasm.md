@@ -1,5 +1,5 @@
 # PHY-32: Code-split do Rapier
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -55,3 +55,26 @@ O chunk de entrada deixa de carregar o Rapier (com o wasm embutido). O módulo d
   - **Live check (criterion 5):** ran `vite preview` on `dist/` in headless Chrome over CDP, with `Fetch` holding back `assets/sim-*.js`. While it was held, the canvas, 18 buttons and the loading badge had rendered, `first-contentful-paint` was at 448 ms, and the only script loaded was `index-CgkX8v4T.js`. After the chunk was released, the badge went away and there was no error panel. Clicking "▶ reproduzir" changed the button to "⏸ pausar", and after 1.5 s the canvas pixels had changed.
   - **Gate:** `npm test` 28 files, 478/478 passed. `npm run lint`, `npm run typecheck` and `npm run build` were clean.
   - The harness commit didn't set `Stage: implementing`, so the stage goes from `to-implement` straight to `to-review` in this commit.
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Merged into `sweatshop/2026-09-24-1506` as `fd3ee2d` (no-ff). Branch `phy/PHY-32-code-split-do-wasm`, commits `8672038` (harness, own commit), `230c07a` (code), `e4a14c2` (review fix).
+
+**Findings**
+
+- Criteria 1–2, 4–6: hold. Build on the merged tree: `index-*.js` 257.65 kB (gzip 80.02), `sim-*.js` 2,120.89 kB (gzip 805.50); the >500 kB warning is the Rapier chunk only. Static value imports of `./sim` on the entry path: none (`App.tsx` and `accelerationTracker.ts` are type-only or go through `./sim/timestep`).
+- Criterion 3: holds. The five PHY-16 tests are green; stage 2 recorded the `void ensureSim()` mutation with five red outputs, which satisfies mutate-verify for the harness change.
+- Criterion 5: stage 2's live check is recorded above (first paint with the sim chunk held back, play after release). Not repeated here.
+- Small fix (`e4a14c2`, `src/App.tsx` only): the comment on the dynamic import said retry covers a failed chunk fetch. It does not: browsers cache a failed module fetch in the module map, so a second `import()` rejects without a network round-trip. Comment reworded, no behaviour change.
+- Parked in `CLEAN-01` (outside Primary files, so neither a small fix nor this ticket's reopen): `vite:preloadError` reload listener in `main.tsx`; a lint rule pinning criterion 4 (today only convention keeps `../sim` value imports out of the entry path); `index.ts` re-exporting `TIMESTEP` from `./timestep` directly; the two boot-failure tests still waiting on a 5-microtask loop instead of `settleSimImport()`.
+- Proxy decided (2026-09-24): three files joined Primary files so criterion 4 could hold. Named here for the session PR.
+- Test-first separation: `diff --stat` of `8672038` touches `src/App.test.ts` only; `230c07a` touches no test file.
+
+**Gate (merged tree, before the docs commit)**
+
+    npm test        28 files, 478/478 passed
+    npm run lint    clean
+    npm run typecheck clean
+    npm run build   index 257.65 kB, sim 2,120.89 kB, one >500 kB warning (Rapier chunk)
