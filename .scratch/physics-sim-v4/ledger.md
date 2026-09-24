@@ -8,3 +8,4 @@ Uma linha por ticket fechado, escrita no mesmo commit que marca `Stage: done`.
 | 2026-09-24 | CLEAN-01 | 26cde93 |
 | 2026-09-24 | PHY-23 | cd46211 |
 | 2026-09-24 | CLEAN-02 | 9d3a6a8 |
+| 2026-09-24 | PHY-24 | 6e19338 |
