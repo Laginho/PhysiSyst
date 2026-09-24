@@ -135,6 +135,55 @@ describe('removeBodyAndDependents', () => {
     expect(next.contacts).toEqual([])
   })
 })
+
+describe('PHY-23: removeBodyAndDependents with pulleys and ropes', () => {
+  // Two ceilings, each carrying a pulley; rope r1 hangs a–b over p1, rope r2
+  // hangs b–c over p2.
+  const block = (id: string, x: number) =>
+    ({ id, shape: 'rectangle', width: 0.4, height: 0.4, mass: 1, fixed: false, position: { x, y: 0 }, rotation: 0 }) as const
+  const ceiling = (id: string, x: number) =>
+    ({ id, shape: 'rectangle', width: 2, height: 0.5, mass: 0, fixed: true, position: { x, y: 5 }, rotation: 0 }) as const
+  const end = (bodyId: string) => ({ bodyId, anchor: { x: 0, y: 0.2 } })
+  const ROPED: Scene = {
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [ceiling('c1', 0), ceiling('c2', 10), block('a', -0.25), block('b', 0.25), block('c', 10.25)],
+    forces: [],
+    contacts: [],
+    pulleys: [
+      { id: 'p1', bodyId: 'c1', anchor: { x: 0, y: -0.75 }, radius: 0.25 },
+      { id: 'p2', bodyId: 'c2', anchor: { x: 0, y: -0.75 }, radius: 0.25 },
+    ],
+    constraints: [
+      { id: 'r1', kind: 'rope', a: end('a'), b: end('b'), via: ['p1'] },
+      { id: 'r2', kind: 'rope', a: end('b'), b: end('c'), via: ['p2'] },
+    ],
+  }
+
+  it('removing a rope end body removes every rope tied to it and keeps the pulleys', () => {
+    const next = removeBodyAndDependents(ROPED, 'b')
+    expect(next.constraints).toEqual([])
+    expect(next.pulleys!.map((p) => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('removing a rope end body keeps ropes that do not touch it', () => {
+    const next = removeBodyAndDependents(ROPED, 'a')
+    expect(next.constraints!.map((c) => c.id)).toEqual(['r2'])
+  })
+
+  it('removing a pulley mount removes its pulleys and every rope passing over them', () => {
+    const next = removeBodyAndDependents(ROPED, 'c1')
+    expect(next.pulleys!.map((p) => p.id)).toEqual(['p2'])
+    expect(next.constraints!.map((c) => c.id)).toEqual(['r2'])
+    expect(next.bodies.map((b) => b.id)).toEqual(['c2', 'a', 'b', 'c'])
+  })
+
+  it('a document without the collections gains none on removal', () => {
+    const next = removeBodyAndDependents(DOC, 'a')
+    expect(next).not.toHaveProperty('pulleys')
+    expect(next).not.toHaveProperty('constraints')
+  })
+})
 // ---------- T6: forces, contacts, constants ----------
 
 const FORCE = { bodyId: 'a', anchor: { x: 0, y: 0 }, magnitude: 5, direction: 90 }

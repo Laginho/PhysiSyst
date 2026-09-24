@@ -7,7 +7,7 @@
  * STRUCTURAL — everything else: record membership, body geometry/pose/mass/
  * fixed, contact changes (mu drives the GLOBAL friction-potential solve and
  * the warnings set per ADR-0003, not a local collider field), particleMode
- * (changes rigid-body construction). Structural edits rebuild at the frame
+ * (changes rigid-body construction), any pulley or constraint change. Structural edits rebuild at the frame
  * boundary with carry-over, which is provably trajectory-transparent.
  *
  * React-free and pure: `routeDocChange` reads two documents; `applyLiveOps`
@@ -90,6 +90,16 @@ export function routeDocChange(prev: Scene, next: Scene): DocRoute {
     if (!before || before.muS !== contact.muS || before.muK !== contact.muK) {
       return { kind: 'structural', reason: 'contact pair/friction changed (global friction solve)' }
     }
+  }
+
+  // Pulleys and constraints: any change at all rebuilds (PHY-23). A rope's
+  // length is derived from the document poses at build time, and there is no
+  // live setter for any of it. Absent and empty collections are the same.
+  if (JSON.stringify(prev.pulleys ?? []) !== JSON.stringify(next.pulleys ?? [])) {
+    return { kind: 'structural', reason: 'pulleys changed' }
+  }
+  if (JSON.stringify(prev.constraints ?? []) !== JSON.stringify(next.constraints ?? [])) {
+    return { kind: 'structural', reason: 'constraints changed' }
   }
 
   if (!!prev.constants.particleMode !== !!next.constants.particleMode) {

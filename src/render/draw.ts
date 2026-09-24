@@ -1,3 +1,4 @@
+import { bodyPointToWorld, scenePath } from '../scene'
 import type { Scene } from '../scene'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
 
@@ -235,6 +236,52 @@ export function drawScene(
     ctx.fillStyle = style.dynamicStroke
     ctx.fillText(label, 0, 0)
     ctx.restore()
+  }
+  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style)
+  ctx.restore()
+}
+
+/**
+ * Pulleys as outlined circles with an axle dot, ropes as their tangent legs
+ * plus the arc wrapped on each pulley (PHY-23). Drawn in world meters under
+ * one y-flipped transform, so canvas arc angles are the path's own angles.
+ */
+function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransform, ppm: number, style: DrawStyle): void {
+  const pulleys = scene.pulleys ?? []
+  const ropes = scene.constraints ?? []
+  if (pulleys.length === 0 && ropes.length === 0) return
+  const origin = worldToScreen(t, 0, 0)
+  ctx.save()
+  ctx.translate(origin.x, origin.y)
+  ctx.scale(ppm, -ppm)
+  ctx.lineWidth = 2 / ppm
+  ctx.strokeStyle = style.dynamicStroke
+  const bodies = new Map(scene.bodies.map((b) => [b.id, b]))
+  for (const pulley of pulleys) {
+    const mount = bodies.get(pulley.bodyId)
+    if (!mount) continue
+    const c = bodyPointToWorld(mount, pulley.anchor)
+    ctx.beginPath()
+    ctx.arc(c.x, c.y, pulley.radius, 0, Math.PI * 2)
+    ctx.fillStyle = style.dynamicFill
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(c.x, c.y, 3 / ppm, 0, Math.PI * 2)
+    ctx.fillStyle = style.dynamicStroke
+    ctx.fill()
+  }
+  for (const rope of ropes) {
+    const path = scenePath(scene, rope)
+    if (!path) continue
+    ctx.beginPath()
+    path.segments.forEach((s, i) => {
+      ctx.moveTo(s.from.x, s.from.y)
+      ctx.lineTo(s.to.x, s.to.y)
+      const arc = path.arcs[i]
+      if (arc) ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.start, arc.start + arc.direction * arc.sweep, arc.direction < 0)
+    })
+    ctx.stroke()
   }
   ctx.restore()
 }

@@ -30,6 +30,7 @@ function makeFakeSimulator(): Simulator {
     step: () => {},
     readStates: () => new Map(),
     readContacts: () => [],
+    readConstraints: () => [],
     setForceMagnitude: () => {},
     setGravity: () => {},
     setForceDirection: () => {},
@@ -119,6 +120,13 @@ function renderApp(): HTMLElement {
   root = createRoot(host)
   act(() => root?.render(createElement(App)))
   return host
+}
+
+/** App imports the simulator dynamically (PHY-32): wait for that import so `createSimulator` has been called. */
+async function settleSimImport(): Promise<void> {
+  await act(async () => {
+    await vi.dynamicImportSettled()
+  })
 }
 
 function inputForLabel(panel: Element, labelText: string): HTMLInputElement {
@@ -694,8 +702,9 @@ describe('canvas coluna nunca vaza para o inspetor (PHY-20)', () => {
 })
 
 describe('loading screen (PHY-16)', () => {
-  it('boots the simulator on mount, before any play interaction', () => {
+  it('boots the simulator on mount, before any play interaction', async () => {
     renderApp()
+    await settleSimImport()
     expect(createSimulator).toHaveBeenCalledTimes(1)
   })
 
@@ -723,6 +732,7 @@ describe('loading screen (PHY-16)', () => {
       expect({ edge, value: overlay.style[edge] }).not.toEqual({ edge, value: '0px' })
     }
 
+    await settleSimImport()
     await act(async () => {
       resolveBoot(makeFakeSimulator())
       await Promise.resolve()
@@ -749,6 +759,7 @@ describe('loading screen (PHY-16)', () => {
 
     expect(clearSpy).not.toHaveBeenCalled()
 
+    await settleSimImport()
     await act(async () => {
       resolveBoot(makeFakeSimulator())
       await Promise.resolve()
@@ -763,9 +774,7 @@ describe('loading screen (PHY-16)', () => {
     vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
 
     const host = renderApp()
-    await act(async () => {
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    await settleSimImport()
 
     expect(host.textContent).toContain(ptBR['loading.error'])
     // Exactly one error surface: the overlay's fixed message, never the raw
@@ -775,10 +784,8 @@ describe('loading screen (PHY-16)', () => {
     expect(retry).toBeDefined()
 
     vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
-    await act(async () => {
-      retry?.click()
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    act(() => retry?.click())
+    await settleSimImport()
 
     expect(createSimulator).toHaveBeenCalledTimes(2)
     expect(host.textContent).not.toContain(ptBR['loading.error'])
@@ -787,9 +794,7 @@ describe('loading screen (PHY-16)', () => {
   it('leaves the error state when a boot triggered by play succeeds', async () => {
     vi.mocked(createSimulator).mockRejectedValueOnce(new Error('boom'))
     const host = renderApp()
-    await act(async () => {
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    await settleSimImport()
     expect(host.textContent).toContain(ptBR['loading.error'])
 
     // The student presses play instead of "tentar de novo": that path boots
@@ -799,10 +804,8 @@ describe('loading screen (PHY-16)', () => {
     vi.mocked(createSimulator).mockResolvedValueOnce(makeFakeSimulator())
     const play = findButton(host, ptBR['playback.play'])
     if (!play) throw new Error('missing play button')
-    await act(async () => {
-      play.click()
-      for (let i = 0; i < 5; i++) await Promise.resolve()
-    })
+    act(() => play.click())
+    await settleSimImport()
 
     expect(createSimulator).toHaveBeenCalledTimes(2)
     expect(host.textContent).not.toContain(ptBR['loading.error'])

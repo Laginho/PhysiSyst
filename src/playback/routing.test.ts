@@ -233,3 +233,36 @@ describe('routeDocChange', () => {
     expect(routeDocChange(base(), base()).kind).toBe('live')
   })
 })
+
+describe('PHY-23: pulleys and constraints route structural', () => {
+  function roped(): Scene {
+    const s = base()
+    s.pulleys = [{ id: 'p', bodyId: 'floor', anchor: { x: 1, y: 3 }, radius: 0.25 }]
+    s.constraints = [
+      { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0, y: 0 } }, b: { bodyId: 'floor', anchor: { x: 2, y: 0 } }, via: ['p'] },
+    ]
+    return s
+  }
+  const editRoped = (fn: (s: Scene) => void): Scene => {
+    const s = roped()
+    fn(s)
+    return s
+  }
+
+  it.each<[string, Scene, Scene]>([
+    ['pulley added', base(), roped()],
+    ['pulley removed', roped(), editRoped((s) => void s.pulleys!.pop())],
+    ['pulley radius changed', roped(), editRoped((s) => void (s.pulleys![0]!.radius = 0.5))],
+    ['pulley anchor moved', roped(), editRoped((s) => void (s.pulleys![0]!.anchor = { x: 1.5, y: 3 }))],
+    ['rope removed', roped(), editRoped((s) => void s.constraints!.pop())],
+    ['rope end anchor moved', roped(), editRoped((s) => void (s.constraints![0]!.a.anchor = { x: 0.1, y: 0 }))],
+    ['rope via changed', roped(), editRoped((s) => void (s.constraints![0]!.via = []))],
+  ])('%s -> structural', (_name, prev, next) => {
+    expect(routeDocChange(prev, next).kind).toBe('structural')
+  })
+
+  it('an unchanged roped scene stays live, and an absent collection equals an empty one', () => {
+    expect(routeDocChange(roped(), roped()).kind).toBe('live')
+    expect(routeDocChange(base(), { ...base(), pulleys: [], constraints: [] }).kind).toBe('live')
+  })
+})

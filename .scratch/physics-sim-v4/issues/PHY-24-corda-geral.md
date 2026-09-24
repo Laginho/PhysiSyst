@@ -39,3 +39,5 @@ A corda passa a cobrir todo o escopo ideal: sem polia (pêndulo: uma ponta num C
 - `src/sim/acceptance.test.ts`: pêndulo, volta completa, folga, polia móvel, polias em série (2–6). Vermelho porque o codec ainda rejeita essas cenas.
 
 ## Comments
+
+Etapa 3 do PHY-23 (2026-09-24): PHY-34 registra que `resetForces` não zera o torque de `addForceAtPoint`, então uma ponta de corda fora do CM (pêndulo preso num canto) gira cada vez mais até o PHY-34 fechar. As famílias deste ticket com âncora no CM não veem o bug; se alguma âncora ficar fora do CM, fechar o PHY-34 antes.

@@ -578,3 +578,148 @@ describe('ticket 04b: canonical BYTE order with Initial velocity present', () =>
     expect(isDirty(storage, 'cena-vel', scene)).toBe(false)
   })
 })
+
+// PHY-23: pulleys and rope constraints. Atwood document: a fixed ceiling
+// carrying one pulley, two blocks hanging from one rope over it.
+function atwoodJson(): Record<string, unknown> {
+  return {
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [
+      { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+      { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: 3, position: { x: -0.25, y: 2 }, rotation: 0 },
+      { shape: 'rectangle', width: 0.4, height: 0.4, id: 'b', fixed: false, mass: 2, position: { x: 0.25, y: 1 }, rotation: 0 },
+    ],
+    forces: [],
+    contacts: [],
+    pulleys: [{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: -0.75 }, radius: 0.25 }],
+    constraints: [
+      { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0, y: 0.2 } }, b: { bodyId: 'b', anchor: { x: 0, y: 0.2 } }, via: ['p'] },
+    ],
+  }
+}
+
+type Doc = Record<string, unknown>
+const pulley0 = (d: Doc): Doc => (d['pulleys'] as Doc[])[0]!
+const rope0 = (d: Doc): Doc => (d['constraints'] as Doc[])[0]!
+
+describe('PHY-23: pulleys and rope constraints', () => {
+  it('round-trips pulleys and a rope byte-stably, in both directions', () => {
+    const json = atwoodJson()
+    expect(serialize(parse(json))).toStrictEqual(json)
+    const scene = parse(json)
+    expect(parse(serialize(scene))).toStrictEqual(scene)
+    expect(scene.pulleys).toStrictEqual([{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: -0.75 }, radius: 0.25 }])
+    expect(scene.constraints).toStrictEqual([
+      { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0, y: 0.2 } }, b: { bodyId: 'b', anchor: { x: 0, y: 0.2 } }, via: ['p'] },
+    ])
+  })
+
+  it('pulleys and constraints come after contacts in the canonical root key order', () => {
+    const out = serialize(parse(atwoodJson())) as Doc
+    expect(Object.keys(out)).toEqual(['version', 'constants', 'bodies', 'forces', 'contacts', 'pulleys', 'constraints'])
+  })
+
+  it('a document without the keys parses with no pulleys and no constraints, and gains no keys', () => {
+    const scene = parse(clone())
+    expect(scene.pulleys ?? []).toEqual([])
+    expect(scene.constraints ?? []).toEqual([])
+    expect(serialize(scene)).toStrictEqual(clone())
+  })
+
+  it('explicit empty collections parse and round-trip as empty collections', () => {
+    const json = { ...clone(), pulleys: [], constraints: [] }
+    const scene = parse(json)
+    expect(scene.pulleys).toEqual([])
+    expect(scene.constraints).toEqual([])
+    expect(serialize(scene)).toStrictEqual(json)
+  })
+
+  const rejections: Array<{ name: string; mutate: (d: Doc) => void; expected: string | RegExp }> = [
+    { name: 'pulleys not an array', mutate: (d) => void (d['pulleys'] = {}), expected: "'pulleys' must be an array" },
+    { name: 'constraints not an array', mutate: (d) => void (d['constraints'] = 3), expected: "'constraints' must be an array" },
+    {
+      name: 'pulley on a missing body',
+      mutate: (d) => void (pulley0(d)['bodyId'] = 'ghost'),
+      expected: "pulleys[0]: references missing body 'ghost'",
+    },
+    { name: 'pulley radius zero', mutate: (d) => void (pulley0(d)['radius'] = 0), expected: 'pulleys[0]: radius must be a positive finite number' },
+    { name: 'pulley radius negative', mutate: (d) => void (pulley0(d)['radius'] = -0.1), expected: 'pulleys[0]: radius must be a positive finite number' },
+    { name: 'pulley unknown key', mutate: (d) => void (pulley0(d)['spin'] = 1), expected: "unknown key 'spin' in pulleys[0]" },
+    {
+      name: 'duplicate pulley id',
+      mutate: (d) => void (d['pulleys'] as Doc[]).push({ ...pulley0(d) }),
+      expected: "pulleys[1]: duplicate pulley id 'p'",
+    },
+    {
+      name: 'pulley mass (realism option lands in PHY-25)',
+      mutate: (d) => void (pulley0(d)['mass'] = 1),
+      expected: /pulleys\[0\]: pulley mass is not supported yet/,
+    },
+    {
+      name: 'pulley on a dynamic body (movable pulleys land in PHY-24)',
+      mutate: (d) => void (pulley0(d)['bodyId'] = 'a'),
+      expected: /pulleys\[0\]: pulley on dynamic body 'a' is not supported yet/,
+    },
+    {
+      name: 'rope end a on a missing body',
+      mutate: (d) => void ((rope0(d)['a'] as Doc)['bodyId'] = 'ghost'),
+      expected: "constraints[0]: a references missing body 'ghost'",
+    },
+    {
+      name: 'rope end b on a missing body',
+      mutate: (d) => void ((rope0(d)['b'] as Doc)['bodyId'] = 'ghost'),
+      expected: "constraints[0]: b references missing body 'ghost'",
+    },
+    {
+      name: 'rope end unknown key',
+      mutate: (d) => void ((rope0(d)['a'] as Doc)['x'] = 1),
+      expected: "unknown key 'x' in constraints[0].a",
+    },
+    {
+      name: 'via names a missing pulley',
+      mutate: (d) => void (rope0(d)['via'] = ['ghost']),
+      expected: "constraints[0]: via references missing pulley 'ghost'",
+    },
+    {
+      name: 'via is not an array of strings',
+      mutate: (d) => void (rope0(d)['via'] = [1]),
+      expected: 'constraints[0]: via must be an array of pulley ids',
+    },
+    {
+      name: 'rope with no pulley (general ropes land in PHY-24)',
+      mutate: (d) => void (rope0(d)['via'] = []),
+      expected: /constraints\[0\]: a rope must pass over exactly one pulley for now/,
+    },
+    {
+      name: 'rope with two pulleys (general ropes land in PHY-24)',
+      mutate: (d) => {
+        ;(d['pulleys'] as Doc[]).push({ ...pulley0(d), id: 'q' })
+        rope0(d)['via'] = ['p', 'q']
+      },
+      expected: /constraints\[0\]: a rope must pass over exactly one pulley for now/,
+    },
+    {
+      name: 'unknown constraint kind',
+      mutate: (d) => void (rope0(d)['kind'] = 'chain'),
+      expected: "constraints[0]: unknown kind 'chain'",
+    },
+    {
+      name: 'rope unknown key',
+      mutate: (d) => void (rope0(d)['length'] = 5),
+      expected: "unknown key 'length' in constraints[0]",
+    },
+    {
+      name: 'duplicate constraint id',
+      mutate: (d) => void (d['constraints'] as Doc[]).push(JSON.parse(JSON.stringify(rope0(d))) as Doc),
+      expected: "constraints[1]: duplicate constraint id 'corda'",
+    },
+  ]
+
+  it.each(rejections)('rejects: $name', ({ mutate, expected }) => {
+    const doc = atwoodJson()
+    mutate(doc)
+    expect(() => parse(doc)).toThrow(SceneError)
+    expect(() => parse(doc)).toThrow(expected)
+  })
+})

@@ -1,0 +1,150 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[brazil]{babel}
+\usepackage{fontspec}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{booktabs,tabularx,xcolor,hyperref,enumitem,array}
+\hypersetup{colorlinks,linkcolor=black,urlcolor=blue!60!black}
+\setlist{nosep,leftmargin=1.4em}
+\setlength{\parskip}{0.45em}\setlength{\parindent}{0pt}
+\newcommand{\tk}[1]{\texttt{#1}}
+\newcommand{\ok}{\textcolor{green!50!black}{\textbf{ok}}}
+\newcommand{\bad}{\textcolor{red!70!black}{\textbf{falhou}}}
+\newcommand{\meh}{\textcolor{orange!80!black}{\textbf{parou}}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\title{Sweatshop \tk{2026-09-24-1506}\\[2pt]\large Lineup nova: Opus 5.5 no stage 2, Fable 5.1 no stage 3 (e como proxy)}
+\author{Foreman (Claude Opus 5.5)}
+\date{24 de setembro de 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Resumo}
+Foram três lançamentos do driver entre 15:06 e 16:42 (96 min), com 11 stages rodados e 82 min de stage.
+\textbf{Três tickets chegaram a \tk{done} na sessão}: PHY-23 (o tracer da v4, corda sobre polia fixa), PHY-32 (code-split do Rapier) e CLEAN-01 (endurecimento do code-split, aberto pelo review do PHY-32).
+Os três têm veredito Approve e estão no \href{https://github.com/Laginho/PhysiSyst/pull/8}{PR \#8}.
+Nenhum review reabriu um ticket.
+
+Das 11 execuções, 5 não chegaram onde deviam.
+Nenhuma foi erro de engenharia dos modelos.
+Duas foram perguntas legítimas, uma foi uma pergunta desnecessária e duas foram falhas de processo do stage 3.
+A causa de cada uma está na seção~\ref{sec:incidentes}, e todas já têm correção no processo.
+
+Por ticket, a lineup nova custou \textbf{27 min de stage}.
+A leva de 14/09 (Sonnet no stage 2, Opus no stage 3) custou 57, com tickets bem menores.
+O número é pequeno demais para virar conclusão, mas aponta na mesma direção da leitura qualitativa.
+
+\section{Linha do tempo}
+{\small
+\begin{tabularx}{\linewidth}{@{}lllrY@{}}
+\toprule
+Fim & Ticket & Stage (modelo) & Min & Resultado \\
+\midrule
+15:27 & PHY-23 & implement (Opus) & 20 & \ok{} \tk{to-review} na 1ª tentativa \\
+15:40 & PHY-23 & review (Fable) & 13 & Approve, mas \meh{} em \tk{to-merge} num PR contra o \tk{main}: o card do reviewer mandava assim \\
+15:42 & PHY-32 & implement (Opus) & 2 & \meh{}: pergunta legítima (arquivos fora dos Primary files); o driver leu como falha \\
+15:43 & PHY-32 & implement (Opus) & 1 & a mesma pergunta; \tk{blocked} \\
+--- & PHY-32 & proxy (Fable) & 0,8 & \tk{Decision}: os 3 arquivos entram, conferido com grep \\
+15:56 & PHY-23 & review (Fable) & 2 & \bad{}: gate rodado em background; a sessão acabou sem esperar o resultado \\
+16:02 & PHY-32 & implement (Opus) & 6 & \ok{} \tk{to-review} \\
+16:09 & PHY-32 & review (Fable) & 7 & \ok{} merged; abriu o CLEAN-01 \\
+16:15 & CLEAN-01 & implement (Opus) & 6 & \meh{}: usou o proxy 3 vezes, depois pediu ao humano para rodar um script \tk{node} \\
+16:20 & CLEAN-01 & implement (Opus) & 5 & \ok{} \tk{to-review} \\
+16:28 & CLEAN-01 & review (Fable) & 8 & \ok{} merged, com um fix pequeno do próprio review \\
+16:42 & PHY-23 & review (Fable) & 12 & \ok{} merged; resolveu 2 conflitos de rebase e fechou o PR \#7 \\
+\bottomrule
+\end{tabularx}}
+
+\section{Comparação com a leva de 14/09}
+Os tickets são diferentes.
+PHY-19..21 eram bugs de layout e harness, com diffs pequenos.
+PHY-23 é o ticket de arquitetura da v4 (19 arquivos, +1145 linhas, ADR novo).
+Leia a tabela como contexto, não como corrida.
+
+{\small
+\begin{tabularx}{\linewidth}{@{}Ycc@{}}
+\toprule
+ & 14/09 Sonnet $\rightarrow$ Opus & 24/09 Opus 5.5 $\rightarrow$ Fable 5.1 \\
+\midrule
+Tickets que chegaram a \tk{done} & 2 (PHY-19, PHY-21) & 3 (PHY-23, PHY-32, CLEAN-01) \\
+Minutos de stage, somados & 114 & 82 \\
+\textbf{Minutos de stage por ticket em \tk{done}} & \textbf{57} & \textbf{27} \\
+Stage 2 que chegou a \tk{to-review}: mediana & 10 min ($n=5$) & 6 min ($n=3$) \\
+Stage 3 que fez merge: mediana & 10 min ($n=3$) & 8 min ($n=3$) \\
+Reviews que reabriram o ticket & 3 de 6 & 0 de 5 \\
+Execuções do stage 2 que pararam & 2 de 7 & 3 de 5 (2 legítimas) \\
+Falhas de processo no stage 3 & 0 & 2 (card, background) \\
+Ticket que terminou \tk{blocked} esperando o humano & 1 (PHY-20) & 0 \\
+\bottomrule
+\end{tabularx}}
+
+A diferença que mais pesa é o \emph{retrabalho}.
+Na leva de 14/09, metade dos reviews mandou o ticket de volta, e o PHY-20 levou dois ciclos completos até parar em \tk{blocked}.
+Aqui nenhum review reabriu, e o custo extra veio do processo: as perguntas e o card desatualizado.
+Isso é mais barato de corrigir do que a qualidade do código.
+
+\section{O que cada modelo fez}\label{sec:qual}
+
+\subsection*{Stage 2: Opus 5.5 (high)}
+\begin{itemize}
+  \item \textbf{PHY-23 passou de primeira num ticket de arquitetura.} Os 14 critérios foram atendidos.
+  Os erros medidos ficaram muito abaixo da tolerância: no pior caso, 0{,}05\% em $a$, 0{,}79\% em $T$ e 0{,}26~mm em $|$caminho$-L|$.
+  A tabela de mutate-verify tem 7 mutações, cada uma com o teste que ficou vermelho e o valor medido. É exatamente o registro que o \tk{AGENTS.md} pede.
+  \item \textbf{Deixa as decisões à vista.} Listou quatro decisões que o ticket não resolvia. A principal é o critério 1, lido como coleções ausentes e opcionais. Também declarou a única linha que escreveu fora dos Primary files.
+  \item \textbf{Respeita a fronteira do escopo.} No PHY-32, em vez de mexer fora dos Primary files, diagnosticou a causa (\tk{TIMESTEP} prendia o Rapier no chunk de entrada), mediu um protótipo (de 2378~kB para 258~kB), reverteu e perguntou. Levou 2 minutos.
+  \item \textbf{Usou bem o proxy.} No CLEAN-01 chamou o proxy três vezes, uma delas para um guard contra loop de reload que o ticket não previa, e dobrou as respostas no ticket como manda a regra.
+  \item \textbf{Ponto fraco: ainda pergunta o que podia resolver sozinho.} Na tentativa 1 do CLEAN-01, pediu ao humano para rodar um script \tk{node}, porque o allowlist não inclui \tk{node}. O review do Fable mostrou depois que \tk{npm exec} resolvia. A tentativa se perdeu por falta de engenho com as ferramentas, não por falta de decisão.
+\end{itemize}
+
+\subsection*{Stage 3: Fable 5.1 (high)}
+\begin{itemize}
+  \item \textbf{Verifica em vez de confiar.} Rodou o gate de novo em todo review e reproduziu as verificações live por conta própria (Chromium headless nos PHY-23 e CLEAN-01). No CLEAN-01 ainda aplicou uma mutação e viu o teste ficar vermelho.
+  \item \textbf{Olha além do diff.} No PHY-23 achou um bug que já existia: \tk{resetForces} não zera o torque, e mediu $\omega = 40{,}4$~rad/s contra 3~rad/s esperados. Abriu o PHY-34 em vez de corrigir no review. No PHY-32 abriu o CLEAN-01 para a falha de chunk em cache. Nos dois casos respeitou o limite do ``fix pequeno''.
+  \item \textbf{Faz o trabalho de merge direito.} No último review do PHY-23, resolveu dois conflitos de rebase contra o PHY-32, entre eles o import do \tk{TIMESTEP}, que tinha mudado de lugar. Checou a separação entre commits de teste e de código depois do rebase e fechou o PR \#7 com um comentário.
+  \item \textbf{Pontos fracos: dois tropeços de processo.} (1) Rodou o gate em background, e a sessão headless acabou antes do resultado. (2) Um \tk{/code-review} rodou no intervalo errado de commits, e o Fable estacionou os achados como não verificados no CLEAN-01, em vez de rodar de novo no intervalo certo. O PR contra o \tk{main} no primeiro review foi culpa do card, não do modelo: ele seguiu a instrução mais específica.
+\end{itemize}
+
+\subsection*{Proxy: Fable 5.1 (high)}
+A regra nova entrou no meio da leva.
+Rendeu 4 decisões e nenhuma escalação.
+\begin{itemize}
+  \item \textbf{PHY-32}, chamado por mim: levou 48~s, 8 chamadas de ferramenta e cerca de 69 mil tokens. Não aceitou o escopo proposto sem checar: fez um grep por imports de valor do módulo do simulador e confirmou que \tk{accelerationTracker.ts} era o único além do \tk{App.tsx}.
+  \item \textbf{CLEAN-01}, chamado pelo stage 2, com 3 decisões: o guard de reload de 10~s com \tk{sessionStorage}, a isenção de testes na regra de lint e a linha em \tk{overlay.test.ts}. O review conferiu as três contra o código e aprovou.
+\end{itemize}
+O proxy tirou o humano do caminho crítico.
+Pelo processo antigo, PHY-32 e CLEAN-01 teriam ficado \tk{blocked} até a próxima leva.
+
+\section{Incidentes e correções}\label{sec:incidentes}
+{\small
+\begin{tabularx}{\linewidth}{@{}p{3.6cm}Yp{4.1cm}@{}}
+\toprule
+Incidente & Causa & Correção \\
+\midrule
+PHY-23 parado em \tk{to-merge} com PR contra o \tk{main} & o card \tk{reviewer.md} ainda mandava usar o \tk{main} como base e fazer merge por PR & card corrigido (\tk{dbfc90b}) \\
+Pergunta do PHY-32 perdida & o driver só reconhece pergunta quando a mensagem termina em ``?'', então tratou como falha e apagou o branch & \tk{blocked} gravado pelo próprio stage agora conta como pergunta, e a mensagem inteira vai para o ticket (\tk{b56a5cc}) \\
+Review do PHY-23 morto em 2 min & gate em background numa sessão headless & regra ``nada em background'' no \tk{ticket-flow} (\tk{901d6c3}) \\
+Tentativa perdida no CLEAN-01 & pediu ao humano um comando fora do allowlist & nenhuma ainda (ver seção~\ref{sec:vez}) \\
+Stages tentando tocar o beep & a preferência do beep, salva na memória do projeto, foi lida pelos stages & memória restrita ao foreman \\
+Driver caiu duas vezes gravando o \tk{run-log.md} & \textbf{erro meu}: o \tk{tail -F} do meu monitor travava o arquivo, e o \tk{TaskStop} deixou o \tk{tail} órfão & processo morto; linhas restauradas à mão; monitor novo lê a saída do driver \\
+Check-in das 16:00 não saiu & o cron da sessão não disparou (causa desconhecida) & troquei por um timer em background \\
+\bottomrule
+\end{tabularx}}
+
+\section{Limites desta avaliação}
+\begin{itemize}
+  \item São 3 tickets de um lado e 2 do outro, com tickets de natureza diferente. O stage 3 teve só 3 reviews completos.
+  \item O driver grava só a última mensagem de cada sessão, sem tokens nem custo por stage. O único número de custo é o do proxy chamado por mim.
+  \item Os minutos incluem o gate (Vitest, build e Chromium headless), que não depende do modelo.
+  \item Três regras mudaram no meio da leva (proxy, card do reviewer, background). Os stages depois das 15:54 rodaram num processo melhor que os primeiros.
+\end{itemize}
+
+\section{Sua vez}\label{sec:vez}
+\begin{enumerate}
+  \item \textbf{PR \#8}: 3 tickets com Approve. O PHY-23 está no topo, com \tk{Review: human}. A decisão a conferir é o critério 1, lido como coleções ausentes e opcionais, sem \tk{[]} literal.
+  \item \textbf{Achados não verificados no CLEAN-01}: o \tk{/code-review} desviado encontrou dois possíveis furos. O autosave com debounce não é gravado antes do reload, e a regra de lint deixa passar \tk{import \{ type X \}}. Merecem um ticket.
+  \item \textbf{Push dos skills}: \tk{b56a5cc} e \tk{901d6c3} estão só no \tk{Agent-Skills} local. Sem esse push, a outra máquina roda o driver sem as correções.
+  \item \textbf{Decidir}: pôr \tk{node} no allowlist dos stages, ou escrever no \tk{ticket-flow} que scripts rodam via \tk{npm exec}.
+  \item \textbf{Próxima leva}: PHY-24 e PHY-26 estão desbloqueados, e o PHY-34 está na fila.
+\end{enumerate}
+
+\end{document}

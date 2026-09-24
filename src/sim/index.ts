@@ -1,3 +1,3 @@
-export { TIMESTEP } from './simulator'
+export { TIMESTEP } from './timestep'
 export { createSimulator } from './simulator'
-export type { BodyState, ContactPoint, Simulator } from './simulator'
+export type { BodyState, ConstraintState, ContactPoint, RopeState, Simulator } from './simulator'
