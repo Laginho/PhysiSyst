@@ -27,7 +27,7 @@ The rope is unilateral: `T = 0` and `slack = true` whenever no pull is needed. T
 
 ## Measured (60 Hz, current mechanism)
 
-PHY-23 families, 1 s window after a 0.5 s settle:
+PHY-23 families, 1 s window after a 0.5 s settle; tolerances 2% (Atwood), 5% (table) and 1 mm:
 
 | Family | `a` error | max `T` error over the window | max \|path − L\| over the 1.5 s run |
 |---|---|---|---|
