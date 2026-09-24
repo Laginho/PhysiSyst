@@ -82,7 +82,7 @@ interface RopeBinding {
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
-  /** This step's tension minus the warm start. */
+  /** The reading the contact-free model expects this step, warm start excluded. */
   predicted: number
   slack: boolean
 }
@@ -90,12 +90,30 @@ interface RopeBinding {
 /** Fraction of a rope's stretch pulled back per step. */
 const ROPE_BETA = 0.2
 
+/**
+ * The lengthening rate a rope `c` past its length L may have: a slack rope
+ * may close its gap in one step, a stretched one must pull back a fraction.
+ * Prediction and correction share it — a correction that aimed at zero would
+ * undo the pull-back, and the warm start would then cancel the next one.
+ */
+function ropeAllowance(c: number): number {
+  return c < 0 ? -c / TIMESTEP : (-ROPE_BETA * c) / TIMESTEP
+}
+
+/** A point the rope pulls: an end, or a pulley's axle. */
+interface RopePull {
+  rigid: RAPIER.RigidBody
+  p: Vec2
+  /**
+   * The way the rope pulls it per unit tension: the leg's unit direction for
+   * an end, the sum of both legs' for a pulley. Also −∂(path length)/∂p.
+   */
+  u: Vec2
+}
+
 interface RopeFrame {
-  pa: Vec2
-  pb: Vec2
-  /** Unit directions from each end along its leg: the way the rope pulls that end. */
-  ua: Vec2
-  ub: Vec2
+  /** In path order: end a, each pulley in `via`, end b. */
+  pulls: RopePull[]
   length: number
 }
 
@@ -110,30 +128,63 @@ function unit(from: Vec2, to: Vec2): Vec2 {
   return d === 0 ? { x: 0, y: 0 } : { x: dx / d, y: dy / d }
 }
 
-function ropeFrame(rope: RopeBinding): RopeFrame {
-  const pa = worldPoint(rope.a)
-  const pb = worldPoint(rope.b)
+/** The rope at its bodies' poses, or with each point `moved` there (path order). */
+function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
+  const points = [rope.a, ...rope.via, rope.b]
+  const at = moved ?? points.map(worldPoint)
   const path = ropePath(
-    pa,
-    pb,
-    rope.via.map((p) => ({ center: worldPoint(p), radius: p.radius })),
+    at[0]!,
+    at.at(-1)!,
+    rope.via.map((p, i) => ({ center: at[i + 1]!, radius: p.radius })),
   )
-  return {
-    pa,
-    pb,
-    ua: unit(pa, path.segments[0]!.to),
-    ub: unit(pb, path.segments.at(-1)!.from),
-    length: path.length,
-  }
+  const s = path.segments
+  const pulls = points.map((point, i): RopePull => {
+    // An end is pulled along its one leg; a pulley back along the leg that
+    // arrives and forward along the leg that leaves.
+    const back = i > 0 ? unit(s[i - 1]!.to, s[i - 1]!.from) : { x: 0, y: 0 }
+    const ahead = i < s.length ? unit(s[i]!.from, s[i]!.to) : { x: 0, y: 0 }
+    return { rigid: point.rigid, p: at[i]!, u: { x: back.x + ahead.x, y: back.y + ahead.y } }
+  })
+  return { pulls, length: path.length }
 }
 
-/** Inverse effective mass of a body for a unit pull `u` at world point `p`. */
-function pullInvMass(rigid: RAPIER.RigidBody, p: Vec2, u: Vec2): number {
-  if (!rigid.isDynamic()) return 0
-  const m = rigid.effectiveInvMass()
-  const com = rigid.worldCom()
-  const arm = (p.x - com.x) * u.y - (p.y - com.y) * u.x
-  return u.x * u.x * m.x + u.y * u.y * m.y + rigid.effectiveWorldInvInertia() * arm * arm
+/**
+ * The rope's inverse effective mass, K: Σ over bodies of J M⁻¹ J′ᵀ, with the
+ * pulls on one body summed first — a movable pulley and an end can share it.
+ * J is the pull applied (`pulls`); J′ the rope's length gradient it acts
+ * against, `along` in path order, the pull itself unless given.
+ */
+function ropeInvMass(pulls: readonly RopePull[], along: readonly Vec2[] = pulls.map((p) => p.u)): number {
+  const jacobians = new Map<RAPIER.RigidBody, { x: number; y: number; w: number; x2: number; y2: number; w2: number }>()
+  pulls.forEach(({ rigid, p, u }, i) => {
+    if (!rigid.isDynamic()) return
+    const com = rigid.worldCom()
+    const g = along[i]!
+    const j = jacobians.get(rigid) ?? { x: 0, y: 0, w: 0, x2: 0, y2: 0, w2: 0 }
+    j.x += u.x
+    j.y += u.y
+    j.w += (p.x - com.x) * u.y - (p.y - com.y) * u.x
+    j.x2 += g.x
+    j.y2 += g.y
+    j.w2 += (p.x - com.x) * g.y - (p.y - com.y) * g.x
+    jacobians.set(rigid, j)
+  })
+  let k = 0
+  for (const [rigid, j] of jacobians) {
+    const m = rigid.effectiveInvMass()
+    k += j.x * j.x2 * m.x + j.y * j.y2 * m.y + rigid.effectiveWorldInvInertia() * j.w * j.w2
+  }
+  return k
+}
+
+/** A tension (as a force) or a tension impulse along every dynamic pull. */
+function applyPulls(pulls: readonly RopePull[], amount: number, impulse: boolean): void {
+  for (const { rigid, p, u } of pulls) {
+    if (!rigid.isDynamic()) continue
+    const f = { x: amount * u.x, y: amount * u.y }
+    if (impulse) rigid.applyImpulseAtPoint(f, p, true)
+    else rigid.addForceAtPoint(f, p, true)
+  }
 }
 
 /**
@@ -153,12 +204,6 @@ function freePointVelocity(rigid: RAPIER.RigidBody, p: Vec2, gravity: Vec2): Vec
     x: v.x + TIMESTEP * (gs * gravity.x + f.x * m.x) - w1 * (p.y - com.y),
     y: v.y + TIMESTEP * (gs * gravity.y + f.y * m.y) + w1 * (p.x - com.x),
   }
-}
-
-function pullRate(rigid: RAPIER.RigidBody, p: Vec2, u: Vec2): number {
-  if (!rigid.isDynamic()) return 0
-  const v = rigid.velocityAtPoint(p)
-  return u.x * v.x + u.y * v.y
 }
 
 /**
@@ -438,8 +483,7 @@ class RapierSimulator implements Simulator {
     const touched = new Set<RAPIER.RigidBody>()
     for (const binding of this.forces.values()) touched.add(binding.rigid)
     for (const rope of this.ropes) {
-      touched.add(rope.a.rigid)
-      touched.add(rope.b.rigid)
+      for (const point of [rope.a, ...rope.via, rope.b]) touched.add(point.rigid)
     }
     for (const rigid of touched) rigid.resetForces(true)
     for (const binding of this.forces.values()) {
@@ -469,47 +513,79 @@ class RapierSimulator implements Simulator {
    * as a force, so Rapier's contact and friction solve sees it.
    */
   private pullRope(rope: RopeBinding): void {
-    const f = ropeFrame(rope)
-    const k = pullInvMass(rope.a.rigid, f.pa, f.ua) + pullInvMass(rope.b.rigid, f.pb, f.ub)
-    if (k === 0) {
+    const now = ropeFrame(rope)
+    const g = this.world.gravity
+    // Rapier splits the step into n substeps: a constant acceleration moves a
+    // body φ = (n + 1)/2n of the Euler distance Δt²·a, while the velocity
+    // still gains Δt·a in full.
+    const n = this.world.numSolverIterations
+    const phi = (n + 1) / (2 * n)
+    const v = now.pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, g))
+    const free = now.pulls.map(({ rigid, p }, i) => {
+      const v0 = rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }
+      return { x: p.x + TIMESTEP * (v0.x + phi * (v[i]!.x - v0.x)), y: p.y + TIMESTEP * (v0.y + phi * (v[i]!.y - v0.y)) }
+    })
+    // The rope where the free step leaves it, and halfway there. Legs turn
+    // while the step runs: a pull along the old legs misses the centripetal
+    // part of a swing, one along the end legs does work against it and
+    // drains its energy. Along the mid-step legs it is square to the chord
+    // each end travels, and does neither.
+    const end = ropeFrame(rope, free)
+    const mid = ropeFrame(
+      rope,
+      free.map((q, i) => ({ x: (q.x + now.pulls[i]!.p.x) / 2, y: (q.y + now.pulls[i]!.p.y) / 2 })),
+    )
+    const pulls = now.pulls.map((pull, i) => ({ ...pull, u: mid.pulls[i]!.u }))
+    const k = ropeInvMass(
+      pulls,
+      end.pulls.map((e) => e.u),
+    )
+    if (k <= 0) {
       rope.tension = rope.residual = rope.predicted = 0
       return
     }
-    const g = this.world.gravity
-    const va = freePointVelocity(rope.a.rigid, f.pa, g)
-    const vb = freePointVelocity(rope.b.rigid, f.pb, g)
-    const lengthening = -(f.ua.x * va.x + f.ua.y * va.y + f.ub.x * vb.x + f.ub.y * vb.y)
-    const c = f.length - rope.length
-    const allowed = c < 0 ? -c / TIMESTEP : (-ROPE_BETA * c) / TIMESTEP
-    rope.predicted = (lengthening - allowed) / (TIMESTEP * k)
-    rope.tension = Math.max(0, rope.predicted + rope.residual)
-    if (rope.tension === 0) return
-    rope.a.rigid.addForceAtPoint({ x: rope.tension * f.ua.x, y: rope.tension * f.ua.y }, f.pa, true)
-    rope.b.rigid.addForceAtPoint({ x: rope.tension * f.ub.x, y: rope.tension * f.ub.y }, f.pb, true)
+    // Where the step should leave the rope: taut at L if it was slack (the
+    // pull is zero if the free step stays short of L), a fraction of any
+    // stretch pulled back otherwise.
+    const c = now.length - rope.length
+    const target = Math.max(0, (1 - ROPE_BETA) * c)
+    const toTarget = (end.length - rope.length - target) / (phi * TIMESTEP * TIMESTEP * k)
+    // The reading the correction will make in a step with no contacts: the
+    // step ends with the ends moving along a chord, and the correction turns
+    // them back onto the rope. It is the rate form of the same pull.
+    let lengthening = 0
+    end.pulls.forEach(({ u }, i) => (lengthening -= u.x * v[i]!.x + u.y * v[i]!.y))
+    rope.predicted = (lengthening - ropeAllowance(target)) / (TIMESTEP * k)
+    rope.tension = Math.max(0, toTarget + rope.residual)
+    if (rope.tension > 0) applyPulls(pulls, rope.tension, false)
   }
 
   /**
    * Rope, after the step: contacts made the prediction wrong by some amount,
    * so an impulse along the rope removes whatever lengthening remains beyond
    * what the slack allows. The tension it implies becomes the reading, and
-   * the part the prediction missed warm-starts the next step.
+   * the part the prediction missed warm-starts the next step. The jerk that
+   * pulls a slack rope taut is in the prediction, so it never warm-starts.
    */
   private correctRope(rope: RopeBinding): void {
     const f = ropeFrame(rope)
-    const k = pullInvMass(rope.a.rigid, f.pa, f.ua) + pullInvMass(rope.b.rigid, f.pb, f.ub)
+    const k = ropeInvMass(f.pulls)
     if (k === 0) {
       rope.slack = true
       return
     }
-    const lengthening = -(pullRate(rope.a.rigid, f.pa, f.ua) + pullRate(rope.b.rigid, f.pb, f.ub))
-    const c = f.length - rope.length
-    const allowed = c < 0 ? -c / TIMESTEP : 0
-    const corrected = Math.max(0, rope.tension + (lengthening - allowed) / (TIMESTEP * k))
-    const impulse = (corrected - rope.tension) * TIMESTEP
-    if (impulse !== 0) {
-      rope.a.rigid.applyImpulseAtPoint({ x: impulse * f.ua.x, y: impulse * f.ua.y }, f.pa, true)
-      rope.b.rigid.applyImpulseAtPoint({ x: impulse * f.ub.x, y: impulse * f.ub.y }, f.pb, true)
+    let lengthening = 0
+    for (const { rigid, p, u } of f.pulls) {
+      if (!rigid.isDynamic()) continue
+      const v = rigid.velocityAtPoint(p)
+      lengthening -= u.x * v.x + u.y * v.y
     }
+    // ponytail: projecting the chord velocity back onto the rope drains a fast
+    // swing (~4% of a 1 m loop's energy per turn at v₀² = 6gL); a RATTLE-style
+    // position-and-velocity projection if energy readouts ever need it.
+    const corrected = Math.max(0, rope.tension + (lengthening - ropeAllowance(f.length - rope.length)) / (TIMESTEP * k))
+    const impulse = (corrected - rope.tension) * TIMESTEP
+    if (impulse !== 0) applyPulls(f.pulls, impulse, true)
     rope.tension = corrected
     rope.residual = corrected > 0 ? corrected - rope.predicted : 0
     rope.slack = corrected === 0

@@ -191,14 +191,12 @@ function parsePulley(raw: unknown, i: number, bodies: ReadonlyMap<string, Body>)
   if (!isObject(raw)) fail(`${where} must be a JSON object`)
   const p = raw
   checkKeys(p, PULLEY_KEYS, `in ${where}`)
-  // Temporary until PHY-25 (disk realism option) and PHY-24 (movable pulleys).
+  // Temporary until PHY-25 (disk realism option).
   if ('mass' in p) fail(`${where}: pulley mass is not supported yet`)
 
   const id = reqString(p, 'id', where)
   const bodyId = reqString(p, 'bodyId', where)
-  const mount = bodies.get(bodyId)
-  if (!mount) fail(`${where}: references missing body '${bodyId}'`)
-  if (!mount.fixed) fail(`${where}: pulley on dynamic body '${bodyId}' is not supported yet`)
+  if (!bodies.has(bodyId)) fail(`${where}: references missing body '${bodyId}'`)
   return { id, bodyId, anchor: parseVec2(p['anchor'], `${where}: anchor.`), radius: reqPositive(p, 'radius', where) }
 }
 
@@ -236,8 +234,10 @@ function parseConstraint(
   for (const pid of viaRaw) {
     if (!pulleyIds.has(pid)) fail(`${where}: via references missing pulley '${pid}'`)
   }
-  // Temporary until PHY-24 generalizes the rope (pendulum, pulleys in series).
-  if (viaRaw.length !== 1) fail(`${where}: a rope must pass over exactly one pulley for now`)
+  if (viaRaw.length === 0 && a.bodyId === b.bodyId) fail(`${where}: a rope with no pulley must join two different bodies`)
+  viaRaw.forEach((pid, k) => {
+    if (pid === viaRaw[k - 1]) fail(`${where}: via repeats pulley '${pid}' back to back`)
+  })
   return { id, kind, a, b, via: [...viaRaw] }
 }
 
