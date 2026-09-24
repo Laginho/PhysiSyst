@@ -1,5 +1,5 @@
 # CLEAN-02: Regra de lint do code-split fecha os dois furos
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -41,3 +41,13 @@ O review sugeriu `@typescript-eslint/no-import-type-side-effects` para o primeir
 
       $ npx eslint src/playback/probe.ts src/App.tsx src/sim/simulator.ts src/playback/integration.test.ts
       (nenhuma saída, exit 0: as linhas 1–3 passam)
+
+- 2026-09-24 Stage 2, depois. `eslint.config.js`: `@typescript-eslint/no-import-type-side-effects` no bloco do code-split (furo 1) e um segundo padrão `^@dimforge/rapier2d-compat(/|$)` sem `allowTypeImports` (furo 2, qualquer import do pacote, inclusive de tipo e subcaminhos). Mesmo probe, mesmo comando:
+
+      src\playback\probe.ts
+        1:1  error  TypeScript will only remove the inline type specifiers which will leave behind a side effect import at runtime. …  @typescript-eslint/no-import-type-side-effects
+        2:1  error  '@dimforge/rapier2d-compat' import is restricted from being used by a pattern. Rapier belongs to src/sim/ only; …  @typescript-eslint/no-restricted-imports
+        3:1  error  '@dimforge/rapier2d-compat' import is restricted from being used by a pattern. Rapier belongs to src/sim/ only; …  @typescript-eslint/no-restricted-imports
+      ✖ 3 problems (3 errors, 0 warnings)
+
+  Linhas 4–5, `App.tsx` (o `import('./sim')` dinâmico), `src/sim/simulator.ts` e o teste seguem limpos (critério 3). Gate, probe apagado, sem mudança fora dos Primary files (critério 4): `npm test` 29 arquivos / 526 testes passando; `npm run lint`, `npm run typecheck` limpos; `npm run build` ok.
