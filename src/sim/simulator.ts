@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier2d-compat'
 import { bodyPointToWorld, ropePath, scenePath } from '../scene'
-import type { Scene, Vec2 } from '../scene'
+import type { RopePath, Scene, Vec2 } from '../scene'
 import { TIMESTEP } from './timestep'
 
 export interface BodyState {
@@ -20,9 +20,14 @@ export interface ContactPoint {
 export interface RopeState {
   id: string
   kind: 'rope'
-  /** Tension over the last step, N. 0 while slack. */
+  /** Tension over the last step, N; the largest segment's when they differ. 0 while slack. */
   tension: number
   slack: boolean
+  /**
+   * T per straight leg, in path order from `a` (PHY-25). All equal to
+   * `tension` unless a pulley on the path has mass.
+   */
+  segments: number[]
 }
 
 export type ConstraintState = RopeState
@@ -48,7 +53,8 @@ export interface Simulator {
    * surviving ids resume from their carried position/rotation/velocity, ids
    * absent from `carry` spawn at their document-initial state, and carried ids
    * absent from `scene` are dropped. Omit it to restart the whole world from
-   * the document.
+   * the document. With `carry`, pulleys with mass that survive keep their
+   * spin from the live world (PHY-25).
    */
   replaceScene(scene: Scene, carry?: ReadonlyMap<string, BodyState>): void
 }
@@ -85,6 +91,34 @@ interface RopeBinding {
   /** The reading the contact-free model expects this step, warm start excluded. */
   predicted: number
   slack: boolean
+  /** The pulleys with mass on the path (PHY-25). Empty: one piece, the scalar fields above. */
+  grips: Grip[]
+  /** One per piece of rope between grips, in path order; empty when `grips` is. */
+  pieces: Piece[]
+}
+
+/**
+ * A pulley with mass on a rope's path. The rope does not slip on the disk, so
+ * the disk splits the rope into two pieces, each of fixed length: the rope's
+ * arc on it is shared at a mark that turns with the disk.
+ */
+interface Grip {
+  /** Index of the pulley in `via`. */
+  at: number
+  disk: RAPIER.RigidBody
+  /** Angle from where the rope meets the disk to the mark, in the wrap direction: the arriving piece's share. */
+  share: number
+  /** The rope's meeting angle (`RopeArc.start`) and the disk's rotation when `share` was last brought up to date. */
+  start: number
+  rotation: number
+}
+
+interface Piece {
+  /** Fixed for the world's life, from the document poses like `RopeBinding.length`. */
+  length: number
+  tension: number
+  residual: number
+  predicted: number
 }
 
 /** Fraction of a rope's stretch pulled back per step. */
@@ -115,6 +149,7 @@ interface RopeFrame {
   /** In path order: end a, each pulley in `via`, end b. */
   pulls: RopePull[]
   length: number
+  path: RopePath
 }
 
 function worldPoint(p: PointBinding): Vec2 {
@@ -145,30 +180,39 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
     const ahead = i < s.length ? unit(s[i]!.from, s[i]!.to) : { x: 0, y: 0 }
     return { rigid: point.rigid, p: at[i]!, u: { x: back.x + ahead.x, y: back.y + ahead.y } }
   })
-  return { pulls, length: path.length }
+  return { pulls, length: path.length, path }
 }
 
 /**
  * The rope's inverse effective mass, K: Σ over bodies of J M⁻¹ J′ᵀ, with the
  * pulls on one body summed first — a movable pulley and an end can share it.
  * J is the pull applied (`pulls`); J′ the rope's length gradient it acts
- * against, `along` in path order, the pull itself unless given.
+ * against (`along`), the pull itself unless given. The two may be different
+ * pieces of one rope (PHY-25): then K couples them through shared bodies.
  */
-function ropeInvMass(pulls: readonly RopePull[], along: readonly Vec2[] = pulls.map((p) => p.u)): number {
+function ropeInvMass(pulls: readonly RopePull[], along: readonly RopePull[] = pulls): number {
   const jacobians = new Map<RAPIER.RigidBody, { x: number; y: number; w: number; x2: number; y2: number; w2: number }>()
-  pulls.forEach(({ rigid, p, u }, i) => {
-    if (!rigid.isDynamic()) return
-    const com = rigid.worldCom()
-    const g = along[i]!
+  const jacobian = (rigid: RAPIER.RigidBody) => {
     const j = jacobians.get(rigid) ?? { x: 0, y: 0, w: 0, x2: 0, y2: 0, w2: 0 }
+    jacobians.set(rigid, j)
+    return j
+  }
+  for (const { rigid, p, u } of pulls) {
+    if (!rigid.isDynamic()) continue
+    const com = rigid.worldCom()
+    const j = jacobian(rigid)
     j.x += u.x
     j.y += u.y
     j.w += (p.x - com.x) * u.y - (p.y - com.y) * u.x
+  }
+  for (const { rigid, p, u: g } of along) {
+    if (!rigid.isDynamic()) continue
+    const com = rigid.worldCom()
+    const j = jacobian(rigid)
     j.x2 += g.x
     j.y2 += g.y
     j.w2 += (p.x - com.x) * g.y - (p.y - com.y) * g.x
-    jacobians.set(rigid, j)
-  })
+  }
   let k = 0
   for (const [rigid, j] of jacobians) {
     const m = rigid.effectiveInvMass()
@@ -203,6 +247,132 @@ function freePointVelocity(rigid: RAPIER.RigidBody, p: Vec2, gravity: Vec2): Vec
   return {
     x: v.x + TIMESTEP * (gs * gravity.x + f.x * m.x) - w1 * (p.y - com.y),
     y: v.y + TIMESTEP * (gs * gravity.y + f.y * m.y) + w1 * (p.x - com.x),
+  }
+}
+
+/**
+ * Where `p` ends the coming step under that free motion. Rapier splits the
+ * step into n substeps: a constant acceleration moves a body φ = (n + 1)/2n
+ * of the Euler distance Δt²·a, while the velocity still gains Δt·a in full.
+ */
+function freePoint(rigid: RAPIER.RigidBody, p: Vec2, v: Vec2, phi: number): Vec2 {
+  const v0 = rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }
+  return { x: p.x + TIMESTEP * (v0.x + phi * (v.x - v0.x)), y: p.y + TIMESTEP * (v0.y + phi * (v.y - v0.y)) }
+}
+
+function wrapAngle(a: number): number {
+  return a - 2 * Math.PI * Math.round(a / (2 * Math.PI))
+}
+
+/** Path-point indices where the pieces meet: end a, each grip's pulley, end b. */
+function pieceBounds(rope: RopeBinding): number[] {
+  return [0, ...rope.grips.map((g) => g.at + 1), rope.via.length + 1]
+}
+
+/** Each grip's share of its arc on `path`, with the disks turned `spin` beyond their rotation now. */
+function gripShares(rope: RopeBinding, path: RopePath, spin?: readonly number[]): number[] {
+  return rope.grips.map((g, k) => {
+    const arc = path.arcs[g.at]!
+    const turned = wrapAngle(g.disk.rotation() - g.rotation) + (spin?.[k] ?? 0)
+    return g.share + arc.direction * (turned - wrapAngle(arc.start - g.start))
+  })
+}
+
+/** Each piece's length on `path`: its legs, the arcs of massless pulleys inside it, and its shares of the grips at its ends. */
+function pieceLengths(rope: RopeBinding, path: RopePath, shares: readonly number[]): number[] {
+  const bounds = pieceBounds(rope)
+  return bounds.slice(1).map((last, k) => {
+    const first = bounds[k]!
+    let length = 0
+    for (let i = first; i < last; i++) {
+      const s = path.segments[i]!
+      length += Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)
+    }
+    for (let i = first + 1; i < last; i++) length += path.arcs[i - 1]!.radius * path.arcs[i - 1]!.sweep
+    if (k > 0) length += path.arcs[first - 1]!.radius * (path.arcs[first - 1]!.sweep - shares[k - 1]!)
+    if (k < rope.grips.length) length += path.arcs[last - 1]!.radius * shares[k]!
+    return length
+  })
+}
+
+/**
+ * Each piece's pulls at `frame`. A grip pulls its mount at the axle and its
+ * disk at the tangent point, both along the one leg of the piece: the disk
+ * takes the torque, the axle the force.
+ */
+function piecePulls(rope: RopeBinding, frame: RopeFrame): RopePull[][] {
+  const s = frame.path.segments
+  const bounds = pieceBounds(rope)
+  return bounds.slice(1).map((last, k) => {
+    const first = bounds[k]!
+    const pulls: RopePull[] = []
+    if (k === 0) pulls.push(frame.pulls[0]!)
+    else {
+      const u = unit(s[first]!.from, s[first]!.to)
+      pulls.push({ ...frame.pulls[first]!, u }, { rigid: rope.grips[k - 1]!.disk, p: s[first]!.from, u })
+    }
+    pulls.push(...frame.pulls.slice(first + 1, last))
+    if (k === rope.grips.length) pulls.push(frame.pulls[last]!)
+    else {
+      const u = unit(s[last - 1]!.to, s[last - 1]!.from)
+      pulls.push({ ...frame.pulls[last]!, u }, { rigid: rope.grips[k]!.disk, p: s[last - 1]!.to, u })
+    }
+    return pulls
+  })
+}
+
+/** The rate the rope lengthens at along `along`, its points moving at `v`. */
+function lengtheningRate(along: readonly RopePull[], v: readonly Vec2[]): number {
+  let rate = 0
+  along.forEach(({ u }, i) => (rate -= u.x * v[i]!.x + u.y * v[i]!.y))
+  return rate
+}
+
+/** x with K x = b (Gaussian elimination, partial pivoting); null when K is singular. */
+function solveLinear(K: readonly (readonly number[])[], b: readonly number[]): number[] | null {
+  const n = b.length
+  const rows = K.map((row, i) => [...row, b[i]!])
+  for (let c = 0; c < n; c++) {
+    let pivot = c
+    for (let r = c + 1; r < n; r++) if (Math.abs(rows[r]![c]!) > Math.abs(rows[pivot]![c]!)) pivot = r
+    if (Math.abs(rows[pivot]![c]!) < 1e-12) return null
+    ;[rows[c], rows[pivot]] = [rows[pivot]!, rows[c]!]
+    const top = rows[c]!
+    for (let r = c + 1; r < n; r++) {
+      const row = rows[r]!
+      const f = row[c]! / top[c]!
+      for (let j = c; j <= n; j++) row[j] = row[j]! - f * top[j]!
+    }
+  }
+  const x = new Array<number>(n).fill(0)
+  for (let r = n - 1; r >= 0; r--) {
+    const row = rows[r]!
+    let s = row[n]!
+    for (let j = r + 1; j < n; j++) s -= row[j]! * x[j]!
+    x[r] = s / row[r]!
+  }
+  return x
+}
+
+/**
+ * Piece tensions T ≥ 0 with K(T − base) = b on the pieces left taut: a piece
+ * whose tension would go negative goes slack and the rest are solved again.
+ * One piece reduces to the scalar rope's max(0, base + b/K).
+ */
+function tautTensions(K: readonly (readonly number[])[], b: readonly number[], base: readonly number[]): number[] {
+  const rhs = b.map((bk, k) => bk + K[k]!.reduce((s, kkl, l) => s + kkl * base[l]!, 0))
+  let taut = b.map((_, k) => k)
+  for (;;) {
+    const x = solveLinear(
+      taut.map((k) => taut.map((l) => K[k]![l]!)),
+      taut.map((k) => rhs[k]!),
+    )
+    const T = b.map(() => 0)
+    if (!x) return T
+    taut.forEach((k, i) => (T[k] = x[i]!))
+    const still = taut.filter((k) => T[k]! > 0)
+    if (still.length === taut.length) return T
+    taut = still
   }
 }
 
@@ -370,6 +540,8 @@ class RapierSimulator implements Simulator {
   private colliders = new Map<string, RAPIER.Collider>()
   private forces = new Map<string, ForceBinding>()
   private ropes: RopeBinding[] = []
+  /** The disks of pulleys with mass, by pulley id (PHY-25). */
+  private disks = new Map<string, RAPIER.RigidBody>()
   private readonly _warnings: string[] = []
   private particleMode = false
 
@@ -380,6 +552,7 @@ class RapierSimulator implements Simulator {
     this.colliders = built.colliders
     this.forces = built.forces
     this.ropes = built.ropes
+    this.disks = built.disks
     this.particleMode = built.particleMode
     this._warnings.push(...built.warnings)
   }
@@ -396,6 +569,7 @@ class RapierSimulator implements Simulator {
     colliders: Map<string, RAPIER.Collider>
     forces: Map<string, ForceBinding>
     ropes: RopeBinding[]
+    disks: Map<string, RAPIER.RigidBody>
     warnings: string[]
     particleMode: boolean
   } {
@@ -405,6 +579,7 @@ class RapierSimulator implements Simulator {
     const colliders = new Map<string, RAPIER.Collider>()
     const forces = new Map<string, ForceBinding>()
     const ropes: RopeBinding[] = []
+    const disks = new Map<string, RAPIER.RigidBody>()
 
     // If anything below throws (e.g. mass<=0), the LOCAL candidate world is
     // freed before rethrow: no WASM leak on repeated invalid rebuilds.
@@ -454,10 +629,31 @@ class RapierSimulator implements Simulator {
         if (!rigid) throw new Error(`constraint references missing body '${bodyId}'`)
         return { rigid, anchorLocal }
       }
+      // A pulley with mass (PHY-25) is a disk body of its own that only
+      // spins, I = ½MR², kept on its axle by the rope code; its mass rides the
+      // mount as a collider that touches nothing, so its weight and inertia
+      // enter the mount's translation. Mass 0 builds nothing: the ideal pulley.
+      for (const pulley of scene.pulleys ?? []) {
+        if (!pulley.mass) continue
+        const mount = point(pulley.bodyId, pulley.anchor)
+        const axle = worldPoint(mount)
+        const disk = world.createRigidBody(
+          RAPIER.RigidBodyDesc.dynamic().setTranslation(axle.x, axle.y).lockTranslations().setGravityScale(0),
+        )
+        world.createCollider(RAPIER.ColliderDesc.ball(pulley.radius).setMass(pulley.mass).setCollisionGroups(0), disk)
+        if (mount.rigid.isDynamic()) {
+          const weight = RAPIER.ColliderDesc.ball(pulley.radius)
+            .setTranslation(pulley.anchor.x, pulley.anchor.y)
+            .setMassProperties(pulley.mass, { x: 0, y: 0 }, 0)
+            .setCollisionGroups(0)
+          world.createCollider(weight, mount.rigid)
+        }
+        disks.set(pulley.id, disk)
+      }
       for (const rope of scene.constraints ?? []) {
         const path = scenePath(scene, rope)
         if (!path) throw new Error(`rope '${rope.id}' has a dangling reference`)
-        ropes.push({
+        const binding: RopeBinding = {
           id: rope.id,
           a: point(rope.a.bodyId, rope.a.anchor),
           b: point(rope.b.bodyId, rope.b.anchor),
@@ -470,13 +666,25 @@ class RapierSimulator implements Simulator {
           residual: 0,
           predicted: 0,
           slack: false,
-        })
+          // The mark starts mid-arc: at the document poses each piece holds half of every arc it ends on.
+          grips: rope.via.flatMap((id, at) => {
+            const disk = disks.get(id)
+            const arc = path.arcs[at]!
+            return disk ? [{ at, disk, share: arc.sweep / 2, start: arc.start, rotation: disk.rotation() }] : []
+          }),
+          pieces: [],
+        }
+        if (binding.grips.length) {
+          const lengths = pieceLengths(binding, path, gripShares(binding, path))
+          binding.pieces = lengths.map((length) => ({ length, tension: 0, residual: 0, predicted: 0 }))
+        }
+        ropes.push(binding)
       }
     } catch (e) {
       world.free()
       throw e
     }
-    return { world, bodies, colliders, forces, ropes, warnings, particleMode: scene.constants.particleMode === true }
+    return { world, bodies, colliders, forces, ropes, disks, warnings, particleMode: scene.constants.particleMode === true }
   }
 
   step(): void {
@@ -486,6 +694,9 @@ class RapierSimulator implements Simulator {
       for (const point of [rope.a, ...rope.via, rope.b]) touched.add(point.rigid)
     }
     for (const rigid of touched) rigid.resetForces(true)
+    // resetForces leaves torques, and a disk is driven by nothing else. The
+    // bodies still keep theirs across steps until PHY-34.
+    for (const disk of this.disks.values()) disk.resetTorques(true)
     for (const binding of this.forces.values()) {
       const p = binding.rigid.translation()
       const r = binding.rigid.rotation()
@@ -501,9 +712,15 @@ class RapierSimulator implements Simulator {
         true,
       )
     }
-    for (const rope of this.ropes) this.pullRope(rope)
+    for (const rope of this.ropes) {
+      if (rope.grips.length) this.pullPieces(rope)
+      else this.pullRope(rope)
+    }
     this.world.step()
-    for (const rope of this.ropes) this.correctRope(rope)
+    for (const rope of this.ropes) {
+      if (rope.grips.length) this.correctPieces(rope)
+      else this.correctRope(rope)
+    }
   }
 
   /**
@@ -515,16 +732,9 @@ class RapierSimulator implements Simulator {
   private pullRope(rope: RopeBinding): void {
     const now = ropeFrame(rope)
     const g = this.world.gravity
-    // Rapier splits the step into n substeps: a constant acceleration moves a
-    // body φ = (n + 1)/2n of the Euler distance Δt²·a, while the velocity
-    // still gains Δt·a in full.
-    const n = this.world.numSolverIterations
-    const phi = (n + 1) / (2 * n)
+    const phi = this.substepFactor()
     const v = now.pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, g))
-    const free = now.pulls.map(({ rigid, p }, i) => {
-      const v0 = rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }
-      return { x: p.x + TIMESTEP * (v0.x + phi * (v[i]!.x - v0.x)), y: p.y + TIMESTEP * (v0.y + phi * (v[i]!.y - v0.y)) }
-    })
+    const free = now.pulls.map(({ rigid, p }, i) => freePoint(rigid, p, v[i]!, phi))
     // The rope where the free step leaves it, and halfway there. Legs turn
     // while the step runs: a pull along the old legs misses the centripetal
     // part of a swing, one along the end legs does work against it and
@@ -538,7 +748,7 @@ class RapierSimulator implements Simulator {
     const pulls = now.pulls.map((pull, i) => ({ ...pull, u: mid.pulls[i]!.u }))
     const k = ropeInvMass(
       pulls,
-      end.pulls.map((e) => e.u),
+      now.pulls.map((pull, i) => ({ ...pull, u: end.pulls[i]!.u })),
     )
     if (k <= 0) {
       rope.tension = rope.residual = rope.predicted = 0
@@ -553,8 +763,7 @@ class RapierSimulator implements Simulator {
     // The reading the correction will make in a step with no contacts: the
     // step ends with the ends moving along a chord, and the correction turns
     // them back onto the rope. It is the rate form of the same pull.
-    let lengthening = 0
-    end.pulls.forEach(({ u }, i) => (lengthening -= u.x * v[i]!.x + u.y * v[i]!.y))
+    const lengthening = lengtheningRate(end.pulls, v)
     rope.predicted = (lengthening - ropeAllowance(target)) / (TIMESTEP * k)
     rope.tension = Math.max(0, toTarget + rope.residual)
     if (rope.tension > 0) applyPulls(pulls, rope.tension, false)
@@ -591,8 +800,131 @@ class RapierSimulator implements Simulator {
     rope.slack = corrected === 0
   }
 
+  private substepFactor(): number {
+    const n = this.world.numSolverIterations
+    return (n + 1) / (2 * n)
+  }
+
+  /** Disks only spin: each is moved onto its axle before the rope reads it. */
+  private placeDisks(rope: RopeBinding): void {
+    for (const { at, disk } of rope.grips) disk.setTranslation(worldPoint(rope.via[at]!), true)
+  }
+
+  /**
+   * A rope over pulleys with mass (PHY-25): pullRope's prediction, once per
+   * piece. The pieces couple through the disks they share and any body two
+   * of them pull, so K is a matrix and the tensions solve together.
+   */
+  private pullPieces(rope: RopeBinding): void {
+    this.placeDisks(rope)
+    const g = this.world.gravity
+    const phi = this.substepFactor()
+    const frame = ropeFrame(rope)
+    const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
+    // Each disk's free turn over the step, the same way.
+    const spin = rope.grips.map(({ disk }) => {
+      const w0 = disk.angvel()
+      const w1 = w0 + TIMESTEP * disk.userTorque() * disk.effectiveWorldInvInertia()
+      return TIMESTEP * (w0 + phi * (w1 - w0))
+    })
+    const endFrame = ropeFrame(rope, free)
+    const midFrame = ropeFrame(
+      rope,
+      free.map((q, i) => ({ x: (q.x + frame.pulls[i]!.p.x) / 2, y: (q.y + frame.pulls[i]!.p.y) / 2 })),
+    )
+    const now = piecePulls(rope, frame)
+    const mid = piecePulls(rope, midFrame)
+    const end = piecePulls(rope, endFrame)
+    const nowLengths = pieceLengths(rope, frame.path, gripShares(rope, frame.path))
+    const endLengths = pieceLengths(rope, endFrame.path, gripShares(rope, endFrame.path, spin))
+    // J along the mid-step legs, J′ along the end-step ones, both at today's points.
+    const pulls = now.map((piece, l) => piece.map((pull, i) => ({ ...pull, u: mid[l]![i]!.u })))
+    const along = now.map((piece, k) => piece.map((pull, i) => ({ ...pull, u: end[k]![i]!.u })))
+    const K = along.map((a) => pulls.map((p) => ropeInvMass(p, a)))
+    const target = rope.pieces.map((piece, k) => Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length)))
+    const toTarget = rope.pieces.map(
+      (piece, k) => (endLengths[k]! - piece.length - target[k]!) / (phi * TIMESTEP * TIMESTEP),
+    )
+    const rates = now.map((piece, k) =>
+      lengtheningRate(
+        end[k]!,
+        piece.map(({ rigid, p }) => freePointVelocity(rigid, p, g)),
+      ),
+    )
+    const predicted = solveLinear(
+      K,
+      rates.map((rate, k) => (rate - ropeAllowance(target[k]!)) / TIMESTEP),
+    )
+    const tensions = tautTensions(
+      K,
+      toTarget,
+      rope.pieces.map((p) => p.residual),
+    )
+    rope.pieces.forEach((piece, k) => {
+      piece.predicted = predicted?.[k] ?? 0
+      piece.tension = tensions[k]!
+      if (piece.tension > 0) applyPulls(pulls[k]!, piece.tension, false)
+    })
+  }
+
+  /** correctRope, once per piece and solved together; first the shares catch up with the disks' turn. */
+  private correctPieces(rope: RopeBinding): void {
+    this.placeDisks(rope)
+    const frame = ropeFrame(rope)
+    const shares = gripShares(rope, frame.path)
+    rope.grips.forEach((grip, k) => {
+      grip.share = shares[k]!
+      grip.start = frame.path.arcs[grip.at]!.start
+      grip.rotation = grip.disk.rotation()
+    })
+    const now = piecePulls(rope, frame)
+    const lengths = pieceLengths(rope, frame.path, shares)
+    const K = now.map((a) => now.map((p) => ropeInvMass(p, a)))
+    const b = now.map((piece, k) => {
+      const v = piece.map(({ rigid, p }) => (rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }))
+      return (lengtheningRate(piece, v) - ropeAllowance(lengths[k]! - rope.pieces[k]!.length)) / TIMESTEP
+    })
+    const corrected = tautTensions(
+      K,
+      b,
+      rope.pieces.map((p) => p.tension),
+    )
+    rope.pieces.forEach((piece, k) => {
+      const impulse = (corrected[k]! - piece.tension) * TIMESTEP
+      if (impulse !== 0) applyPulls(now[k]!, impulse, true)
+      piece.tension = corrected[k]!
+      piece.residual = piece.tension > 0 ? piece.tension - piece.predicted : 0
+    })
+    rope.tension = Math.max(...corrected)
+    rope.slack = rope.tension === 0
+  }
+
+  /**
+   * After a carried rebuild the bodies sit where the run left them, not at
+   * the document poses: set each grip's share so the pieces before it hold
+   * their length again, as a rope that never slipped would.
+   */
+  private regrip(rope: RopeBinding): void {
+    this.placeDisks(rope)
+    const { path } = ropeFrame(rope)
+    rope.grips.forEach((grip, k) => {
+      grip.share = 0
+      grip.start = path.arcs[grip.at]!.start
+      grip.rotation = grip.disk.rotation()
+      const length = pieceLengths(rope, path, gripShares(rope, path))[k]!
+      grip.share = (rope.pieces[k]!.length - length) / path.arcs[grip.at]!.radius
+    })
+  }
+
+  /** T per leg: each piece's tension on every leg it spans. */
+  private segmentTensions(rope: RopeBinding): number[] {
+    if (!rope.grips.length) return [...rope.via.map(() => rope.tension), rope.tension]
+    const bounds = pieceBounds(rope)
+    return rope.pieces.flatMap((piece, k) => Array.from({ length: bounds[k + 1]! - bounds[k]! }, () => piece.tension))
+  }
+
   readConstraints(): ConstraintState[] {
-    return this.ropes.map((r) => ({ id: r.id, kind: 'rope', tension: r.tension, slack: r.slack }))
+    return this.ropes.map((r) => ({ id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r) }))
   }
 
   readStates(): Map<string, BodyState> {
@@ -721,12 +1053,16 @@ class RapierSimulator implements Simulator {
     // caller's error panel works and playback can resume once the doc is
     // fixed — no reboot, no double-free of an already-freed world.
     const next = this.buildWorld(scene)
+    // The disks are not bodies of the document, so `carry` cannot hold them:
+    // a carried rebuild takes each surviving pulley's spin from the live world.
+    const spins = new Map([...this.disks].map(([id, disk]) => [id, disk.angvel()]))
     this.world.free()
     this.world = next.world
     this.bodies = next.bodies
     this.colliders = next.colliders
     this.forces = next.forces
     this.ropes = next.ropes
+    this.disks = next.disks
     this._warnings.length = 0
     this._warnings.push(...next.warnings)
     this.particleMode = next.particleMode
@@ -750,6 +1086,11 @@ class RapierSimulator implements Simulator {
         rigid.lockRotations(true, true)
       }
     }
+    for (const [id, disk] of this.disks) {
+      const spin = spins.get(id)
+      if (spin !== undefined) disk.setAngvel(spin, true)
+    }
+    for (const rope of this.ropes) if (rope.grips.length) this.regrip(rope)
   }
 }
 
