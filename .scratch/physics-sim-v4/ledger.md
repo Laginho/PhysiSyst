@@ -13,3 +13,4 @@ Uma linha por ticket fechado, escrita no mesmo commit que marca `Stage: done`.
 | 2026-09-24 | PHY-25 | 3e8d786 |
 | 2026-09-24 | CLEAN-04 | bafb035 |
 | 2026-09-24 | PHY-26 | 790d937 |
+| 2026-09-24 | CLEAN-05 | a3a242b |

@@ -1,5 +1,5 @@
 # CLEAN-05: ADR-0004 e spec dizem que a mola usa a junta do Rapier; resíduos do PHY-26 fora dos Primary files
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -54,3 +54,22 @@ No test commit: the ticket names none, and no change is observable (CLEAN-04 pre
 5. `drawSpring`'s `lead` → `tail` (and the doc comment's "straight lead").
 
 **Gate:** `npm test` 29 files, 585/585; lint clean; typecheck clean; build OK (the pre-existing >500 kB chunk warning).
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Stage 3 review of `be40a37` (one commit) against the loop's base `sweatshop/2026-09-24-1853`, merged as `a3a242b`. Two-axis review (`code-review`: Standards and Spec sub-agents) over the whole diff; every finding is listed here. No `Proxy decided` lines on this ticket.
+
+**Test-first rule.** The ticket names no test; the single commit touches no test file (`git diff --stat`), and all seven files it touches are in Primary files, each inside its scope note. One name mismatch: criterion 4 and the Primary-files note say `pullPieces`, but the inline ternary lived in `correctPieces` (the `b` vector, one line); `pullPieces` never had one. Stage 2 disclosed it; the intent is the one line the ticket means. After the change the only `isDynamic() ? velocityAtPoint` ternary in the repo is `pointVelocity`'s own body. `correctRope` keeps its `continue` on fixed bodies, a different shape, outside the ticket.
+
+**Red-green proof.** Not applicable: no behaviour changes. Criterion 4 is proved by `npx vitest run src/sim src/scene`: 5 files, 193/193, same counts as before the change.
+
+- ✅ 1 — ADR-0004 `## Springs (PHY-26)`: `+u` on `a`, `−u` on `b` (`pushSpring`), pushed before the rope loop (step hook order checked), `springAt(s, (1 − φ)Δt)` with `substepFactor()`, `readSpring` without lead. The numbers match PHY-26 `## Comments` (0.0297 m of 0.1 m, 2.05%, 4 and 2 peaks of 5) and the tolerances in `acceptance.test.ts` (0.02·0.1 = 0.002, 2%, ≥ 5 peaks). The Consequences line about the joint is gone; its replacement ties the lead to the same `substepFactor` assumption.
+- ✅ 2 — `spec.md` line 125 only: our force, same hook, before the ropes, pointing at the ADR section.
+- ✅ 3 — `Spring` in `src/scene/index.ts`, `SpringState` in `src/sim/index.ts`. Tests keep `Extract<…>` (optional).
+- ✅ 4 — `freePoint` and `correctPieces` call `pointVelocity` (see the name note above). 193/193.
+- ✅ 5 — `drawSpring`: `lead` → `tail`, doc comment included.
+- ✅ 6 — gate rerun on the branch tip by stage 3: 29 files, 585/585; lint and typecheck clean; build ✓ (pre-existing chunk-size warning).
+
+**Standards axis.** No documented-standard violation. Two Duplicated Code spots removed, one Mysterious Name collision (`lead`) removed. Nothing new to park in a `CLEAN-*`.
