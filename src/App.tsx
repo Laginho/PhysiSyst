@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, Scene, Vec2 } from './scene'
-import { collectWarnings, serialize } from './scene'
+import type { AppliedForce, Body, ConstraintEnd, Scene, Spring, Vec2 } from './scene'
+import { bodyPointToWorld, collectWarnings, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
@@ -22,19 +22,25 @@ import type { BodyState, ContactPoint, Simulator } from './sim'
 import {
   addContact,
   addForce,
+  addSpring,
   duplicateBody,
   freshId,
   removeBodyAndDependents,
+  removeConstraint,
   removeContact,
   removeForce,
+  setSpringDx,
+  springDx,
   updateBody,
   updateContact,
   updateForce,
   updateG,
   updateParticleMode,
+  updateSpring,
   type BodyPatch,
 } from './editor/doc'
-import { bodyAtPoint, worldToLocal } from './editor/hitTest'
+import { bodyAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
+import { anchorSnap } from './editor/anchorSnap'
 import { resolveContactSnap } from './editor/contactSnap'
 import { pointInTrash, trashRect, type Rect } from './editor/trash'
 import {
@@ -52,13 +58,14 @@ import {
   alphaFromLocal,
   clampAlphaDeg,
   getHandles,
+  HANDLE_HIT_RADIUS_PX,
   HANDLE_SIZE_PX,
   minDimension,
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
 import { drawArrow, drawGrid, drawScene } from './render/draw'
-import { makeTransform, pixelsPerMeterForWidth, screenToWorld, type Camera, type ScreenTransform } from './render/transform'
+import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
@@ -89,6 +96,11 @@ import {
 
 const LOADING_MESSAGE_COUNT = 10
 const LOADING_MESSAGE_INTERVAL_MS = 1500
+/** Grab distance around a spring's anchor-to-anchor line, about its zigzag's half-width. */
+const SPRING_HIT_TOLERANCE_PX = 8
+
+/** The spring tool between palette click and second anchor: `a` is the first anchor, once clicked. */
+type SpringTool = { a: ConstraintEnd | null } | null
 
 /** Camera/transform/trash-zone for the canvas's current logical size. */
 function geometryFor(width: number, height: number): { camera: Camera; transform: ScreenTransform; trash: Rect } {
@@ -113,13 +125,32 @@ function paint(
   selectedId: string | null,
   states: ReadonlyMap<string, BodyState> | null,
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
-  opts?: { showGlobal: boolean; contacts?: readonly ContactPoint[]; draggingBody?: boolean },
+  opts?: {
+    showGlobal: boolean
+    contacts?: readonly ContactPoint[]
+    draggingBody?: boolean
+    selectedSpringId?: string | null
+    /** The spring tool's first anchor, until the second click. */
+    pendingAnchor?: ConstraintEnd | null
+  },
 ): void {
   const { camera, transform, trash } = geometry
   const view = applyStates(doc, states)
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId)
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId, opts?.selectedSpringId)
+
+  const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
+  if (pendingBody) {
+    const p = bodyPointToWorld(pendingBody, opts.pendingAnchor!.anchor)
+    const s = worldToScreen(transform, p.x, p.y)
+    ctx.save()
+    ctx.fillStyle = '#ff8c00'
+    ctx.beginPath()
+    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
 
   // Trash target: invisible except while a Body is actively being dragged.
   if (opts?.draggingBody) {
@@ -154,7 +185,18 @@ function paint(
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
       for (const a of initialVelocityArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-      for (const a of appliedArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform)
+      for (const a of appliedArrows(selView, camera.pixelsPerMeter)) {
+        drawArrow(ctx, a.from, a.vec, transform)
+        // The application point is draggable (PHY-27): a ring marks the grip.
+        const s = worldToScreen(transform, a.from.x, a.from.y)
+        ctx.save()
+        ctx.strokeStyle = '#d97742'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.arc(s.x, s.y, HANDLE_SIZE_PX / 2, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
     }
   }
 
@@ -385,6 +427,38 @@ function ContactsPanel({
   )
 }
 
+/**
+ * Inspector for the selected spring (PHY-27). `onEdit` refuses an edit the
+ * codec would reject (k ≤ 0, x₀ ≤ 0, c < 0) and returns false; the panel then
+ * shows one warning line until the next accepted edit. Keyed by spring id,
+ * so the warning never carries over to another spring.
+ */
+function SpringPanel({
+  spring,
+  dx,
+  onEdit,
+  onDelete,
+}: {
+  spring: Spring
+  dx: number
+  onEdit: (edit: (d: Scene) => Scene) => boolean
+  onDelete: () => void
+}) {
+  const [invalid, setInvalid] = useState(false)
+  const edit = (e: (d: Scene) => Scene) => setInvalid(!onEdit(e))
+  return (
+    <fieldset style={{ width: 220 }}>
+      <legend>{spring.id}</legend>
+      <NumField label={t('spring.k')} value={spring.k} onChange={(v) => edit((d) => updateSpring(d, spring.id, { k: v }))} />
+      <NumField label={t('spring.x0')} value={spring.x0} step={0.01} onChange={(v) => edit((d) => updateSpring(d, spring.id, { x0: v }))} />
+      <NumField label={t('spring.dx')} value={dx} step={0.01} onChange={(v) => edit((d) => setSpringDx(d, spring.id, v))} />
+      <NumField label={t('spring.c')} value={spring.c ?? 0} step={0.1} onChange={(v) => edit((d) => updateSpring(d, spring.id, { c: v }))} />
+      {invalid && <div style={{ fontSize: 12, color: '#b00' }}>{t('spring.invalid')}</div>}
+      <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
+    </fieldset>
+  )
+}
+
 function getAppStorage(): Storage {
   try {
     if (typeof window !== 'undefined' && window.localStorage) return window.localStorage as unknown as Storage
@@ -462,6 +536,16 @@ export default function App() {
     return scene
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // A spring selection excludes a body selection: every place that selects
+  // one clears the other.
+  const [selectedSpringId, setSelectedSpringId] = useState<string | null>(null)
+  const [springTool, setSpringToolState] = useState<SpringTool>(null)
+  const [toolError, setToolError] = useState<string | null>(null)
+  const springToolRef = useRef<SpringTool>(springTool)
+  function setSpringTool(next: SpringTool) {
+    springToolRef.current = next
+    setSpringToolState(next)
+  }
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
@@ -483,6 +567,7 @@ export default function App() {
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
+  const [springReadout, setSpringReadout] = useState<{ force: number; dx: number } | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting')
   const [messageTick, setMessageTick] = useState(0)
@@ -502,6 +587,7 @@ export default function App() {
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
   const selectedIdRef = useRef<string | null>(selectedId)
+  const selectedSpringIdRef = useRef<string | null>(selectedSpringId)
   const showGlobalRef = useRef(showGlobal)
   const historyRef = useRef<History<Scene>>(history)
   const showShortcutsRef = useRef(showShortcuts)
@@ -532,6 +618,7 @@ export default function App() {
       saveCurrentSceneId(storage, id)
       setDoc(scene)
       setSelectedId(null)
+      setSelectedSpringId(null)
       setImportError(null)
       // Switching/importing/creating/deleting a scene starts a fresh document
       // identity — undo history from the PREVIOUS scene makes no sense here.
@@ -557,6 +644,12 @@ export default function App() {
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
+    const springId = selectedSpringIdRef.current
+    if (springId) {
+      commitDoc((d) => removeConstraint(d, springId))
+      setSelectedSpringId(null)
+      return
+    }
     const id = selectedIdRef.current
     if (!id) return
     commitDoc((d) => removeBodyAndDependents(d, id))
@@ -569,6 +662,7 @@ export default function App() {
     | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null; startDoc: Scene }
     | { kind: 'rotate'; id: string; startAngle: number; startRotation: number; startDoc: Scene }
     | { kind: 'resize' | 'alpha'; id: string; startDoc: Scene }
+    | { kind: 'forceAnchor'; id: string; forceId: string; startDoc: Scene }
     | null
   >(null)
 
@@ -579,6 +673,8 @@ export default function App() {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
         draggingBody: dragRef.current?.kind === 'move',
+        selectedSpringId: selectedSpringIdRef.current,
+        pendingAnchor: springToolRef.current?.a,
       })
   }, [size.width, size.height])
 
@@ -667,6 +763,11 @@ export default function App() {
     repaint()
   }, [doc, selectedId, showGlobal, repaint, fail])
 
+  useEffect(() => {
+    selectedSpringIdRef.current = selectedSpringId
+    repaint()
+  }, [selectedSpringId, springTool, repaint])
+
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
   useEffect(() => {
@@ -686,6 +787,13 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => {
       setStepsTick(playbackRef.current.stepsTaken)
+      const springSel = selectedSpringIdRef.current
+      if (springSel) {
+        // A world awaiting its rebuild still holds the old springs: no reading.
+        const sim = pendingRebuildRef.current ? null : simRef.current
+        const s = sim?.readConstraints().find((c) => c.id === springSel)
+        setSpringReadout(s?.kind === 'spring' ? { force: s.force.a, dx: s.dx } : null)
+      }
       const sel = selectedIdRef.current
       if (!sel) {
         setReadout(null)
@@ -924,7 +1032,13 @@ export default function App() {
           break
         case 'deselectOrClose':
           if (showShortcutsRef.current) setShowShortcuts(false)
-          else setSelectedId(null)
+          else if (springToolRef.current) {
+            setSpringTool(null)
+            setToolError(null)
+          } else {
+            setSelectedId(null)
+            setSelectedSpringId(null)
+          }
           break
         case 'toggleHelp':
           setShowShortcuts((v) => !v)
@@ -969,8 +1083,38 @@ export default function App() {
     return { sx: e.clientX - r.left, sy: e.clientY - r.top }
   }
 
+  /**
+   * Spring tool click: anchor A, then anchor B, each through Anchor snap.
+   * A click off every body, or on A's own body, is ignored.
+   */
+  function onSpringToolClick(w: Vec2) {
+    const tool = springToolRef.current
+    const hit = bodyAtPoint(liveBodies(), w)
+    if (!tool || !hit) return
+    const end: ConstraintEnd = { bodyId: hit.id, anchor: anchorSnap(hit, w, transform) }
+    if (!tool.a) {
+      setSpringTool({ a: end })
+      return
+    }
+    if (tool.a.bodyId === hit.id) return
+    const res = addSpring(docRef.current, tool.a, end)
+    if (res.error) {
+      setToolError(res.error)
+      return
+    }
+    commitDoc(res.doc)
+    setSpringTool(null)
+    setToolError(null)
+    setSelectedId(null)
+    setSelectedSpringId(res.newId)
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     const w = eventToWorld(e)
+    if (springToolRef.current) {
+      onSpringToolClick(w)
+      return
+    }
     const { sx, sy } = eventToScreen(e)
     const bodies = liveBodies()
     const selected = bodies.find((b) => b.id === selectedId)
@@ -993,17 +1137,34 @@ export default function App() {
         }
         return
       }
+      // Then the application points of its forces, which drag with Anchor snap.
+      const grabbed = docRef.current.forces.find((f) => {
+        if (f.bodyId !== selected.id) return false
+        const p = bodyPointToWorld(selected, f.anchor)
+        const s = worldToScreen(transform, p.x, p.y)
+        return Math.hypot(s.x - sx, s.y - sy) <= HANDLE_HIT_RADIUS_PX
+      })
+      if (grabbed) {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        dragRef.current = { kind: 'forceAnchor', id: selected.id, forceId: grabbed.id, startDoc: docRef.current }
+        return
+      }
     }
 
+    // A body under the pointer wins over a spring end anchored on it; springs
+    // are picked where they cross open space.
     const hit = bodyAtPoint(bodies, w)
     if (hit) {
       setSelectedId(hit.id)
+      setSelectedSpringId(null)
       dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, startDoc: docRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
-    } else {
-      setSelectedId(null)
+      return
     }
+    const spring = springAtPoint(applyStates(docRef.current, statesRef.current), w, SPRING_HIT_TOLERANCE_PX / camera.pixelsPerMeter)
+    setSelectedId(null)
+    setSelectedSpringId(spring?.id ?? null)
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1032,6 +1193,11 @@ export default function App() {
     if (drag.kind === 'rotate') {
       const angle = Math.atan2(raw.y - body.position.y, raw.x - body.position.x)
       setDoc((d) => updateBody(d, drag.id, { rotation: drag.startRotation + angle - drag.startAngle }))
+      return
+    }
+
+    if (drag.kind === 'forceAnchor') {
+      setDoc((d) => updateForce(d, drag.forceId, { anchor: anchorSnap(body, raw, transform) }))
       return
     }
 
@@ -1100,9 +1266,20 @@ export default function App() {
           : { ...common, shape, base: 2, alpha: 30 }
     commitDoc({ ...doc, bodies: [...doc.bodies, body] })
     setSelectedId(id)
+    setSelectedSpringId(null)
+  }
+
+  /** Refuses a spring edit that would not survive the codec (PHY-27, proxy decision on criterion 3). */
+  function commitSpringEdit(edit: (d: Scene) => Scene): boolean {
+    const next = edit(docRef.current)
+    const s = next.constraints?.find((c) => c.id === selectedSpringId)
+    if (s?.kind !== 'spring' || !(s.k > 0 && s.x0 > 0 && (s.c ?? 0) >= 0)) return false
+    commitDoc(next)
+    return true
   }
 
   const selected = selectedId ? (doc.bodies.find((b) => b.id === selectedId) ?? null) : null
+  const selectedSpring = doc.constraints?.find((c): c is Spring => c.id === selectedSpringId && c.kind === 'spring') ?? null
   const warnings = collectWarnings(doc)
 
   return (
@@ -1176,7 +1353,7 @@ export default function App() {
                 border: '1px solid #999',
                 background: '#fafbfc',
                 touchAction: 'none',
-                cursor: selected ? 'grab' : 'default',
+                cursor: springTool ? 'crosshair' : selected ? 'grab' : 'default',
               }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
@@ -1303,7 +1480,23 @@ export default function App() {
             <button onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
             <button onClick={() => addShape('circle')}>{t('palette.circle')}</button>
             <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
+            <button
+              onClick={() => {
+                setSpringTool({ a: null })
+                setToolError(null)
+                setSelectedId(null)
+                setSelectedSpringId(null)
+              }}
+            >
+              {t('palette.spring')}
+            </button>
           </div>
+          {springTool && (
+            <div style={{ fontSize: 12, color: '#555' }}>
+              {t(springTool.a ? 'tool.springSecond' : 'tool.springFirst')}
+              {toolError && <span style={{ color: '#b00' }}> — {t(toolError)}</span>}
+            </div>
+          )}
         </div>
         {/* The row sets the panel height; excess content scrolls independently.
             The width is fixed because the panel's content width changes with the
@@ -1503,7 +1696,13 @@ export default function App() {
             </fieldset>
           )}
           <fieldset style={{ width: 220 }}>
-            <legend>{selected ? t('readout.title', { id: selected.id }) : t('readout.titleEmpty')}</legend>
+            <legend>
+              {selected
+                ? t('readout.title', { id: selected.id })
+                : selectedSpring
+                  ? t('readout.title', { id: selectedSpring.id })
+                  : t('readout.titleEmpty')}
+            </legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               <div>{t('readout.steps')}: {stepsTick}</div>
               <div>{t('readout.speed')}: {playback.speed.toFixed(2)}×</div>
@@ -1530,7 +1729,18 @@ export default function App() {
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {!selected && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
+              {selectedSpring && springReadout && (
+                <>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {t('readout.springForce')}: {springReadout.force.toFixed(2)} N
+                  </div>
+                  <div>
+                    {t('readout.springDx')}: {springReadout.dx.toFixed(3)} m
+                  </div>
+                </>
+              )}
+              {selectedSpring && !springReadout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
+              {!selected && !selectedSpring && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
           <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
@@ -1557,6 +1767,15 @@ export default function App() {
                 onRemove={(id) => commitDoc((d) => removeForce(d, id))}
               />
             </>
+          )}
+          {selectedSpring && (
+            <SpringPanel
+              key={selectedSpring.id}
+              spring={selectedSpring}
+              dx={springDx(doc, selectedSpring)}
+              onEdit={commitSpringEdit}
+              onDelete={deleteSelected}
+            />
           )}
           <ContactsPanel
             doc={doc}
@@ -1589,6 +1808,7 @@ export default function App() {
                   const { doc: next, newId } = duplicateBody(doc, selected.id)
                   commitDoc(next)
                   if (newId) setSelectedId(newId)
+                  setSelectedSpringId(null)
                 }}
               >
                 {t('panel.duplicate')}
