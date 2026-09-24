@@ -1,5 +1,5 @@
 # PHY-25: Polia com massa (Realism option)
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-24
 Review: agent
@@ -60,3 +60,21 @@ Red-green: at `bd2f038` (tests only) 10 red — codec rejects any `mass`, readou
 Gate (`npm test && npm run lint && npm run typecheck && npm run build`): 29 files, 549 tests passed; lint and typecheck clean; build ✓ (the existing >500 kB chunk warning).
 
 Outside the Primary files, left for stage 3: `src/scene/index.ts:18` still says "Until PHY-25 they also reject a pulley mass" (stale now), and ADR-0004 has no section on the pieces mechanism.
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Findings (review de `bd2f038`, `82c1395`, `7af7c46`, `0c8ee27`, `672abf9` contra `183c6d3`, diff completo lido; base do loop `sweatshop/2026-09-24-1853`):
+
+- Critérios 1–7: ✅. Codec aceita `mass ≥ 0`, rejeita negativa e não-número, ausência sobrevive ao reparse (1). Atwood com `M = 2`: `a`, `T₁`, `T₂` por segmento dentro de 3% (2). Polia móvel com massa, `m₂ = 2` pela decisão do proxy, fórmula fechada intacta (3). `mass: 0` e ausente bit a bit iguais em 90 passos, estados e leitura; o caminho escalar refatorado (`ropeInvMass` recebe `along` como pulls, `freePoint`, `lengtheningRate`) faz a mesma aritmética na mesma ordem, e as suítes do PHY-23/24 passam no gate (4). Carry leva o giro do disco e `regrip` reparte os arcos; o teste segura `T` por segmento 60 passos (5). Nove mutações registradas, todas refeitas pelo review (6). Gate verde (7).
+- Test-first: `bd2f038` só toca testes e o ticket; `82c1395` e `672abf9` só código e ticket. `7af7c46` e `0c8ee27` são commits só de teste (emenda do proxy e reforço mutate-verify), nenhum commit de código toca teste. Diff só em Primary files.
+- Proxy decided: critério 3, `m₂` 1 → 2 — com `m₂ = 1` o contrapeso passava pelo eixo da polia fixa no passo 89, dentro da janela. Fórmula e tolerância intactas; o review confere: `a_load` e `T` batem com as formas fechadas desde o passo 0 nas duas massas.
+- Spec: `tension` escalar = maior pedaço e `slack` só quando todos afrouxam — o spec não define o escalar com polia de massa; documentado em `RopeState`, fica como está. O ângulo do disco não sai em `readStates` (spec: "estado angular próprio") — não é critério, é assunto do editor/desenho (PHY-28/29). Estrutura de `gripShares` (`wrapAngle` nos dois deltas, teto |Δθ| < π por passo ≈ 47 m/s em R = 0,25), `pieceLengths` (pernas, arcos internos, quotas nas pontas), `segmentTensions` (soma `via.length + 1`) e o colisor de peso no Corpo dinâmico (massa pontual no eixo por eixos paralelos) conferidos índice a índice.
+- Standards: ADR-0004 ("one mechanism", "no collider", "single iteration") não descreve os pedaços, `src/scene/index.ts:18-19` continua a dizer que a massa de polia é rejeitada, `correctPieces` sem o marcador `ponytail:` da projeção, `userForce` dos discos nunca limpa (sem efeito, translação travada), termos `grip`/`piece`/`share` fora do `CONTEXT.md`. Nenhum é critério deste ticket e três estão fora dos Primary files → `CLEAN-04`. Duplicação `pullPieces`/`pullRope` e `correctPieces`/`correctRope` é o preço do critério 4 (caminho escalar intocado); o ADR deve dizê-lo (CLEAN-04, critério 1).
+
+Red-green: as nove mutações da tabela da etapa 2 refeitas uma a uma pelo review sobre `npx vitest run src/scene/codec.test.ts src/sim`, cada uma revertida antes da seguinte (árvore limpa conferida): (1) ignora `mass` — 3 failed, `expected 0.3270029330253601 to be less than or equal to 0.049049999999999996`; (2) massa 0 constrói disco — 2 failed, os dois testes de identidade; (3) massa não vai ao Corpo — 1 failed, `1.5182154432364872`; (4) torque não limpo — 3 failed, `0.3294128084182739`; (5) segmentos leem só o máximo — 3 failed, `1.6360066197394083 … 0.6867`; (6) carry perde o giro — 1 failed, `0.13645679712295533`; (7) carry sem `regrip` — 1 failed, `24.525000000000002 … 0.73575`; (8) codec rejeita 0 — 3 failed, `SceneParseError: pulleys[0]: mass must be a non-negative finite number`; (9) codec aceita negativa — 1 failed, `expected function to throw an error, but it didn't`. Todas batem com a tabela do ticket. Sem mutação, 156/156.
+
+Gate em `672abf9` (ponta da sessão, rebase sem efeito): 29 arquivos, 549/549 testes, lint, typecheck, build (aviso de chunk > 500 kB, pré-existente).
+
+Merge: `3e8d786` em `sweatshop/2026-09-24-1853`.
