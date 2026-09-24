@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSimulator, TIMESTEP } from './index'
 import { parse } from '../scene'
 import type { Scene } from '../scene'
+import type { ConstraintState, RopeState } from './index'
 import { groundBody } from '../persistence'
 
 const G = 9.81
@@ -383,7 +384,7 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     return PULLEY_Y - (ya + HALF) + Math.PI * R + (PULLEY_Y - (yb + HALF))
   }
 
-  const tension = (sim: Awaited<ReturnType<typeof createSimulator>>) => sim.readConstraints().find((c) => c.id === 'corda')!
+  const tension = (sim: Awaited<ReturnType<typeof createSimulator>>) => sim.readConstraints().find((c) => c.id === 'corda') as RopeState
 
   it.each([
     { m1: 3, m2: 2 },
@@ -512,7 +513,7 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
 describe('acceptance: general rope (PHY-24)', () => {
   type Sim = Awaited<ReturnType<typeof createSimulator>>
   const load = (scene: Scene): Promise<Sim> => createSimulator(parse(scene))
-  const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda')!
+  const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda') as RopeState
   const CM = { x: 0, y: 0 }
 
   function pendulumScene(bob: { x: number; y: number }, vx = 0): Scene {
@@ -746,7 +747,7 @@ describe('acceptance: general rope (PHY-24)', () => {
 describe('acceptance: pulley with mass (PHY-25)', () => {
   type Sim = Awaited<ReturnType<typeof createSimulator>>
   const load = (scene: Scene): Promise<Sim> => createSimulator(parse(scene))
-  const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda')!
+  const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda') as RopeState
   const R = 0.25
   const TOP = { x: 0, y: 0.2 }
   const CM = { x: 0, y: 0 }
@@ -893,6 +894,191 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
       expect(Math.abs(t1! - t1Closed)).toBeLessThanOrEqual(0.03 * t1Closed)
       expect(Math.abs(t2! - t2Closed)).toBeLessThanOrEqual(0.03 * t2Closed)
     }
+  })
+})
+
+/**
+ * PHY-26: the ideal spring. Scenes go through the codec first. Closed forms
+ * written before running; every spring end sits on the line through the
+ * bodies' centers, so nothing spins.
+ */
+describe('acceptance: ideal spring (PHY-26)', () => {
+  type Sim = Awaited<ReturnType<typeof createSimulator>>
+  type SpringState = Extract<ConstraintState, { kind: 'spring' }>
+  const load = (scene: Scene): Promise<Sim> => createSimulator(parse(scene))
+  const spring = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'mola') as SpringState
+
+  // Frictionless floor (top at y = 0), a wall whose right face is x = −1.9,
+  // a 0.4 m block resting on the floor. The spring runs from the wall's face
+  // to the block's left face at y = 0.2, so x = blockX − 0.2 + 1.9 and the
+  // block's equilibrium is at blockX = X0 − 1.7.
+  const X0 = 1
+  const X_EQ = X0 - 1.7
+  function horizontalScene(m: number, k: number, blockX: number, c?: number): Scene {
+    return {
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 10, height: 1, id: 'chao', fixed: true, mass: 0, position: { x: 0, y: -0.5 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.2, height: 1, id: 'parede', fixed: true, mass: 0, position: { x: -2, y: 0.5 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'bloco', fixed: false, mass: m, position: { x: blockX, y: 0.2 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [
+        {
+          id: 'mola',
+          kind: 'spring',
+          a: { bodyId: 'parede', anchor: { x: 0.1, y: -0.3 } },
+          b: { bodyId: 'bloco', anchor: { x: -0.2, y: 0 } },
+          k,
+          x0: X0,
+          ...(c === undefined ? {} : { c }),
+        },
+      ],
+    }
+  }
+
+  /** Samples of `read` at every step, index i at t = i·Δt. */
+  function run(sim: Sim, steps: number, read: () => number): number[] {
+    const out = [read()]
+    for (let i = 0; i < steps; i++) {
+      sim.step()
+      out.push(read())
+    }
+    return out
+  }
+
+  /** Times the samples cross `level` going up, interpolated inside the tick. */
+  function upCrossings(samples: readonly number[], level: number): number[] {
+    const out: number[] = []
+    for (let i = 1; i < samples.length; i++) {
+      const p = samples[i - 1]! - level
+      const q = samples[i]! - level
+      if (p < 0 && q >= 0) out.push((i - 1 + -p / (q - p)) * TIMESTEP)
+    }
+    return out
+  }
+
+  it.each([
+    { m: 1, k: 40 },
+    { m: 2, k: 50 },
+  ])('horizontal m=$m k=$k, frictionless, released A = 0.1 m out: period 2π√(m/k) and amplitude after 5 periods within 2%', async ({ m, k }) => {
+    const A = 0.1
+    const period = 2 * Math.PI * Math.sqrt(m / k)
+    const sim = await load(horizontalScene(m, k, X_EQ + A))
+    const x = run(sim, Math.ceil((6 * period) / TIMESTEP), () => sim.readStates().get('bloco')!.position.x)
+    const up = upCrossings(x, X_EQ)
+    expect(up.length).toBeGreaterThanOrEqual(6)
+    const measured = (up[5]! - up[0]!) / 5
+    expect(Math.abs(measured - period)).toBeLessThanOrEqual(0.02 * period)
+    // The 5th full period after release, peak to peak.
+    const fifth = x.slice(Math.floor((4 * period) / TIMESTEP), Math.ceil((5 * period) / TIMESTEP) + 1)
+    const amplitude = (Math.max(...fifth) - Math.min(...fifth)) / 2
+    expect(Math.abs(amplitude - A)).toBeLessThanOrEqual(0.02 * A)
+  })
+
+  it.each([
+    { m: 1, k: 40 },
+    { m: 0.5, k: 20 },
+  ])('vertical m=$m k=$k from the ceiling, released at natural length: equilibrium mg/k below it and period 2π√(m/k) within 2%', async ({ m, k }) => {
+    const x0 = 1
+    const period = 2 * Math.PI * Math.sqrt(m / k)
+    const drop = (m * G) / k
+    // Ceiling bottom at y = 5.75; the block's top face hangs x below it.
+    const sim = await load({
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'bloco', fixed: false, mass: m, position: { x: 0, y: 5.75 - x0 - 0.2 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [
+        { id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: -0.25 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0.2 } }, k, x0 },
+      ],
+    })
+    const stretch = run(sim, Math.ceil((4 * period) / TIMESTEP), () => 5.75 - (sim.readStates().get('bloco')!.position.y + 0.2) - x0)
+    const whole = stretch.slice(0, Math.round((3 * period) / TIMESTEP) + 1)
+    const equilibrium = (Math.max(...whole) + Math.min(...whole)) / 2
+    expect(Math.abs(equilibrium - drop)).toBeLessThanOrEqual(0.02 * drop)
+    const up = upCrossings(stretch, drop)
+    expect(up.length).toBeGreaterThanOrEqual(4)
+    const measured = (up[3]! - up[0]!) / 3
+    expect(Math.abs(measured - period)).toBeLessThanOrEqual(0.02 * period)
+  })
+
+  it.each([
+    { m: 1, k: 40, c: 0.8 },
+    { m: 2, k: 50, c: 2 },
+  ])('damped m=$m k=$k c=$c: successive peaks follow A·e^(−ct/2m) within 5%', async ({ m, k, c }) => {
+    const A = 0.1
+    const damped = 2 * Math.PI / Math.sqrt(k / m - (c / (2 * m)) ** 2)
+    const sim = await load(horizontalScene(m, k, X_EQ + A, c))
+    const d = run(sim, Math.ceil((5.5 * damped) / TIMESTEP), () => sim.readStates().get('bloco')!.position.x - X_EQ)
+    const peaks: Array<{ t: number; value: number }> = []
+    for (let i = 1; i < d.length - 1; i++) {
+      if (d[i]! > 0 && d[i]! >= d[i - 1]! && d[i]! > d[i + 1]!) peaks.push({ t: i * TIMESTEP, value: d[i]! })
+    }
+    expect(peaks.length).toBeGreaterThanOrEqual(5)
+    for (const { t, value } of peaks) {
+      const envelope = A * Math.exp((-c * t) / (2 * m))
+      expect(Math.abs(value - envelope)).toBeLessThanOrEqual(0.05 * envelope)
+    }
+  })
+
+  it('the readout gives Δx signed (+ stretched), and F_el = kΔx + c·ẋ at each end', async () => {
+    const m = 1
+    const k = 40
+    const c = 0.8
+    const sim = await load(horizontalScene(m, k, X_EQ - 0.1, c))
+    // Compressed at rest: Δx = −0.1 before any step, F_el pushes the ends apart.
+    expect(spring(sim)).toStrictEqual({ id: 'mola', kind: 'spring', dx: expect.closeTo(-0.1, 9), force: { a: expect.closeTo(-4, 9), b: expect.closeTo(-4, 9) } })
+    let stretched = false
+    for (let i = 0; i < 90; i++) {
+      sim.step()
+      const s = sim.readStates().get('bloco')!
+      // The wall end is fixed at (−1.9, 0.2); the block end is the block's left face.
+      const bx = s.position.x - 0.2 * Math.cos(s.rotation)
+      const by = s.position.y - 0.2 * Math.sin(s.rotation)
+      const x = Math.hypot(bx + 1.9, by - 0.2)
+      const ux = (bx + 1.9) / x
+      const uy = (by - 0.2) / x
+      // The block end's velocity along the spring: v + ω × r, r = (bx, by) − center.
+      const rate = (s.linvel.x - s.angvel * (by - s.position.y)) * ux + (s.linvel.y + s.angvel * (bx - s.position.x)) * uy
+      const force = k * (x - X0) + c * rate
+      const read = spring(sim)
+      expect(read.dx).toBeCloseTo(x - X0, 9)
+      expect(read.force.a).toBeCloseTo(force, 6)
+      expect(read.force.b).toBeCloseTo(force, 6)
+      if (read.dx > 0.05) stretched = true
+    }
+    expect(stretched).toBe(true)
+  })
+
+  it('the readout is the force the block feels: m·Δv/Δt = −F_el (mean over the step) within 2%', async () => {
+    const m = 1
+    const sim = await load(horizontalScene(m, 40, X_EQ + 0.1))
+    const f0 = spring(sim).force.b
+    const v0 = sim.readStates().get('bloco')!.linvel.x
+    sim.step()
+    const f1 = spring(sim).force.b
+    const v1 = sim.readStates().get('bloco')!.linvel.x
+    const felt = (m * (v1 - v0)) / TIMESTEP
+    const mean = -(f0 + f1) / 2
+    expect(Math.abs(felt - mean)).toBeLessThanOrEqual(0.02 * Math.abs(mean))
+  })
+
+  it('a rope and a spring read out side by side, in document order', async () => {
+    const scene = horizontalScene(1, 40, X_EQ)
+    scene.constraints!.unshift({ id: 'corda', kind: 'rope', a: { bodyId: 'parede', anchor: { x: 0.1, y: 0.3 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0.2 } }, via: [] })
+    const sim = await load(scene)
+    sim.step()
+    expect(sim.readConstraints().map((c) => [c.id, c.kind])).toStrictEqual([
+      ['corda', 'rope'],
+      ['mola', 'spring'],
+    ])
   })
 })
 

@@ -745,3 +745,78 @@ describe('PHY-23: pulleys and rope constraints', () => {
     expect(serialize(parse(doc))).toStrictEqual(doc)
   })
 })
+
+// PHY-26: the ideal spring. A block hanging from the ceiling on one spring.
+function springJson(): Record<string, unknown> {
+  return {
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [
+      { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+      { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: 1, position: { x: 0, y: 4 }, rotation: 0 },
+    ],
+    forces: [],
+    contacts: [],
+    constraints: [
+      { id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: -0.25 } }, b: { bodyId: 'a', anchor: { x: 0, y: 0.2 } }, k: 40, x0: 1.5 },
+    ],
+  }
+}
+
+describe('PHY-26: spring constraints', () => {
+  it('round-trips a spring byte-stably in both directions, c absent stays absent', () => {
+    const json = springJson()
+    expect(serialize(parse(json))).toStrictEqual(json)
+    const scene = parse(json)
+    expect(parse(serialize(scene))).toStrictEqual(scene)
+    expect(scene.constraints).toStrictEqual([
+      { id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: -0.25 } }, b: { bodyId: 'a', anchor: { x: 0, y: 0.2 } }, k: 40, x0: 1.5 },
+    ])
+  })
+
+  it.each([0, 0.8])('round-trips a spring with c = %s', (c) => {
+    const doc = springJson()
+    rope0(doc)['c'] = c
+    expect(serialize(parse(doc))).toStrictEqual(doc)
+    expect(parse(doc).constraints![0]).toMatchObject({ kind: 'spring', c })
+  })
+
+  it('a spring and a rope share the constraints list', () => {
+    const doc = atwoodJson()
+    ;(doc['constraints'] as Doc[]).push({ id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 1, y: 0 } }, b: { bodyId: 'b', anchor: { x: 0, y: 0 } }, k: 10, x0: 0.5, c: 0.1 })
+    expect(serialize(parse(doc))).toStrictEqual(doc)
+  })
+
+  const rejections: Array<{ name: string; mutate: (d: Doc) => void; expected: string | RegExp }> = [
+    { name: 'k zero', mutate: (d) => void (rope0(d)['k'] = 0), expected: 'constraints[0]: k must be a positive finite number' },
+    { name: 'k negative', mutate: (d) => void (rope0(d)['k'] = -5), expected: 'constraints[0]: k must be a positive finite number' },
+    { name: 'k missing', mutate: (d) => void delete rope0(d)['k'], expected: 'constraints[0]: k must be a positive finite number' },
+    { name: 'x0 zero', mutate: (d) => void (rope0(d)['x0'] = 0), expected: 'constraints[0]: x0 must be a positive finite number' },
+    { name: 'x0 negative', mutate: (d) => void (rope0(d)['x0'] = -1), expected: 'constraints[0]: x0 must be a positive finite number' },
+    { name: 'c negative', mutate: (d) => void (rope0(d)['c'] = -0.1), expected: 'constraints[0]: c must be a non-negative finite number' },
+    { name: 'c not a number', mutate: (d) => void (rope0(d)['c'] = '1'), expected: 'constraints[0]: c must be a non-negative finite number' },
+    {
+      name: 'end a on a missing body',
+      mutate: (d) => void ((rope0(d)['a'] as Doc)['bodyId'] = 'ghost'),
+      expected: "constraints[0]: a references missing body 'ghost'",
+    },
+    {
+      name: 'end b on a missing body',
+      mutate: (d) => void ((rope0(d)['b'] as Doc)['bodyId'] = 'ghost'),
+      expected: "constraints[0]: b references missing body 'ghost'",
+    },
+    {
+      name: 'both ends on one body',
+      mutate: (d) => void ((rope0(d)['b'] as Doc)['bodyId'] = 'teto'),
+      expected: 'constraints[0]: a spring must join two different bodies',
+    },
+    { name: 'a rope key on a spring', mutate: (d) => void (rope0(d)['via'] = []), expected: "unknown key 'via' in constraints[0]" },
+  ]
+
+  it.each(rejections)('rejects: $name', ({ mutate, expected }) => {
+    const doc = springJson()
+    mutate(doc)
+    expect(() => parse(doc)).toThrow(SceneError)
+    expect(() => parse(doc)).toThrow(expected)
+  })
+})
