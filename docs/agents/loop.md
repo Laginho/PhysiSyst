@@ -14,6 +14,7 @@ The ticket is the contract, the commit is the handoff.
 | planner | fable / high | "let's build a new feature" | stage 1 (`grill-me` → `to-spec` → `to-tickets`) |
 | executor | opus 5.5 / high | `PHY-NN` | stage 2 (`tdd`) |
 | reviewer | fable 5.1 / high | `PHY-NN` | stage 3 (`code-review`) |
+| proxy | fable 5.1 / high | spawned by a stage, never opened by hand | none — answers a stage's question for me, or escalates it |
 | debug | opus / high | a symptom | none — `/diagnosing-bugs`, files tickets |
 
 Agent cards in `.claude/agents/` pin the model and effort for each — pick the
