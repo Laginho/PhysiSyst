@@ -1071,15 +1071,49 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     expect(Math.abs(felt - mean)).toBeLessThanOrEqual(0.02 * Math.abs(mean))
   })
 
-  it('a rope and a spring read out side by side, in document order', async () => {
+  it('a spring and a rope read out side by side, in document order', async () => {
+    // Spring first: the simulator builds ropes before springs, so this order pins the sort.
     const scene = horizontalScene(1, 40, X_EQ)
-    scene.constraints!.unshift({ id: 'corda', kind: 'rope', a: { bodyId: 'parede', anchor: { x: 0.1, y: 0.3 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0.2 } }, via: [] })
+    scene.constraints!.push({ id: 'corda', kind: 'rope', a: { bodyId: 'parede', anchor: { x: 0.1, y: 0.3 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0.2 } }, via: [] })
     const sim = await load(scene)
     sim.step()
     expect(sim.readConstraints().map((c) => [c.id, c.kind])).toStrictEqual([
-      ['corda', 'rope'],
       ['mola', 'spring'],
+      ['corda', 'rope'],
     ])
+  })
+
+  it('two free bodies, g = 0: period 2π√(μ/k) with μ = m₁m₂/(m₁+m₂) within 2%, the center of mass stays put', async () => {
+    const m1 = 1
+    const m2 = 2
+    const k = 30
+    const x0 = 1
+    const period = 2 * Math.PI * Math.sqrt((m1 * m2) / (m1 + m2) / k)
+    // Centers 1.6 m apart, faces 1.2 m: stretched 0.2 m. COM at x = (0·1 + 1.6·2)/3.
+    const com = (1.6 * m2) / (m1 + m2)
+    const sim = await load({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: m1, position: { x: 0, y: 0 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'b', fixed: false, mass: m2, position: { x: 1.6, y: 0 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [{ id: 'mola', kind: 'spring', a: { bodyId: 'a', anchor: { x: 0.2, y: 0 } }, b: { bodyId: 'b', anchor: { x: -0.2, y: 0 } }, k, x0 }],
+    })
+    let worstCom = 0
+    const gap = run(sim, Math.ceil((4 * period) / TIMESTEP), () => {
+      const s = sim.readStates()
+      const xa = s.get('a')!.position.x
+      const xb = s.get('b')!.position.x
+      worstCom = Math.max(worstCom, Math.abs((m1 * xa + m2 * xb) / (m1 + m2) - com))
+      return xb - xa - 0.4 - x0
+    })
+    const up = upCrossings(gap, 0)
+    expect(up.length).toBeGreaterThanOrEqual(4)
+    expect(Math.abs((up[3]! - up[0]!) / 3 - period)).toBeLessThanOrEqual(0.02 * period)
+    expect(worstCom).toBeLessThan(1e-4)
   })
 })
 
