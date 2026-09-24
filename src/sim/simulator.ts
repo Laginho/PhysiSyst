@@ -277,7 +277,7 @@ function freePointVelocity(rigid: RAPIER.RigidBody, p: Vec2, gravity: Vec2): Vec
  * of the Euler distance Δt²·a, while the velocity still gains Δt·a in full.
  */
 function freePoint(rigid: RAPIER.RigidBody, p: Vec2, v: Vec2, phi: number): Vec2 {
-  const v0 = rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }
+  const v0 = pointVelocity(rigid, p)
   return { x: p.x + TIMESTEP * (v0.x + phi * (v.x - v0.x)), y: p.y + TIMESTEP * (v0.y + phi * (v.y - v0.y)) }
 }
 
@@ -964,7 +964,7 @@ class RapierSimulator implements Simulator {
     const K = now.map((a) => now.map((p) => ropeInvMass(p, a)))
     // ponytail: the same chord-velocity projection as correctRope, same energy drain and upgrade path.
     const b = now.map((piece, k) => {
-      const v = piece.map(({ rigid, p }) => (rigid.isDynamic() ? rigid.velocityAtPoint(p) : { x: 0, y: 0 }))
+      const v = piece.map(({ rigid, p }) => pointVelocity(rigid, p))
       return (lengtheningRate(piece, v) - ropeAllowance(lengths[k]! - rope.pieces[k]!.length)) / TIMESTEP
     })
     const corrected = tautTensions(

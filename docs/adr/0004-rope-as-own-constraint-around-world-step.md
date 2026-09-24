@@ -38,6 +38,16 @@ A pulley with `mass > 0` is a disk the rope does not slip on, so it turns and th
 
 The scalar path (`pullRope`/`correctRope`) stays separate even though one piece is the scalar rope: PHY-25 criterion 4 wants `mass` absent or 0 to run bit for bit like PHY-24, and folding the scalar rope into the matrix path would reorder its arithmetic. The duplication between `pullPieces`/`pullRope` and `correctPieces`/`correctRope` is that price.
 
+## Springs (PHY-26)
+
+A spring is not a Rapier joint either. `pushSpring` applies `F_el = k·Δx + c·ẋ` along the axis between the anchors as a force of our own, `+u` on end `a` and `−u` on `b` (`u` from `a` to `b`), so a stretched spring pulls its ends together and damping opposes separation. A fixed end gets no force and counts as still.
+
+- **Same hook, before the ropes.** The springs are pushed after the applied forces and before any rope's prediction, so the rope's free motion already includes them.
+- **Same substep factor.** A constant force over Rapier's substeps moves a body only `φ` of the Euler distance while its velocity gains the full `Δt·F/m`; for a spring that alone pumps energy in. The force is taken with both ends moved `(1 − φ)Δt` ahead at their velocity now (`springAt`), which makes the step area-preserving for a linear spring. Without that lead all six oscillation tests of PHY-26 fail.
+- **The readout** (`readSpring`) is `F_el` at the current state, no lead: `dx` signed (+ stretched), the same `force` at both ends while the spring is massless.
+
+Rapier's spring joint (`JointData.spring(x0, k, c, …)`) was tried first and missed the PHY-26 tolerances: a horizontal `m = 1`, `k = 40` spring lost 0.0297 m of a 0.1 m amplitude in 5 periods (0.002 allowed), the vertical equilibrium was off by 2.05% (2% allowed), and the damped cases found 4 and 2 peaks where 5 were needed. And, like every joint, it returns no force for the readout.
+
 ## Measured (60 Hz, current mechanism)
 
 PHY-23 families, 1 s window after a 0.5 s settle; tolerances 2% (Atwood), 5% (table) and 1 mm:
@@ -77,4 +87,4 @@ The substep factor matters: with `φ = 1` the loop stretches 11.6 mm. The declar
 - `φ` is read from `world.numSolverIterations`; it assumes Rapier's substepping stays the one measured here (Rapier 0.20).
 - Ropes have no collider: a rope passes through bodies, and it is drawn from the same `ropePath` the simulator solves on. A pulley with mass has colliders only to carry its mass, in collision group 0: it passes through bodies too.
 - A disk may turn less than π per step, or `gripShares` reads the turn the wrong way round.
-- The spring does **not** use this mechanism. It uses Rapier's spring joint, which already expresses it (spec, PHY-26).
+- The spring's `(1 − φ)Δt` lead reads the same `substepFactor` as the rope prediction, so the assumption above covers both.
