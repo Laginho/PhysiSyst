@@ -1,5 +1,5 @@
 # PHY-27: Editor I — Anchor snap e ferramenta Mola
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-26
 Review: agent
@@ -47,3 +47,5 @@ O mesmo Anchor snap passa a valer para o ponto de aplicação das forças aplica
 ## Comments
 
 - 2026-09-24 (review do PHY-26, stage 3) O critério 6 lê `SpringState` (`{ id, kind: 'spring', dx, force: { a, b } }`) de `readConstraints`, mas o tipo não é exportado de `src/sim/index.ts` — CLEAN-05 exporta. Se o CLEAN-05 ainda não tiver fechado quando este ticket entrar, a etapa 1 acrescenta `src/sim/index.ts` aos Primary files.
+- 2026-09-24 (stage 2) CLEAN-05 fechou antes: `SpringState` já sai de `src/sim/index.ts`, nenhum arquivo novo nos Primary files.
+- Proxy decided: critério 3 — um valor que o codec rejeitaria (k ≤ 0, x₀ ≤ 0, incluindo Δx ≥ x, c < 0) nunca entra no doc; a edição é descartada, sem clamp, e o inspetor da mola mostra uma linha de aviso (string nova nos dois catálogos) — `collectWarnings` não tem aviso de mola e `parseSpring` rejeita os três, então a única regra do codec que o inspetor pode seguir é "nada que ele grava falha no parse"; clamp mudaria a física em silêncio.
