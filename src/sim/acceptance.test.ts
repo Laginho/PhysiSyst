@@ -544,12 +544,13 @@ describe('acceptance: general rope (PHY-24)', () => {
     expect(Math.abs(period - expected)).toBeLessThanOrEqual(0.02 * expected)
   })
 
-  it('loop with v_top² > gL: goes all the way round with T > 0 the whole time', async () => {
+  it('loop with v_top² > gL: goes all the way round with T > 0 and the rope at L (±1 mm) every step (CLEAN-03)', async () => {
     const L = 1
-    // v_top² = v₀² − 4gL = 2gL.
+    // v_top² = v₀² − 4gL = 2gL. The ±1 mm pins the substep factor φ: with φ = 1 the loop stretches ~12 mm.
     const sim = await load(pendulumScene({ x: 0, y: -L }, Math.sqrt(6 * G * L)))
     let swept = 0
     let prev = -Math.PI / 2
+    let worst = 0
     const tensions: number[] = []
     for (let i = 0; swept < 2 * Math.PI && i < 300; i++) {
       sim.step()
@@ -561,9 +562,11 @@ describe('acceptance: general rope (PHY-24)', () => {
       swept += d
       prev = phi
       tensions.push(rope(sim).slack ? 0 : rope(sim).tension)
+      worst = Math.max(worst, Math.abs(Math.hypot(p.x, p.y) - L))
     }
     expect(swept).toBeGreaterThanOrEqual(2 * Math.PI)
     expect(Math.min(...tensions)).toBeGreaterThan(0)
+    expect(worst).toBeLessThanOrEqual(0.001)
   })
 
   it('loop with v_top² < gL: T = 0 near the top and the body falls inside the circle', async () => {

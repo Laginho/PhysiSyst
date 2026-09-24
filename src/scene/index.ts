@@ -14,9 +14,9 @@
  *   by id), negative force magnitude, negative friction coefficients.
  *
  * Pulleys and rope constraints (PHY-23) HARD-reject dangling body/pulley
- * references, duplicate ids and radius <= 0. Until PHY-24/25 they also
- * reject a rope not over exactly one pulley, a pulley on a dynamic body and
- * a pulley mass.
+ * references, duplicate ids and radius <= 0, a rope with no pulley whose ends
+ * share a body, and the same pulley twice in a row in `via`. Until PHY-25 they
+ * also reject a pulley mass.
  */
 export { collectWarnings, parse, serialize, SceneParseError } from './codec'
 export { bodyPointToWorld, ropePath, scenePath } from './ropePath'

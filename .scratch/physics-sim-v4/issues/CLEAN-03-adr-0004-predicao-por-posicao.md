@@ -1,5 +1,5 @@
 # CLEAN-03: ADR-0004 descreve a predição por posição e o fator de subpasso ganha teste
-Stage: to-implement
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -37,3 +37,21 @@ O PHY-24 trocou o mecanismo da corda sem tocar no documento que o descreve. Trê
 ## Comments
 
 - 2026-09-24 Aberto pelo review do PHY-24 (stage 3). Os três itens estavam anotados pelo stage 2 em `## Comments` do PHY-24 como fora dos Primary files; nenhum é critério daquele ticket, então o PHY-24 fechou como está.
+
+Etapa 2 (2026-09-24), mutate-verify (critério 4). Teste novo em `805edd5`: `acceptance: general rope (PHY-24) > loop with v₀² = 6gL: the rope stays at L (±1 mm) every step of the first turn (CLEAN-03)`. Verde no código atual (pior |dist − L| = 0,045 mm), como o ticket previa.
+
+| Mutação | Vermelho |
+|---|---|
+| `pullRope`: `const phi = 1` no lugar de `(n + 1) / (2 * n)` | `Tests 1 failed \| 20 passed (21)`; `AssertionError: expected 0.011633209588792104 to be less than or equal to 0.001` — só o teste novo |
+
+Revertida depois. A tabela Measured do ADR foi remedida no código atual com logs descartáveis no `acceptance.test.ts` (revertidos, fora dos commits): as linhas do PHY-23 mudaram um pouco com o mecanismo novo (Atwood `T` 0,003% → 0,004%, mesa μₖ = 0,2 `T` 0,788% → 0,490%) e foram atualizadas junto com as famílias novas.
+
+Gate verde no commit de docs: 29 arquivos, 542/542 testes, lint, typecheck, build (só o aviso de chunk > 500 kB, que já existia).
+
+Etapa 3 (2026-09-24). O teste novo copiava o laço de varredura do irmão `loop with v_top² > gL` inteiro (mesma cena, mesmo laço); o review fundiu a asserção de comprimento nesse teste, agora `loop with v_top² > gL: goes all the way round with T > 0 and the rope at L (±1 mm) every step (CLEAN-03)`. Mutate-verify refeito no teste fundido:
+
+| Mutação | Vermelho |
+|---|---|
+| `pullRope`: `const phi = 1` | `Tests 1 failed \| 19 passed (20)`; `AssertionError: expected 0.011633209588792104 to be less than or equal to 0.001` — só o teste fundido |
+
+Revertida depois. O ADR também recuperou a linha de tolerâncias do PHY-23 (2%, 5%, 1 mm) que o commit de docs tinha apagado.
