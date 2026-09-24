@@ -45,3 +45,5 @@ O mesmo Anchor snap passa a valer para o ponto de aplicação das forças aplica
 - `src/App.test.ts`, no espelho do pointer e do teclado: criação, cancelamento, seleção, Delete, undo, arraste do ponto de força (2, 4, 5, 7). Vermelho porque a ferramenta não existe.
 
 ## Comments
+
+- 2026-09-24 (review do PHY-26, stage 3) O critério 6 lê `SpringState` (`{ id, kind: 'spring', dx, force: { a, b } }`) de `readConstraints`, mas o tipo não é exportado de `src/sim/index.ts` — CLEAN-05 exporta. Se o CLEAN-05 ainda não tiver fechado quando este ticket entrar, a etapa 1 acrescenta `src/sim/index.ts` aos Primary files.
