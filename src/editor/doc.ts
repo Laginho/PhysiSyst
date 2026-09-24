@@ -99,7 +99,7 @@ export function removeBodyAndDependents(doc: Scene, id: string): Scene {
   if (doc.pulleys) next.pulleys = doc.pulleys.filter((p) => !lostPulleys.has(p.id))
   if (doc.constraints) {
     next.constraints = doc.constraints.filter(
-      (c) => c.a.bodyId !== id && c.b.bodyId !== id && !c.via.some((p) => lostPulleys.has(p)),
+      (c) => c.a.bodyId !== id && c.b.bodyId !== id && !(c.kind === 'rope' && c.via.some((p) => lostPulleys.has(p))),
     )
   }
   return next
