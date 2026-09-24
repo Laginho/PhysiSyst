@@ -657,11 +657,6 @@ describe('PHY-23: pulleys and rope constraints', () => {
       expected: /pulleys\[0\]: pulley mass is not supported yet/,
     },
     {
-      name: 'pulley on a dynamic body (movable pulleys land in PHY-24)',
-      mutate: (d) => void (pulley0(d)['bodyId'] = 'a'),
-      expected: /pulleys\[0\]: pulley on dynamic body 'a' is not supported yet/,
-    },
-    {
       name: 'rope end a on a missing body',
       mutate: (d) => void ((rope0(d)['a'] as Doc)['bodyId'] = 'ghost'),
       expected: "constraints[0]: a references missing body 'ghost'",
@@ -687,17 +682,17 @@ describe('PHY-23: pulleys and rope constraints', () => {
       expected: 'constraints[0]: via must be an array of pulley ids',
     },
     {
-      name: 'rope with no pulley (general ropes land in PHY-24)',
-      mutate: (d) => void (rope0(d)['via'] = []),
-      expected: /constraints\[0\]: a rope must pass over exactly one pulley for now/,
+      name: 'rope with no pulley and both ends on one body (PHY-24)',
+      mutate: (d) => {
+        rope0(d)['via'] = []
+        ;(rope0(d)['b'] as Doc)['bodyId'] = 'a'
+      },
+      expected: "constraints[0]: a rope with no pulley must join two different bodies",
     },
     {
-      name: 'rope with two pulleys (general ropes land in PHY-24)',
-      mutate: (d) => {
-        ;(d['pulleys'] as Doc[]).push({ ...pulley0(d), id: 'q' })
-        rope0(d)['via'] = ['p', 'q']
-      },
-      expected: /constraints\[0\]: a rope must pass over exactly one pulley for now/,
+      name: 'the same pulley twice in a row (PHY-24)',
+      mutate: (d) => void (rope0(d)['via'] = ['p', 'p']),
+      expected: "constraints[0]: via repeats pulley 'p' back to back",
     },
     {
       name: 'unknown constraint kind',
@@ -721,5 +716,32 @@ describe('PHY-23: pulleys and rope constraints', () => {
     mutate(doc)
     expect(() => parse(doc)).toThrow(SceneError)
     expect(() => parse(doc)).toThrow(expected)
+  })
+
+  // PHY-24: the general rope. Each document round-trips byte-stably.
+  const acceptances: Array<{ name: string; mutate: (d: Doc) => void }> = [
+    { name: 'a pendulum: no pulley, one end on the fixed ceiling', mutate: (d) => {
+      rope0(d)['via'] = []
+      ;(rope0(d)['a'] as Doc)['bodyId'] = 'teto'
+    } },
+    { name: 'no pulley between two dynamic bodies', mutate: (d) => void (rope0(d)['via'] = []) },
+    { name: 'two pulleys in series', mutate: (d) => {
+      ;(d['pulleys'] as Doc[]).push({ ...pulley0(d), id: 'q', anchor: { x: 1, y: -0.75 } })
+      rope0(d)['via'] = ['p', 'q']
+    } },
+    { name: 'a pulley revisited after another one', mutate: (d) => {
+      ;(d['pulleys'] as Doc[]).push({ ...pulley0(d), id: 'q', anchor: { x: 1, y: -0.75 } })
+      rope0(d)['via'] = ['p', 'q', 'p']
+    } },
+    { name: 'a movable pulley on a dynamic body', mutate: (d) => {
+      ;(d['pulleys'] as Doc[]).push({ id: 'm', bodyId: 'b', anchor: { x: 0, y: 0 }, radius: 0.1 })
+      rope0(d)['via'] = ['m', 'p']
+    } },
+  ]
+
+  it.each(acceptances)('accepts: $name', ({ mutate }) => {
+    const doc = atwoodJson()
+    mutate(doc)
+    expect(serialize(parse(doc))).toStrictEqual(doc)
   })
 })

@@ -1,5 +1,5 @@
 # PHY-24: Corda geral — pêndulo, folga, várias polias, polia móvel
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-23
 Review: agent

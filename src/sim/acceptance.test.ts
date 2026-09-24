@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createSimulator, TIMESTEP } from './index'
+import { parse } from '../scene'
 import type { Scene } from '../scene'
 import { groundBody } from '../persistence'
 
@@ -495,6 +496,237 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     const s = sim.readStates()
     expect(tension(sim).slack).toBe(false)
     expect(Math.abs(atwoodLength(s.get('a')!.position.y, s.get('b')!.position.y) - L)).toBeLessThan(0.001)
+  })
+})
+
+/**
+ * PHY-24: the general rope — pendulum, loop, slack, movable pulley, pulleys in
+ * series. Every scene goes through the codec first, so a document the codec
+ * rejects cannot pass here. Closed forms written before running; anchors sit
+ * on each body's center of mass (PHY-34: an off-center rope end spins up).
+ */
+describe('acceptance: general rope (PHY-24)', () => {
+  type Sim = Awaited<ReturnType<typeof createSimulator>>
+  const load = (scene: Scene): Promise<Sim> => createSimulator(parse(scene))
+  const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda')!
+  const CM = { x: 0, y: 0 }
+
+  function pendulumScene(bob: { x: number; y: number }, vx = 0): Scene {
+    return {
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'circle', radius: 0.05, id: 'pivo', fixed: true, mass: 0, position: { x: 0, y: 0 }, rotation: 0 },
+        { shape: 'circle', radius: 0.1, id: 'bola', fixed: false, mass: 1, position: bob, rotation: 0, vx },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'pivo', anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [] }],
+    }
+  }
+
+  it('simple pendulum, θ₀ = 10°: period 2π√(L/g) within 2%, over 3 oscillations', async () => {
+    const L = 1
+    const theta0 = (10 * Math.PI) / 180
+    const sim = await load(pendulumScene({ x: L * Math.sin(theta0), y: -L * Math.cos(theta0) }))
+    // Upward zero crossings of x, interpolated inside the tick.
+    const crossings: number[] = []
+    let prevX = sim.readStates().get('bola')!.position.x
+    for (let i = 1; crossings.length < 4 && i < 720; i++) {
+      sim.step()
+      const x = sim.readStates().get('bola')!.position.x
+      if (prevX < 0 && x >= 0) crossings.push((i - 1 + -prevX / (x - prevX)) * TIMESTEP)
+      prevX = x
+    }
+    expect(crossings).toHaveLength(4)
+    const period = (crossings[3]! - crossings[0]!) / 3
+    const expected = 2 * Math.PI * Math.sqrt(L / G)
+    expect(Math.abs(period - expected)).toBeLessThanOrEqual(0.02 * expected)
+  })
+
+  it('loop with v_top² > gL: goes all the way round with T > 0 the whole time', async () => {
+    const L = 1
+    // v_top² = v₀² − 4gL = 2gL.
+    const sim = await load(pendulumScene({ x: 0, y: -L }, Math.sqrt(6 * G * L)))
+    let swept = 0
+    let prev = -Math.PI / 2
+    const tensions: number[] = []
+    for (let i = 0; swept < 2 * Math.PI && i < 300; i++) {
+      sim.step()
+      const p = sim.readStates().get('bola')!.position
+      const phi = Math.atan2(p.y, p.x)
+      let d = phi - prev
+      if (d < -Math.PI) d += 2 * Math.PI
+      if (d > Math.PI) d -= 2 * Math.PI
+      swept += d
+      prev = phi
+      tensions.push(rope(sim).slack ? 0 : rope(sim).tension)
+    }
+    expect(swept).toBeGreaterThanOrEqual(2 * Math.PI)
+    expect(Math.min(...tensions)).toBeGreaterThan(0)
+  })
+
+  it('loop with v_top² < gL: T = 0 near the top and the body falls inside the circle', async () => {
+    const L = 1
+    // v_top² would be 0.5 gL: the rope goes slack at sin α = 5/6 above the pivot.
+    const sim = await load(pendulumScene({ x: 0, y: -L }, Math.sqrt(4.5 * G * L)))
+    let slackNearTop = false
+    let minDistance = Infinity
+    for (let i = 0; i < 90; i++) {
+      sim.step()
+      const p = sim.readStates().get('bola')!.position
+      if (rope(sim).slack && rope(sim).tension === 0 && p.y > 0.5 * L) slackNearTop = true
+      if (slackNearTop) minDistance = Math.min(minDistance, Math.hypot(p.x, p.y))
+    }
+    expect(slackNearTop).toBe(true)
+    expect(minDistance).toBeLessThan(L - 0.01)
+  })
+
+  it('slack: bodies pushed toward each other feel no rope; moving apart, it goes taut again at the same L (±1 mm)', async () => {
+    // Zero g, two blocks passing each other 0.5 m apart vertically at 2 m/s
+    // relative: the gap closes to 0.5 m at t = 1 s and reopens to L at t = 2 s.
+    const L = Math.hypot(2, 0.5)
+    const sim = await load({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'a', fixed: false, mass: 1, position: { x: -1, y: -0.25 }, rotation: 0, vx: 1 },
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'b', fixed: false, mass: 1, position: { x: 1, y: 0.25 }, rotation: 0, vx: -1 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: CM }, b: { bodyId: 'b', anchor: CM }, via: [] }],
+    })
+    const distance = (): number => {
+      const s = sim.readStates()
+      const a = s.get('a')!.position
+      const b = s.get('b')!.position
+      return Math.hypot(b.x - a.x, b.y - a.y)
+    }
+    let maxDistance = 0
+    for (let i = 1; i <= 240; i++) {
+      sim.step()
+      const d = distance()
+      maxDistance = Math.max(maxDistance, d)
+      const t = i * TIMESTEP
+      if (t > 0.1 && t < 1.9) {
+        expect(rope(sim).slack).toBe(true)
+        expect(rope(sim).tension).toBe(0)
+        expect(d).toBeLessThan(L)
+        // The rope never pushes: the blocks keep their launch velocity.
+        expect(sim.readStates().get('a')!.linvel.x).toBeCloseTo(1, 9)
+      }
+      if (t > 2.2) {
+        expect(rope(sim).slack).toBe(false)
+        expect(Math.abs(d - L)).toBeLessThanOrEqual(0.001)
+      }
+    }
+    expect(maxDistance).toBeLessThanOrEqual(L + 0.001)
+  })
+
+  it('movable massless pulley: a_load = a_counterweight/2, T = 3Mmg/(M + 4m) within 2%', async () => {
+    // Ceiling end → down to the movable pulley on the load M, half turn under
+    // it → up over a fixed pulley → down to the counterweight m. With y up,
+    // 2y_M + y_m is constant: a_M = (2m − M)g/(M + 4m), a_m = −2a_M.
+    const M = 3
+    const m = 1
+    const r = 0.25
+    const aLoad = ((2 * m - M) * G) / (M + 4 * m)
+    const tClosed = (3 * M * m * G) / (M + 4 * m)
+    const sim = await load({
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 10 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.3, height: 0.3, id: 'carga', fixed: false, mass: M, position: { x: 0, y: 4 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'contrapeso', fixed: false, mass: m, position: { x: 0.75, y: 3 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      pulleys: [
+        { id: 'movel', bodyId: 'carga', anchor: CM, radius: r },
+        { id: 'fixa', bodyId: 'teto', anchor: { x: 0.5, y: -0.5 }, radius: r },
+      ],
+      constraints: [
+        {
+          id: 'corda',
+          kind: 'rope',
+          a: { bodyId: 'teto', anchor: { x: -0.25, y: 0 } },
+          b: { bodyId: 'contrapeso', anchor: CM },
+          via: ['movel', 'fixa'],
+        },
+      ],
+    })
+    const pathLength = (yM: number, ym: number): number => 10 - yM + Math.PI * r + (9.5 - yM) + Math.PI * r + (9.5 - ym)
+    const L = pathLength(4, 3)
+    let maxLengthError = 0
+    const tick = (): void => {
+      sim.step()
+      const s = sim.readStates()
+      maxLengthError = Math.max(maxLengthError, Math.abs(pathLength(s.get('carga')!.position.y, s.get('contrapeso')!.position.y) - L))
+    }
+    for (let i = 0; i < 30; i++) tick()
+    const s1 = sim.readStates()
+    const tensions: number[] = []
+    for (let i = 0; i < 60; i++) {
+      tick()
+      tensions.push(rope(sim).tension)
+    }
+    const s2 = sim.readStates()
+    const dvM = s2.get('carga')!.linvel.y - s1.get('carga')!.linvel.y
+    const dvm = s2.get('contrapeso')!.linvel.y - s1.get('contrapeso')!.linvel.y
+    const window = 60 * TIMESTEP
+    expect(Math.abs(dvM - aLoad * window)).toBeLessThanOrEqual(0.02 * Math.abs(aLoad) * window)
+    expect(Math.abs(dvM + dvm / 2)).toBeLessThanOrEqual(0.02 * Math.abs(aLoad) * window)
+    for (const t of tensions) expect(Math.abs(t - tClosed)).toBeLessThanOrEqual(0.02 * tClosed)
+    expect(maxLengthError).toBeLessThan(0.001)
+  })
+
+  it('Atwood over two fixed pulleys in series: same a and T as over one pulley (2%)', async () => {
+    const m1 = 3
+    const m2 = 2
+    const aClosed = ((m1 - m2) * G) / (m1 + m2)
+    const tClosed = (2 * m1 * m2 * G) / (m1 + m2)
+    const r = 0.25
+    const TOP = { x: 0, y: 0.2 }
+    const sim = await load({
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: m1, position: { x: -0.75, y: 2 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'b', fixed: false, mass: m2, position: { x: 0.75, y: 1 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      pulleys: [
+        { id: 'p1', bodyId: 'teto', anchor: { x: -0.5, y: -1 }, radius: r },
+        { id: 'p2', bodyId: 'teto', anchor: { x: 0.5, y: -1 }, radius: r },
+      ],
+      constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: TOP }, b: { bodyId: 'b', anchor: TOP }, via: ['p1', 'p2'] }],
+    })
+    const pathLength = (ya: number, yb: number): number => 5 - (ya + 0.2) + (Math.PI / 2) * r + 1 + (Math.PI / 2) * r + (5 - (yb + 0.2))
+    const L = pathLength(2, 1)
+    let maxLengthError = 0
+    const tick = (): void => {
+      sim.step()
+      const s = sim.readStates()
+      maxLengthError = Math.max(maxLengthError, Math.abs(pathLength(s.get('a')!.position.y, s.get('b')!.position.y) - L))
+    }
+    for (let i = 0; i < 30; i++) tick()
+    const s1 = sim.readStates()
+    const tensions: number[] = []
+    for (let i = 0; i < 60; i++) {
+      tick()
+      tensions.push(rope(sim).tension)
+    }
+    const s2 = sim.readStates()
+    const dvA = s2.get('a')!.linvel.y - s1.get('a')!.linvel.y
+    const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
+    expect(Math.abs(-dvA - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.02 * aClosed)
+    expect(Math.abs(dvB - aClosed * 60 * TIMESTEP)).toBeLessThanOrEqual(0.02 * aClosed)
+    for (const t of tensions) expect(Math.abs(t - tClosed)).toBeLessThanOrEqual(0.02 * tClosed)
+    expect(maxLengthError).toBeLessThan(0.001)
   })
 })
 
