@@ -1,5 +1,5 @@
 # PHY-23: Tracer — corda sobre uma polia fixa
-Stage: to-merge
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -98,3 +98,5 @@ Two axes, both sub-agents plus my own read of the rope code. No fix commit of my
 **Standards.** No documented-standard breach. Judgement calls, none blocking, all candidates for one `CLEAN-*` ticket: `step()` still inlines the rotation `bodyPointToWorld` now provides; `pullRope`/`correctRope` share a prologue; `new Map(scene.bodies…)` is built in four places and `scenePath` rebuilds it per rope in `drawRopes`; `RopeFrame.length` (current) vs `RopeBinding.length` (fixed `L`) share a word for opposite roles; `drawRopes` also draws pulleys. No unit test pins `drawRopes` — the ticket asked for the live check (11) instead, which is what was done.
 
 **Found outside this ticket, filed as PHY-34.** `resetForces` does not clear the torque `addForceAtPoint` adds, so torque accumulates step after step for any anchor off the COM: measured ω = 40.4 rad/s after 1 s where τ/I·t = 3 rad/s. Pre-existing on applied forces; the rope inherits it for off-COM ends, which none of this ticket's families have. Fix is one line but needs a regression test, so not a stage-3 fix. Comment left on PHY-24.
+
+- 2026-09-24 Foreman: back to `to-review`. The review approved it but took the no-session flow (PR #7 against `main`, `to-merge`) while `sweatshop/2026-09-24-1506` was open; the reviewer card named `main` as the base, fixed in `dbfc90b`. Re-review merges into the session.
