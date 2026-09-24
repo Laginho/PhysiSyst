@@ -800,7 +800,9 @@ export default function App() {
     if (!simBootRef.current) {
       const bootDoc = docRef.current
       setBootState('booting')
-      // A failed chunk fetch rejects like a failed boot, so retry covers both.
+      // A failed chunk fetch rejects into the same error branch as a failed
+      // boot. Retry re-issues the import, but browsers keep a failed module
+      // fetch in the module map, so only a reload recovers that case (CLEAN-01).
       simBootRef.current = import('./sim').then(({ createSimulator }) => createSimulator(bootDoc)).then(
         (sim) => {
           simRef.current = sim
