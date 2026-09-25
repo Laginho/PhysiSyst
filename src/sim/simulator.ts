@@ -874,10 +874,13 @@ class RapierSimulator implements Simulator {
       for (const point of [rope.a, ...rope.via, rope.b]) touched.add(point.rigid)
     }
     for (const s of this.springs) touched.add(s.a.rigid).add(s.b.rigid)
-    for (const rigid of touched) rigid.resetForces(true)
-    // resetForces leaves torques, and a disk is driven by nothing else. The
-    // bodies still keep theirs across steps until PHY-34. A disk's force moves
-    // nothing (translation locked); it is cleared so it does not pile up.
+    // resetForces leaves torques: an off-COM addForceAtPoint would pile its
+    // torque onto the last step's (PHY-34). A disk's force moves nothing
+    // (translation locked); it is cleared so it does not pile up either.
+    for (const rigid of touched) {
+      rigid.resetForces(true)
+      rigid.resetTorques(true)
+    }
     for (const disk of this.disks.values()) {
       disk.resetForces(true)
       disk.resetTorques(true)
