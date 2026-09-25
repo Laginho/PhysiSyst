@@ -1,5 +1,5 @@
 # PHY-29: Setas de tração e força elástica, rótulos em todos os vetores
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-25, PHY-26
 Review: agent

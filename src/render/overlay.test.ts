@@ -9,10 +9,15 @@ import {
   NORMAL_LEN,
   vectorArrowLengthPx,
   appliedArrows,
+  elasticArrows,
+  initialVelocityArrows,
   normalArrows,
+  tensionArrows,
+  vectorLabels,
   weightArrows,
+  type OverlayArrow,
 } from './overlay'
-import type { BodyState, ContactPoint } from '../sim/simulator'
+import type { BodyState, ConstraintState, ContactPoint } from '../sim/simulator'
 import { TIMESTEP } from '../sim/timestep'
 
 const PPM = 60
@@ -328,6 +333,186 @@ describe('normalArrows', () => {
 
   it('empty when no contacts', () => {
     expect(normalArrows([])).toEqual([])
+  })
+})
+
+type SceneBody = Scene['bodies'][number]
+
+function block(id: string, x: number, y: number, fixed = false): SceneBody {
+  return { id, shape: 'rectangle', width: 0.4, height: 0.4, fixed, mass: fixed ? 0 : 1, position: { x, y }, rotation: 0 }
+}
+
+function rope(id: string, a: string, b: string, via: string[] = []): NonNullable<Scene['constraints']>[number] {
+  return { id, kind: 'rope', a: { bodyId: a, anchor: { x: 0, y: 0 } }, b: { bodyId: b, anchor: { x: 0, y: 0 } }, via }
+}
+
+function spring(id: string, a: string, b: string): NonNullable<Scene['constraints']>[number] {
+  return { id, kind: 'spring', a: { bodyId: a, anchor: { x: 0, y: 0 } }, b: { bodyId: b, anchor: { x: 0, y: 0 } }, k: 10, x0: 1 }
+}
+
+function ropeState(id: string, segments: number[]): ConstraintState {
+  const tension = Math.max(0, ...segments)
+  return { id, kind: 'rope', tension, slack: tension === 0, segments }
+}
+
+function springState(id: string, a: number, b = a): ConstraintState {
+  return { id, kind: 'spring', dx: 0, force: { a, b } }
+}
+
+/**
+ * Atwood machine: pulley of radius 0.5 centered (0, 5) on the fixed ceiling,
+ * blocks hanging at x = ±0.5 — both legs are the vertical lines x = ±0.5.
+ */
+function atwood(pulleyMass?: number): Scene {
+  return {
+    ...sceneWithBodies([block('teto', 0, 5, true), block('a', -0.5, 2), block('b', 0.5, 2)]),
+    pulleys: [{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: 0 }, radius: 0.5, ...(pulleyMass === undefined ? {} : { mass: pulleyMass }) }],
+    constraints: [rope('r', 'a', 'b', ['p'])],
+  }
+}
+
+function expectArrow(arrow: OverlayArrow | undefined, from: { x: number; y: number }, vec: { x: number; y: number }): void {
+  expect(arrow).toBeDefined()
+  expect(arrow!.from.x).toBeCloseTo(from.x, 9)
+  expect(arrow!.from.y).toBeCloseTo(from.y, 9)
+  expect(arrow!.vec.x).toBeCloseTo(vec.x, 9)
+  expect(arrow!.vec.y).toBeCloseTo(vec.y, 9)
+}
+
+describe('tensionArrows', () => {
+  it('Atwood: one T per dynamic end, at the anchor, toward the next path point; none on the fixed pulley', () => {
+    const arrows = tensionArrows(atwood(), [ropeState('r', [12, 12])], PPM)
+    const len = vectorArrowLengthPx(12) / PPM
+    expect(arrows).toHaveLength(2)
+    expect(arrows.every((a) => a.kind === 'tension')).toBe(true)
+    expectArrow(arrows[0], { x: -0.5, y: 2 }, { x: 0, y: len })
+    expectArrow(arrows[1], { x: 0.5, y: 2 }, { x: 0, y: len })
+  })
+
+  it('straight rope between two dynamic bodies: each end pulled toward the other', () => {
+    const scene: Scene = { ...sceneWithBodies([block('a', 0, 0), block('b', 3, 4)]), constraints: [rope('r', 'a', 'b')] }
+    const arrows = tensionArrows(scene, [ropeState('r', [5])], PPM)
+    const len = vectorArrowLengthPx(5) / PPM
+    expect(arrows).toHaveLength(2)
+    expectArrow(arrows[0], { x: 0, y: 0 }, { x: 0.6 * len, y: 0.8 * len })
+    expectArrow(arrows[1], { x: 3, y: 4 }, { x: -0.6 * len, y: -0.8 * len })
+  })
+
+  it('movable pulley: one arrow per adjacent segment at the pulley center; fixed ends get none', () => {
+    // Pulley (0, 2) r 0.5 on the dynamic block, rope from the ceiling at x = -0.5
+    // under the pulley and back up to x = +0.5: both legs vertical.
+    const scene: Scene = {
+      ...sceneWithBodies([block('esq', -0.5, 5, true), block('dir', 0.5, 5, true), block('bloco', 0, 2)]),
+      pulleys: [{ id: 'm', bodyId: 'bloco', anchor: { x: 0, y: 0 }, radius: 0.5 }],
+      constraints: [rope('r', 'esq', 'dir', ['m'])],
+    }
+    const arrows = tensionArrows(scene, [ropeState('r', [7, 7])], PPM)
+    const len = vectorArrowLengthPx(7) / PPM
+    expect(arrows).toHaveLength(2)
+    expectArrow(arrows[0], { x: 0, y: 2 }, { x: 0, y: len })
+    expectArrow(arrows[1], { x: 0, y: 2 }, { x: 0, y: len })
+  })
+
+  it('pulley with mass: each end sized by its own segment tension', () => {
+    const arrows = tensionArrows(atwood(2), [ropeState('r', [10, 6])], PPM)
+    expect(arrows).toHaveLength(2)
+    expect(Math.hypot(arrows[0]!.vec.x, arrows[0]!.vec.y) * PPM).toBeCloseTo(vectorArrowLengthPx(10), 9)
+    expect(Math.hypot(arrows[1]!.vec.x, arrows[1]!.vec.y) * PPM).toBeCloseTo(vectorArrowLengthPx(6), 9)
+  })
+
+  it('slack rope (T = 0) and a rope with no reading draw nothing', () => {
+    expect(tensionArrows(atwood(), [ropeState('r', [0, 0])], PPM)).toEqual([])
+    expect(tensionArrows(atwood(), [], PPM)).toEqual([])
+  })
+})
+
+describe('elasticArrows', () => {
+  it('stretched spring pulls each dynamic end toward the other; the fixed end gets none', () => {
+    const scene: Scene = { ...sceneWithBodies([block('parede', 0, 0, true), block('m', 3, 0)]), constraints: [spring('s', 'parede', 'm')] }
+    const arrows = elasticArrows(scene, [springState('s', 5)], PPM)
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0]!.kind).toBe('elastic')
+    expectArrow(arrows[0], { x: 3, y: 0 }, { x: -vectorArrowLengthPx(5) / PPM, y: 0 })
+  })
+
+  it('compressed spring pushes the ends apart, sized by |F_el|', () => {
+    const scene: Scene = { ...sceneWithBodies([block('a', 0, 0), block('b', 0, 2)]), constraints: [spring('s', 'a', 'b')] }
+    const arrows = elasticArrows(scene, [springState('s', -4)], PPM)
+    const len = vectorArrowLengthPx(4) / PPM
+    expect(arrows).toHaveLength(2)
+    expectArrow(arrows[0], { x: 0, y: 0 }, { x: 0, y: -len })
+    expectArrow(arrows[1], { x: 0, y: 2 }, { x: 0, y: len })
+  })
+
+  it('ropes and springs with no reading are ignored', () => {
+    const scene: Scene = { ...sceneWithBodies([block('a', 0, 0), block('b', 0, 2)]), constraints: [spring('s', 'a', 'b'), rope('r', 'a', 'b')] }
+    expect(elasticArrows(scene, [ropeState('r', [3])], PPM)).toEqual([])
+  })
+})
+
+describe('vectorLabels', () => {
+  const labelsOf = (arrows: OverlayArrow[], lang: 'pt-BR' | 'en' = 'pt-BR') => {
+    const labels = vectorLabels(arrows, lang)
+    return arrows.map((a) => labels.get(a.key))
+  }
+
+  it('one of each kind: the bare symbol from the table, per language', () => {
+    const scene: Scene = {
+      ...sceneWithBodies(
+        [{ ...block('a', 0, 0), vx: 1 }, block('parede', -3, 0, true)],
+        9.81,
+        [{ id: 'f', bodyId: 'a', anchor: { x: 0, y: 0 }, magnitude: 5, direction: 0 }],
+      ),
+      constraints: [spring('s', 'parede', 'a')],
+    }
+    const states = new Map<string, BodyState>([['a', stateAt(0, 0)]])
+    const arrows = [
+      ...weightArrows(scene, states, PPM),
+      ...normalArrows([{ aId: 'a', bId: 'parede', point: { x: 0, y: 0 }, normal: { x: 0, y: 1 } }]),
+      ...appliedArrows(scene, PPM),
+      ...tensionArrows({ ...atwood() }, [ropeState('r', [3, 3])], PPM).slice(0, 1),
+      ...elasticArrows(scene, [springState('s', 2)], PPM),
+      ...initialVelocityArrows(scene, PPM),
+    ]
+    expect(labelsOf(arrows)).toEqual(['P', 'N', 'F', 'T', 'F_el', 'v₀'])
+    expect(labelsOf(arrows, 'en')).toEqual(['W', 'N', 'F', 'T', 'F_s', 'v₀'])
+  })
+
+  it('two of a kind: numeric subscripts in document order', () => {
+    const scene = sceneWithBodies([block('a', 0, 0), block('b', 1, 0)])
+    const states = new Map<string, BodyState>([['a', stateAt(0, 0)], ['b', stateAt(1, 0)]])
+    expect(labelsOf(weightArrows(scene, states, PPM))).toEqual(['P_1', 'P_2'])
+    const springs: Scene = { ...scene, constraints: [spring('s1', 'a', 'b'), spring('s2', 'b', 'a')] }
+    const arrows = elasticArrows(springs, [springState('s1', 1), springState('s2', 1)], PPM)
+    expect(labelsOf(arrows)).toEqual(['F_el,1', 'F_el,1', 'F_el,2', 'F_el,2'])
+    expect(labelsOf(arrows, 'en')).toEqual(['F_s,1', 'F_s,1', 'F_s,2', 'F_s,2'])
+  })
+
+  it('the same rope carries the same T at both ends', () => {
+    expect(labelsOf(tensionArrows(atwood(), [ropeState('r', [9, 9])], PPM))).toEqual(['T', 'T'])
+  })
+
+  it('pulley with mass: one T per segment', () => {
+    expect(labelsOf(tensionArrows(atwood(1), [ropeState('r', [9, 8])], PPM))).toEqual(['T_1', 'T_2'])
+  })
+
+  it('two ropes number apart; a slack rope loses its arrows and its label', () => {
+    const scene: Scene = {
+      ...sceneWithBodies([block('a', 0, 0), block('b', 1, 0), block('c', 2, 0)]),
+      constraints: [rope('r1', 'a', 'b'), rope('r2', 'b', 'c')],
+    }
+    expect(labelsOf(tensionArrows(scene, [ropeState('r1', [2]), ropeState('r2', [3])], PPM))).toEqual(['T_1', 'T_1', 'T_2', 'T_2'])
+    expect(labelsOf(tensionArrows(scene, [ropeState('r1', [0]), ropeState('r2', [3])], PPM))).toEqual(['T', 'T'])
+  })
+
+  it('the same Contact pair carries the same N at every point', () => {
+    const contacts: ContactPoint[] = [
+      { aId: 'a', bId: 'chao', point: { x: -0.2, y: 0 }, normal: { x: 0, y: 1 } },
+      { aId: 'a', bId: 'chao', point: { x: 0.2, y: 0 }, normal: { x: 0, y: 1 } },
+      { aId: 'chao', bId: 'b', point: { x: 3, y: 0 }, normal: { x: 0, y: 1 } },
+    ]
+    expect(labelsOf(normalArrows(contacts))).toEqual(['N_1', 'N_1', 'N_2'])
+    expect(labelsOf(normalArrows(contacts.slice(0, 2)))).toEqual(['N', 'N'])
   })
 })
 
