@@ -1608,3 +1608,54 @@ describe('autosave pendente grava no pagehide (PHY-35)', () => {
     }
   })
 })
+
+describe('trocar de cena zera o playback (PHY-36)', () => {
+  const storage = () => window.localStorage as unknown as PersistStorage
+  // Same id and same pose in both scenes: the case carry-over keeps.
+  const ballScene = (): Scene => ({
+    ...blankScene(),
+    bodies: [...blankScene().bodies, { shape: 'circle', radius: 0.5, id: 'bola', fixed: false, mass: 1, position: { x: 6, y: 3.5 }, rotation: 0 }],
+  })
+  function seed() {
+    saveIndex(storage(), [
+      { id: 'cena-1', name: 'Cena 1', updatedAt: 1 },
+      { id: 'cena-2', name: 'Cena 2', updatedAt: 2 },
+    ])
+    saveScene(storage(), 'cena-1', ballScene())
+    saveScene(storage(), 'cena-2', ballScene())
+    saveCurrentSceneId(storage(), 'cena-1')
+  }
+  const wait = (ms: number) =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, ms))
+    })
+  const readoutText = (host: HTMLElement) => (panel(host, 'leitura — bola') ?? panel(host, 'leitura'))?.textContent ?? ''
+
+  it.each([
+    ['duplicar', (host: HTMLElement) => findButton(host, ptBR['scenes.duplicate'])?.click()],
+    ['lista de cenas', (host: HTMLElement) => setSelectValue(sceneSelect(host), 'cena-2')],
+  ])('via %s: a cena nova começa em passos 0, na pose e na velocidade do documento', async (_, switchScene) => {
+    // Every step lands `bola` far from its document pose, moving.
+    vi.mocked(createSimulator).mockImplementation(async () => ({
+      ...makeFakeSimulator(),
+      readStates: () => new Map([['bola', { position: { x: 9, y: 6 }, rotation: 0, linvel: { x: 5, y: 0 }, angvel: 0 }]]),
+    }))
+    const { host, canvas } = setupWith(seed)
+    await settleSimImport()
+    for (let i = 0; i < 100 && loadingOverlay(host); i++) await wait(5)
+    expect(loadingOverlay(host)).toBeUndefined()
+    act(() => findButton(host, ptBR['playback.step'])?.click())
+    await wait(150)
+    expect(readoutText(host)).toContain(`${ptBR['readout.steps']}: 1`)
+
+    act(() => switchScene(host))
+    await wait(150)
+
+    expect(readoutText(host)).toContain(`${ptBR['readout.steps']}: 0`)
+    // Clicking the document pose finds the body, and it reads the document's state.
+    click(canvas, { x: 6, y: 3.5 })
+    await wait(150)
+    expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (6.00, 3.50) m`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 0.00 m/s`)
+  }, 10000)
+})

@@ -1,5 +1,5 @@
 # PHY-36: Trocar de cena herda o estado simulado da cena anterior
-Stage: to-implement
+Stage: to-review
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -35,3 +35,8 @@ Ao trocar de cena (lista, galeria, nova, duplicar, importar, excluir), o playbac
 ## Comments
 
 - 2026-09-25 Aberto pelo passe manual do PHY-33, item 4 (a execução de controle do pêndulo rápido não achava a corda para selecionar). Vem de antes da v4: carry-over e troca de cena são da v1. A v4 só deixa o problema mais fácil de encontrar, porque tem mais presets com ids repetidos.
+- 2026-09-25 Stage 2. `switchToScene` (moved below `dispatch`, which it now needs) points `docRef` at the new scene and dispatches `reset`: stepsTaken 0, paused, world rebuilt from the new doc, `statesRef` null, `builtDocRef` = new doc, so the doc effect sees nothing to route and `carryOver` never runs across a switch. All six paths call `switchToScene`, so the one change covers criterion 2. The test runs two of them (duplicar, lista de cenas).
+  Mutate-verify, `npx vitest run src/App.test.ts -t PHY-36`, both cases red each time:
+  - Removed `dispatch({ type: 'reset' })` from `switchToScene`: `expected 'leiturapassos: 1velocidade: 1.00×selecione um corpo' to contain 'passos: 0'` (the red commit fails the same way).
+  - Removed `statesRef.current = null` from the reset in `dispatch` (counter still zeroes): `expected 'leiturapassos: 0velocidade: 1.00×selecione um corpo' to contain 'posição: (6.00, 3.50) m'`. The click on the document pose finds no body, so the pose/velocity assertions stand on their own.
+  Gate: 30 files, 709 tests passed; lint, typecheck clean; build OK (the >500 kB chunk warning is from before this change).
