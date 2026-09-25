@@ -1,5 +1,5 @@
 # CLEAN-14: `axleTolerance` obrigatória em `pulleyAtPoint`
-Stage: to-review
+Stage: done
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -22,6 +22,16 @@ Tornar o parâmetro obrigatório e passar `Infinity` explicitamente nos testes d
 #### Verification
 
     npm test && npm run lint && npm run typecheck && npm run build
+
+#### Resolution (2026-09-25)
+
+Verdict: Approve
+
+- Critério 1 ✅: `axleTolerance: number` sem default em `src/editor/hitTest.ts`; `pulleyAtPoint(scene, w)` é erro de tipo. Reproduzido no review: com `hitTest.test.ts` no estado da session branch e `hitTest.ts` novo, `npm run typecheck` dá `TS2554: Expected 3 arguments, but got 2` nas linhas 176, 177, 178, 179 e 184.
+- Critério 2 ✅: gate verde na session branch (30 arquivos, 712 testes; lint, typecheck e build limpos).
+- Primary files respeitados: o único commit toca `hitTest.ts`, `hitTest.test.ts` e o ticket. Sem teste novo, como o ticket previa (critério 1 é o typecheck).
+- Os dois callers de produção (`src/App.tsx` 1193 e 1275) já passavam `AXLE_HIT_RADIUS_PX / camera.pixelsPerMeter`; nenhum outro caller no repo. Docstring de `pulleyAtPoint` já não menciona default.
+- Merge: `2b0bd2f` na `sweatshop/2026-09-24-1853`.
 
 ## Tests stage 2 writes (own commit, red)
 
