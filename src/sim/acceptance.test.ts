@@ -1258,6 +1258,63 @@ describe('acceptance: ideal spring (PHY-26)', () => {
       }
       expect(worst).toBeLessThanOrEqual(0.03 * A)
     })
+
+    // CLEAN-09: a carry that changes an end must not resume the old nodes.
+    it.each([
+      {
+        how: 'the block moved 0.5 m, so the carry drops it',
+        edit: (s: Scene) => void (s.bodies.find((b) => b.id === 'bloco')!.position.x += 0.5),
+        drop: 'bloco',
+      },
+      {
+        how: 'the wall end re-anchored 0.5 m along the axis, both bodies carried',
+        edit: (s: Scene) => void (s.constraints![0]!.a.anchor.x += 0.5),
+        drop: undefined,
+      },
+    ])('replaceScene with carry after $how: the chain re-seats, Δv within 10% of the ideal spring, then |F_el| ≤ 2·k·|Δx| per end for 8 steps', async ({ edit, drop }) => {
+      const k = 40
+      /** The block's Δv over the first step after the rebuild, and the spring over the 8 after it. */
+      async function rebuilt(ms?: number) {
+        const scene = horizontalScene(1, k, X_EQ + A, undefined, ms)
+        const sim = await load(scene)
+        for (let i = 0; i < 37; i++) sim.step()
+        const carry = new Map(sim.readStates())
+        if (drop) carry.delete(drop)
+        edit(scene)
+        sim.replaceScene(parse(scene), carry)
+        const v0 = sim.readStates().get('bloco')!.linvel.x
+        sim.step()
+        const dv = sim.readStates().get('bloco')!.linvel.x - v0
+        const after = Array.from({ length: 8 }, () => (sim.step(), spring(sim)))
+        return { dv, after }
+      }
+      const ideal = await rebuilt()
+      const { dv, after } = await rebuilt(0.1)
+      expect(Math.abs(ideal.dv)).toBeGreaterThan(0.3)
+      expect(Math.abs(dv - ideal.dv)).toBeLessThanOrEqual(0.1 * Math.abs(ideal.dv))
+      for (const { dx, force } of after) {
+        expect(Math.abs(force.a)).toBeLessThanOrEqual(2 * k * Math.abs(dx))
+        expect(Math.abs(force.b)).toBeLessThanOrEqual(2 * k * Math.abs(dx))
+      }
+    })
+
+    it('damped, c = 0.5 and mₛ = 0.1: the peak-to-peak decrement follows the ideal spring with the same c within 2% over 10 peaks', async () => {
+      const c = 0.5
+      async function peaks(ms?: number): Promise<number[]> {
+        const sim = await load(horizontalScene(1, 40, X_EQ + A, c, ms))
+        const d = run(sim, Math.ceil(12 / TIMESTEP), () => sim.readStates().get('bloco')!.position.x - X_EQ)
+        const out: number[] = []
+        for (let i = 1; i < d.length - 1; i++) if (d[i]! > 0 && d[i]! >= d[i - 1]! && d[i]! > d[i + 1]!) out.push(d[i]!)
+        expect(out.length).toBeGreaterThanOrEqual(10)
+        return out.slice(0, 10)
+      }
+      const ideal = await peaks()
+      const chain = await peaks(0.1)
+      for (let i = 1; i < 10; i++) {
+        const expected = ideal[i]! / ideal[i - 1]!
+        expect(Math.abs(chain[i]! / chain[i - 1]! - expected)).toBeLessThanOrEqual(0.02 * expected)
+      }
+    })
   })
 })
 
