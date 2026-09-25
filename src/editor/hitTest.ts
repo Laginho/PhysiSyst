@@ -58,8 +58,16 @@ function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   return Math.hypot(p.x - q.x, p.y - q.y)
 }
 
-/** Topmost pulley whose circle holds a world point, at the poses the scene holds. */
-export function pulleyAtPoint(scene: Scene, w: Vec2): Pulley | null {
+/** Axle grab radius: the drawn 3 px axle dot plus a margin (PHY-37). */
+export const AXLE_HIT_RADIUS_PX = 5
+
+/**
+ * Topmost pulley whose circle holds a world point, at the poses the scene
+ * holds. Over its own mount body the pulley only takes points within
+ * `axleTolerance` meters of its axle, so a body the disk covers stays
+ * clickable (PHY-37).
+ */
+export function pulleyAtPoint(scene: Scene, w: Vec2, axleTolerance = Infinity): Pulley | null {
   const bodies = new Map(scene.bodies.map((b) => [b.id, b]))
   const pulleys = scene.pulleys ?? []
   for (let i = pulleys.length - 1; i >= 0; i--) {
@@ -67,7 +75,8 @@ export function pulleyAtPoint(scene: Scene, w: Vec2): Pulley | null {
     const mount = bodies.get(p.bodyId)
     if (!mount) continue
     const c = bodyPointToWorld(mount, p.anchor)
-    if (Math.hypot(w.x - c.x, w.y - c.y) <= p.radius) return p
+    const d = Math.hypot(w.x - c.x, w.y - c.y)
+    if (d <= p.radius && (d <= axleTolerance || !pointInBody(mount, w))) return p
   }
   return null
 }

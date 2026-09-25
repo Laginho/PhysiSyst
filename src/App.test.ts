@@ -14,6 +14,7 @@ import { en } from './i18n/en'
 import { setLang } from './i18n'
 import { AUTOSAVE_DELAY_MS, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import type { Scene } from './scene/types'
+import { presetById } from './presets'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -1486,6 +1487,44 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const reopened = renderApp()
     expect(sceneSelect(reopened).value).toBe('cena-1')
+  })
+})
+
+describe('corpo coberto pela polia montada nele (PHY-37)', () => {
+  // Preset "Polia móvel": pulley `movel` r 0.25 on the CM of `carga`
+  // (0.3 × 0.3 at (6, 2.5)), so the disk covers the whole load.
+  const CARGA_CORNER = { x: 6.14, y: 2.64 }
+  // 3 px beside the axle at 60 px/m: on the drawn dot, never exactly on the axle.
+  const MOVEL_AXLE = { x: 6.05, y: 2.5 }
+  const setup = () =>
+    setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
+      saveScene(storage, 'cena-1', presetById('movable-pulley')!.buildScene())
+      saveCurrentSceneId(storage, 'cena-1')
+    })
+
+  it('um clique num canto da carga seleciona a carga, não a polia', () => {
+    const { host, canvas } = setup()
+    click(canvas, CARGA_CORNER)
+    expect(panel(host, 'carga')).toBeDefined()
+    expect(panel(host, 'movel')).toBeUndefined()
+  })
+
+  it('o eixo da polia continua selecionando a polia', () => {
+    const { host, canvas } = setup()
+    click(canvas, MOVEL_AXLE)
+    expect(panel(host, 'movel')).toBeDefined()
+    expect(panel(host, 'carga')).toBeUndefined()
+  })
+
+  it('na ferramenta Corda, o eixo da polia entra na corda em vez de terminá-la na carga', () => {
+    const { host, canvas } = setup()
+    act(() => findButton(host, 'corda')?.click())
+    click(canvas, { x: 5.5, y: 8.3 })
+    click(canvas, MOVEL_AXLE)
+    click(canvas, { x: 6.75, y: 1.5 })
+    expect(panel(host, 'corda-2')).toBeDefined()
   })
 })
 

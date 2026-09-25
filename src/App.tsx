@@ -44,7 +44,7 @@ import {
   type BodyPatch,
   type MutationResult,
 } from './editor/doc'
-import { bodyAtPoint, pulleyAtPoint, ropeAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
+import { AXLE_HIT_RADIUS_PX, bodyAtPoint, pulleyAtPoint, ropeAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
 import { anchorSnap } from './editor/anchorSnap'
 import { resolveContactSnap } from './editor/contactSnap'
 import { pointInTrash, trashRect, type Rect } from './editor/trash'
@@ -1190,7 +1190,7 @@ export default function App() {
     if (!tool) return
     const view = applyStates(docRef.current, statesRef.current)
     if (tool.kind === 'rope') {
-      const pulley = pulleyAtPoint(view, w)
+      const pulley = pulleyAtPoint(view, w, AXLE_HIT_RADIUS_PX / camera.pixelsPerMeter)
       if (pulley) {
         // A pulley never ends a rope, and clicked twice in a row it counts once.
         if (tool.a && tool.via[tool.via.length - 1] !== pulley.id) setTool({ ...tool, via: [...tool.via, pulley.id] })
@@ -1269,10 +1269,10 @@ export default function App() {
       }
     }
 
-    // A pulley is drawn over its mount body and wins over it. A body under the
-    // pointer wins over a spring or rope end anchored on it; lines are picked
-    // where they cross open space.
-    const pulley = pulleyAtPoint(view, w)
+    // A pulley is drawn over the bodies and wins over them, except over its
+    // own mount body away from the axle. A body under the pointer wins over a
+    // spring or rope end anchored on it; lines are picked where they cross open space.
+    const pulley = pulleyAtPoint(view, w, AXLE_HIT_RADIUS_PX / camera.pixelsPerMeter)
     if (pulley) {
       setSelection({ kind: 'pulley', id: pulley.id })
       return
