@@ -1,5 +1,5 @@
 # PHY-31: Presets em árvore e os oito presets de vínculo
-Stage: to-implement
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-24, PHY-26
 Review: agent
@@ -53,3 +53,18 @@ A ordem dentro de cada tópico é decisão do implementador, em dificuldade cres
 - `src/App.test.ts`: galeria agrupada, nós vazios ausentes (4, 7).
 
 ## Comments
+
+### Stage 2 (2026-09-25)
+
+Branch `phy/PHY-31-presets-em-arvore` off `sweatshop/2026-09-24-1853`. Red commit `6fa935d` (tests only), code commit `5503cc9` (no test file touched).
+
+Order chosen within each topic (criterion 4, increasing difficulty): Princípios — Atwood, bloco na mesa, polia móvel, cunha empurrada; Campo uniforme — queda livre, projétil; MHS — massa-mola horizontal, vertical, pêndulo simples, amortecida. The new presets reuse the PHY-23/24/26 acceptance geometry, shifted into the default camera; the simple pendulum uses L = 2 m (the acceptance family uses 1 m) so it reads on screen.
+
+Red before the code: all 14 new `presets.test.ts` tests, the new `i18n.test.ts` describe (`TREE` undefined) and both new `App.test.ts` tests failed; after: `npx vitest run src/presets src/i18n src/App.test.ts` 111/111. Gate: `npm test` 30 files, 703 tests passed; lint clean; typecheck clean; build ok (the only size warning is the Rapier chunk PHY-32 already documents).
+
+Mutation record, `App.test.ts` › `galeria em árvore (PHY-31)` (criterion 8). Each mutation applied to the committed code, the two tests run with `npx vitest run src/App.test.ts -t "PHY-31"`, then reverted:
+
+1. **Empty node shown.** `TREE` gets `{ mecanica, dinamica, gravitacao }` (no preset) and `galleryGroups` loses its `.filter(g => g.presets.length > 0)`. Red: `agrupa por nó…` — `AssertionError: expected [ { …(2) }, { …(2) }, { …(2) }, …(3) ] to strictly equal [ { …(2) }, { …(2) }, { …(2) }, …(2) ]` (6 groups where 5 belong).
+2. **Declared order ignored.** `galleryGroups` loses `.sort((a, b) => a.position - b.position)`, so Princípios comes out in array order (cunha first). Red: `agrupa por nó…` — `AssertionError: expected [ { …(2) }, … ] to strictly equal [ { …(2) }, … ]`.
+3. **Scene named in pt-BR whatever the language.** `createPresetScene` takes the name from `getCatalog('pt-BR')` instead of `t()`. Red: `usar um preset…` — `AssertionError: expected 'Máquina de Atwood' to be 'Atwood machine'`.
+4. **Node headings not translated.** The gallery heading reads the labels from `getCatalog('pt-BR')` instead of `t()`. Red: `usar um preset…` — `AssertionError: expected 'Mecânica / Dinâmica / Princípios' to be 'Mechanics / Dynamics / Principles'`.
