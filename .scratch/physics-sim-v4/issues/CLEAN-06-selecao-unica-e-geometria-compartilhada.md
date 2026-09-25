@@ -1,5 +1,5 @@
 # CLEAN-06: Seleção como um valor só e geometria de corpo compartilhada entre os módulos do editor
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-28
 Review: agent
@@ -43,3 +43,20 @@ Bloqueado pelo PHY-28 porque ele mexe nos mesmos lugares (seleção, `hitTest`, 
 
 - 2026-09-24 Aberto pelo review do PHY-27 (stage 3). Nenhum item é critério daquele ticket, então o PHY-27 fechou como está.
 - 2026-09-24 (review do PHY-28, stage 3) O PHY-28 fechou; a seleção agora são três ids (`selectedId`, `selectedConstraintId`, `selectedPulleyId`) e o `paint`/`drawScene` levam os três. Resíduos de forma achados lá, nos mesmos arquivos deste ticket, para o stage 1 dobrar no corpo se quiser: (a) o traço de seleção `lineWidth = 3 / ppm; strokeStyle = '#ff8c00'` aparece quatro vezes em `draw.ts` (corpo, mola, polia, corda); (b) `tool.kind` é despachado em `onToolClick`, no ternário da linha de dica e via o parâmetro `selects` de `finishTool`, que se deriva da ferramenta; (c) a legenda da leitura avalia `selected ?? selectedConstraint ?? selectedPulley` duas vezes; (d) `'a' in toolRef.current` onde a união já tem discriminante; (e) `click`/`panel`/`field`/`setup` do bloco PHY-28 do `App.test.ts` repetem os do bloco PHY-27, só a semente muda.
+- 2026-09-24 (stage 2) Proxy decided: `triangleHeight` fica em `src/editor/handles.ts` (ao lado do inverso `alphaFromLocal`) e `src/render/draw.ts` importa de lá, não no `scene` — o item 2 pede `scene`, mas nenhum arquivo de `src/scene` está nos Primary files e o critério 2 só pede um lugar em `src/editor` + `src/render` (precedente: `overlay.ts` já importa `localToWorld` de `handles`). Mover para o `scene` e adotar em `simulator`/`codec` fica para um CLEAN futuro.
+- 2026-09-24 (stage 2) Proxy decided: os comentários de doc de `updateSpring` e `removeConstraint` (item 5) não foram feitos — `src/editor/doc.ts` está fora dos Primary files e nenhum critério os nomeia. Stage 1 pode dobrá-los num ticket que tenha `doc.ts`.
+- 2026-09-24 (stage 2) Implementação, commit `c1dba73`:
+  - Critério 1: `selection: { kind: 'body' | 'constraint' | 'pulley'; id } | null`, um `setSelection`, um `selectionRef`; `selectedOf(selection, kind)` deriva os três ids só para leitura (`paint`, inspetores, leitura). Constraint cobre mola e corda, como o `selectedConstraintId` do PHY-28. `deleteSelected` despacha por `kind`. `drawScene` mantém a assinatura (fora do escopo de `draw.ts`).
+  - Critério 2: `triangleHeight` em `handles.ts`, usado por `anchorSnap` (via `localVertices`), `contactSnap`, `hitTest`, `handles` e `draw` (caminho e âncora do rótulo). `simulator`, `codec` e `presets` mantêm o seu.
+  - Critério 3: `localVertices` e `closestPoint(p, a, b)` (com a guarda de segmento nulo que era do `hitTest`) no `contactSnap`; `nearestWithin` no `handles`, usado por `pickHandle` e `anchorSnap`. `candidates()` agora sai dos vértices: centro = média dos vértices (exato em ponto flutuante para retângulo e triângulo), pontos médios das faces, vértices. `contactSnap` usa `bodyPointToWorld` do `scene` no lugar do seu `localToWorld` privado.
+  - Critério 4: `drawConstraints`.
+  - Critério 5: `setTool` embrulhado virou `useState` puro; `toolRef` sincroniza no mesmo `useEffect` do `selectionRef`. Os dois blocos save/arc/restore do `paint` são `screenCircle`.
+  - Critério 6: `npm test` 30 arquivos / 642 testes antes e depois; lint, typecheck e build verdes.
+- 2026-09-24 (stage 2) Mutate-verify (nenhum teste novo; a suíte existente é a prova, `npx vitest run src/editor src/render src/App.test.ts`):
+  - `triangleHeight` × 1.01 → 6 vermelhos (anchorSnap centroide/vértices/pontos médios do triângulo, contactSnap face inclinada, handles α na hipotenusa, draw rótulo M no centroide).
+  - `closestPoint` com `t` sempre 0 → 14+ vermelhos (contactSnap, clique em mola/corda no App). Com `t` limitado a 0.9 fica verde, e a 0.5 só 2 vermelhos no contactSnap: o `hitTest` de mola/corda é pego só pelo App.
+  - `nearestWithin` sem `bestD = d` → 1 vermelho (anchorSnap "the nearest candidate wins").
+  - `toolRef.current = tool` removido → 6+ vermelhos (ferramenta Mola, PHY-27). `selectionRef.current = selection` removido → 6+ vermelhos (Backspace, Delete de mola/corda/polia, leitura da mola).
+  - `deleteSelected` com o despacho trocado → 3 vermelhos (Delete só a mola, só a corda, remover corpo).
+  - Verdes, equivalentes na prática: `selectedOf` ignorando `kind` (ids são únicos entre corpos, vínculos e polias, então um id do tipo errado não acha nada); e o `setSelection(null)` do drop na lixeira removido — o corpo sai do doc, então a seleção órfã não aparece; só um Ctrl+Z logo depois o traria de volta já selecionado. Nenhum teste novo: o código já cumpre o critério 1, um teste agora nasceria verde e não vermelho, e o critério 6 fixa a contagem. Se o stage 3 quiser o pino, é um teste de lixeira + Ctrl+Z no espelho do pointer.
+  - Notas do review do PHY-28 (a)–(e) não dobradas no corpo: continuam notas, não feitas.
