@@ -1,4 +1,4 @@
-import { bodyPointToWorld, scenePath, triangleHeight } from '../scene'
+import { bodyPointToWorld, localVertices, scenePath, triangleHeight } from '../scene'
 import type { Scene } from '../scene'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
 
@@ -139,9 +139,7 @@ function pathBody(ctx: CanvasRenderingContext2D, body: Scene['bodies'][number]):
       ctx.arc(0, 0, body.radius, 0, Math.PI * 2)
       break
     case 'triangle':
-      ctx.moveTo(0, 0)
-      ctx.lineTo(body.base, 0)
-      ctx.lineTo(body.base, triangleHeight(body))
+      localVertices(body).forEach((v, i) => (i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y)))
       ctx.closePath()
       break
   }

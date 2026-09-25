@@ -79,7 +79,7 @@ describe('weightArrows', () => {
 })
 
 describe('appliedArrows', () => {
-  it('maps anchor through localToWorld and direction through world frame, sized by the shared rule', () => {
+  it('maps anchor through bodyPointToWorld and direction through world frame, sized by the shared rule', () => {
     const view: Scene = {
       version: 1,
       constants: { g: 9.81 },
