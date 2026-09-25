@@ -1,5 +1,5 @@
 # CLEAN-06: Seleção como um valor só e geometria de corpo compartilhada entre os módulos do editor
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-28
 Review: agent

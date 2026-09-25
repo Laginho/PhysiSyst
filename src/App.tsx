@@ -1585,12 +1585,7 @@ export default function App() {
             <input
               type="checkbox"
               checked={showGlobal}
-              onChange={(e) => {
-                const v = e.target.checked
-                setShowGlobal(v)
-                showGlobalRef.current = v
-                repaint()
-              }}
+              onChange={(e) => setShowGlobal(e.target.checked)}
             />{' '}
             {t('panel.showVectors')}
           </label>
