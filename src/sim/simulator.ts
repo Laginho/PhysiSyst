@@ -35,7 +35,11 @@ export interface SpringState {
   kind: 'spring'
   /** Δx = x − x₀, m: + stretched, − compressed. */
   dx: number
-  /** F_el at each end, N: k·Δx + c·ẋ, + pulling the ends together. Equal while the spring is massless. */
+  /**
+   * F_el at each end, N, + pulling the ends together: k·Δx + c·ẋ at both
+   * while the spring is massless; with mass (PHY-30), the force each end got
+   * over the last step, which differs while the spring accelerates.
+   */
   force: { a: number; b: number }
 }
 
@@ -96,7 +100,35 @@ interface SpringBinding {
   k: number
   x0: number
   c: number
+  /** The hidden chain of a spring with mass (PHY-30); null for the ideal spring. */
+  chain: Chain | null
 }
+
+/**
+ * A spring with mass: N nodes of mₛ/N on the axis, joined to each other and
+ * to the ends by N + 1 springs of (N + 1)k, x₀/(N + 1) and (N + 1)c. The
+ * nodes are ours, not Rapier bodies, so they never collide or show up in
+ * `readStates`, and they stay on the axis: a free chain buckles when pushed.
+ */
+interface Chain {
+  mass: number
+  /** Node points (world, projected onto the axis every step) and velocities along it. */
+  p: Vec2[]
+  w: number[]
+  /** F_el each end got over the last step; null before the first. */
+  force: { a: number; b: number } | null
+}
+
+/** Nodes in a spring's hidden chain: effective mass 0.315·mₛ at the end against the continuum's 1/3. */
+const CHAIN_NODES = 8
+
+/**
+ * The chain's θ-method weight. ½ keeps every mode's energy, so the waves the
+ * step cannot follow never die down; 1 (backward Euler) drains 5.5% of the
+ * block's amplitude in 10 periods (m = 1, k = 40, mₛ = 0.1). At 0.55 it keeps
+ * 99.4%, and the tension the ends get cancels the node ringing exactly.
+ */
+const CHAIN_THETA = 0.55
 
 interface RopeBinding {
   id: string
@@ -299,9 +331,99 @@ function springAt(s: SpringBinding, lead = 0) {
   return { now, u, dx, force: s.k * dx + s.c * rate }
 }
 
-function readSpring(s: SpringBinding): SpringState {
+function readSpring(s: SpringBinding, lag: number): SpringState {
+  if (s.chain) {
+    const { x, at, v } = chainAxis(s, s.chain, lag)
+    const T = chainTensions(s, at, v)
+    return { id: s.id, kind: 'spring', dx: x - s.x0, force: s.chain.force ?? { a: T[0]!, b: T.at(-1)! } }
+  }
   const { dx, force } = springAt(s)
   return { id: s.id, kind: 'spring', dx, force: { a: force, b: force } }
+}
+
+function dot(p: Vec2, q: Vec2): number {
+  return p.x * q.x + p.y * q.y
+}
+
+/**
+ * The chain on the spring's axis: end a, the nodes, end b, as distances from
+ * end a now (`at`) and velocities along the axis (`v`). The nodes run `lag`
+ * seconds behind the bodies (see pushChain), so the ends are taken back
+ * there too, each at its velocity now.
+ */
+function chainAxis(s: SpringBinding, chain: Chain, lag: number) {
+  const pa = worldPoint(s.a)
+  const pb = worldPoint(s.b)
+  const u = unit(pa, pb)
+  const x = Math.hypot(pb.x - pa.x, pb.y - pa.y)
+  const va = dot(pointVelocity(s.a.rigid, pa), u)
+  const vb = dot(pointVelocity(s.b.rigid, pb), u)
+  const at = [-lag * va, ...chain.p.map((p) => dot({ x: p.x - pa.x, y: p.y - pa.y }, u)), x - lag * vb]
+  return { pa, pb, u, x, at, v: [va, ...chain.w, vb] }
+}
+
+/** The tension of each of the chain's springs, + pulling its two points together. */
+function chainTensions(s: SpringBinding, at: readonly number[], v: readonly number[]): number[] {
+  const n = at.length - 1
+  return at.slice(1).map((q, i) => n * s.k * (q - at[i]! - s.x0 / n) + n * s.c * (v[i + 1]! - v[i]!))
+}
+
+/**
+ * The nodes after one θ-method step, the ends moving on at their velocity:
+ * q with −κ q_{i−1} + (μ/θ²Δt² + 2κ) q_i − κ q_{i+1} = rhs_i, κ = k′ + c′/θΔt,
+ * solved by the Thomas algorithm. θ > ½ keeps it stable for any mass and
+ * damps the modes a 60 Hz step cannot follow.
+ */
+function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: readonly number[], g: number): number[] {
+  const n = CHAIN_NODES
+  const dt = TIMESTEP
+  const th = CHAIN_THETA
+  const k = (n + 1) * s.k
+  const c = (n + 1) * s.c
+  const mu = chain.mass / n
+  const inertia = mu / (th * th * dt * dt)
+  const kappa = k + c / (th * dt)
+  const T = chainTensions(s, at, v)
+  const second = (x: readonly number[], i: number) => x[i + 1]! - 2 * x[i]! + x[i - 1]!
+  const q = at.map((p, j) => p + dt * v[j]!)
+  const rhs = at.map((p, i) =>
+    i === 0 || i === n + 1
+      ? 0
+      : inertia * (p + dt * v[i]!) +
+        (mu * g) / th -
+        (c / (th * dt)) * second(at, i) -
+        ((c * (1 - th)) / th) * second(v, i) +
+        ((1 - th) / th) * (T[i]! - T[i - 1]!),
+  )
+  rhs[1] = rhs[1]! + kappa * q[0]!
+  rhs[n] = rhs[n]! + kappa * q[n + 1]!
+  const diag = inertia + 2 * kappa
+  const sweep: number[] = []
+  const d: number[] = []
+  for (let i = 1; i <= n; i++) {
+    const m = diag + kappa * (sweep[i - 2] ?? 0)
+    sweep.push(-kappa / m)
+    d.push((rhs[i]! + kappa * (d[i - 2] ?? 0)) / m)
+  }
+  for (let i = n; i >= 1; i--) q[i] = d[i - 1]! - sweep[i - 1]! * (i < n ? q[i + 1]! : 0)
+  return q
+}
+
+/** A chain for `mass`; null for the ideal spring. */
+function newChain(mass: number | undefined): Chain | null {
+  return mass ? { mass, p: [], w: [], force: null } : null
+}
+
+/** The nodes evenly spaced between the ends where they are, moving with the axis. */
+function placeChain(s: SpringBinding, chain: Chain): void {
+  const pa = worldPoint(s.a)
+  const pb = worldPoint(s.b)
+  const u = unit(pa, pb)
+  const ua = dot(pointVelocity(s.a.rigid, pa), u)
+  const ub = dot(pointVelocity(s.b.rigid, pb), u)
+  const f = Array.from({ length: CHAIN_NODES }, (_, i) => (i + 1) / (CHAIN_NODES + 1))
+  chain.p = f.map((t) => ({ x: pa.x + t * (pb.x - pa.x), y: pa.y + t * (pb.y - pa.y) }))
+  chain.w = f.map((t) => ua + t * (ub - ua))
 }
 
 function wrapAngle(a: number): number {
@@ -697,7 +819,7 @@ class RapierSimulator implements Simulator {
       }
       for (const [index, constraint] of (scene.constraints ?? []).entries()) {
         if (constraint.kind === 'spring') {
-          springs.push({
+          const spring: SpringBinding = {
             id: constraint.id,
             index,
             a: point(constraint.a.bodyId, constraint.a.anchor),
@@ -705,7 +827,10 @@ class RapierSimulator implements Simulator {
             k: constraint.k,
             x0: constraint.x0,
             c: constraint.c ?? 0,
-          })
+            chain: newChain(constraint.mass),
+          }
+          if (spring.chain) placeChain(spring, spring.chain)
+          springs.push(spring)
           continue
         }
         const rope = constraint
@@ -776,7 +901,10 @@ class RapierSimulator implements Simulator {
         true,
       )
     }
-    for (const s of this.springs) this.pushSpring(s)
+    for (const s of this.springs) {
+      if (s.chain) this.pushChain(s, s.chain)
+      else this.pushSpring(s)
+    }
     for (const rope of this.ropes) {
       if (rope.grips.length) this.pullPieces(rope)
       else this.pullRope(rope)
@@ -877,6 +1005,35 @@ class RapierSimulator implements Simulator {
     const { now, u, force } = springAt(s, (1 - this.substepFactor()) * TIMESTEP)
     if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: force * u.x, y: force * u.y }, now[0], true)
     if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -force * u.x, y: -force * u.y }, now[1], true)
+  }
+
+  /**
+   * Spring with mass (PHY-30), in pushSpring's place: one θ-method chain
+   * step, and each end gets its spring's tension weighted the same way, which
+   * sees the ends θΔt ahead of the chain. It must see them pushSpring's
+   * (1 − φ)Δt ahead of the bodies (with θ = 1 and no lag the block loses two
+   * thirds of its amplitude in 10 periods), so the chain runs (θ − 1 + φ)Δt
+   * behind the bodies.
+   */
+  private pushChain(s: SpringBinding, chain: Chain): void {
+    const { pa, pb, u, at, v } = chainAxis(s, chain, this.chainLag())
+    const n = CHAIN_NODES
+    const q = chainStep(s, chain, at, v, dot(this.world.gravity, u))
+    const th = CHAIN_THETA
+    const w = q.map((p, j) => (j === 0 || j === n + 1 ? v[j]! : (p - at[j]!) / (th * TIMESTEP) - ((1 - th) / th) * v[j]!))
+    const before = chainTensions(s, at, v)
+    const after = chainTensions(s, q, w)
+    const fa = th * after[0]! + (1 - th) * before[0]!
+    const fb = th * after[n]! + (1 - th) * before[n]!
+    chain.force = { a: fa, b: fb }
+    chain.p = q.slice(1, -1).map((p) => ({ x: pa.x + p * u.x, y: pa.y + p * u.y }))
+    chain.w = w.slice(1, -1)
+    if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: fa * u.x, y: fa * u.y }, pa, true)
+    if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -fb * u.x, y: -fb * u.y }, pb, true)
+  }
+
+  private chainLag(): number {
+    return (CHAIN_THETA - 1 + this.substepFactor()) * TIMESTEP
   }
 
   private substepFactor(): number {
@@ -1009,7 +1166,7 @@ class RapierSimulator implements Simulator {
         r.index,
         { id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r) },
       ]),
-      ...this.springs.map((s): [number, ConstraintState] => [s.index, readSpring(s)]),
+      ...this.springs.map((s): [number, ConstraintState] => [s.index, readSpring(s, this.chainLag())]),
     ]
     return read.sort(([i], [j]) => i - j).map(([, state]) => state)
   }
@@ -1143,6 +1300,8 @@ class RapierSimulator implements Simulator {
     // The disks are not bodies of the document, so `carry` cannot hold them:
     // a carried rebuild takes each surviving pulley's spin from the live world.
     const spins = new Map([...this.disks].map(([id, disk]) => [id, disk.angvel()]))
+    // Nor the chains of springs with mass: theirs resume with the spring's id.
+    const chains = new Map(this.springs.flatMap((s) => (s.chain ? [[s.id, s.chain] as const] : [])))
     this.world.free()
     this.world = next.world
     this.bodies = next.bodies
@@ -1179,6 +1338,12 @@ class RapierSimulator implements Simulator {
       if (spin !== undefined) disk.setAngvel(spin, true)
     }
     for (const rope of this.ropes) if (rope.grips.length) this.regrip(rope)
+    for (const s of this.springs) {
+      if (!s.chain) continue
+      const live = chains.get(s.id)
+      if (live) Object.assign(s.chain, { p: live.p, w: live.w, force: live.force })
+      else placeChain(s, s.chain)
+    }
   }
 }
 

@@ -109,7 +109,8 @@ export interface Rope {
 /**
  * Ideal massless spring between two anchors (PHY-26). `x0` is the natural
  * length; x is the current anchor distance and Δx = x − x0. `c` is the
- * damping coefficient along the axis, N·s/m, absent = 0.
+ * damping coefficient along the axis, N·s/m, absent = 0. `mass` is the
+ * realism option (PHY-30), kg, absent = 0: the ideal massless spring.
  */
 export interface Spring {
   id: string
@@ -119,6 +120,7 @@ export interface Spring {
   k: number
   x0: number
   c?: number
+  mass?: number
 }
 
 export type Constraint = Rope | Spring
