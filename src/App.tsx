@@ -1764,9 +1764,10 @@ export default function App() {
               <legend>{t('gallery.title')}</legend>
               <div style={{ display: 'grid', gap: 6 }}>
                 {galleryGroups().map(({ node, presets }) => {
-                  const path = nodeLabelKeys(node).map((k) => t(k)).join(' / ')
+                  const keys = nodeLabelKeys(node)
+                  const path = keys.map((k) => t(k)).join(' / ')
                   return (
-                    <div key={path} role="group" aria-label={path} style={{ display: 'grid', gap: 6 }}>
+                    <div key={keys[keys.length - 1]} role="group" aria-label={path} style={{ display: 'grid', gap: 6 }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{path}</div>
                       {presets.map((p) => (
                         <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
