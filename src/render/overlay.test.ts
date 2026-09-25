@@ -346,8 +346,8 @@ function rope(id: string, a: string, b: string, via: string[] = []): NonNullable
   return { id, kind: 'rope', a: { bodyId: a, anchor: { x: 0, y: 0 } }, b: { bodyId: b, anchor: { x: 0, y: 0 } }, via }
 }
 
-function spring(id: string, a: string, b: string): NonNullable<Scene['constraints']>[number] {
-  return { id, kind: 'spring', a: { bodyId: a, anchor: { x: 0, y: 0 } }, b: { bodyId: b, anchor: { x: 0, y: 0 } }, k: 10, x0: 1 }
+function spring(id: string, a: string, b: string, mass?: number): NonNullable<Scene['constraints']>[number] {
+  return { id, kind: 'spring', a: { bodyId: a, anchor: { x: 0, y: 0 } }, b: { bodyId: b, anchor: { x: 0, y: 0 } }, k: 10, x0: 1, ...(mass === undefined ? {} : { mass }) }
 }
 
 function ropeState(id: string, segments: number[]): ConstraintState {
@@ -444,6 +444,14 @@ describe('elasticArrows', () => {
     expectArrow(arrows[1], { x: 0, y: 2 }, { x: 0, y: len })
   })
 
+  it('spring with mass (PHY-30): each end sized by its own F_el', () => {
+    const scene: Scene = { ...sceneWithBodies([block('a', 0, 0), block('b', 0, 2)]), constraints: [spring('s', 'a', 'b', 0.2)] }
+    const arrows = elasticArrows(scene, [springState('s', 9, 4)], PPM)
+    expect(arrows).toHaveLength(2)
+    expectArrow(arrows[0], { x: 0, y: 0 }, { x: 0, y: vectorArrowLengthPx(9) / PPM })
+    expectArrow(arrows[1], { x: 0, y: 2 }, { x: 0, y: -vectorArrowLengthPx(4) / PPM })
+  })
+
   it('ropes and springs with no reading are ignored', () => {
     const scene: Scene = { ...sceneWithBodies([block('a', 0, 0), block('b', 0, 2)]), constraints: [spring('s', 'a', 'b'), rope('r', 'a', 'b')] }
     expect(elasticArrows(scene, [ropeState('r', [3])], PPM)).toEqual([])
@@ -490,6 +498,15 @@ describe('vectorLabels', () => {
 
   it('the same rope carries the same T at both ends', () => {
     expect(labelsOf(tensionArrows(atwood(), [ropeState('r', [9, 9])], PPM))).toEqual(['T', 'T'])
+  })
+
+  it('spring with mass (PHY-30): one F_el per end; massless, one for both', () => {
+    const bodies = sceneWithBodies([block('a', 0, 0), block('b', 0, 2)])
+    const massive: Scene = { ...bodies, constraints: [spring('s', 'a', 'b', 0.2)] }
+    expect(labelsOf(elasticArrows(massive, [springState('s', 9, 4)], PPM))).toEqual(['F_el,1', 'F_el,2'])
+    expect(labelsOf(elasticArrows(massive, [springState('s', 9, 4)], PPM), 'en')).toEqual(['F_s,1', 'F_s,2'])
+    const ideal: Scene = { ...bodies, constraints: [spring('s', 'a', 'b', 0)] }
+    expect(labelsOf(elasticArrows(ideal, [springState('s', 5)], PPM))).toEqual(['F_el', 'F_el'])
   })
 
   it('pulley with mass: one T per segment', () => {

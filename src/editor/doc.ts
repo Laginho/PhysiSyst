@@ -215,7 +215,7 @@ export function updateG(doc: Scene, g: number): Scene {
 /** Stiffness of a spring fresh from the palette, N/m; the student edits it in the inspector. */
 export const SPRING_DEFAULT_K = 20
 
-export type SpringPatch = Partial<Pick<Spring, 'k' | 'x0' | 'c'>>
+export type SpringPatch = Partial<Pick<Spring, 'k' | 'x0' | 'c' | 'mass'>>
 
 /** x, the current anchor-to-anchor distance at the document's poses; null when an end dangles. */
 function springLength(doc: Scene, a: ConstraintEnd, b: ConstraintEnd): number | null {

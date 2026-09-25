@@ -158,8 +158,10 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
 
 /**
  * F_el at every dynamic end of a spring, at the anchor, along its axis:
- * toward the other end while stretched, away while compressed. A spring with
- * no reading, or F_el = 0 at that end, draws nothing there.
+ * toward the other end while stretched, away while compressed, each sized by
+ * its own end's reading. A spring with no reading, or F_el = 0 at that end,
+ * draws nothing there. With mass (PHY-30) F_el differs per end, and so does
+ * the label.
  */
 export function elasticArrows(view: Scene, constraints: readonly ConstraintState[], pixelsPerMeter: number): OverlayArrow[] {
   const bodies = new Map(view.bodies.map((b) => [b.id, b]))
@@ -172,10 +174,11 @@ export function elasticArrows(view: Scene, constraints: readonly ConstraintState
     if (state?.kind !== 'spring' || !a || !b) continue
     const pa = bodyPointToWorld(a, spring.a.anchor)
     const pb = bodyPointToWorld(b, spring.b.anchor)
-    for (const [body, at, other, force] of [[a, pa, pb, state.force.a], [b, pb, pa, state.force.b]] as const) {
+    const perEnd = (spring.mass ?? 0) > 0
+    for (const [end, body, at, other, force] of [['a', a, pa, pb, state.force.a], ['b', b, pb, pa, state.force.b]] as const) {
       if (body.fixed) continue
       const vec = arrowToward(at, other, force, pixelsPerMeter)
-      if (vec) out.push({ from: at, vec, kind: 'elastic', key: `elastic:${spring.id}` })
+      if (vec) out.push({ from: at, vec, kind: 'elastic', key: perEnd ? `elastic:${spring.id}#${end}` : `elastic:${spring.id}` })
     }
   }
   return out

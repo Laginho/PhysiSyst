@@ -914,7 +914,7 @@ describe('acceptance: ideal spring (PHY-26)', () => {
   // block's equilibrium is at blockX = X0 − 1.7.
   const X0 = 1
   const X_EQ = X0 - 1.7
-  function horizontalScene(m: number, k: number, blockX: number, c?: number): Scene {
+  function horizontalScene(m: number, k: number, blockX: number, c?: number, springMass?: number): Scene {
     return {
       version: 1,
       constants: { g: G },
@@ -934,6 +934,7 @@ describe('acceptance: ideal spring (PHY-26)', () => {
           k,
           x0: X0,
           ...(c === undefined ? {} : { c }),
+          ...(springMass === undefined ? {} : { mass: springMass }),
         },
       ],
     }
@@ -1114,6 +1115,149 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     expect(up.length).toBeGreaterThanOrEqual(4)
     expect(Math.abs((up[3]! - up[0]!) / 3 - period)).toBeLessThanOrEqual(0.02 * period)
     expect(worstCom).toBeLessThan(1e-4)
+  })
+
+  /**
+   * PHY-30: the spring with mass. Closed forms from the continuum spring:
+   * against a fixed end it adds mₛ/3 to the block's inertia, hangs mₛ/2 of
+   * its weight on the block, and its center moves at half the block's, so
+   * the ends' forces differ by mₛ·a/2 (Newton on the spring).
+   */
+  describe('with mass (PHY-30)', () => {
+    const A = 0.1
+
+    /** Mean period over `count` up-crossings of the block through X_EQ. */
+    function period(sim: Sim, count: number, estimate: number): { measured: number; x: number[] } {
+      const x = run(sim, Math.ceil(((count + 1) * estimate) / TIMESTEP), () => sim.readStates().get('bloco')!.position.x)
+      const up = upCrossings(x, X_EQ)
+      expect(up.length).toBeGreaterThanOrEqual(count + 1)
+      return { measured: (up[count]! - up[0]!) / count, x }
+    }
+
+    it.each([
+      { m: 1, k: 40 },
+      { m: 2, k: 50 },
+    ])('horizontal m=$m k=$k, mₛ = 0.1·m: period within 3% of 2π√((m + mₛ/3)/k) and nearer it than 2π√(m/k); amplitude after 5 periods within 2%', async ({ m, k }) => {
+      const ms = 0.1 * m
+      const massive = 2 * Math.PI * Math.sqrt((m + ms / 3) / k)
+      const massless = 2 * Math.PI * Math.sqrt(m / k)
+      const { measured, x } = period(await load(horizontalScene(m, k, X_EQ + A, undefined, ms)), 5, massive)
+      expect(Math.abs(measured - massive)).toBeLessThanOrEqual(0.03 * massive)
+      expect(Math.abs(measured - massive)).toBeLessThan(Math.abs(measured - massless))
+      const fifth = x.slice(Math.floor((4 * massive) / TIMESTEP), Math.ceil((5 * massive) / TIMESTEP) + 1)
+      const amplitude = (Math.max(...fifth) - Math.min(...fifth)) / 2
+      expect(Math.abs(amplitude - A)).toBeLessThanOrEqual(0.02 * A)
+    })
+
+    it('while the spring accelerates, F_el differs per end: F_b − F_a follows mₛ·a/2 within 10% (least squares over 3 periods)', async () => {
+      const m = 1
+      const ms = 0.1
+      const sim = await load(horizontalScene(m, 40, X_EQ + A, undefined, ms))
+      let v = sim.readStates().get('bloco')!.linvel.x
+      let sxy = 0
+      let sxx = 0
+      let widest = 0
+      for (let i = 0; i < Math.ceil(3 / TIMESTEP); i++) {
+        sim.step()
+        const now = sim.readStates().get('bloco')!.linvel.x
+        // The wall end is a, the block end b, the axis from a to b is +x.
+        const expected = (ms / 2) * ((now - v) / TIMESTEP)
+        v = now
+        const { a, b } = spring(sim).force
+        sxy += (b - a) * expected
+        sxx += expected * expected
+        widest = Math.max(widest, Math.abs(b - a))
+      }
+      expect(widest).toBeGreaterThan(0.1)
+      expect(Math.abs(sxy / sxx - 1)).toBeLessThanOrEqual(0.1)
+    })
+
+    it('mₛ = 0 is the ideal spring: both ends read the same F_el at every step', async () => {
+      const sim = await load(horizontalScene(1, 40, X_EQ + A, undefined, 0))
+      for (let i = 0; i < 60; i++) {
+        sim.step()
+        const { a, b } = spring(sim).force
+        expect(a).toBe(b)
+      }
+    })
+
+    it('with mass the readout is the force each end got: m·Δv/Δt = −F_el at the block within 0.5% every step', async () => {
+      const m = 1
+      const sim = await load(horizontalScene(m, 40, X_EQ + A, undefined, 0.1))
+      let v = sim.readStates().get('bloco')!.linvel.x
+      for (let i = 0; i < 90; i++) {
+        sim.step()
+        const now = sim.readStates().get('bloco')!.linvel.x
+        const felt = (m * (now - v)) / TIMESTEP
+        v = now
+        const fb = spring(sim).force.b
+        expect(Math.abs(felt + fb)).toBeLessThanOrEqual(0.005 * Math.abs(fb) + 1e-3)
+      }
+    })
+
+    it('vertical, hanging from the ceiling: equilibrium (m + mₛ/2)g/k below the natural length within 2%', async () => {
+      const m = 1
+      const ms = 0.2
+      const k = 40
+      const x0 = 1
+      const drop = ((m + ms / 2) * G) / k
+      const sim = await load({
+        version: 1,
+        constants: { g: G },
+        bodies: [
+          { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+          { shape: 'rectangle', width: 0.4, height: 0.4, id: 'bloco', fixed: false, mass: m, position: { x: 0, y: 5.75 - x0 - 0.2 }, rotation: 0 },
+        ],
+        forces: [],
+        contacts: [],
+        constraints: [
+          { id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: -0.25 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0.2 } }, k, x0, mass: ms },
+        ],
+      })
+      const estimate = 2 * Math.PI * Math.sqrt((m + ms / 3) / k)
+      const stretch = run(sim, Math.round((3 * estimate) / TIMESTEP), () => 5.75 - (sim.readStates().get('bloco')!.position.y + 0.2) - x0)
+      const equilibrium = (Math.max(...stretch) + Math.min(...stretch)) / 2
+      expect(Math.abs(equilibrium - drop)).toBeLessThanOrEqual(0.02 * drop)
+    })
+
+    it('the chain is hidden and collides with nothing: readStates holds only the document bodies, and a fixed bar across the spring leaves the period at 2π√((m + mₛ/3)/k)', async () => {
+      const m = 1
+      const k = 40
+      const ms = 0.1
+      const scene = horizontalScene(m, k, X_EQ + A, undefined, ms)
+      // Across the spring's line (y = 0.2, from x = −1.9 to the block's face near −0.8), touching nothing else.
+      scene.bodies.push({ shape: 'rectangle', width: 0.1, height: 0.2, id: 'barra', fixed: true, mass: 0, position: { x: -1.5, y: 0.2 }, rotation: 0 })
+      const sim = await load(scene)
+      const massive = 2 * Math.PI * Math.sqrt((m + ms / 3) / k)
+      const { measured } = period(sim, 3, massive)
+      expect(new Set(sim.readStates().keys())).toStrictEqual(new Set(['chao', 'parede', 'bloco', 'barra']))
+      expect(Math.abs(measured - massive)).toBeLessThanOrEqual(0.03 * massive)
+      expect(Math.abs(measured - massive)).toBeLessThan(Math.abs(measured - 2 * Math.PI * Math.sqrt(m / k)))
+    })
+
+    it('replaceScene with carry keeps the chain: F_el per end reads the same across the rebuild, and the block follows an uninterrupted run within 3% of A', async () => {
+      const scene = horizontalScene(1, 40, X_EQ + A, undefined, 0.1)
+      const cut = await load(scene)
+      const whole = await load(scene)
+      for (let i = 0; i < 37; i++) {
+        cut.step()
+        whole.step()
+      }
+      const before = spring(cut).force
+      // Mid-swing: the chain is live, its ends read apart.
+      expect(Math.abs(before.a - before.b)).toBeGreaterThan(0.05)
+      cut.replaceScene(parse(scene), cut.readStates())
+      const after = spring(cut).force
+      expect(after.a).toBeCloseTo(before.a, 9)
+      expect(after.b).toBeCloseTo(before.b, 9)
+      let worst = 0
+      for (let i = 0; i < 120; i++) {
+        cut.step()
+        whole.step()
+        worst = Math.max(worst, Math.abs(cut.readStates().get('bloco')!.position.x - whole.readStates().get('bloco')!.position.x))
+      }
+      expect(worst).toBeLessThanOrEqual(0.03 * A)
+    })
   })
 })
 

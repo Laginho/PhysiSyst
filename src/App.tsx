@@ -479,7 +479,7 @@ function ContactsPanel({
 
 /**
  * Inspector for the selected spring (PHY-27). `onEdit` refuses an edit the
- * codec would reject (k ≤ 0, x₀ ≤ 0, c < 0) and returns false; the panel then
+ * codec would reject (k ≤ 0, x₀ ≤ 0, c < 0, mₛ < 0) and returns false; the panel then
  * shows one warning line until the next accepted edit. Keyed by spring id,
  * so the warning never carries over to another spring.
  */
@@ -503,6 +503,7 @@ function SpringPanel({
       <NumField label={t('spring.x0')} value={spring.x0} step={0.01} onChange={(v) => edit((d) => updateSpring(d, spring.id, { x0: v }))} />
       <NumField label={t('spring.dx')} value={dx} step={0.01} onChange={(v) => edit((d) => setSpringDx(d, spring.id, v))} />
       <NumField label={t('spring.c')} value={spring.c ?? 0} step={0.1} onChange={(v) => edit((d) => updateSpring(d, spring.id, { c: v }))} />
+      <NumField label={t('spring.mass')} value={spring.mass ?? 0} step={0.01} onChange={(v) => edit((d) => updateSpring(d, spring.id, { mass: v }))} />
       {invalid && <div style={{ fontSize: 12, color: '#b00' }}>{t('spring.invalid')}</div>}
       <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
     </fieldset>
@@ -1388,7 +1389,7 @@ export default function App() {
   function commitSpringEdit(edit: (d: Scene) => Scene): boolean {
     const next = edit(docRef.current)
     const s = next.constraints?.find((c) => c.id === selectedConstraintId)
-    if (s?.kind !== 'spring' || !(s.k > 0 && s.x0 > 0 && (s.c ?? 0) >= 0)) return false
+    if (s?.kind !== 'spring' || !(s.k > 0 && s.x0 > 0 && (s.c ?? 0) >= 0 && (s.mass ?? 0) >= 0)) return false
     commitDoc(next)
     return true
   }
@@ -1836,9 +1837,18 @@ export default function App() {
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
               {selectedSpring && constraintReadout?.kind === 'spring' && (
                 <>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.springForce')}: {constraintReadout.force.a.toFixed(2)} N
-                  </div>
+                  {/* F_el differs per end only on a spring with mass (PHY-30). */}
+                  {(selectedSpring.mass ?? 0) > 0 ? (
+                    ([[selectedSpring.a, constraintReadout.force.a], [selectedSpring.b, constraintReadout.force.b]] as const).map(([end, F], i) => (
+                      <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
+                        {t('readout.springForceAt', { body: end.bodyId })}: {F.toFixed(2)} N
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.springForce')}: {constraintReadout.force.a.toFixed(2)} N
+                    </div>
+                  )}
                   <div>
                     {t('readout.springDx')}: {constraintReadout.dx.toFixed(3)} m
                   </div>
