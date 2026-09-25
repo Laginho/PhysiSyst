@@ -1,5 +1,5 @@
 # CLEAN-15: Predicado "vínculos que tocam o corpo" compartilhado
-Stage: to-review
+Stage: done
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -25,6 +25,24 @@ Extrair um `constraintsOn(scene, id)` (ou predicado equivalente) em `src/scene` 
 #### Verification
 
     npm test && npm run lint && npm run typecheck && npm run build
+
+#### Resolution (2026-09-25)
+
+Verdict: Approve
+
+Findings:
+
+- Critério 1 ✅ — `constraintTouchesBody(scene, constraint, bodyId)` em `src/scene/ropePath.ts:155`, reexportado por `src/scene/index.ts`; `removeBodyAndDependents` (`doc.ts:104`) e `isHeld` (`accelerationTracker.ts:82`) chamam-no. Nenhuma cópia da regra sobrou nos dois callers; `removePulleyAndDependents` (`doc.ts:289`) é outro predicado ("corda passa por esta polia"), fora do ticket.
+- Critério 2 ✅ — `git diff sweatshop/2026-09-24-1853...HEAD --stat` não toca nenhum `*.test.ts`. Mutação registada pelo stage 2 reproduzida no review (`&& false` no ramo da polia): `3 failed | 61 passed` nos dois arquivos, os mesmos três testes; revertida, árvore limpa.
+- Critério 3 ✅ — gate verde em `051f1e4` (já sobre a ponta da session, sem rebase): 30 arquivos, 714 testes; lint, typecheck e build limpos.
+- Comportamento preservado — comparação linha a linha nos dois callers: `doc.pulleys` undefined, `via` com id de polia inexistente, corpo que é ponta e montagem ao mesmo tempo, tudo igual. A única diferença estrutural (`.some` aninhado em vez de Set/Map) só divergiria com ids de polia duplicados, que o codec rejeita; custo irrelevante nos tamanhos de cena do app.
+- Primary files ✅ — `ropePath.ts` cabe na cláusula "o módulo de `src/scene` onde o helper couber": é o módulo de helpers de cena (`scenePath`, `bodyPointToWorld`). Um commit só, como o ticket previa.
+- Standards: sem violação; smell leve (julgamento) de que `ropePath.ts` diz "pure rope geometry" no cabeçalho e já hospeda helpers gerais de cena — renomear fica fora deste ticket, sem CLEAN por ora.
+- Regressão: nenhuma.
+
+Files: `src/scene/ropePath.ts`, `src/scene/index.ts`, `src/editor/doc.ts`, `src/playback/accelerationTracker.ts`.
+
+Merge: `c63e121` na session `sweatshop/2026-09-24-1853`.
 
 ## Tests stage 2 writes (own commit, red)
 
