@@ -855,6 +855,13 @@ export default function App() {
     return () => saverRef.current?.cancel()
   }, [doc, currentId])
 
+  // Leaving the page (F5, tab close, CLEAN-01's chunk reload) must not drop the edit still inside the debounce.
+  useEffect(() => {
+    const flush = () => saverRef.current?.flush()
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [])
+
   // Hydration recovery: structured key stored, translated at render time so language switches re-render correctly
   useEffect(() => {
     const idxRes = loadIndexResult(storage)
