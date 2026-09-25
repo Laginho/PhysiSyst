@@ -72,6 +72,16 @@ export function getAcceleration(tracker: AccelTracker, scene: Scene, id: string,
   if (measured) return { ...measured, approximate: false }
   const body = scene.bodies.find((candidate) => candidate.id === id)
   const analytic = estimateAnalyticAcceleration(scene, id)
-  const approximate = Boolean(body && !body.fixed && body.mass > 0 && scene.contacts.some((contact) => contact.a === id || contact.b === id))
+  const approximate = Boolean(body && !body.fixed && body.mass > 0 && isHeld(scene, id))
   return { ...analytic, approximate }
+}
+
+// The analytic estimate knows no contact, rope or spring force; any of them makes it a guess.
+function isHeld(scene: Scene, id: string): boolean {
+  if (scene.contacts.some((contact) => contact.a === id || contact.b === id)) return true
+  const pulleyBody = new Map((scene.pulleys ?? []).map((pulley) => [pulley.id, pulley.bodyId]))
+  return (scene.constraints ?? []).some((constraint) =>
+    constraint.a.bodyId === id ||
+    constraint.b.bodyId === id ||
+    (constraint.kind === 'rope' && constraint.via.some((pulleyId) => pulleyBody.get(pulleyId) === id)))
 }
