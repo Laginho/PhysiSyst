@@ -319,7 +319,7 @@ function pointVelocity(rigid: RAPIER.RigidBody, p: Vec2): Vec2 {
 }
 
 /**
- * The spring's axis, Δx and F_el = kΔx + c·ẋ with its ends `lead` seconds
+ * The spring's axis, length x, Δx and F_el = kΔx + c·ẋ with its ends `lead` seconds
  * ahead of where they are, each moving on at its velocity now.
  */
 function springAt(s: SpringBinding, lead = 0) {
@@ -327,9 +327,10 @@ function springAt(s: SpringBinding, lead = 0) {
   const v = [pointVelocity(s.a.rigid, now[0]), pointVelocity(s.b.rigid, now[1])] as const
   const [pa, pb] = now.map((p, i) => ({ x: p.x + lead * v[i]!.x, y: p.y + lead * v[i]!.y }))
   const u = unit(pa!, pb!)
-  const dx = Math.hypot(pb!.x - pa!.x, pb!.y - pa!.y) - s.x0
+  const x = Math.hypot(pb!.x - pa!.x, pb!.y - pa!.y)
+  const dx = x - s.x0
   const rate = (v[1].x - v[0].x) * u.x + (v[1].y - v[0].y) * u.y
-  return { now, v, u, dx, force: s.k * dx + s.c * rate }
+  return { now, v, u, x, dx, force: s.k * dx + s.c * rate }
 }
 
 function readSpring(s: SpringBinding): SpringState {
@@ -348,10 +349,10 @@ function dot(p: Vec2, q: Vec2): number {
  * there too, each at its velocity now.
  */
 function chainAxis(s: SpringBinding, chain: Chain, lag: number) {
-  const { now, v, u, dx } = springAt(s)
+  const { now, v, u, x } = springAt(s)
   const va = dot(v[0], u)
   const vb = dot(v[1], u)
-  return { now, u, at: [-lag * va, ...chain.p, dx + s.x0 - lag * vb], v: [va, ...chain.w, vb] }
+  return { now, u, at: [-lag * va, ...chain.p, x - lag * vb], v: [va, ...chain.w, vb] }
 }
 
 /** The tension of each of the chain's springs, + pulling its two points together. */
@@ -412,11 +413,11 @@ function newChain(mass: number | undefined): Chain | null {
  * axis. A chain stretched evenly pulls both ends with the ideal spring's F_el.
  */
 function placeChain(s: SpringBinding, chain: Chain): void {
-  const { now, u, dx, force } = springAt(s)
-  const ua = dot(pointVelocity(s.a.rigid, now[0]), u)
-  const ub = dot(pointVelocity(s.b.rigid, now[1]), u)
+  const { v, u, x, force } = springAt(s)
+  const ua = dot(v[0], u)
+  const ub = dot(v[1], u)
   const f = Array.from({ length: CHAIN_NODES }, (_, i) => (i + 1) / (CHAIN_NODES + 1))
-  chain.p = f.map((t) => t * (dx + s.x0))
+  chain.p = f.map((t) => t * x)
   chain.w = f.map((t) => ua + t * (ub - ua))
   chain.force = { a: force, b: force }
 }
