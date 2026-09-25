@@ -7,7 +7,7 @@ A web app that simulates classical mechanics problems: students compose scenes o
 ### Scene composition
 
 **Scene**:
-A complete setup of one mechanics problem: its bodies, applied forces, contacts, constraints, and constants. The unit of saving, sharing, and playing.
+A complete setup of one mechanics problem: its bodies, applied forces, contacts, pulleys, constraints, and constants. The unit of saving, sharing, and playing.
 _Avoid_: level, world, problem (the *problem* is what the student solves; the *scene* is its representation)
 
 **Body**:
@@ -89,7 +89,7 @@ A scene-wide toggle that disables rotation, for intro-level problems where bodie
 ### Distribution
 
 **Preset**:
-A ready-made scene shipped with the app so it is never empty on first open. The classic wedge-pushed-by-force problem is preset #1.
+A ready-made scene shipped with the app so it is never empty on first open. Presets live in the Preset tree; the classic wedge-pushed-by-force problem is one of them.
 
 **Preset tree**:
 The gallery's organization: area → part → topic, following the textbook *Tópicos de Física* (the most popular convention when in doubt). Only nodes holding a preset are shown; presets within a topic go in increasing difficulty.
