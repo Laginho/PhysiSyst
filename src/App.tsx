@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, ConstraintEnd, Scene, Spring, Vec2 } from './scene'
-import { bodyPointToWorld, collectWarnings, serialize } from './scene'
+import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
+import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
@@ -18,10 +18,12 @@ import { DEMO_SCENE } from './scene/demo'
 import { createPresetScene, PRESETS } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
-import type { BodyState, ContactPoint, Simulator } from './sim'
+import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
 import {
   addContact,
   addForce,
+  addPulley,
+  addRope,
   addSpring,
   duplicateBody,
   freshId,
@@ -29,6 +31,7 @@ import {
   removeConstraint,
   removeContact,
   removeForce,
+  removePulleyAndDependents,
   setSpringDx,
   springDx,
   updateBody,
@@ -36,10 +39,12 @@ import {
   updateForce,
   updateG,
   updateParticleMode,
+  updatePulley,
   updateSpring,
   type BodyPatch,
+  type MutationResult,
 } from './editor/doc'
-import { bodyAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
+import { bodyAtPoint, pulleyAtPoint, ropeAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
 import { anchorSnap } from './editor/anchorSnap'
 import { resolveContactSnap } from './editor/contactSnap'
 import { pointInTrash, trashRect, type Rect } from './editor/trash'
@@ -96,11 +101,20 @@ import {
 
 const LOADING_MESSAGE_COUNT = 10
 const LOADING_MESSAGE_INTERVAL_MS = 1500
-/** Grab distance around a spring's anchor-to-anchor line, about its zigzag's half-width. */
-const SPRING_HIT_TOLERANCE_PX = 8
+/** Grab distance around a spring's or rope's line, about the spring zigzag's half-width. */
+const LINE_HIT_TOLERANCE_PX = 8
 
-/** The spring tool between palette click and second anchor: `a` is the first anchor, once clicked. */
-type SpringTool = { a: ConstraintEnd | null } | null
+/**
+ * A palette tool between its palette click and the edit it makes: `a` is the
+ * first anchor once clicked, `via` the rope's pulleys so far, in click order.
+ */
+type Tool = { kind: 'spring'; a: ConstraintEnd | null } | { kind: 'pulley' } | { kind: 'rope'; a: ConstraintEnd | null; via: string[] } | null
+
+const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉'
+/** `T₁`, `T₂`, … for the rope's legs in path order. */
+function subscript(n: number): string {
+  return String(n).replace(/\d/g, (d) => SUBSCRIPT_DIGITS[Number(d)]!)
+}
 
 /** Camera/transform/trash-zone for the canvas's current logical size. */
 function geometryFor(width: number, height: number): { camera: Camera; transform: ScreenTransform; trash: Rect } {
@@ -129,8 +143,9 @@ function paint(
     showGlobal: boolean
     contacts?: readonly ContactPoint[]
     draggingBody?: boolean
-    selectedSpringId?: string | null
-    /** The spring tool's first anchor, until the second click. */
+    selectedConstraintId?: string | null
+    selectedPulleyId?: string | null
+    /** The spring or rope tool's first anchor, until the tool finishes. */
     pendingAnchor?: ConstraintEnd | null
   },
 ): void {
@@ -138,7 +153,7 @@ function paint(
   const view = applyStates(doc, states)
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId, opts?.selectedSpringId)
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId, opts?.selectedConstraintId, opts?.selectedPulleyId)
 
   const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
   if (pendingBody) {
@@ -459,6 +474,35 @@ function SpringPanel({
   )
 }
 
+/**
+ * Inspector for the selected pulley (PHY-28). Same clamps as the body panel
+ * and the force magnitude, so a typed value never makes an unparseable doc.
+ */
+function PulleyPanel({ pulley, onPatch, onDelete }: { pulley: Pulley; onPatch: (patch: { radius?: number; mass?: number }) => void; onDelete: () => void }) {
+  return (
+    <fieldset style={{ width: 220 }}>
+      <legend>{pulley.id}</legend>
+      <NumField label={t('properties.radius')} value={pulley.radius} step={0.05} onChange={(v) => onPatch({ radius: minDimension(v) })} />
+      <NumField label={t('properties.mass')} value={pulley.mass ?? 0} onChange={(v) => onPatch({ mass: Math.max(0, v) })} />
+      <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
+    </fieldset>
+  )
+}
+
+/** Inspector for the selected rope (PHY-28): its path and L, both read-only — L is derived, never stored. */
+function RopePanel({ rope, length, onDelete }: { rope: Rope; length: number | null; onDelete: () => void }) {
+  return (
+    <fieldset style={{ width: 220 }}>
+      <legend>{rope.id}</legend>
+      <div style={{ fontSize: 12 }}>
+        {t('rope.path')}: {[rope.a.bodyId, ...rope.via, rope.b.bodyId].join(' → ')}
+      </div>
+      {length !== null && <div style={{ fontSize: 12 }}>L: {length.toFixed(3)} m</div>}
+      <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
+    </fieldset>
+  )
+}
+
 function getAppStorage(): Storage {
   try {
     if (typeof window !== 'undefined' && window.localStorage) return window.localStorage as unknown as Storage
@@ -536,15 +580,16 @@ export default function App() {
     return scene
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // A spring selection excludes a body selection: every place that selects
-  // one clears the other.
-  const [selectedSpringId, setSelectedSpringId] = useState<string | null>(null)
-  const [springTool, setSpringToolState] = useState<SpringTool>(null)
+  // Body, constraint (spring or rope) and pulley selections exclude each
+  // other: every place that selects one clears the others.
+  const [selectedConstraintId, setSelectedConstraintId] = useState<string | null>(null)
+  const [selectedPulleyId, setSelectedPulleyId] = useState<string | null>(null)
+  const [tool, setToolState] = useState<Tool>(null)
   const [toolError, setToolError] = useState<string | null>(null)
-  const springToolRef = useRef<SpringTool>(springTool)
-  function setSpringTool(next: SpringTool) {
-    springToolRef.current = next
-    setSpringToolState(next)
+  const toolRef = useRef<Tool>(tool)
+  function setTool(next: Tool) {
+    toolRef.current = next
+    setToolState(next)
   }
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -567,7 +612,7 @@ export default function App() {
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
-  const [springReadout, setSpringReadout] = useState<{ force: number; dx: number } | null>(null)
+  const [constraintReadout, setConstraintReadout] = useState<ConstraintState | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting')
   const [messageTick, setMessageTick] = useState(0)
@@ -587,7 +632,8 @@ export default function App() {
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
   const selectedIdRef = useRef<string | null>(selectedId)
-  const selectedSpringIdRef = useRef<string | null>(selectedSpringId)
+  const selectedConstraintIdRef = useRef<string | null>(selectedConstraintId)
+  const selectedPulleyIdRef = useRef<string | null>(selectedPulleyId)
   const showGlobalRef = useRef(showGlobal)
   const historyRef = useRef<History<Scene>>(history)
   const showShortcutsRef = useRef(showShortcuts)
@@ -618,7 +664,8 @@ export default function App() {
       saveCurrentSceneId(storage, id)
       setDoc(scene)
       setSelectedId(null)
-      setSelectedSpringId(null)
+      setSelectedConstraintId(null)
+      setSelectedPulleyId(null)
       setImportError(null)
       // Switching/importing/creating/deleting a scene starts a fresh document
       // identity — undo history from the PREVIOUS scene makes no sense here.
@@ -644,10 +691,16 @@ export default function App() {
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
-    const springId = selectedSpringIdRef.current
-    if (springId) {
-      commitDoc((d) => removeConstraint(d, springId))
-      setSelectedSpringId(null)
+    const constraintId = selectedConstraintIdRef.current
+    if (constraintId) {
+      commitDoc((d) => removeConstraint(d, constraintId))
+      setSelectedConstraintId(null)
+      return
+    }
+    const pulleyId = selectedPulleyIdRef.current
+    if (pulleyId) {
+      commitDoc((d) => removePulleyAndDependents(d, pulleyId))
+      setSelectedPulleyId(null)
       return
     }
     const id = selectedIdRef.current
@@ -673,8 +726,9 @@ export default function App() {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
         draggingBody: dragRef.current?.kind === 'move',
-        selectedSpringId: selectedSpringIdRef.current,
-        pendingAnchor: springToolRef.current?.a,
+        selectedConstraintId: selectedConstraintIdRef.current,
+        selectedPulleyId: selectedPulleyIdRef.current,
+        pendingAnchor: toolRef.current && 'a' in toolRef.current ? toolRef.current.a : null,
       })
   }, [size.width, size.height])
 
@@ -764,9 +818,10 @@ export default function App() {
   }, [doc, selectedId, showGlobal, repaint, fail])
 
   useEffect(() => {
-    selectedSpringIdRef.current = selectedSpringId
+    selectedConstraintIdRef.current = selectedConstraintId
+    selectedPulleyIdRef.current = selectedPulleyId
     repaint()
-  }, [selectedSpringId, springTool, repaint])
+  }, [selectedConstraintId, selectedPulleyId, tool, repaint])
 
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
@@ -787,14 +842,13 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => {
       setStepsTick(playbackRef.current.stepsTaken)
-      const springSel = selectedSpringIdRef.current
-      if (springSel) {
-        // A world awaiting its rebuild still holds the old springs: no reading.
+      const constraintSel = selectedConstraintIdRef.current
+      if (constraintSel) {
+        // A world awaiting its rebuild still holds the old constraints: no reading.
         const sim = pendingRebuildRef.current ? null : simRef.current
-        const s = sim?.readConstraints().find((c) => c.id === springSel)
-        setSpringReadout(s?.kind === 'spring' ? { force: s.force.a, dx: s.dx } : null)
+        setConstraintReadout(sim?.readConstraints().find((c) => c.id === constraintSel) ?? null)
       } else {
-        setSpringReadout(null)
+        setConstraintReadout(null)
       }
       const sel = selectedIdRef.current
       if (!sel) {
@@ -1034,12 +1088,13 @@ export default function App() {
           break
         case 'deselectOrClose':
           if (showShortcutsRef.current) setShowShortcuts(false)
-          else if (springToolRef.current) {
-            setSpringTool(null)
+          else if (toolRef.current) {
+            setTool(null)
             setToolError(null)
           } else {
             setSelectedId(null)
-            setSelectedSpringId(null)
+            setSelectedConstraintId(null)
+            setSelectedPulleyId(null)
           }
           break
         case 'toggleHelp':
@@ -1086,40 +1141,62 @@ export default function App() {
   }
 
   /**
-   * Spring tool click: anchor A, then anchor B, each through Anchor snap.
-   * A click off every body, or on A's own body, is ignored.
+   * Palette tool click, every body anchor through Anchor snap. Pulley: one
+   * click on a body. Spring: anchor A, then anchor B. Rope: anchor A, then the
+   * pulleys in order, then anchor B. A click off every body is ignored, and so
+   * is one that would join A's body to itself with nothing in between.
    */
-  function onSpringToolClick(w: Vec2) {
-    const tool = springToolRef.current
-    const hit = bodyAtPoint(liveBodies(), w)
-    if (!tool || !hit) return
-    const end: ConstraintEnd = { bodyId: hit.id, anchor: anchorSnap(hit, w, transform) }
-    if (!tool.a) {
-      setSpringTool({ a: end })
+  function onToolClick(w: Vec2) {
+    const tool = toolRef.current
+    if (!tool) return
+    const view = applyStates(docRef.current, statesRef.current)
+    if (tool.kind === 'rope') {
+      const pulley = pulleyAtPoint(view, w)
+      if (pulley) {
+        // A pulley never ends a rope, and clicked twice in a row it counts once.
+        if (tool.a && tool.via[tool.via.length - 1] !== pulley.id) setTool({ ...tool, via: [...tool.via, pulley.id] })
+        return
+      }
+    }
+    const hit = bodyAtPoint(view.bodies, w)
+    if (!hit) return
+    const anchor = anchorSnap(hit, w, transform)
+    if (tool.kind === 'pulley') {
+      finishTool(addPulley(docRef.current, hit.id, anchor), 'pulley')
       return
     }
-    if (tool.a.bodyId === hit.id) return
-    const res = addSpring(docRef.current, tool.a, end)
+    const end: ConstraintEnd = { bodyId: hit.id, anchor }
+    if (!tool.a) {
+      setTool({ ...tool, a: end })
+      return
+    }
+    if (tool.a.bodyId === hit.id && (tool.kind === 'spring' || tool.via.length === 0)) return
+    finishTool(tool.kind === 'spring' ? addSpring(docRef.current, tool.a, end) : addRope(docRef.current, tool.a, tool.via, end), 'constraint')
+  }
+
+  /** Commits what a tool built and selects it; a refusal stays on the tool's hint line. */
+  function finishTool(res: MutationResult, selects: 'constraint' | 'pulley') {
     if (res.error) {
       setToolError(res.error)
       return
     }
     commitDoc(res.doc)
-    setSpringTool(null)
+    setTool(null)
     setToolError(null)
     setSelectedId(null)
-    setSelectedSpringId(res.newId)
+    setSelectedConstraintId(selects === 'constraint' ? res.newId : null)
+    setSelectedPulleyId(selects === 'pulley' ? res.newId : null)
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     const w = eventToWorld(e)
-    if (springToolRef.current) {
-      onSpringToolClick(w)
+    if (toolRef.current) {
+      onToolClick(w)
       return
     }
     const { sx, sy } = eventToScreen(e)
-    const bodies = liveBodies()
-    const selected = bodies.find((b) => b.id === selectedId)
+    const view = applyStates(docRef.current, statesRef.current)
+    const selected = view.bodies.find((b) => b.id === selectedId)
 
     // Handles win over body hit-testing while a body is selected.
     if (selected) {
@@ -1153,20 +1230,31 @@ export default function App() {
       }
     }
 
-    // A body under the pointer wins over a spring end anchored on it; springs
-    // are picked where they cross open space.
-    const hit = bodyAtPoint(bodies, w)
+    // A pulley is drawn over its mount body and wins over it. A body under the
+    // pointer wins over a spring or rope end anchored on it; lines are picked
+    // where they cross open space.
+    const pulley = pulleyAtPoint(view, w)
+    if (pulley) {
+      setSelectedId(null)
+      setSelectedConstraintId(null)
+      setSelectedPulleyId(pulley.id)
+      return
+    }
+    const hit = bodyAtPoint(view.bodies, w)
     if (hit) {
       setSelectedId(hit.id)
-      setSelectedSpringId(null)
+      setSelectedConstraintId(null)
+      setSelectedPulleyId(null)
       dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, startDoc: docRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
       return
     }
-    const spring = springAtPoint(applyStates(docRef.current, statesRef.current), w, SPRING_HIT_TOLERANCE_PX / camera.pixelsPerMeter)
+    const tolerance = LINE_HIT_TOLERANCE_PX / camera.pixelsPerMeter
+    const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance)
     setSelectedId(null)
-    setSelectedSpringId(spring?.id ?? null)
+    setSelectedConstraintId(line?.id ?? null)
+    setSelectedPulleyId(null)
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1243,6 +1331,8 @@ export default function App() {
       if (pointInTrash(trashRectValue, sx, sy)) {
         setDoc((d) => removeBodyAndDependents(d, drag.id))
         setSelectedId(null)
+        setSelectedConstraintId(null)
+        setSelectedPulleyId(null)
       } else if (drag.neighborId) {
         // Contact is declared here, on drop, never mid-drag; duplicate pairs
         // are a silent no-op (addContact's own guard).
@@ -1268,20 +1358,35 @@ export default function App() {
           : { ...common, shape, base: 2, alpha: 30 }
     commitDoc({ ...doc, bodies: [...doc.bodies, body] })
     setSelectedId(id)
-    setSelectedSpringId(null)
+    setSelectedConstraintId(null)
+    setSelectedPulleyId(null)
+  }
+
+  /** Arms a palette tool; selection yields to it until it finishes or Esc cancels. */
+  function armTool(next: Tool) {
+    setTool(next)
+    setToolError(null)
+    setSelectedId(null)
+    setSelectedConstraintId(null)
+    setSelectedPulleyId(null)
   }
 
   /** Refuses a spring edit that would not survive the codec (PHY-27, proxy decision on criterion 3). */
   function commitSpringEdit(edit: (d: Scene) => Scene): boolean {
     const next = edit(docRef.current)
-    const s = next.constraints?.find((c) => c.id === selectedSpringId)
+    const s = next.constraints?.find((c) => c.id === selectedConstraintId)
     if (s?.kind !== 'spring' || !(s.k > 0 && s.x0 > 0 && (s.c ?? 0) >= 0)) return false
     commitDoc(next)
     return true
   }
 
   const selected = selectedId ? (doc.bodies.find((b) => b.id === selectedId) ?? null) : null
-  const selectedSpring = doc.constraints?.find((c): c is Spring => c.id === selectedSpringId && c.kind === 'spring') ?? null
+  const selectedSpring = doc.constraints?.find((c): c is Spring => c.id === selectedConstraintId && c.kind === 'spring') ?? null
+  const selectedRope = doc.constraints?.find((c): c is Rope => c.id === selectedConstraintId && c.kind === 'rope') ?? null
+  const selectedPulley = doc.pulleys?.find((p) => p.id === selectedPulleyId) ?? null
+  // T differs per leg only across a pulley with mass (PHY-25).
+  const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
+  const selectedConstraint = selectedSpring ?? selectedRope
   const warnings = collectWarnings(doc)
 
   return (
@@ -1355,7 +1460,7 @@ export default function App() {
                 border: '1px solid #999',
                 background: '#fafbfc',
                 touchAction: 'none',
-                cursor: springTool ? 'crosshair' : selected ? 'grab' : 'default',
+                cursor: tool ? 'crosshair' : selected ? 'grab' : 'default',
               }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
@@ -1482,20 +1587,13 @@ export default function App() {
             <button onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
             <button onClick={() => addShape('circle')}>{t('palette.circle')}</button>
             <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
-            <button
-              onClick={() => {
-                setSpringTool({ a: null })
-                setToolError(null)
-                setSelectedId(null)
-                setSelectedSpringId(null)
-              }}
-            >
-              {t('palette.spring')}
-            </button>
+            <button onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
+            <button onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
+            <button onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
           </div>
-          {springTool && (
+          {tool && (
             <div style={{ fontSize: 12, color: '#555' }}>
-              {t(springTool.a ? 'tool.springSecond' : 'tool.springFirst')}
+              {t(tool.kind === 'pulley' ? 'tool.pulley' : tool.kind === 'spring' ? (tool.a ? 'tool.springSecond' : 'tool.springFirst') : tool.a ? 'tool.ropeNext' : 'tool.ropeFirst')}
               {toolError && <span style={{ color: '#b00' }}> — {t(toolError)}</span>}
             </div>
           )}
@@ -1699,11 +1797,9 @@ export default function App() {
           )}
           <fieldset style={{ width: 220 }}>
             <legend>
-              {selected
-                ? t('readout.title', { id: selected.id })
-                : selectedSpring
-                  ? t('readout.title', { id: selectedSpring.id })
-                  : t('readout.titleEmpty')}
+              {selected ?? selectedConstraint ?? selectedPulley
+                ? t('readout.title', { id: (selected ?? selectedConstraint ?? selectedPulley)!.id })
+                : t('readout.titleEmpty')}
             </legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               <div>{t('readout.steps')}: {stepsTick}</div>
@@ -1731,18 +1827,30 @@ export default function App() {
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {selectedSpring && springReadout && (
+              {selectedSpring && constraintReadout?.kind === 'spring' && (
                 <>
                   <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.springForce')}: {springReadout.force.toFixed(2)} N
+                    {t('readout.springForce')}: {constraintReadout.force.a.toFixed(2)} N
                   </div>
                   <div>
-                    {t('readout.springDx')}: {springReadout.dx.toFixed(3)} m
+                    {t('readout.springDx')}: {constraintReadout.dx.toFixed(3)} m
                   </div>
                 </>
               )}
-              {selectedSpring && !springReadout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {!selected && !selectedSpring && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
+              {selectedRope && constraintReadout?.kind === 'rope' && (
+                <>
+                  {(ropePerLeg ? constraintReadout.segments : [constraintReadout.tension]).map((T, i) => (
+                    <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.ropeTension')}{ropePerLeg ? subscript(i + 1) : ''}: {T.toFixed(2)} N
+                    </div>
+                  ))}
+                  {constraintReadout.slack && <div>{t('readout.ropeSlack')}</div>}
+                </>
+              )}
+              {((selectedConstraint && constraintReadout?.kind !== selectedConstraint.kind) || selectedPulley) && (
+                <div style={{ color: '#777' }}>{t('readout.noData')}</div>
+              )}
+              {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
           <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
@@ -1779,6 +1887,10 @@ export default function App() {
               onDelete={deleteSelected}
             />
           )}
+          {selectedRope && <RopePanel rope={selectedRope} length={scenePath(doc, selectedRope)?.length ?? null} onDelete={deleteSelected} />}
+          {selectedPulley && (
+            <PulleyPanel pulley={selectedPulley} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
+          )}
           <ContactsPanel
             doc={doc}
             onAdd={(a, b) => {
@@ -1810,7 +1922,8 @@ export default function App() {
                   const { doc: next, newId } = duplicateBody(doc, selected.id)
                   commitDoc(next)
                   if (newId) setSelectedId(newId)
-                  setSelectedSpringId(null)
+                  setSelectedConstraintId(null)
+                  setSelectedPulleyId(null)
                 }}
               >
                 {t('panel.duplicate')}

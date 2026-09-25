@@ -181,6 +181,7 @@ export function drawScene(
   style: DrawStyle = DEFAULT_STYLE,
   selectedId?: string | null,
   selectedConstraintId?: string | null,
+  selectedPulleyId?: string | null,
 ): void {
   const t = makeTransform(camera, width, height)
   const labels = massLabels(scene)
@@ -238,7 +239,7 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style, selectedConstraintId)
+  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style, selectedConstraintId, selectedPulleyId)
   ctx.restore()
 }
 
@@ -255,6 +256,7 @@ function drawRopes(
   ppm: number,
   style: DrawStyle,
   selectedConstraintId?: string | null,
+  selectedPulleyId?: string | null,
 ): void {
   const pulleys = scene.pulleys ?? []
   const constraints = scene.constraints ?? []
@@ -274,7 +276,14 @@ function drawRopes(
     ctx.arc(c.x, c.y, pulley.radius, 0, Math.PI * 2)
     ctx.fillStyle = style.dynamicFill
     ctx.fill()
+    ctx.save()
+    // Selected pulley or rope (PHY-28): the same bright stroke as a selected body.
+    if (pulley.id === selectedPulleyId) {
+      ctx.lineWidth = 3 / ppm
+      ctx.strokeStyle = '#ff8c00'
+    }
     ctx.stroke()
+    ctx.restore()
     ctx.beginPath()
     ctx.arc(c.x, c.y, 3 / ppm, 0, Math.PI * 2)
     ctx.fillStyle = style.dynamicStroke
@@ -298,6 +307,11 @@ function drawRopes(
     }
     const path = scenePath(scene, constraint)
     if (!path) continue
+    ctx.save()
+    if (constraint.id === selectedConstraintId) {
+      ctx.lineWidth = 3 / ppm
+      ctx.strokeStyle = '#ff8c00'
+    }
     ctx.beginPath()
     path.segments.forEach((s, i) => {
       ctx.moveTo(s.from.x, s.from.y)
@@ -306,6 +320,7 @@ function drawRopes(
       if (arc) ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.start, arc.start + arc.direction * arc.sweep, arc.direction < 0)
     })
     ctx.stroke()
+    ctx.restore()
   }
   ctx.restore()
 }
