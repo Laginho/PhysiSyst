@@ -1,5 +1,5 @@
 # PHY-35: Edição feita logo antes de recarregar ou fechar a aba não se perde
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent

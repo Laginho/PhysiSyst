@@ -12,7 +12,7 @@ import { createSimulator, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang } from './i18n'
-import { blankScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { AUTOSAVE_DELAY_MS, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import type { Scene } from './scene/types'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -1538,6 +1538,73 @@ describe('galeria em árvore (PHY-31)', () => {
       expect(host.textContent).toContain('bloco-2')
     } finally {
       setLang('pt-BR')
+    }
+  })
+})
+
+describe('autosave pendente grava no pagehide (PHY-35)', () => {
+  const storage = () => window.localStorage as unknown as PersistStorage
+  function seedCena1() {
+    saveIndex(storage(), [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
+    saveScene(storage(), 'cena-1', blankScene())
+    saveCurrentSceneId(storage(), 'cena-1')
+  }
+  const storedIds = () => loadScene(storage(), 'cena-1')?.bodies.map((b) => b.id) ?? []
+
+  it('uma edição feita antes dos 400 ms é gravada quando a página sai', () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(seedCena1)
+    act(() => findButton(host, 'retângulo')?.click())
+    expect(storedIds()).not.toContain('retangulo')
+
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    expect(storedIds()).toContain('retangulo')
+  })
+
+  it('sem edição pendente o pagehide não grava nada', () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(seedCena1)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      // Only the mount's schedule is pending, and its payload is the one already stored.
+      act(() => window.dispatchEvent(new Event('pagehide')))
+      expect(setItem).not.toHaveBeenCalled()
+
+      act(() => findButton(host, 'retângulo')?.click())
+      act(() => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS))
+      expect(storedIds()).toContain('retangulo')
+      setItem.mockClear()
+
+      act(() => window.dispatchEvent(new Event('pagehide')))
+      expect(setItem).not.toHaveBeenCalled()
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
+  it('depois do unmount o pagehide não grava e o listener sai de window', () => {
+    vi.useFakeTimers()
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      const { host } = setupWith(seedCena1)
+      act(() => findButton(host, 'retângulo')?.click())
+      act(() => root?.unmount())
+      root = null
+      setItem.mockClear()
+
+      act(() => window.dispatchEvent(new Event('pagehide')))
+      expect(setItem).not.toHaveBeenCalled()
+      // Behaviour alone can't see a leaked listener (unmount cancels the pending save), so check the pairing too.
+      const added = add.mock.calls.filter(([type]) => type === 'pagehide').map(([, fn]) => fn)
+      const removed = remove.mock.calls.filter(([type]) => type === 'pagehide').map(([, fn]) => fn)
+      expect(added.length).toBeGreaterThan(0)
+      expect(removed).toEqual(expect.arrayContaining(added))
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+      setItem.mockRestore()
     }
   })
 })
