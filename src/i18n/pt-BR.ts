@@ -108,7 +108,6 @@ export const ptBR = {
   'readout.more': 'ver mais',
   'readout.noData': 'sem leitura',
   'readout.springForce': 'F_el',
-  'readout.springForceAt': 'F_el em {body}',
   'readout.springDx': 'Δx',
   'readout.ropeTension': 'T',
   'readout.ropeSlack': 'frouxa',

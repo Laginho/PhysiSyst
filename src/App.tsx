@@ -1837,11 +1837,11 @@ export default function App() {
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
               {selectedSpring && constraintReadout?.kind === 'spring' && (
                 <>
-                  {/* F_el differs per end only on a spring with mass (PHY-30). */}
+                  {/* F_el differs per end only on a spring with mass (PHY-30), labelled as its arrows. */}
                   {(selectedSpring.mass ?? 0) > 0 ? (
-                    ([[selectedSpring.a, constraintReadout.force.a], [selectedSpring.b, constraintReadout.force.b]] as const).map(([end, F], i) => (
+                    [constraintReadout.force.a, constraintReadout.force.b].map((F, i) => (
                       <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
-                        {t('readout.springForceAt', { body: end.bodyId })}: {F.toFixed(2)} N
+                        {t('readout.springForce')},{i + 1}: {F.toFixed(2)} N
                       </div>
                     ))
                   ) : (

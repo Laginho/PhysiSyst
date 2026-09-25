@@ -1,5 +1,5 @@
 # CLEAN-10: Sobras da cadeia da mola com massa: rótulos do painel, duplicações e a regra de carry no ADR
-Stage: implementing
+Stage: to-review
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -42,3 +42,9 @@ Cinco notas sem critério que os reviews do PHY-30 e do CLEAN-09 deixaram, nenhu
 ## Comments
 
 - 2026-09-24 Aberto pelo review do CLEAN-09 (stage 3). Os itens 1 e 2 vêm do comentário de abertura do CLEAN-09 (review do PHY-30) e ficaram de fora dali; 3–5 são os judgement calls do eixo Standards do CLEAN-09. Nenhum é critério de ticket fechado, por isso o CLEAN-09 fechou como está.
+- 2026-09-24 Stage 2, testes (`21ff82a`): o teste do PHY-30 espera `F_el,1: 2.00 N` antes de `F_el,2: 2.50 N` e nenhum `F_el em`; vermelho na base — `expected '…F_el em parede: 2.00 NF_el em bloco: 2.50 NΔx: 0.100 m' to contain 'F_el,1: 2.00 N'`. No mesmo commit, o item 4: `peakTicks` ao lado de `upCrossings`, usado pelos dois testes amortecidos (verdes antes e depois).
+- 2026-09-24 Stage 2, implementação: o painel lê `{t('readout.springForce')},{i + 1}` na ordem `force.a`, `force.b` (critério 1); `readout.springForceAt` saiu de `pt-BR.ts` e `en.ts`, sem uso. `springAt` passou a devolver também `v`, as velocidades das pontas; `chainAxis` parte dele (`now`, `v`, `u`, `dx + x0`) e `pushChain` aplica as forças em `now` (critério 3). `chainStep` devolve `{ q, T }` e `pushChain` usa `T` como `before` (critério 2). ADR-0004: um item "Carry of a spring with mass" logo abaixo do carry da polia (critério 5).
+- Mutações (aplicada, rodada, revertida):
+  - `App.tsx`, pontas trocadas (`[force.b, force.a]`), `npx vitest run src/App.test.ts -t CLEAN-10`: 1 failed — `expected '…F_el,1: 2.50 NF_el,2: 2.00 NΔx: 0.100 m' to contain 'F_el,1: 2.00 N'`
+  - `simulator.ts`, `chainAxis` sem `+ s.x0` na ponta b, `npx vitest run src/sim/acceptance.test.ts -t PHY-30`: 8 failed | 3 passed — os testes do PHY-30 e do CLEAN-09 passam pelo `chainAxis` refatorado
+- Gate: `npm test` 30 arquivos, 683 testes verdes; `npm run lint` e `npm run typecheck` limpos; `npm run build` ✓ (só o aviso de chunk > 500 kB de sempre). Nenhum texto nem tolerância dos testes do PHY-30/CLEAN-09 mudou (critérios 2 e 3); `npx vitest run src/sim src/App.test.ts`: 4 arquivos, 140 testes verdes.

@@ -108,7 +108,6 @@ export const en = {
   'readout.more': 'show more',
   'readout.noData': 'no data',
   'readout.springForce': 'F_s',
-  'readout.springForceAt': 'F_s on {body}',
   'readout.springDx': 'Δx',
   'readout.ropeTension': 'T',
   'readout.ropeSlack': 'slack',
