@@ -1,32 +1,10 @@
-import { bodyPointToWorld, type Body, type Vec2 } from '../scene'
-import { triangleHeight } from './handles'
+import { bodyPointToWorld, localVertices, type Body, type Vec2 } from '../scene'
 
 export const CONTACT_SNAP_TOLERANCE_PX = 10
 
 interface Segment {
   a: Vec2
   b: Vec2
-}
-
-/** A body's polygon vertices in its local, origin-relative frame, in order around the edge. A circle has none. */
-export function localVertices(body: Body): Vec2[] {
-  switch (body.shape) {
-    case 'rectangle':
-      return [
-        { x: -body.width / 2, y: -body.height / 2 },
-        { x: body.width / 2, y: -body.height / 2 },
-        { x: body.width / 2, y: body.height / 2 },
-        { x: -body.width / 2, y: body.height / 2 },
-      ]
-    case 'triangle':
-      return [
-        { x: 0, y: 0 },
-        { x: body.base, y: 0 },
-        { x: body.base, y: triangleHeight(body) },
-      ]
-    case 'circle':
-      return []
-  }
 }
 
 function polygonVertices(body: Body): Vec2[] {

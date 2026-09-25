@@ -69,7 +69,7 @@ import {
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
-import { drawArrow, drawGrid, drawScene } from './render/draw'
+import { drawArrow, drawGrid, drawScene, selectedOf, type Selection } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
@@ -106,9 +106,21 @@ const LINE_HIT_TOLERANCE_PX = 8
 
 /**
  * A palette tool between its palette click and the edit it makes: `a` is the
- * first anchor once clicked, `via` the rope's pulleys so far, in click order.
+ * first anchor once clicked (a pulley never has one), `via` the rope's pulleys
+ * so far, in click order.
  */
-type Tool = { kind: 'spring'; a: ConstraintEnd | null } | { kind: 'pulley' } | { kind: 'rope'; a: ConstraintEnd | null; via: string[] } | null
+type Tool =
+  | { kind: 'spring'; a: ConstraintEnd | null }
+  | { kind: 'pulley'; a?: never }
+  | { kind: 'rope'; a: ConstraintEnd | null; via: string[] }
+  | null
+
+/** The hint-line key for an armed tool: what its next click does. */
+function toolHint(tool: NonNullable<Tool>): string {
+  if (tool.kind === 'pulley') return 'tool.pulley'
+  if (tool.kind === 'spring') return tool.a ? 'tool.springSecond' : 'tool.springFirst'
+  return tool.a ? 'tool.ropeNext' : 'tool.ropeFirst'
+}
 
 const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉'
 /** `T₁`, `T₂`, … for the rope's legs in path order. */
@@ -133,13 +145,6 @@ function messageOf(e: unknown): string {
  * projected over the document, so selection handles and force arrows ride the
  * moving body without any playback-specific drawing code.
  */
-/** What the editor has selected: one body, one constraint (spring or rope), one pulley, or nothing. */
-type Selection = { kind: 'body' | 'constraint' | 'pulley'; id: string } | null
-
-function selectedOf(selection: Selection, kind: NonNullable<Selection>['kind']): string | null {
-  return selection?.kind === kind ? selection.id : null
-}
-
 /** A screen-px circle at a screen point: filled in `color`, or stroked at `strokeWidth` when given. */
 function screenCircle(ctx: CanvasRenderingContext2D, at: { x: number; y: number }, radius: number, color: string, strokeWidth?: number): void {
   ctx.save()
@@ -175,7 +180,7 @@ function paint(
   const selectedId = selectedOf(selection, 'body')
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId, selectedOf(selection, 'constraint'), selectedOf(selection, 'pulley'))
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selection)
 
   const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
   if (pendingBody) {
@@ -715,7 +720,7 @@ export default function App() {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
         draggingBody: dragRef.current?.kind === 'move',
-        pendingAnchor: toolRef.current && 'a' in toolRef.current ? toolRef.current.a : null,
+        pendingAnchor: toolRef.current?.a ?? null,
       })
   }, [size.width, size.height])
 
@@ -1146,7 +1151,7 @@ export default function App() {
     if (!hit) return
     const anchor = anchorSnap(hit, w, transform)
     if (tool.kind === 'pulley') {
-      finishTool(addPulley(docRef.current, hit.id, anchor), 'pulley')
+      finishTool(addPulley(docRef.current, hit.id, anchor))
       return
     }
     const end: ConstraintEnd = { bodyId: hit.id, anchor }
@@ -1155,11 +1160,11 @@ export default function App() {
       return
     }
     if (tool.a.bodyId === hit.id && (tool.kind === 'spring' || tool.via.length === 0)) return
-    finishTool(tool.kind === 'spring' ? addSpring(docRef.current, tool.a, end) : addRope(docRef.current, tool.a, tool.via, end), 'constraint')
+    finishTool(tool.kind === 'spring' ? addSpring(docRef.current, tool.a, end) : addRope(docRef.current, tool.a, tool.via, end))
   }
 
   /** Commits what a tool built and selects it; a refusal stays on the tool's hint line. */
-  function finishTool(res: MutationResult, selects: 'constraint' | 'pulley') {
+  function finishTool(res: MutationResult) {
     if (res.error) {
       setToolError(res.error)
       return
@@ -1167,7 +1172,8 @@ export default function App() {
     commitDoc(res.doc)
     setTool(null)
     setToolError(null)
-    setSelection(res.newId ? { kind: selects, id: res.newId } : null)
+    const kind = res.doc.pulleys?.some((p) => p.id === res.newId) ? 'pulley' : 'constraint'
+    setSelection(res.newId ? { kind, id: res.newId } : null)
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1357,6 +1363,7 @@ export default function App() {
   // T differs per leg only across a pulley with mass (PHY-25).
   const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
   const selectedConstraint = selectedSpring ?? selectedRope
+  const selectedItem = selected ?? selectedConstraint ?? selectedPulley
   const warnings = collectWarnings(doc)
 
   return (
@@ -1563,7 +1570,7 @@ export default function App() {
           </div>
           {tool && (
             <div style={{ fontSize: 12, color: '#555' }}>
-              {t(tool.kind === 'pulley' ? 'tool.pulley' : tool.kind === 'spring' ? (tool.a ? 'tool.springSecond' : 'tool.springFirst') : tool.a ? 'tool.ropeNext' : 'tool.ropeFirst')}
+              {t(toolHint(tool))}
               {toolError && <span style={{ color: '#b00' }}> — {t(toolError)}</span>}
             </div>
           )}
@@ -1762,9 +1769,7 @@ export default function App() {
           )}
           <fieldset style={{ width: 220 }}>
             <legend>
-              {selected ?? selectedConstraint ?? selectedPulley
-                ? t('readout.title', { id: (selected ?? selectedConstraint ?? selectedPulley)!.id })
-                : t('readout.titleEmpty')}
+              {selectedItem ? t('readout.title', { id: selectedItem.id }) : t('readout.titleEmpty')}
             </legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               <div>{t('readout.steps')}: {stepsTick}</div>

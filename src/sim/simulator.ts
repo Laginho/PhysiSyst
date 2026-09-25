@@ -1,5 +1,5 @@
 import * as RAPIER from '@dimforge/rapier2d-compat'
-import { bodyPointToWorld, ropePath, scenePath } from '../scene'
+import { bodyPointToWorld, ropePath, scenePath, triangleHeight } from '../scene'
 import type { RopePath, Scene, Vec2 } from '../scene'
 import { TIMESTEP } from './timestep'
 
@@ -564,8 +564,8 @@ function colliderDescFor(body: Scene['bodies'][number], friction: number, useMax
       break
     case 'triangle': {
       // Right triangle: local origin at the alpha corner, base along +x,
-      // vertical leg at the far end. Height = base * tan(alpha).
-      const h = body.base * Math.tan((body.alpha * Math.PI) / 180)
+      // vertical leg at the far end.
+      const h = triangleHeight(body)
       const hull = RAPIER.ColliderDesc.convexHull(new Float32Array([0, 0, body.base, 0, body.base, h]))
       if (!hull) throw new Error(`degenerate triangle geometry for base=${body.base} alpha=${body.alpha}`)
       desc = hull

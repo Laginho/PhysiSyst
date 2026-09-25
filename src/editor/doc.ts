@@ -242,6 +242,7 @@ export function addSpring(doc: Scene, a: ConstraintEnd, b: ConstraintEnd): Mutat
   return { doc: { ...doc, constraints: [...(doc.constraints ?? []), spring] }, newId, error: null }
 }
 
+/** Patches a spring's k, x0 or c; any other constraint id, or a missing one, returns the doc unchanged. */
 export function updateSpring(doc: Scene, id: string, patch: SpringPatch): Scene {
   if (!doc.constraints?.some((c) => c.id === id && c.kind === 'spring')) return doc
   return { ...doc, constraints: doc.constraints.map((c) => (c.id === id && c.kind === 'spring' ? { ...c, ...patch } : c)) }
@@ -260,6 +261,7 @@ export function setSpringDx(doc: Scene, id: string, dx: number): Scene {
   return updateSpring(doc, id, { x0: x - dx })
 }
 
+/** Removes one spring or rope; the bodies and pulleys it joined stay. A missing id returns the doc unchanged. */
 export function removeConstraint(doc: Scene, id: string): Scene {
   if (!doc.constraints?.some((c) => c.id === id)) return doc
   return { ...doc, constraints: doc.constraints.filter((c) => c.id !== id) }

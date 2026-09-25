@@ -19,7 +19,7 @@
  * optional; when present it must be finite and >= 0 (PHY-25).
  */
 export { collectWarnings, parse, serialize, SceneParseError } from './codec'
-export { bodyPointToWorld, ropePath, scenePath } from './ropePath'
+export { bodyPointToWorld, localVertices, ropePath, scenePath, triangleHeight } from './ropePath'
 export type { PathPulley, RopeArc, RopePath, RopeSegment } from './ropePath'
 export { SCENE_VERSION } from './types'
 export type {

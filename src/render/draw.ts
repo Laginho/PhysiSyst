@@ -1,6 +1,5 @@
-import { bodyPointToWorld, scenePath } from '../scene'
+import { bodyPointToWorld, scenePath, triangleHeight } from '../scene'
 import type { Scene } from '../scene'
-import { triangleHeight } from '../editor/handles'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
 
 export interface DrawStyle {
@@ -22,6 +21,13 @@ const DEFAULT_STYLE: DrawStyle = {
 }
 
 const LABEL_FONT = 'italic 16px system-ui, sans-serif'
+
+/** What the editor has selected: one body, one constraint (spring or rope), one pulley, or nothing. */
+export type Selection = { kind: 'body' | 'constraint' | 'pulley'; id: string } | null
+
+export function selectedOf(selection: Selection, kind: NonNullable<Selection>['kind']): string | null {
+  return selection?.kind === kind ? selection.id : null
+}
 
 /**
  * Mass labels derived from the Scene on every render — never stored, never
@@ -180,9 +186,7 @@ export function drawScene(
   width: number,
   height: number,
   style: DrawStyle = DEFAULT_STYLE,
-  selectedId?: string | null,
-  selectedConstraintId?: string | null,
-  selectedPulleyId?: string | null,
+  selection: Selection = null,
 ): void {
   const t = makeTransform(camera, width, height)
   const labels = massLabels(scene)
@@ -212,10 +216,9 @@ export function drawScene(
       ctx.stroke()
     }
     if (isHatchedGround(body)) drawHatch(ctx, body as Extract<Scene['bodies'][number], { shape: 'rectangle' }>, camera.pixelsPerMeter)
-    if (body.id === selectedId) {
+    if (body.id === selectedOf(selection, 'body')) {
       // Selection outline: solid bright ring around the shape.
-      ctx.lineWidth = 3 / camera.pixelsPerMeter
-      ctx.strokeStyle = '#ff8c00'
+      selectionStroke(ctx, camera.pixelsPerMeter)
       ctx.stroke()
     }
     ctx.restore()
@@ -240,8 +243,14 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selectedConstraintId, selectedPulleyId)
+  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection)
   ctx.restore()
+}
+
+/** The bright stroke every selected item is outlined with. */
+function selectionStroke(ctx: CanvasRenderingContext2D, ppm: number): void {
+  ctx.lineWidth = 3 / ppm
+  ctx.strokeStyle = '#ff8c00'
 }
 
 /**
@@ -256,9 +265,10 @@ function drawConstraints(
   t: ScreenTransform,
   ppm: number,
   style: DrawStyle,
-  selectedConstraintId?: string | null,
-  selectedPulleyId?: string | null,
+  selection: Selection,
 ): void {
+  const selectedConstraintId = selectedOf(selection, 'constraint')
+  const selectedPulleyId = selectedOf(selection, 'pulley')
   const pulleys = scene.pulleys ?? []
   const constraints = scene.constraints ?? []
   if (pulleys.length === 0 && constraints.length === 0) return
@@ -279,10 +289,7 @@ function drawConstraints(
     ctx.fill()
     ctx.save()
     // Selected pulley or rope (PHY-28): the same bright stroke as a selected body.
-    if (pulley.id === selectedPulleyId) {
-      ctx.lineWidth = 3 / ppm
-      ctx.strokeStyle = '#ff8c00'
-    }
+    if (pulley.id === selectedPulleyId) selectionStroke(ctx, ppm)
     ctx.stroke()
     ctx.restore()
     ctx.beginPath()
@@ -296,12 +303,8 @@ function drawConstraints(
       const b = bodies.get(constraint.b.bodyId)
       if (!a || !b) continue
       // Selected spring (PHY-27): the same bright stroke as a selected body.
-      const selected = constraint.id === selectedConstraintId
       ctx.save()
-      if (selected) {
-        ctx.lineWidth = 3 / ppm
-        ctx.strokeStyle = '#ff8c00'
-      }
+      if (constraint.id === selectedConstraintId) selectionStroke(ctx, ppm)
       drawSpring(ctx, bodyPointToWorld(a, constraint.a.anchor), bodyPointToWorld(b, constraint.b.anchor), ppm)
       ctx.restore()
       continue
@@ -309,10 +312,7 @@ function drawConstraints(
     const path = scenePath(scene, constraint)
     if (!path) continue
     ctx.save()
-    if (constraint.id === selectedConstraintId) {
-      ctx.lineWidth = 3 / ppm
-      ctx.strokeStyle = '#ff8c00'
-    }
+    if (constraint.id === selectedConstraintId) selectionStroke(ctx, ppm)
     ctx.beginPath()
     path.segments.forEach((s, i) => {
       ctx.moveTo(s.from.x, s.from.y)
