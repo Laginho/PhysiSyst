@@ -1,4 +1,4 @@
-import type { Body, Vec2 } from '../scene'
+import { bodyPointToWorld, localVertices, type Body, type Vec2 } from '../scene'
 
 export const CONTACT_SNAP_TOLERANCE_PX = 10
 
@@ -7,35 +7,8 @@ interface Segment {
   b: Vec2
 }
 
-function localToWorld(body: Body, point: Vec2): Vec2 {
-  const c = Math.cos(body.rotation)
-  const s = Math.sin(body.rotation)
-  return {
-    x: body.position.x + c * point.x - s * point.y,
-    y: body.position.y + s * point.x + c * point.y,
-  }
-}
-
 function polygonVertices(body: Body): Vec2[] {
-  switch (body.shape) {
-    case 'rectangle':
-      return [
-        { x: -body.width / 2, y: -body.height / 2 },
-        { x: body.width / 2, y: -body.height / 2 },
-        { x: body.width / 2, y: body.height / 2 },
-        { x: -body.width / 2, y: body.height / 2 },
-      ].map((point) => localToWorld(body, point))
-    case 'triangle': {
-      const height = body.base * Math.tan((body.alpha * Math.PI) / 180)
-      return [
-        { x: 0, y: 0 },
-        { x: body.base, y: 0 },
-        { x: body.base, y: height },
-      ].map((point) => localToWorld(body, point))
-    }
-    case 'circle':
-      return []
-  }
+  return localVertices(body).map((point) => bodyPointToWorld(body, point))
 }
 
 function segments(body: Body): Segment[] {
@@ -43,15 +16,13 @@ function segments(body: Body): Segment[] {
   return vertices.map((a, index) => ({ a, b: vertices[(index + 1) % vertices.length]! }))
 }
 
-function closestPoint(point: Vec2, segment: Segment): Vec2 {
-  const dx = segment.b.x - segment.a.x
-  const dy = segment.b.y - segment.a.y
+/** The point of segment a–b nearest to `point`; a zero-length segment is its one point. */
+export function closestPoint(point: Vec2, a: Vec2, b: Vec2): Vec2 {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
   const lengthSquared = dx * dx + dy * dy
-  const t = Math.max(
-    0,
-    Math.min(1, ((point.x - segment.a.x) * dx + (point.y - segment.a.y) * dy) / lengthSquared),
-  )
-  return { x: segment.a.x + t * dx, y: segment.a.y + t * dy }
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared))
+  return { x: a.x + t * dx, y: a.y + t * dy }
 }
 
 function normalizeAxisAngle(raw: number): number {
@@ -128,7 +99,7 @@ export function resolveContactSnap(
       continue
     }
     for (const segment of segments(neighbor)) {
-      const onSurface = closestPoint(dragged.position, segment)
+      const onSurface = closestPoint(dragged.position, segment.a, segment.b)
       const dx = dragged.position.x - onSurface.x
       const dy = dragged.position.y - onSurface.y
       const distance = Math.hypot(dx, dy)

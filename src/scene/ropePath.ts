@@ -1,4 +1,4 @@
-import type { Body, Rope, Scene, Vec2 } from './types'
+import type { Body, Constraint, Rope, Scene, TriangleGeometry, Vec2 } from './types'
 
 export interface RopeSegment {
   from: Vec2
@@ -94,6 +94,32 @@ function tangent(p: Node, q: Node): RopeSegment {
   }
 }
 
+/** A right triangle's vertical leg: base · tan(α). */
+export function triangleHeight(body: Pick<TriangleGeometry, 'base' | 'alpha'>): number {
+  return body.base * Math.tan((body.alpha * Math.PI) / 180)
+}
+
+/** A body's polygon vertices in its local, origin-relative frame, in order around the edge. A circle has none. */
+export function localVertices(body: Body): Vec2[] {
+  switch (body.shape) {
+    case 'rectangle':
+      return [
+        { x: -body.width / 2, y: -body.height / 2 },
+        { x: body.width / 2, y: -body.height / 2 },
+        { x: body.width / 2, y: body.height / 2 },
+        { x: -body.width / 2, y: body.height / 2 },
+      ]
+    case 'triangle':
+      return [
+        { x: 0, y: 0 },
+        { x: body.base, y: 0 },
+        { x: body.base, y: triangleHeight(body) },
+      ]
+    case 'circle':
+      return []
+  }
+}
+
 /** A body-local, origin-relative point in the world, at the body's pose. */
 export function bodyPointToWorld(pose: Pick<Body, 'position' | 'rotation'>, anchor: Vec2): Vec2 {
   const c = Math.cos(pose.rotation)
@@ -123,4 +149,14 @@ export function scenePath(scene: Scene, rope: Rope): RopePath | null {
     via.push({ center: bodyPointToWorld(mount, pulley.anchor), radius: pulley.radius })
   }
   return ropePath(a, b, via)
+}
+
+/** A constraint touches a body when either end is on it, or it is a rope passing over a pulley mounted on it. */
+export function constraintTouchesBody(scene: Scene, constraint: Constraint, bodyId: string): boolean {
+  return (
+    constraint.a.bodyId === bodyId ||
+    constraint.b.bodyId === bodyId ||
+    (constraint.kind === 'rope' &&
+      constraint.via.some((pulleyId) => (scene.pulleys ?? []).some((pulley) => pulley.id === pulleyId && pulley.bodyId === bodyId)))
+  )
 }

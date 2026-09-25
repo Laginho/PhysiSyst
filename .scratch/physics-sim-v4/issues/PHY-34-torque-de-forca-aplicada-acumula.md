@@ -1,5 +1,5 @@
 # PHY-34: Torque de força aplicada acumula entre passos
-Stage: to-implement
+Stage: done
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -7,21 +7,23 @@ Review: agent
 - Primary files:
   - `src/sim/simulator.ts` (`step`, o reset por passo)
   - `src/sim/acceptance.test.ts`
+  - `src/sim/simulator.test.ts` (as pré-condições do spinner em `particle mode (T7/M2)`)
 
 #### What to build
 
 `step()` zera as forças dos corpos tocados com `resetForces`, mas o Rapier guarda força e torque em separado: `resetForces` não zera o torque que `addForceAtPoint` acrescenta quando o ponto fica fora do centro de massa. O torque de cada passo soma ao dos anteriores, e o corpo gira cada vez mais rápido do que a física manda.
 
-Medido na revisão do PHY-23 (2026-09-24), com o simulador de produção: bloco 1×1 m, 1 kg, g = 0, força de 1 N para cima aplicada em (0.5, 0). ω após 1 s = 40,4 rad/s; analítico τ/I·t = 0,5/(1/6)·1 = 3 rad/s. Sonda direta no Rapier 0.20: `userTorque()` depois de `resetForces` + `addForceAtPoint` lê 2, 4, 6 em três passos seguidos.
+Medido na revisão do PHY-23 (2026-09-24), com o simulador de produção: bloco 1×1 m, 1 kg, g = 0, força de 1 N para cima aplicada em (0.5, 0). ω após 1 s = 40,4 rad/s; analítico τ/I·t = 0,5/(1/6)·1 = 3 rad/s (supõe braço fixo; a âncora gira com o corpo, ~81° em 1 s, e o valor certo é √(6·sin θ) ≈ 2,43 — ver critério 1). Sonda direta no Rapier 0.20: `userTorque()` depois de `resetForces` + `addForceAtPoint` lê 2, 4, 6 em três passos seguidos.
 
 Afeta toda força aplicada fora do CM desde que as âncoras existem (o teste de âncora em `acceptance.test.ts` só checa `angvel > 0.05` em 30 passos, insensível à acumulação). Desde o PHY-23 afeta também pontas de corda fora do CM: as famílias do tracer têm braço zero e não veem o bug, e `freePointVelocity` lê `userTorque()`, herdando o lixo acumulado. A correção provável é uma linha, `resetTorques(true)` ao lado de `resetForces(true)`, mas é bug de física e leva teste de regressão.
 
 #### Acceptance criteria
 
-1. Bloco 1×1 m, 1 kg, g = 0, força de 1 N para cima em (0.5, 0): |ω(1 s) − 3 rad/s| ≤ 2% de 3 rad/s
+1. Bloco 1×1 m, 1 kg, g = 0, força de 1 N para cima em (0.5, 0), 60 passos: |ω − √(6·sin θ)| ≤ 2% de √(6·sin θ), com θ lido do simulador (braço 0.5·cos θ, τ = 0.5·cos θ N·m; energia: ½·I·ω² = 0.5·sin θ)
 2. O teste de âncora existente (`force anchor semantics`) continua verde
 3. Teste de regressão mutate-verified conforme o `AGENTS.md` (sem o reset do torque, vermelho)
 4. Gate verde
+5. Os testes de `particle mode (T7/M2)` continuam mostrando o corpo livre girando (|ω| > 0.1 após 60 passos) e o travado não
 
 #### Verification
 
@@ -30,8 +32,35 @@ Afeta toda força aplicada fora do CM desde que as âncoras existem (o teste de 
 
 ## Tests stage 2 writes (own commit, red)
 
-- `src/sim/acceptance.test.ts`: ω após 1 s de força fora do CM contra τ/I·t (1). Vermelho porque o torque acumula (~40 rad/s em vez de 3).
+- `src/sim/acceptance.test.ts`: ω após 1 s de força fora do CM contra √(6·sin θ) (1). Vermelho porque o torque acumula (~40 rad/s em vez de ~2,4).
 
 ## Comments
 
 Aberto pela etapa 3 do PHY-23 (2026-09-24). Achado fora dos critérios daquele ticket; não bloqueou o merge.
+
+Proxy decided: critério 1 passa a comparar ω com √(6·sin θ) na mesma cena de 1 s e banda de 2% — o "3 rad/s" supunha braço fixo, mas a âncora gira com o corpo e a força fica no referencial do mundo; com o fix o simulador dá ω = 2,445 contra a integração de θ'' = 3·cos θ em 2,431, e nenhuma física correta atinge 3 (2026-09-25).
+
+Proxy decided: `src/sim/simulator.test.ts` entra nos Primary files (critério 5) e as duas pré-condições do spinner passam a `Math.abs(angvel) > 0.1` — com o fix o círculo é um pêndulo físico em torno de θ = π/2 e em 60 passos está na volta (ω = −7,83); o sinal positivo só valia porque o torque acumulava (2026-09-25).
+
+#### Resolution (2026-09-25)
+
+Verdict: Approve
+
+Findings:
+
+- Critério 1 ✅ — `acceptance.test.ts` compara ω com √(6·sin θ) a 2% após 60 passos, θ lido do simulador.
+- Critério 2 ✅ — `force anchor semantics` verde no gate.
+- Critério 3 ✅ — teste chama `createSimulator` de produção; red-green abaixo.
+- Critério 4 ✅ — gate verde.
+- Critério 5 ✅ — os dois testes do spinner em `particle mode (T7/M2)` verdes com `|ω| > 0.1`.
+- Test-first ✅ — três commits só de teste (`4aae830`, `7a5e157`, `a78ac9d`) antes do fix; o commit de código (`47884b6`) toca só `src/sim/simulator.ts` e o ticket. Tudo dentro dos Primary files.
+- Regressão: `freePointVelocity` (linha 299) lê `userTorque()` e agora vê só o torque do passo; o reset do disco já existia e não muda.
+- Proxy decided (2): critério 1 reescrito para √(6·sin θ) em vez de τ/I·t = 3 (braço gira com o corpo); `simulator.test.ts` nos Primary files e pré-condições do spinner em módulo. Ambas consistentes com a física e com o que o fix mede.
+
+Files: `src/sim/simulator.ts` (`resetTorques(true)` ao lado de `resetForces(true)` para cada corpo tocado), `src/sim/acceptance.test.ts`, `src/sim/simulator.test.ts`.
+
+Red-green: com `src/sim/simulator.ts` de `a78ac9d` (sem o fix), `npx vitest run src/sim/acceptance.test.ts src/sim/simulator.test.ts` → 1 failed | 83 passed: `expected 40.358917236328125 to be less than or equal to 0` (θ passou de π, esperado clampado a 0). Com o fix: 84 passed.
+
+Gate: `npm test` 30 files, 704 passed; `npm run lint` limpo; `npm run typecheck` limpo; `npm run build` ok (aviso de chunk > 500 kB pré-existente).
+
+Merged into `sweatshop/2026-09-24-1853` at `01fe2c8`.

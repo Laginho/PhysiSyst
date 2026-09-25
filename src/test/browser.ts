@@ -221,6 +221,9 @@ export async function openBrowserSession(width: number): Promise<BrowserSession>
   const reset = async () => {
     const url = server.resolvedUrls?.local[0]
     if (!url) throw new Error('Vite dev server has no resolved URL')
+    // The app flushes its pending autosave on pagehide (PHY-35). A listener added after the
+    // app's runs after that flush, so the next load starts from empty storage.
+    await evaluate<void>("addEventListener('pagehide', () => { try { localStorage.clear() } catch {} })")
     await connection.send('Page.navigate', { url }, activeSessionId)
     for (let attempt = 0; attempt < 100; attempt++) {
       if (await evaluate<boolean>("Boolean(document.querySelector('canvas'))")) break

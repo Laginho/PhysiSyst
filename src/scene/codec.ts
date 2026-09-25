@@ -1,5 +1,5 @@
 import { SCENE_VERSION } from './types'
-import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Pulley, Scene } from './types'
+import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Pulley, Scene, Spring } from './types'
 
 export class SceneParseError extends Error {
   constructor(message: string) {
@@ -191,15 +191,18 @@ function parsePulley(raw: unknown, i: number, bodies: ReadonlyMap<string, Body>)
   if (!isObject(raw)) fail(`${where} must be a JSON object`)
   const p = raw
   checkKeys(p, PULLEY_KEYS, `in ${where}`)
-  // Temporary until PHY-25 (disk realism option) and PHY-24 (movable pulleys).
-  if ('mass' in p) fail(`${where}: pulley mass is not supported yet`)
 
   const id = reqString(p, 'id', where)
   const bodyId = reqString(p, 'bodyId', where)
-  const mount = bodies.get(bodyId)
-  if (!mount) fail(`${where}: references missing body '${bodyId}'`)
-  if (!mount.fixed) fail(`${where}: pulley on dynamic body '${bodyId}' is not supported yet`)
-  return { id, bodyId, anchor: parseVec2(p['anchor'], `${where}: anchor.`), radius: reqPositive(p, 'radius', where) }
+  if (!bodies.has(bodyId)) fail(`${where}: references missing body '${bodyId}'`)
+  const pulley: Pulley = { id, bodyId, anchor: parseVec2(p['anchor'], `${where}: anchor.`), radius: reqPositive(p, 'radius', where) }
+  // The disk realism option (PHY-25): absent = 0, and absence survives reparse.
+  if ('mass' in p) {
+    const mass = p['mass']
+    if (!isFiniteNumber(mass) || mass < 0) fail(`${where}: mass must be a non-negative finite number`)
+    pulley.mass = mass
+  }
+  return pulley
 }
 
 function parseEnd(raw: unknown, key: 'a' | 'b', where: string, bodies: ReadonlyMap<string, Body>): ConstraintEnd {
@@ -212,6 +215,24 @@ function parseEnd(raw: unknown, key: 'a' | 'b', where: string, bodies: ReadonlyM
 }
 
 const ROPE_KEYS = ['id', 'kind', 'a', 'b', 'via'] as const
+const SPRING_KEYS = ['id', 'kind', 'a', 'b', 'k', 'x0', 'c', 'mass'] as const
+
+function parseSpring(s: Record<string, unknown>, where: string, bodies: ReadonlyMap<string, Body>): Spring {
+  checkKeys(s, SPRING_KEYS, `in ${where}`)
+  const id = reqString(s, 'id', where)
+  const a = parseEnd(s['a'], 'a', where, bodies)
+  const b = parseEnd(s['b'], 'b', where, bodies)
+  if (a.bodyId === b.bodyId) fail(`${where}: a spring must join two different bodies`)
+  const spring: Spring = { id, kind: 'spring', a, b, k: reqPositive(s, 'k', where), x0: reqPositive(s, 'x0', where) }
+  // Damping and mass are optional like a pulley's mass: absent = 0, and absence survives reparse.
+  for (const key of ['c', 'mass'] as const) {
+    if (!(key in s)) continue
+    const value = s[key]
+    if (!isFiniteNumber(value) || value < 0) fail(`${where}: ${key} must be a non-negative finite number`)
+    spring[key] = value
+  }
+  return spring
+}
 
 function parseConstraint(
   raw: unknown,
@@ -223,6 +244,7 @@ function parseConstraint(
   if (!isObject(raw)) fail(`${where} must be a JSON object`)
   const c = raw
   const kind = c['kind']
+  if (kind === 'spring') return parseSpring(c, where, bodies)
   if (kind !== 'rope') fail(`${where}: unknown kind '${String(kind)}'`)
   checkKeys(c, ROPE_KEYS, `in ${where}`)
 
@@ -236,8 +258,10 @@ function parseConstraint(
   for (const pid of viaRaw) {
     if (!pulleyIds.has(pid)) fail(`${where}: via references missing pulley '${pid}'`)
   }
-  // Temporary until PHY-24 generalizes the rope (pendulum, pulleys in series).
-  if (viaRaw.length !== 1) fail(`${where}: a rope must pass over exactly one pulley for now`)
+  if (viaRaw.length === 0 && a.bodyId === b.bodyId) fail(`${where}: a rope with no pulley must join two different bodies`)
+  viaRaw.forEach((pid, k) => {
+    if (pid === viaRaw[k - 1]) fail(`${where}: via repeats pulley '${pid}' back to back`)
+  })
   return { id, kind, a, b, via: [...viaRaw] }
 }
 

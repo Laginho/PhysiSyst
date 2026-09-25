@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Body, Scene } from '../scene'
-import { drawScene, massLabels } from './draw'
+import { drawArrow, drawScene, massLabels } from './draw'
+import { makeTransform } from './transform'
 
 const PPM = 60
 const CAMERA = { centerX: 6, centerY: 4, pixelsPerMeter: PPM }
@@ -138,5 +139,47 @@ describe('textbook rendering (drawScene)', () => {
     drawScene(ctx, sceneWith([makeBody('chao', 'rectangle', true), makeBody('r', 'rectangle'), makeBody('t', 'triangle')]), CAMERA, 900, 600)
     const texts = callsOf(log, 'fillText').map((e) => e.args![0])
     expect(texts).toEqual(['m', 'M'])
+  })
+})
+
+/** Each fillText with the font active when it ran. */
+function textsWithFont(log: LogEntry[]): Array<{ text: unknown; x: number; y: number; font: unknown }> {
+  const out: Array<{ text: unknown; x: number; y: number; font: unknown }> = []
+  let font: unknown
+  for (const e of log) {
+    if (e.kind === 'set' && e.name === 'font') font = e.value
+    if (e.kind === 'call' && e.name === 'fillText') out.push({ text: e.args![0], x: e.args![1] as number, y: e.args![2] as number, font })
+  }
+  return out
+}
+
+const fontPx = (font: unknown) => Number(/(\d+(?:\.\d+)?)px/.exec(String(font))![1])
+
+describe('vector label beside its arrow (drawArrow)', () => {
+  const t = makeTransform(CAMERA, 900, 600)
+  // Arrow from the camera center (screen 450, 300) one meter right: tip at (510, 300).
+  const tip = { x: 450 + PPM, y: 300 }
+
+  it('draws the bare letter next to the tip, and nothing else', () => {
+    const { ctx, log } = recordingCtx()
+    drawArrow(ctx, { x: 6, y: 4 }, { x: 1, y: 0 }, t, undefined, 'T')
+    const texts = textsWithFont(log)
+    expect(texts.map((e) => e.text)).toEqual(['T'])
+    expect(Math.hypot(texts[0]!.x - tip.x, texts[0]!.y - tip.y)).toBeLessThan(30)
+  })
+
+  it('F_el: the subscript in a smaller font, no value drawn', () => {
+    const { ctx, log } = recordingCtx()
+    drawArrow(ctx, { x: 6, y: 4 }, { x: 1, y: 0 }, t, undefined, 'F_el')
+    const texts = textsWithFont(log)
+    expect(texts.map((e) => e.text)).toEqual(['F', 'el'])
+    expect(fontPx(texts[1]!.font)).toBeLessThan(fontPx(texts[0]!.font))
+    for (const e of texts) expect(Math.hypot(e.x - tip.x, e.y - tip.y)).toBeLessThan(30)
+  })
+
+  it('no label: no text', () => {
+    const { ctx, log } = recordingCtx()
+    drawArrow(ctx, { x: 6, y: 4 }, { x: 1, y: 0 }, t)
+    expect(callsOf(log, 'fillText')).toHaveLength(0)
   })
 })

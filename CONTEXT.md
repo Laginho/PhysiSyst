@@ -7,7 +7,7 @@ A web app that simulates classical mechanics problems: students compose scenes o
 ### Scene composition
 
 **Scene**:
-A complete setup of one mechanics problem: its bodies, applied forces, contacts, constraints, and constants. The unit of saving, sharing, and playing.
+A complete setup of one mechanics problem: its bodies, applied forces, contacts, pulleys, constraints, and constants. The unit of saving, sharing, and playing.
 _Avoid_: level, world, problem (the *problem* is what the student solves; the *scene* is its representation)
 
 **Body**:
@@ -59,8 +59,8 @@ An ideal constraint between two anchored bodies, optionally passing over a seque
 _Avoid_: string, cable, thread; "pendulum" as an element
 
 **Pulley** (polia):
-A circle of given radius mounted at an anchor on a body; ropes wrap it. On a fixed body it is a fixed pulley, on a dynamic body a movable one. Massless and frictionless by default; mass (a disk) is a realism option.
-_Avoid_: wheel, sheave
+A circle of given radius mounted at an anchor on a body; ropes wrap it. On a fixed body it is a fixed pulley, on a dynamic body a movable one. Massless and frictionless by default; mass (a disk) is a realism option. The rope does not slip on a pulley with mass: the pulley turns with it, and the tension differs on each side.
+_Avoid_: wheel, sheave; grip, piece, share (the simulator's words for how it solves a pulley with mass, defined in ADR-0004, not domain terms)
 
 **Spring** (mola):
 A constraint between two anchored bodies with stiffness `k`, natural length `x₀` and damping `c` (default 0). `x` is the current anchor distance and `Δx = x − x₀`; the spring stores `x₀`, so dragging a body changes `Δx`. Massless by default; mass is a realism option.
@@ -89,7 +89,7 @@ A scene-wide toggle that disables rotation, for intro-level problems where bodie
 ### Distribution
 
 **Preset**:
-A ready-made scene shipped with the app so it is never empty on first open. The classic wedge-pushed-by-force problem is preset #1.
+A ready-made scene shipped with the app so it is never empty on first open. Presets live in the Preset tree; the classic wedge-pushed-by-force problem is one of them.
 
 **Preset tree**:
 The gallery's organization: area → part → topic, following the textbook *Tópicos de Física* (the most popular convention when in doubt). Only nodes holding a preset are shown; presets within a topic go in increasing difficulty.

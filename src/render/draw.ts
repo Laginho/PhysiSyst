@@ -1,4 +1,4 @@
-import { bodyPointToWorld, scenePath } from '../scene'
+import { bodyPointToWorld, localVertices, scenePath, triangleHeight } from '../scene'
 import type { Scene } from '../scene'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
 
@@ -21,6 +21,13 @@ const DEFAULT_STYLE: DrawStyle = {
 }
 
 const LABEL_FONT = 'italic 16px system-ui, sans-serif'
+
+/** What the editor has selected: one body, one constraint (spring or rope), one pulley, or nothing. */
+export type Selection = { kind: 'body' | 'constraint' | 'pulley'; id: string } | null
+
+export function selectedOf(selection: Selection, kind: NonNullable<Selection>['kind']): string | null {
+  return selection?.kind === kind ? selection.id : null
+}
 
 /**
  * Mass labels derived from the Scene on every render — never stored, never
@@ -132,9 +139,7 @@ function pathBody(ctx: CanvasRenderingContext2D, body: Scene['bodies'][number]):
       ctx.arc(0, 0, body.radius, 0, Math.PI * 2)
       break
     case 'triangle':
-      ctx.moveTo(0, 0)
-      ctx.lineTo(body.base, 0)
-      ctx.lineTo(body.base, body.base * Math.tan((body.alpha * Math.PI) / 180))
+      localVertices(body).forEach((v, i) => (i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y)))
       ctx.closePath()
       break
   }
@@ -179,7 +184,7 @@ export function drawScene(
   width: number,
   height: number,
   style: DrawStyle = DEFAULT_STYLE,
-  selectedId?: string | null,
+  selection: Selection = null,
 ): void {
   const t = makeTransform(camera, width, height)
   const labels = massLabels(scene)
@@ -209,10 +214,9 @@ export function drawScene(
       ctx.stroke()
     }
     if (isHatchedGround(body)) drawHatch(ctx, body as Extract<Scene['bodies'][number], { shape: 'rectangle' }>, camera.pixelsPerMeter)
-    if (body.id === selectedId) {
+    if (body.id === selectedOf(selection, 'body')) {
       // Selection outline: solid bright ring around the shape.
-      ctx.lineWidth = 3 / camera.pixelsPerMeter
-      ctx.strokeStyle = '#ff8c00'
+      selectionStroke(ctx, camera.pixelsPerMeter)
       ctx.stroke()
     }
     ctx.restore()
@@ -225,7 +229,7 @@ export function drawScene(
     let ay = 0
     if (body.shape === 'triangle') {
       ax = (2 * body.base) / 3
-      ay = (body.base * Math.tan((body.alpha * Math.PI) / 180)) / 3
+      ay = triangleHeight(body) / 3
     }
     ctx.save()
     ctx.translate(s.x + ax * camera.pixelsPerMeter, s.y - ay * camera.pixelsPerMeter)
@@ -237,19 +241,35 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style)
+  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection)
   ctx.restore()
+}
+
+/** The bright stroke every selected item is outlined with. */
+function selectionStroke(ctx: CanvasRenderingContext2D, ppm: number): void {
+  ctx.lineWidth = 3 / ppm
+  ctx.strokeStyle = '#ff8c00'
 }
 
 /**
  * Pulleys as outlined circles with an axle dot, ropes as their tangent legs
- * plus the arc wrapped on each pulley (PHY-23). Drawn in world meters under
- * one y-flipped transform, so canvas arc angles are the path's own angles.
+ * plus the arc wrapped on each pulley (PHY-23), springs as zigzags (PHY-26).
+ * Drawn in world meters under one y-flipped transform, so canvas arc angles
+ * are the path's own angles.
  */
-function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransform, ppm: number, style: DrawStyle): void {
+function drawConstraints(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  t: ScreenTransform,
+  ppm: number,
+  style: DrawStyle,
+  selection: Selection,
+): void {
+  const selectedConstraintId = selectedOf(selection, 'constraint')
+  const selectedPulleyId = selectedOf(selection, 'pulley')
   const pulleys = scene.pulleys ?? []
-  const ropes = scene.constraints ?? []
-  if (pulleys.length === 0 && ropes.length === 0) return
+  const constraints = scene.constraints ?? []
+  if (pulleys.length === 0 && constraints.length === 0) return
   const origin = worldToScreen(t, 0, 0)
   ctx.save()
   ctx.translate(origin.x, origin.y)
@@ -265,15 +285,32 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
     ctx.arc(c.x, c.y, pulley.radius, 0, Math.PI * 2)
     ctx.fillStyle = style.dynamicFill
     ctx.fill()
+    ctx.save()
+    // Selected pulley or rope (PHY-28): the same bright stroke as a selected body.
+    if (pulley.id === selectedPulleyId) selectionStroke(ctx, ppm)
     ctx.stroke()
+    ctx.restore()
     ctx.beginPath()
     ctx.arc(c.x, c.y, 3 / ppm, 0, Math.PI * 2)
     ctx.fillStyle = style.dynamicStroke
     ctx.fill()
   }
-  for (const rope of ropes) {
-    const path = scenePath(scene, rope)
+  for (const constraint of constraints) {
+    if (constraint.kind === 'spring') {
+      const a = bodies.get(constraint.a.bodyId)
+      const b = bodies.get(constraint.b.bodyId)
+      if (!a || !b) continue
+      // Selected spring (PHY-27): the same bright stroke as a selected body.
+      ctx.save()
+      if (constraint.id === selectedConstraintId) selectionStroke(ctx, ppm)
+      drawSpring(ctx, bodyPointToWorld(a, constraint.a.anchor), bodyPointToWorld(b, constraint.b.anchor), ppm)
+      ctx.restore()
+      continue
+    }
+    const path = scenePath(scene, constraint)
     if (!path) continue
+    ctx.save()
+    if (constraint.id === selectedConstraintId) selectionStroke(ctx, ppm)
     ctx.beginPath()
     path.segments.forEach((s, i) => {
       ctx.moveTo(s.from.x, s.from.y)
@@ -282,8 +319,39 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
       if (arc) ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.start, arc.start + arc.direction * arc.sweep, arc.direction < 0)
     })
     ctx.stroke()
+    ctx.restore()
   }
   ctx.restore()
+}
+
+const SPRING_ZIGS = 10
+
+/**
+ * A spring (PHY-26) as a zigzag between its anchors: a straight tail at each
+ * end and a fixed number of zigs, so stretching spreads them and compressing
+ * packs them. Width in screen px, so it reads the same at any zoom.
+ */
+function drawSpring(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }, ppm: number): void {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+  if (length === 0) return
+  const ux = dx / length
+  const uy = dy / length
+  const half = 7 / ppm
+  const tail = 0.15 * length
+  const pitch = (length - 2 * tail) / SPRING_ZIGS
+  ctx.beginPath()
+  ctx.moveTo(from.x, from.y)
+  ctx.lineTo(from.x + tail * ux, from.y + tail * uy)
+  for (let i = 0; i < SPRING_ZIGS; i++) {
+    const along = tail + (i + 0.5) * pitch
+    const side = i % 2 === 0 ? half : -half
+    ctx.lineTo(from.x + along * ux - side * uy, from.y + along * uy + side * ux)
+  }
+  ctx.lineTo(to.x - tail * ux, to.y - tail * uy)
+  ctx.lineTo(to.x, to.y)
+  ctx.stroke()
 }
 
 export interface ArrowStyle {
@@ -292,14 +360,22 @@ export interface ArrowStyle {
   headLenPx: number
 }
 
+const VECTOR_LABEL_FONT = 'italic 15px system-ui, sans-serif'
+const VECTOR_SUB_FONT = 'italic 11px system-ui, sans-serif'
+/** How far to the side of the tip, px, the label sits: off the arrow's line, and so off the rope or spring it draws on. */
+const VECTOR_LABEL_GAP_PX = 18
+
 /** Reusable overlay arrow from a world point along a world vector (for force vectors in T8).
- * Takes the ScreenTransform (not raw canvas dims) so it stays correct under DPR pre-scaling. */
+ * Takes the ScreenTransform (not raw canvas dims) so it stays correct under DPR pre-scaling.
+ * `label` (a Vector label, PHY-29) is drawn just past the tip; after its first
+ * `_` comes the subscript, in a smaller font. */
 export function drawArrow(
   ctx: CanvasRenderingContext2D,
   fromWorld: { x: number; y: number },
   vecWorld: { x: number; y: number },
   t: ScreenTransform,
   style?: Partial<ArrowStyle>,
+  label?: string,
 ): void {
   const s: ArrowStyle = { color: '#d97742', widthPx: 2, headLenPx: 10, ...style }
   const from = worldToScreen(t, fromWorld.x, fromWorld.y)
@@ -319,5 +395,21 @@ export function drawArrow(
   ctx.lineTo(to.x - s.headLenPx * Math.cos(angle + Math.PI / 6), to.y - s.headLenPx * Math.sin(angle + Math.PI / 6))
   ctx.closePath()
   ctx.fill()
+  if (label) {
+    // Base right-aligned and subscript left-aligned on one junction point, so
+    // no text measuring is needed to butt them together.
+    const [base, sub] = label.split(/_(.*)/s)
+    const x = to.x - VECTOR_LABEL_GAP_PX * Math.sin(angle)
+    const y = to.y + VECTOR_LABEL_GAP_PX * Math.cos(angle)
+    ctx.textBaseline = 'middle'
+    ctx.font = VECTOR_LABEL_FONT
+    ctx.textAlign = sub ? 'right' : 'center'
+    ctx.fillText(base!, x, y)
+    if (sub) {
+      ctx.font = VECTOR_SUB_FONT
+      ctx.textAlign = 'left'
+      ctx.fillText(sub, x, y + 4)
+    }
+  }
   ctx.restore()
 }

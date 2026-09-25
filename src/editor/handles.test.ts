@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Body } from '../scene'
+import { bodyPointToWorld, type Body } from '../scene'
 import { makeTransform } from '../render/transform'
 import {
   alphaFromLocal,
   clampAlphaDeg,
   getHandles,
   HANDLE_HIT_RADIUS_PX,
-  localToWorld,
   minDimension,
   pickHandle,
 } from './handles'
@@ -41,15 +40,15 @@ describe('panel clamp helpers (same constants as handle drags)', () => {
   })
 })
 
-describe('localToWorld', () => {
+describe('bodyPointToWorld', () => {
   it('is translate-only for an unrotated body', () => {
-    expect(localToWorld(rect, 1, -0.5)).toEqual({ x: 1, y: -0.5 })
+    expect(bodyPointToWorld(rect, { x: 1, y: -0.5 })).toEqual({ x: 1, y: -0.5 })
   })
 
   it('applies the body rotation about its own origin', () => {
     const rotated = { ...rect, rotation: Math.PI / 2 }
     // local (1, 0) under +90° CCW -> (0, 1)
-    const w = localToWorld(rotated, 1, 0)
+    const w = bodyPointToWorld(rotated, { x: 1, y: 0 })
     expect(w.x).toBeCloseTo(0, 9)
     expect(w.y).toBeCloseTo(1, 9)
   })

@@ -564,7 +564,9 @@ describe('particle mode (T7/M2)', () => {
   it('constants.particleMode locks every body rotation: torque cannot spin bodies up', async () => {
     const free = await createSimulator(spinner())
     for (let i = 0; i < 60; i++) free.step()
-    expect(free.readStates().get('b')!.angvel).toBeGreaterThan(0.1)
+    // The arm rides the body and the push stays world-up: a pendulum about
+    // theta = pi/2, on its return swing by 1 s, so only the magnitude is pinned.
+    expect(Math.abs(free.readStates().get('b')!.angvel)).toBeGreaterThan(0.1)
 
     const locked = await createSimulator(spinner(true))
     for (let i = 0; i < 60; i++) locked.step()
@@ -577,7 +579,7 @@ describe('particle mode (T7/M2)', () => {
     const sim = await createSimulator(spinner())
     for (let i = 0; i < 60; i++) sim.step()
     const carried = sim.readStates()
-    expect(carried.get('b')!.angvel).toBeGreaterThan(0.1)
+    expect(Math.abs(carried.get('b')!.angvel)).toBeGreaterThan(0.1)
 
     sim.replaceScene(spinner(true), carried)
     const after = sim.readStates().get('b')!
