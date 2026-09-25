@@ -7,6 +7,7 @@ Review: agent
 - Primary files:
   - `src/sim/simulator.ts` (`step`, o reset por passo)
   - `src/sim/acceptance.test.ts`
+  - `src/sim/simulator.test.ts` (as pré-condições do spinner em `particle mode (T7/M2)`)
 
 #### What to build
 
@@ -22,6 +23,7 @@ Afeta toda força aplicada fora do CM desde que as âncoras existem (o teste de 
 2. O teste de âncora existente (`force anchor semantics`) continua verde
 3. Teste de regressão mutate-verified conforme o `AGENTS.md` (sem o reset do torque, vermelho)
 4. Gate verde
+5. Os testes de `particle mode (T7/M2)` continuam mostrando o corpo livre girando (|ω| > 0.1 após 60 passos) e o travado não
 
 #### Verification
 
@@ -37,3 +39,5 @@ Afeta toda força aplicada fora do CM desde que as âncoras existem (o teste de 
 Aberto pela etapa 3 do PHY-23 (2026-09-24). Achado fora dos critérios daquele ticket; não bloqueou o merge.
 
 Proxy decided: critério 1 passa a comparar ω com √(6·sin θ) na mesma cena de 1 s e banda de 2% — o "3 rad/s" supunha braço fixo, mas a âncora gira com o corpo e a força fica no referencial do mundo; com o fix o simulador dá ω = 2,445 contra a integração de θ'' = 3·cos θ em 2,431, e nenhuma física correta atinge 3 (2026-09-25).
+
+Proxy decided: `src/sim/simulator.test.ts` entra nos Primary files (critério 5) e as duas pré-condições do spinner passam a `Math.abs(angvel) > 0.1` — com o fix o círculo é um pêndulo físico em torno de θ = π/2 e em 60 passos está na volta (ω = −7,83); o sinal positivo só valia porque o torque acumulava (2026-09-25).
