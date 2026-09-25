@@ -1,5 +1,5 @@
 # CLEAN-07: Geometria de corpo no `scene` (dissolve `render → editor`) e resíduos de forma do PHY-28
-Stage: implementing
+Stage: to-review
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -79,3 +79,10 @@ Review (stage 3) sobre `0f74823` + `0c3ea4b`, base `sweatshop/2026-09-24-1853`, 
 - Primary files vs critérios: `draw.ts` "só os imports" e `App.tsx` "só os itens 4–7" contradizem os critérios 3 e 4, que exigem corpo em `draw.ts` e o item 3 no `App.tsx`; `presets` "só o `base · tan(α)`" e o `F` virou `(H/BASE)` porque o critério 1 proíbe qualquer `tan(α)` fora do `scene`. Critérios vencem; nada disso é creep.
 - Fora do contrato, em CLEAN-08: o hull do triângulo em `simulator.ts` e o `pathBody` em `draw.ts` ainda soletram os três vértices que `localVertices` já dá; o nome do teste `overlay.test.ts:82` ainda diz "localToWorld".
 - Juízos (smells de baseline), sem ação: `triangleHeight`/`localVertices` moram em `scene/ropePath.ts` (o ticket os mandou para lá; o `index` os re-exporta, então mudar de arquivo é invisível aos chamadores); os testes de `bodyPointToWorld` ficaram em `handles.test.ts`.
+
+#### Reopen (stage 2, 2026-09-24) — critério 5
+
+- Teste só de teste, vermelho, commit `e142b72`: `App.test.ts` bloco PHY-28, "mola nova seleciona a mola mesmo com uma polia de mesmo id na cena". `seedAtwood` ganhou um parâmetro opcional `pulleys`; o teste semeia a polia `mola` no teto e constrói uma mola bloco1 → bloco2. Vermelho sobre o código do review (`0c3ea4b`): `expected 'molaraio (m)massa (kg)excluir' to contain 'k (N/m)'` — o painel da polia `mola` no lugar do da mola.
+- Fix em `App.tsx` `finishTool`: o tipo vem de a lista de polias ter crescido (`res.doc.pulleys.length > docRef.current.pulleys.length`, lido antes do `commitDoc`), a sugestão do review. Mantém a decisão do proxy (tipo derivado do resultado, não da ferramenta).
+- Mutate-verify (seam DOM): `>` → `>=` (todo resultado vira polia) → 13 vermelhos em `App.test.ts`, entre eles o teste novo com a mesma saída acima; revertido → 54/54.
+- Gate: `npm test` 643/643 (642 do review + o teste novo; o critério 8 falava da contagem do refactor, o teste é do reopen), lint, typecheck e build verdes.

@@ -1169,10 +1169,11 @@ export default function App() {
       setToolError(res.error)
       return
     }
+    // Ids are scoped per list, so a pulley may share the new constraint's id: the list that grew says which it is.
+    const kind = (res.doc.pulleys?.length ?? 0) > (docRef.current.pulleys?.length ?? 0) ? 'pulley' : 'constraint'
     commitDoc(res.doc)
     setTool(null)
     setToolError(null)
-    const kind = res.doc.pulleys?.some((p) => p.id === res.newId) ? 'pulley' : 'constraint'
     setSelection(res.newId ? { kind, id: res.newId } : null)
   }
 
