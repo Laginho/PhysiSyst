@@ -1,5 +1,5 @@
 # CLEAN-07: Geometria de corpo no `scene` (dissolve `render → editor`) e resíduos de forma do PHY-28
-Stage: to-implement
+Stage: to-review
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -32,7 +32,7 @@ Nenhum item muda comportamento; a suíte existente prova cada um.
 2. `updateSpring` e `removeConstraint` têm comentário de doc
 3. `drawScene` recebe uma seleção só (a união de `App.tsx`, exportada de onde couber)
 4. O traço de seleção de `draw.ts` existe uma vez
-5. `tool.kind` despachado num lugar só no `App.tsx`; `finishTool` sem o parâmetro `selects`
+5. `tool.kind` lido em dois lugares só no `App.tsx` — `onToolClick` (comportamento) e `toolHint` (dica); `finishTool` sem o parâmetro `selects`
 6. A legenda da leitura avalia a seleção uma vez; nenhum `'a' in` sobre `Tool`
 7. Os helpers do bloco PHY-28 do `App.test.ts` são os do PHY-27, parametrizados pela semente
 8. `npm test` com os mesmos números de antes; gate verde
@@ -49,3 +49,13 @@ Nenhum item muda comportamento; a suíte existente prova cada um.
 ## Comments
 
 - 2026-09-24 Aberto pelo review do CLEAN-06 (stage 3). Junta a decisão do proxy daquele ticket (geometria no `editor` em vez do `scene`) com as cinco notas do review do PHY-28 que ficaram como comentário no CLEAN-06. Stage 1 confirma o recorte antes de implementar; `needs-triage` até lá.
+- 2026-09-24 Proxy decided: critério 5 = `onToolClick` como único despacho de comportamento e `toolHint(tool)` (módulo, ao lado de `type Tool`) como único de apresentação; `finishTool(res)` deriva o tipo da seleção do resultado (`res.doc.pulleys` contém `newId` → polia, senão restrição), não da ferramenta — a nota (b) do PHY-28 mirava o terceiro despacho vazando pelo flag `selects`; uma tabela por tipo duplicaria o meio comum do clique para três tipos. Critério 5 reescrito no corpo com essa leitura.
+- 2026-09-24 (stage 2) Implementação, commit `0f74823`:
+  - Critério 1: `triangleHeight` e `localVertices` em `src/scene/ropePath.ts`, exportados de `src/scene/index.ts`. `contactSnap`, `anchorSnap`, `hitTest`, `handles`, `draw`, `simulator` e `presets` importam do `scene`. `handles.localToWorld` apagado; `getHandles` e `overlay.appliedArrows` usam `bodyPointToWorld`. No preset, `F = (M+m)·g·(H/BASE)` em vez de um segundo `tan α`. `src/codec/*.ts` não existe (o codec é `src/scene/codec.ts`, sem `Math.tan`): nada a fazer ali.
+  - Critério 3: `Selection` e `selectedOf` saem do `App.tsx` para `src/render/draw.ts` (o `render` não pode importar do `editor`, e o `App` já importa do `render`); `drawScene(…, style, selection)`.
+  - Critério 4: `selectionStroke(ctx, ppm)` em `draw.ts`, usado pelos quatro traços.
+  - Critério 6: `selectedItem` avaliado uma vez; o `'a' in` virou `toolRef.current?.a ?? null`, com a variante polia de `Tool` declarando `a?: never` (sem isso, ler `.a` na união seria um terceiro `tool.kind`).
+  - Critério 7: `click`/`panel`/`field` no nível do módulo de `App.test.ts` e `setupWith(seed)`; cada bloco fica com `const setup = () => setupWith(seedX)`.
+  - `handles.test.ts`: os dois testes de `localToWorld` passam a chamar `bodyPointToWorld` (mesmas entradas, mesmas expectativas), o que mantém a contagem e dá ao `bodyPointToWorld` um teste direto que ele não tinha. Mutação `y: … - anchor.x * s …` → vermelho (`expected -1 to be close to 1`); mutação no termo `anchor.y * s` passa por esses dois (nenhum usa y local com rotação) mas a suíte pega: 4 vermelhos em `anchorSnap`, `doc` e `acceptance` (PHY-23). Revertido.
+  - Fora dos Primary files, deixado: o nome do teste `overlay.test.ts:82` ainda diz "localToWorld".
+  - Gate: `npm test` 642/642 (baseline 642/642), lint, typecheck e build verdes. Uma execução em oito deu `1 failed | 641 passed` num arquivo que não consegui identificar (saída não guardada); as outras sete, duas delas concorrentes, deram 642/642. Provável o timeout solto de `simulator.test.ts` já registrado no PHY-20; o refactor não mexe em temporização.
