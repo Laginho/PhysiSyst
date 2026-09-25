@@ -69,10 +69,19 @@ import {
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
-import { drawArrow, drawGrid, drawScene, selectedOf, type Selection } from './render/draw'
+import { drawArrow, drawGrid, drawScene, selectedOf, type ArrowStyle, type Selection } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
-import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
+import {
+  appliedArrows,
+  elasticArrows,
+  initialVelocityArrows,
+  normalArrows,
+  tensionArrows,
+  vectorLabels,
+  weightArrows,
+  type OverlayArrow,
+} from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
 import { getLang, setLang as persistLang, t, type Lang } from './i18n'
@@ -170,6 +179,8 @@ function paint(
   opts?: {
     showGlobal: boolean
     contacts?: readonly ContactPoint[]
+    constraints?: readonly ConstraintState[]
+    lang?: Lang
     draggingBody?: boolean
     /** The spring or rope tool's first anchor, until the tool finishes. */
     pendingAnchor?: ConstraintEnd | null
@@ -211,18 +222,28 @@ function paint(
   }
 
   // Vector overlay: global mode draws scene-wide, otherwise selection-only.
+  // Vector labels number over the whole scene's arrows, so a selected vector
+  // reads the same letter it has in global mode.
+  const ppm = camera.pixelsPerMeter
+  const constraints = opts?.constraints ?? []
+  const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
+    { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
+    { arrows: initialVelocityArrows(view, ppm), style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
+    { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
+    { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
+    { arrows: tensionArrows(view, constraints, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
+    { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
+  ]
+  const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
-    for (const a of weightArrows(doc, states, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#2e7d32', widthPx: 2, headLenPx: 8 })
-    for (const a of initialVelocityArrows(view, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-    for (const a of appliedArrows(view, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#d97742', widthPx: 2, headLenPx: 10 })
-    for (const a of normalArrows(opts.contacts ?? [])) drawArrow(ctx, a.from, a.vec, transform, { color: '#1565c0', widthPx: 2, headLenPx: 8 })
+    for (const { arrows, style } of layers) for (const a of arrows) drawArrow(ctx, a.from, a.vec, transform, style, labels.get(a.key))
   } else {
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      for (const a of initialVelocityArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-      for (const a of appliedArrows(selView, camera.pixelsPerMeter)) {
-        drawArrow(ctx, a.from, a.vec, transform)
+      for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels.get(a.key))
+      for (const a of appliedArrows(selView, ppm)) {
+        drawArrow(ctx, a.from, a.vec, transform, undefined, labels.get(a.key))
         // The application point is draggable (PHY-27): a ring marks the grip.
         screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
       }
@@ -634,6 +655,8 @@ export default function App() {
   const statesRef = useRef<Map<string, BodyState> | null>(null)
   const accelRef = useRef(initialTracker())
   const contactsRef = useRef<ContactPoint[]>([])
+  /** Rope and spring readings, refreshed with the contacts, for the T and F_el arrows. */
+  const constraintsRef = useRef<ConstraintState[]>([])
   /** Document the running world was built from — the carry-over baseline. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
@@ -642,6 +665,7 @@ export default function App() {
   const docRef = useRef<Scene>(doc)
   const selectionRef = useRef<Selection>(selection)
   const showGlobalRef = useRef(showGlobal)
+  const langRef = useRef(lang)
   const historyRef = useRef<History<Scene>>(history)
   const showShortcutsRef = useRef(showShortcuts)
   const saverRef = useRef<DebouncedSaver | null>(null)
@@ -719,6 +743,8 @@ export default function App() {
       paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
+        constraints: constraintsRef.current,
+        lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
       })
@@ -814,6 +840,12 @@ export default function App() {
     repaint()
   }, [selection, tool, repaint])
 
+  // Vector labels follow the language (P→W, F_el→F_s) without waiting for a frame.
+  useEffect(() => {
+    langRef.current = lang
+    repaint()
+  }, [lang, repaint])
+
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
   useEffect(() => {
@@ -882,6 +914,7 @@ export default function App() {
       accelRef.current = onRebuild(accelRef.current, prev, next)
       statesRef.current = next
       contactsRef.current = sim.readContacts()
+      constraintsRef.current = sim.readConstraints()
       pendingRebuildRef.current = false
       setSimError(null)
       return true
@@ -905,6 +938,7 @@ export default function App() {
         accelRef.current = onSteps(accelRef.current, n, prev, next)
         statesRef.current = next
         contactsRef.current = sim.readContacts()
+        constraintsRef.current = sim.readConstraints()
       } catch (e) {
         fail(e)
         return
@@ -929,6 +963,7 @@ export default function App() {
           accelRef.current = onReset()
           statesRef.current = null
           contactsRef.current = simRef.current ? simRef.current.readContacts() : []
+          constraintsRef.current = simRef.current ? simRef.current.readConstraints() : []
           builtDocRef.current = docRef.current
           setSimError(null)
         } catch (e) {
@@ -963,6 +998,7 @@ export default function App() {
           simRef.current = sim
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
+          constraintsRef.current = sim.readConstraints()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc
           setSimError(null)

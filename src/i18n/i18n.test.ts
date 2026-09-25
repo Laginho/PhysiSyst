@@ -225,3 +225,21 @@ describe('projectile Preset descriptions', () => {
     }
   })
 })
+
+describe('Vector label symbols (PHY-29)', () => {
+  const table: Array<[string, string, string]> = [
+    ['vector.weight', 'P', 'W'],
+    ['vector.normal', 'N', 'N'],
+    ['vector.applied', 'F', 'F'],
+    ['vector.tension', 'T', 'T'],
+    ['vector.elastic', 'F_el', 'F_s'],
+    ['vector.initialVelocity', 'v₀', 'v₀'],
+  ]
+
+  it('both catalogs carry the symbol table', () => {
+    for (const [key, pt, english] of table) {
+      expect((ptBR as Record<string, string>)[key], key).toBe(pt)
+      expect((en as Record<string, string>)[key], key).toBe(english)
+    }
+  })
+})

@@ -1,5 +1,5 @@
 # PHY-29: Setas de tração e força elástica, rótulos em todos os vetores
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-25, PHY-26
 Review: agent
@@ -49,3 +49,11 @@ Os rótulos são derivados da cena, nunca guardados, e sempre visíveis.
 - `src/i18n/i18n.test.ts`: símbolos nos dois idiomas (6).
 
 ## Comments
+
+- 2026-09-24 Stage 2 (claude-opus-5-5). Base: a sessão `sweatshop/2026-09-24-1853`; branch `phy/PHY-29-setas-de-vinculo-e-rotulos`.
+  - `71924c7` só testes, vermelho: 17 testes novos falham (`tensionArrows`/`elasticArrows`/`vectorLabels is not a function`, `drawArrow` sem texto, chaves `vector.*` ausentes).
+  - `02ec18e` código, sem tocar teste. `OverlayArrow` ganha `key` (a grandeza que a seta desenha: `weight:<corpo>`, `applied:<força>`, `normal:<par ordenado>`, `tension:<corda>` ou `tension:<corda>#<segmento>` com polia de massa, `elastic:<mola>`, `initial-velocity:<corpo>`). `vectorLabels(arrows, lang)` numera por tipo as chaves distintas na ordem das setas; `_` abre o subscrito (`T_1`, `F_el`, `F_el,2`). `drawArrow(..., label)` desenha o rótulo 18 px ao lado da ponta (perpendicular à seta, fora da corda ou da mola), base alinhada à direita e subscrito à esquerda em 11 px contra 15 px, sem `measureText`. `App.paint` rotula sobre o conjunto de setas da cena inteira, também no modo só-seleção; `constraintsRef` lê `readConstraints()` junto de cada `readContacts()`; `langRef` + efeito repinta ao trocar idioma.
+  - Decisões fora do texto: `F_el = 0` numa ponta (mola no comprimento natural) não desenha seta, pela mesma guarda de magnitude zero que some com a corda frouxa; a checagem `state.slack` saiu por redundante (frouxa ⇒ `T = 0`), o que deixou a guarda presa pelo teste da corda frouxa. A legenda do toggle virou "mostrar todos os vetores" / "show all vectors" — a antiga listava só peso/aplicadas/normais.
+  - Mutação (testes chamam as funções direto; registro por completude), cada uma vermelha em `npx vitest run src/render src/i18n`: guarda de magnitude zero removida → 2 falhas; `if (mount.fixed) return` removido → 4; `perSegment` sempre falso → 1; numerar sempre (`< 1`) → 4; sem `Math.sign` → 1; chave da normal por ponto → 1; ponta `a` no ponto errado → 2; subscrito na fonte da base → 1; rótulo não desenhado → 2; `vector.elastic` en = `F_el` → 3.
+  - Critério 7, live: `vite preview` + Chromium headless, cenas semeadas no localStorage (sem preset de Atwood/massa-mola ainda, PHY-31), vetores ligados, reproduzir ~0,3 s, pausar, capturar, trocar idioma, capturar. Atwood pt-BR: `P_1`, `P_2`, `T` nas duas pontas, nenhuma seta na polia fixa; en: `W_1`, `W_2`, `T`. Massa-mola pt-BR: `F_el` no bloco (parede fixa sem seta), `N` nos dois pontos do contato, `P`; en: `F_s`, `W`. Primeira rodada achou o rótulo em cima da própria linha (o `T` sumia na corda, o `F_el` no zigue-zague); corrigido para o lado da ponta antes do commit.
+  - Gate: 30 arquivos / 661 testes, lint, typecheck e build verdes.
