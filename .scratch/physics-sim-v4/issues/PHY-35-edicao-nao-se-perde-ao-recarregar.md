@@ -1,5 +1,5 @@
 # PHY-35: Edição feita logo antes de recarregar ou fechar a aba não se perde
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -36,3 +36,7 @@ Ao sair da página, o autosave pendente é gravado de forma síncrona. `Debounce
 
 - 2026-09-24 Aberto a partir do achado 3 que o review do PHY-23 deixou no CLEAN-01, mais amplo do que o review descreveu: não existe flush no `pagehide`, então o F5 e o fechar da aba também perdem a última edição, não só o reload do CLEAN-01.
 - 2026-09-25 Proxy decided: add `src/test/browser.ts` to Primary files and fix `reset()` in its own test-only commit before the code commit — the PHY-35 fix invalidates the harness's "clear storage after load = fresh app" assumption (navigating away now flushes the last drag), so this is a Primary-files blank, not a new seam, and it's reversible. Evidence: with the fix and without the harness change, `src/App.browser.test.ts` is 8/10 (PHY-18 "drops at the same world position…" at 1280 and 1920: `missing caixa panel`); with it, 10/10. A CDP `Storage.clearDataForOrigin` from about:blank raced the flushed write and stayed red.
+- 2026-09-25 Mutate-verify (stage 2), each run `npx vitest run src/App.test.ts -t PHY-35` against the fix with one mutation applied:
+  - No `window.addEventListener('pagehide', flush)`: "uma edição feita antes dos 400 ms…" red, `expected [ 'chao' ] to include 'retangulo'`; "depois do unmount…" red, `expected 0 to be greater than 0`.
+  - Cleanup returns `() => {}` (listener never removed): "depois do unmount…" red, `expected [] to deeply equal ArrayContaining [[Function flush]]`. The behaviour half of that test cannot see a leaked listener (unmount cancels the pending save), so it also checks the add/remove pairing on `window`.
+  - Dedupe line `if (lastSavedRef.current.get(id) === payload) return` removed: "sem edição pendente o pagehide não grava nada" red, `expected "setItem" to not be called at all, but actually been called 2 times`.
