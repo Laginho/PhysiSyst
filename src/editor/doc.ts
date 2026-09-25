@@ -1,4 +1,4 @@
-import { bodyPointToWorld, type AppliedForce, type Body, type ConstraintEnd, type Contact, type Pulley, type Rope, type Scene, type Spring } from '../scene'
+import { bodyPointToWorld, constraintTouchesBody, type AppliedForce, type Body, type ConstraintEnd, type Contact, type Pulley, type Rope, type Scene, type Spring } from '../scene'
 
 /**
  * Editor doc-op GUARD DOCTRINE: guards here exist only for USER-ACTIONABLE
@@ -100,13 +100,8 @@ export function removeBodyAndDependents(doc: Scene, id: string): Scene {
     forces: doc.forces.filter((f) => f.bodyId !== id),
     contacts: doc.contacts.filter((c) => c.a !== id && c.b !== id),
   }
-  const lostPulleys = new Set((doc.pulleys ?? []).filter((p) => p.bodyId === id).map((p) => p.id))
-  if (doc.pulleys) next.pulleys = doc.pulleys.filter((p) => !lostPulleys.has(p.id))
-  if (doc.constraints) {
-    next.constraints = doc.constraints.filter(
-      (c) => c.a.bodyId !== id && c.b.bodyId !== id && !(c.kind === 'rope' && c.via.some((p) => lostPulleys.has(p))),
-    )
-  }
+  if (doc.pulleys) next.pulleys = doc.pulleys.filter((p) => p.bodyId !== id)
+  if (doc.constraints) next.constraints = doc.constraints.filter((c) => !constraintTouchesBody(doc, c, id))
   return next
 }
 
