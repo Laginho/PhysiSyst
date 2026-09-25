@@ -1,5 +1,5 @@
 # CLEAN-14: `axleTolerance` obrigatória em `pulleyAtPoint`
-Stage: to-implement
+Stage: to-review
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -30,3 +30,4 @@ Tornar o parâmetro obrigatório e passar `Infinity` explicitamente nos testes d
 ## Comments
 
 - 2026-09-25 Aberto pelo review do PHY-37 (stage 3): achado fora dos Primary files daquele ticket (`hitTest.test.ts`).
+- 2026-09-25 Stage 2: `axleTolerance: number` sem default; os cinco call sites do PHY-28 passam `Infinity`. Prova do critério 1: com só `hitTest.ts` mudado (testes em stash), `npm run typecheck` dá `TS2554: Expected 3 arguments, but got 2` em `hitTest.test.ts` 176, 177, 178, 179 e 184. Gate verde: 30 arquivos, 712 testes; lint, typecheck e build limpos.

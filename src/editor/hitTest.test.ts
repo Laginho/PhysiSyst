@@ -173,15 +173,15 @@ describe('pulleyAtPoint and ropeAtPoint (PHY-28)', () => {
   }
 
   it('hits a pulley inside its circle, following its mount body, and misses outside', () => {
-    expect(pulleyAtPoint(SCENE, { x: 0.3, y: 4.3 })?.id).toBe('p1')
-    expect(pulleyAtPoint(SCENE, { x: 0, y: 4.45 })?.id).toBe('p1')
-    expect(pulleyAtPoint(SCENE, { x: 0.4, y: 3.6 })).toBeNull()
-    expect(pulleyAtPoint({ ...SCENE, bodies: [{ ...ceiling, position: { x: 3, y: 5 } }, left, right] }, { x: 3, y: 4 })?.id).toBe('p1')
+    expect(pulleyAtPoint(SCENE, { x: 0.3, y: 4.3 }, Infinity)?.id).toBe('p1')
+    expect(pulleyAtPoint(SCENE, { x: 0, y: 4.45 }, Infinity)?.id).toBe('p1')
+    expect(pulleyAtPoint(SCENE, { x: 0.4, y: 3.6 }, Infinity)).toBeNull()
+    expect(pulleyAtPoint({ ...SCENE, bodies: [{ ...ceiling, position: { x: 3, y: 5 } }, left, right] }, { x: 3, y: 4 }, Infinity)?.id).toBe('p1')
   })
 
   it('the topmost pulley wins', () => {
     const two: Scene = { ...SCENE, pulleys: [...SCENE.pulleys!, { id: 'p2', bodyId: 'ceiling', anchor: { x: 0, y: -1 }, radius: 0.5 }] }
-    expect(pulleyAtPoint(two, { x: 0, y: 4 })?.id).toBe('p2')
+    expect(pulleyAtPoint(two, { x: 0, y: 4 }, Infinity)?.id).toBe('p2')
   })
 
   it('hits a rope within the tolerance of any straight leg, and misses beside it and past its ends', () => {
