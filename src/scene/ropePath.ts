@@ -1,4 +1,4 @@
-import type { Body, Rope, Scene, TriangleGeometry, Vec2 } from './types'
+import type { Body, Constraint, Rope, Scene, TriangleGeometry, Vec2 } from './types'
 
 export interface RopeSegment {
   from: Vec2
@@ -149,4 +149,14 @@ export function scenePath(scene: Scene, rope: Rope): RopePath | null {
     via.push({ center: bodyPointToWorld(mount, pulley.anchor), radius: pulley.radius })
   }
   return ropePath(a, b, via)
+}
+
+/** A constraint touches a body when either end is on it, or it is a rope passing over a pulley mounted on it. */
+export function constraintTouchesBody(scene: Scene, constraint: Constraint, bodyId: string): boolean {
+  return (
+    constraint.a.bodyId === bodyId ||
+    constraint.b.bodyId === bodyId ||
+    (constraint.kind === 'rope' &&
+      constraint.via.some((pulleyId) => (scene.pulleys ?? []).some((pulley) => pulley.id === pulleyId && pulley.bodyId === bodyId)))
+  )
 }
