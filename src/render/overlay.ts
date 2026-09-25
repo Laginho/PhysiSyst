@@ -193,6 +193,11 @@ const SYMBOL_KEY: Record<ArrowKind, I18nKey> = {
   'initial-velocity': 'vector.initialVelocity',
 }
 
+/** The n-th of a symbol: `,n` after a subscript already open (`F_el,2`), else `_n` (`T_2`). */
+export function numberedSymbol(symbol: string, n: number): string {
+  return symbol.includes('_') ? `${symbol},${n}` : `${symbol}_${n}`
+}
+
 /**
  * Vector labels, derived from the arrows on every render and never stored:
  * the kind's symbol in `lang`, numbered 1, 2, … in the order the arrows come
@@ -210,7 +215,7 @@ export function vectorLabels(arrows: readonly OverlayArrow[], lang: Lang): Map<s
   for (const [kind, keys] of keysByKind) {
     const symbol: string = getCatalog(lang)[SYMBOL_KEY[kind]]
     keys.forEach((key, i) => {
-      out.set(key, keys.length < 2 ? symbol : symbol.includes('_') ? `${symbol},${i + 1}` : `${symbol}_${i + 1}`)
+      out.set(key, keys.length < 2 ? symbol : numberedSymbol(symbol, i + 1))
     })
   }
   return out

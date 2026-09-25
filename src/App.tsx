@@ -77,6 +77,7 @@ import {
   elasticArrows,
   initialVelocityArrows,
   normalArrows,
+  numberedSymbol,
   tensionArrows,
   vectorLabels,
   weightArrows,
@@ -1841,7 +1842,7 @@ export default function App() {
                   {(selectedSpring.mass ?? 0) > 0 ? (
                     [constraintReadout.force.a, constraintReadout.force.b].map((F, i) => (
                       <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
-                        {t('readout.springForce')},{i + 1}: {F.toFixed(2)} N
+                        {numberedSymbol(t('readout.springForce'), i + 1)}: {F.toFixed(2)} N
                       </div>
                     ))
                   ) : (
