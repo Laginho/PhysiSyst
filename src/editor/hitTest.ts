@@ -67,7 +67,7 @@ export const AXLE_HIT_RADIUS_PX = 5
  * `axleTolerance` meters of its axle, so a body the disk covers stays
  * clickable (PHY-37).
  */
-export function pulleyAtPoint(scene: Scene, w: Vec2, axleTolerance = Infinity): Pulley | null {
+export function pulleyAtPoint(scene: Scene, w: Vec2, axleTolerance: number): Pulley | null {
   const bodies = new Map(scene.bodies.map((b) => [b.id, b]))
   const pulleys = scene.pulleys ?? []
   for (let i = pulleys.length - 1; i >= 0; i--) {
