@@ -1239,6 +1239,13 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     expect(panel(host, 'corda')).toBeUndefined()
     click(canvas, { x: 7.5, y: 7.1 })
     expect(panel(host, 'teto')).toBeDefined()
+    // A rope left over the removed pulley would be invisible, but it would
+    // still hold the id: a new rope takes 'corda' only if the old one is gone.
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, B2_CLICK)
+    expect(panel(host, 'corda')).toBeDefined()
+    pressKey('z', { ctrlKey: true })
 
     pressKey('Escape')
     pressKey('z', { ctrlKey: true })
@@ -1267,6 +1274,20 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
       click(canvas, spot)
       expect(panel(host, legend)).toBeUndefined()
     }
+    // Dependents left dangling would be invisible but keep their ids: new
+    // ones take the bare ids only if the old ones are gone. Undone after.
+    tool(host, 'polia')
+    click(canvas, { x: 5.76, y: 2.81 })
+    expect(panel(host, 'polia')).toBeDefined()
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, B2_CLICK)
+    expect(panel(host, 'corda')).toBeDefined()
+    tool(host, 'mola')
+    click(canvas, B1_CLICK)
+    click(canvas, B2_CLICK)
+    expect(panel(host, 'mola')).toBeDefined()
+    for (let i = 0; i < 3; i++) pressKey('z', { ctrlKey: true })
 
     pressKey('z', { ctrlKey: true })
     for (const [spot, legend] of [[PULLEY_SPOT, 'polia'], [LEFT_LEG, 'corda'], [springMiddle, 'mola'], [{ x: 7.5, y: 7.1 }, 'teto']] as const) {
