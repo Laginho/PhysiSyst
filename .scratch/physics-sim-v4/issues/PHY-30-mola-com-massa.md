@@ -1,10 +1,12 @@
 # PHY-30: Mola com massa (Realism option)
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-27, PHY-29
 Review: agent
 
 - Primary files:
+  - `src/scene/types.ts` (`mass?` em `Spring`)
+  - `src/editor/doc.ts` (`SpringPatch` ganha `'mass'`)
   - `src/scene/codec.ts`, `src/scene/codec.test.ts` (`mass ≥ 0` na mola)
   - `src/sim/simulator.ts`
   - `src/sim/acceptance.test.ts`
@@ -43,3 +45,5 @@ Pode ser cortado sem prejuízo do resto do ciclo.
 - `src/App.test.ts`: campo de massa e leitura por ponta (6).
 
 ## Comments
+
+Proxy decided: add `src/scene/types.ts` (`mass?` on `Spring`) and `src/editor/doc.ts` (`SpringPatch` gains `'mass'`) to Primary files, no new criterion — both are type-only lines criteria 1 and 6 cannot typecheck without, mirroring `PulleyPatch`; a stage-1 omission, reversible, no new seam.

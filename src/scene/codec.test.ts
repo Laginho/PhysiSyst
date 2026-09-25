@@ -820,3 +820,27 @@ describe('PHY-26: spring constraints', () => {
     expect(() => parse(doc)).toThrow(expected)
   })
 })
+
+describe('PHY-30: spring mass', () => {
+  it.each([0, 0.1, 2.5])('round-trips a spring with mass = %s', (mass) => {
+    const doc = springJson()
+    rope0(doc)['mass'] = mass
+    expect(serialize(parse(doc))).toStrictEqual(doc)
+    expect(parse(doc).constraints![0]).toMatchObject({ kind: 'spring', mass })
+  })
+
+  it('mass absent stays absent (the ideal spring)', () => {
+    expect(parse(springJson()).constraints![0]).not.toHaveProperty('mass')
+  })
+
+  it.each([
+    { name: 'negative', mass: -0.1 },
+    { name: 'not a number', mass: '0.1' },
+    { name: 'infinite', mass: Infinity },
+  ])('rejects mass $name', ({ mass }) => {
+    const doc = springJson()
+    rope0(doc)['mass'] = mass
+    expect(() => parse(doc)).toThrow(SceneError)
+    expect(() => parse(doc)).toThrow('constraints[0]: mass must be a non-negative finite number')
+  })
+})

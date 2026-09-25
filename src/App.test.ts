@@ -1024,6 +1024,51 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     expect(readout()).toContain('Δx: -0.100 m')
   }, 10000)
 
+  it('inspetor edita a massa mₛ da mola (PHY-30); negativa não entra e avisa', () => {
+    const { host, canvas } = setup()
+    buildSpring(host, canvas)
+    const input = () => inputForLabel(panel(host, 'mola')!, 'mₛ (kg)')
+    expect(field(host, 'mola', 'mₛ (kg)')).toBe(0)
+
+    act(() => setNativeInputValue(input(), 0.2))
+    expect(field(host, 'mola', 'mₛ (kg)')).toBe(0.2)
+    expect(panel(host, 'mola')?.textContent).not.toContain('k e x₀ devem ser positivos')
+
+    act(() => setNativeInputValue(input(), -1))
+    expect(field(host, 'mola', 'mₛ (kg)')).toBe(0.2)
+    expect(panel(host, 'mola')?.textContent).toContain('k e x₀ devem ser positivos')
+
+    // The edit was one step: undo takes the mass back to 0.
+    pressKey('z', { ctrlKey: true })
+    expect(field(host, 'mola', 'mₛ (kg)')).toBe(0)
+  })
+
+  it('com mₛ > 0, a leitura mostra F_el em cada ponta, cada uma com o seu valor (PHY-30)', async () => {
+    vi.mocked(createSimulator).mockImplementation(async () => ({
+      ...makeFakeSimulator(),
+      readConstraints: () => [{ id: 'mola', kind: 'spring' as const, dx: 0.1, force: { a: 2, b: 2.5 } }],
+    }))
+    const { host, canvas } = setup()
+    await settleSimImport()
+    buildSpring(host, canvas)
+    act(() => setNativeInputValue(inputForLabel(panel(host, 'mola')!, 'mₛ (kg)'), 0.2))
+
+    await act(async () => {
+      findButton(host, '▶ reproduzir')?.click()
+    })
+    const readout = () => panel(host, 'leitura — mola')?.textContent ?? ''
+    for (let i = 0; i < 200 && !readout().includes('F_el'); i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 5))
+      })
+    }
+
+    expect(readout()).toContain('F_el em parede: 2.00 N')
+    expect(readout()).toContain('F_el em bloco: 2.50 N')
+    expect(readout()).not.toContain('F_el: ')
+    expect(readout()).toContain('Δx: 0.100 m')
+  }, 10000)
+
   it('arrastar o ponto de aplicação de uma força move a âncora com Anchor snap, em um passo de undo', () => {
     const { host, canvas } = setup()
     click(canvas, { x: 5.2, y: 0.7 })
