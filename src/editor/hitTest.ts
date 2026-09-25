@@ -1,4 +1,4 @@
-import { bodyPointToWorld, type Body, type Scene, type Spring, type Vec2 } from '../scene'
+import { bodyPointToWorld, scenePath, type Body, type Pulley, type Rope, type Scene, type Spring, type Vec2 } from '../scene'
 
 /** World point -> body-LOCAL frame: inverse of translate(position)·rotate(rotation). */
 function toLocal(body: Body, w: Vec2): Vec2 {
@@ -48,6 +48,35 @@ function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   const lengthSquared = dx * dx + dy * dy
   const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+/** Topmost pulley whose circle holds a world point, at the poses the scene holds. */
+export function pulleyAtPoint(scene: Scene, w: Vec2): Pulley | null {
+  const bodies = new Map(scene.bodies.map((b) => [b.id, b]))
+  const pulleys = scene.pulleys ?? []
+  for (let i = pulleys.length - 1; i >= 0; i--) {
+    const p = pulleys[i]
+    const mount = bodies.get(p.bodyId)
+    if (!mount) continue
+    const c = bodyPointToWorld(mount, p.anchor)
+    if (Math.hypot(w.x - c.x, w.y - c.y) <= p.radius) return p
+  }
+  return null
+}
+
+/**
+ * Topmost rope with a straight leg within `tolerance` meters of a world point.
+ * The arcs are not tested: they lie on the pulley, which is hit first.
+ */
+export function ropeAtPoint(scene: Scene, w: Vec2, tolerance: number): Rope | null {
+  const constraints = scene.constraints ?? []
+  for (let i = constraints.length - 1; i >= 0; i--) {
+    const c = constraints[i]
+    if (c.kind !== 'rope') continue
+    const path = scenePath(scene, c)
+    if (path?.segments.some((s) => distanceToSegment(w, s.from, s.to) <= tolerance)) return c
+  }
+  return null
 }
 
 /**

@@ -1,4 +1,4 @@
-import { bodyPointToWorld, type AppliedForce, type Body, type ConstraintEnd, type Contact, type Scene, type Spring } from '../scene'
+import { bodyPointToWorld, type AppliedForce, type Body, type ConstraintEnd, type Contact, type Pulley, type Rope, type Scene, type Spring } from '../scene'
 
 /**
  * Editor doc-op GUARD DOCTRINE: guards here exist only for USER-ACTIONABLE
@@ -22,10 +22,11 @@ export type BodyPatch = DistributivePartialOmit<Body, 'id'>
 /** bodyId is IMMUTABLE: retargeting a force is delete+add, not a patch. */
 export type ForcePatch = Partial<Omit<AppliedForce, 'id' | 'bodyId'>>
 
-type IdScope = 'bodies' | 'forces' | 'constraints'
+type IdScope = 'bodies' | 'forces' | 'constraints' | 'pulleys'
 
 function scopedIds(doc: Scene, scope: IdScope): string[] {
   if (scope === 'constraints') return (doc.constraints ?? []).map((c) => c.id)
+  if (scope === 'pulleys') return (doc.pulleys ?? []).map((p) => p.id)
   return scope === 'bodies' ? doc.bodies.map((b) => b.id) : doc.forces.map((f) => f.id)
 }
 
@@ -262,6 +263,51 @@ export function setSpringDx(doc: Scene, id: string, dx: number): Scene {
 export function removeConstraint(doc: Scene, id: string): Scene {
   if (!doc.constraints?.some((c) => c.id === id)) return doc
   return { ...doc, constraints: doc.constraints.filter((c) => c.id !== id) }
+}
+
+// ---------- PHY-28: pulleys and ropes ----------
+
+/** Radius of a pulley fresh from the palette, m; the student edits it in the inspector. */
+export const PULLEY_DEFAULT_RADIUS = 0.25
+
+export type PulleyPatch = Partial<Pick<Pulley, 'radius' | 'mass'>>
+
+/** Mounts a massless pulley at a body-local anchor. STRUCTURAL GUARD: the body must exist. */
+export function addPulley(doc: Scene, bodyId: string, anchor: Pulley['anchor']): MutationResult {
+  if (!doc.bodies.some((b) => b.id === bodyId)) return { doc, newId: null, error: 'error.corpoInexistente' }
+  const newId = freshId(doc, 'polia', 'pulleys')
+  const pulley: Pulley = { id: newId, bodyId, anchor, radius: PULLEY_DEFAULT_RADIUS }
+  return { doc: { ...doc, pulleys: [...(doc.pulleys ?? []), pulley] }, newId, error: null }
+}
+
+export function updatePulley(doc: Scene, id: string, patch: PulleyPatch): Scene {
+  if (!doc.pulleys?.some((p) => p.id === id)) return doc
+  return { ...doc, pulleys: doc.pulleys.map((p) => (p.id === id ? { ...p, ...patch } : p)) }
+}
+
+/** Removes a pulley and every rope passing over it, in the same edit. */
+export function removePulleyAndDependents(doc: Scene, id: string): Scene {
+  if (!doc.pulleys?.some((p) => p.id === id)) return doc
+  const next: Scene = { ...doc, pulleys: doc.pulleys.filter((p) => p.id !== id) }
+  if (doc.constraints) next.constraints = doc.constraints.filter((c) => c.kind !== 'rope' || !c.via.includes(id))
+  return next
+}
+
+/**
+ * Appends a rope from `a` over `via`, in order, to `b`. STRUCTURAL GUARDS, as
+ * the codec would reject: every body and pulley must exist, no pulley twice in
+ * a row, and a rope with no pulley must join two different bodies.
+ */
+export function addRope(doc: Scene, a: ConstraintEnd, via: readonly string[], b: ConstraintEnd): MutationResult {
+  const bodies = new Set(doc.bodies.map((x) => x.id))
+  if (!bodies.has(a.bodyId) || !bodies.has(b.bodyId)) return { doc, newId: null, error: 'error.corpoInexistente' }
+  const pulleys = new Set((doc.pulleys ?? []).map((p) => p.id))
+  if (!via.every((p) => pulleys.has(p))) return { doc, newId: null, error: 'error.poliaInexistente' }
+  if (via.some((p, i) => p === via[i - 1])) return { doc, newId: null, error: 'error.poliaRepetida' }
+  if (via.length === 0 && a.bodyId === b.bodyId) return { doc, newId: null, error: 'error.parConsigoMesmo' }
+  const newId = freshId(doc, 'corda', 'constraints')
+  const rope: Rope = { id: newId, kind: 'rope', a, b, via: [...via] }
+  return { doc: { ...doc, constraints: [...(doc.constraints ?? []), rope] }, newId, error: null }
 }
 
 /** Toggles particle mode (T7/M2). Structural: the world rebuilds with locked rotations. */
