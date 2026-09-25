@@ -1,5 +1,5 @@
 # PHY-33: Closeout v4
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-23, PHY-24, PHY-25, PHY-26, PHY-27, PHY-28, PHY-29, PHY-30, PHY-31, PHY-32
 Review: human
@@ -45,3 +45,9 @@ Passe manual (desktop):
 ## Comments
 
 - 2026-09-25 Attempt 1 failed: exit 0. Log tail: ...the real app in headless Chromium through all eight checks. /  / So far: / - **Gates:** green locally, 703 tests in 30 files, plus lint, typecheck and build. CI is green on the latest merge on `main` (`ca9aab8`, PR #8). Most of v4 is still on the unpushed session branch, so its CI hasn't run yet. The report says so. / - **Branch:** `phy/PHY-33-closeout-v4`, with the move to `implementing` committed. / - **Docs, not yet committed:** /   - `package.json` is at 0.4.0. /   - The README now lists ropes, pulleys and springs, the vector letters and the gallery tree. /   - `CONTEXT.md` needed two fixes: the Scene definition didn't mention pulleys, and it still said the wedge is "preset #1", which stopped being true with the gallery tree. /   - The v4 section of `FINAL_REPORT.md` is drafted: scope per ticket, gates, limitations and next steps. The manual-pass results go in when the agent finishes. / - **Loose end:** `package-lock.json` still says version 0.3.0. It's outside this ticket's allowed files, so I'll note it on the ticket rather than change it. /  / When the pass comes back I'll fill in its results and open a `needs-triage` ticket for each failure. Then I'll commit, with the ticket moved to `to-review`. /
+- 2026-09-25 Attempt 2 (stage 2). The first attempt ended because it left the manual pass running in a background agent, and its branch did not survive. This attempt restarted from the session branch at `edf6b16` and ran everything in the foreground.
+  - Gates: 703 tests / 30 files, lint, typecheck and build green, both before the edits and after them. CI is green on the latest merge on `main` (`ca9aab8`). v4 itself has not been through CI yet, and `FINAL_REPORT.md` says so.
+  - Manual pass: headless Chromium at 1280 px, driven through `src/test/browser.ts` (loaded by Vite SSR) with real palette clicks, pointer clicks on the canvas and inspector fields. The per-item numbers are in `FINAL_REPORT.md`. All eight items pass. The driver script and screenshots stayed in the session scratchpad and are not committed, because a pass script is not among this ticket's Primary files.
+  - Defects opened as `needs-triage`: PHY-36 (a scene switch inherits the simulated state), PHY-37 (a body covered by its own pulley can't be selected), PHY-38 (the step-0 acceleration ignores ropes and springs). The three ticket files sit outside Primary files. Criterion 2 is what asks for them.
+  - `CONTEXT.md`: the Scene definition now lists pulleys, and the Preset entry no longer calls the wedge "preset #1". Rope, Pulley, Spring, Anchor snap, Vector label and Preset tree already matched what was delivered.
+  - Loose end: `package-lock.json` still says `version` 0.3.0. It is outside Primary files and was left alone.

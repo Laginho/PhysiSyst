@@ -182,3 +182,78 @@ All ten v1 items stand, with one change: **#3 (window resize during playback) is
 - Constraints: rope → pulley → spring.
 - Restitution (elastic collisions), out of scope since v1.
 - Code-split the Rapier2D wasm bundle (the >500 kB chunk advisory has stood since v1).
+
+---
+
+# physics-sim v4 — Vínculos: corda, polia e mola
+
+**Closeout PHY-33, 2026-09-25.** Ten tickets (PHY-23–PHY-32) and twelve cleanups (CLEAN-01–CLEAN-12) add the first Constraints to the Scene: an ideal rope over any sequence of pulleys, fixed and movable pulleys (mass is a Realism option), and an ideal spring (damping; mass is a Realism option). The palette gains Rope, Pulley and Spring tools with Anchor snap. Every vector carries a letter. The gallery becomes a Preset tree with eight new presets, and the Rapier wasm moves out of the entry chunk. The whole cycle ran unattended in one sweatshop session (`sweatshop/2026-09-24-1853`).
+
+## Scope Delivered (PHY-23–PHY-32)
+
+| Ticket | Deliverable |
+|---|---|
+| PHY-23 Tracer: rope over a fixed pulley | Schema `pulleys` + `constraints` (rope `a`/`via`/`b`, length never stored), the rope as the simulator's own constraint around the world step (ADR-0004), Atwood acceptance family |
+| PHY-24 General rope | Pendulum (rope to a fixed body), slack (one-sided), several pulleys, movable pulley; loop, pendulum, table-hanging and 2:1 families |
+| PHY-25 Pulley with mass | Disk pulley that turns with the rope without slipping, a different `T` on each side (`T₁`, `T₂`…) |
+| PHY-26 Ideal spring | `k`, `x₀`, `c`; the force is applied through the rope hook (`k·Δx` + damping), not Rapier's spring joint, which lost ~30% amplitude in 5 periods |
+| PHY-27 Editor I: Anchor snap + Spring tool | Anchor snap (center of mass, face midpoint, vertex) for spring ends and force application points; spring inspector with `x₀` and `Δx` linked (`Δx` edits write `x₀ = x − Δx`) |
+| PHY-28 Editor II: Pulley and Rope tools | Pulley by one click on a body, rope by anchor → pulleys in order → anchor; rope, pulley and spring selectable; deleting cleans up dependents |
+| PHY-29 Constraint arrows and vector labels | `T` and `F_el` arrows; a letter beside every vector (`P`, `N`, `F`, `T`, `F_el`, `v₀`; `W`, `F_s` in en-US), numbered only when two of a kind exist; `T`/`F_el`/`Δx` in the readout panel |
+| PHY-30 Spring with mass | Massive spring as a chain of nodes, `F_el` per end (`F_el₁`, `F_el₂`) |
+| PHY-31 Preset tree | Area → part → topic (*Tópicos de Física*); only nodes holding a preset are shown; names/descriptions in i18n; eight new presets (Atwood, table-hanging, movable pulley, loop pendulum, simple pendulum, three mass-springs) |
+| PHY-32 Code-split of the wasm | Rapier in a lazily loaded chunk; entry chunk under 500 kB |
+
+The CLEAN tickets kept ADR-0004 and the code in step with each other. They covered position-based prediction, the pieces of a pulley with mass, the spring as a force, and the re-seated spring chain in the carry. They also removed the geometry that the editor modules duplicated, and hardened the code split (CLEAN-01/02).
+
+## Gate Outcomes
+
+- **703 tests / 30 files, all green** (`npm test`); `eslint .`, `tsc --noEmit` and `vite build` clean. Rerun for this closeout on `phy/PHY-33-closeout-v4`, cut from the session branch at `edf6b16`.
+- Build: entry `index-*.js` 285.67 kB (gzip 88.13 kB), lazy `sim-*.js` 2,132.26 kB (gzip 809.71 kB). The >500 kB advisory still prints, but only the lazy Rapier chunk is over the limit (PHY-32 criterion 2).
+- CI green on the latest merge on `main` (`ca9aab8`, PR #8): https://github.com/Laginho/PhysiSyst/actions/runs/36055658405, Deploy green on the same commit: https://github.com/Laginho/PhysiSyst/actions/runs/36055754319. **v4 itself has not been through CI yet.** It lives on the session branch, and CI runs on pull requests and on `main`. It will run when the driver opens the session PR.
+
+## Desktop Manual Pass (1–8)
+
+Run in headless Chromium at 1280×1080, pt-BR, against the Vite dev server of this branch. The published site still serves v3. The pass drove the repo's own CDP harness (`src/test/browser.ts`), with the real palette buttons, pointer clicks on the canvas and the inspector's fields. It read the results off the readout panel and took canvas screenshots. No scene document was written by hand. **All eight items pass. The pass found three defects, each opened as its own `needs-triage` ticket.**
+
+| Item | Result |
+|---|---|
+| **1** Atwood by hand, `T` against the closed form | ✅ **Pass.** Fixed ceiling (4 × 0.5 m) at (6, 8), blocks of 0.4 m with m₁ = 3 kg and m₂ = 2 kg, pulley mounted by Anchor snap on the ceiling's bottom-face midpoint, rope from block 1's top face over the pulley to block 2's top face (both anchors snapped). After 30 steps, `T = 23.54 N` against `2m₁m₂g/(m₁+m₂) = 23.544 N`, and block 1 reads \|a\| = 1.96 m/s² against 1.962. |
+| **2** Table + hanging block, declared μₖ | ✅ **Pass.** Fixed table 8 × 4 m (top at y = 4), block m₁ = 2 kg on it, hanging block m₂ = 1 kg. The pulley was snapped to the table's top-right vertex and its radius set to 0.2 m in the inspector. The rope runs from the block's right-face midpoint over the pulley to the hanging block's top, and the `mesa ↔ bloco` Contact was declared from the contacts panel. With μ = 0, \|a\| = 3.27 m/s² against g/3 = 3.270. With μs = μk = 0.2, \|a\| = 1.96 against `(m₂ − μₖm₁)g/(m₁+m₂)` = 1.962. |
+| **3** Movable pulley: the load moves half as far as the counterweight | ✅ **Pass, with one defect.** Load M = 3 kg with a movable pulley snapped to its center of mass, fixed pulley on the ceiling at a free point, counterweight m = 1 kg. The rope runs ceiling → under the movable pulley → over the fixed one → counterweight. In 40 steps the load went down 0.31 m and the counterweight up 0.63 m (ratio −0.49 at the panel's two decimals). \|a\| was 1.40 and 2.80 m/s² against `(2m − M)g/(M + 4m)` = 1.401 and twice that. Defect: a load that fits inside its pulley can never be clicked — **PHY-37**. The hand-built load had to be 0.8 m wide, and the preset's 0.3 m load selects only the pulley. |
+| **4** Slow loop: the rope goes slack near the top | ✅ **Pass, with one defect.** Loop preset (L = 1 m) with `v₀` lowered in the panel to √(4gL) = 6.26 m/s, so v² at the top would be 0, below gL. With the rope selected, `T` falls 45.5 → 36.0 → 24.4 → 13.7 → 5.5 N in steps of 5, and from step 30 (0.5 s) it reads 0 and **"frouxa"**. The rope stays slack after that. Control: the unmodified preset (v₀² = 6gL) stays taut the whole turn, with `T` ≥ 7.32 N sampled every 5 steps. The ideal minimum at the top is mg = 9.81 N. The gap is ADR-0004's documented energy loss, about 4% per fast turn. Defect found by the control: reopening the preset resumed the previous run instead of starting from the document — **PHY-36**. |
+| **5** Spring "compressed 5 cm" by the `Δx` field | ✅ **Pass, with one defect.** In the horizontal mass-spring preset (k = 40 N/m, m = 1 kg), typing `Δx = −0.05` wrote `x₀ = x − Δx` (1.50 → 1.85 m) and left the block where it was, as the spec says. The block then oscillated between 6.10 and 6.20 m, an amplitude of 5 cm. Successive maxima came at 60 and 59 steps, periods of 1.000 s and 0.983 s, against `2π√(m/k)` = 0.9935 s. Defect: before the first step, the panel reads \|a\| = 9.81 m/s² with no `≈`, and after one step it reads 2.00 = k·\|Δx\|/m — **PHY-38**. |
+| **6** Labels legible, `P` → `W` in English | ✅ **Pass.** With "mostrar todos os vetores" on, four scenes were screenshotted: the wedge (`P₂`, `N₁`, `N₂`, `F`), Atwood (`T` on each leg, `P₁`, `P₂`), the horizontal spring (`F_el`, `N`, `P`) and the projectile (`v₀`, `P`). Every letter sits clear of its arrow and is readable. Switching to English repaints at once: `P₂` → `W₂`, `P` → `W`, `F_el` → `F_s`, and `N`, `F`, `T`, `v₀` stay the same. Two cosmetic observations, not opened as tickets: a block resting on the floor draws two `N` arrows (one per contact point), and both are labelled `N` because they belong to one contact pair. The `m_a`/`m_b` mass labels are wider than 0.4 m blocks and cross their outline. |
+| **7** Delete a body with rope, pulley and spring attached; Ctrl+Z | ✅ **Pass.** Atwood preset, plus a spring added with the Mola tool from the ceiling to block 2. Deleting the selected ceiling left bodies `chao`, `bloco-1` and `bloco-2`, with no pulleys and no constraints: the pulley on the ceiling, the rope over it and the spring all went in the same edit, and the canvas shows only the two blocks. Ctrl+Z brought the saved document back byte-identical to the one before the delete. |
+| **8** Preset tree: only nodes with a preset, every new preset runs | ✅ **Pass.** The gallery shows five groups, all of them nodes of `TREE` and none empty. Mecânica / Dinâmica / Princípios has Atwood, table-hanging, movable pulley and the wedge. Atrito entre sólidos has the incline. Resultantes tangencial e centrípeta has the loop pendulum. Movimentos em campo gravitacional uniforme has free fall and projectile. Ondulatória / MHS has horizontal, vertical, simple pendulum and damped. Each of the eight new presets was opened from the gallery under its own name and played for 1 s (about 57 steps). The canvas changed every time, with no simulation error and no warnings. |
+
+### Defects opened by this pass
+
+| Ticket | Defect |
+|---|---|
+| **PHY-36** | Switching scenes doesn't reset playback. `carryOver` keeps the simulated state of every body with the same id and the same pose, and the step counter keeps counting, so reopening a preset or switching to a duplicated scene resumes the old run. This predates v4. |
+| **PHY-37** | A pulley wins the click over its mount body across its whole disk. A body that fits inside its pulley (the "Polia móvel" preset's load) can't be selected, dragged or deleted on the canvas. |
+| **PHY-38** | Before the first step, the readout's analytic acceleration ignores ropes and springs, and marks `≈` only for Contacts. A block on a stretched spring reads g as if exact. |
+
+Also open at closeout, filed during the run: **PHY-34** (applied-force torque accumulates between steps, `needs-triage`), **PHY-35** (the last edit is lost on reload or tab close, `ready-for-agent`) and **CLEAN-13** (unverified findings from the CLEAN-12 review, `blocked` for stage 1). Loose end: `package-lock.json` still records `version` 0.3.0. It is outside PHY-33's files, and the next `npm install` rewrites it.
+
+## Known Limitations
+
+**Carried from v1 §4:** #1 (no restitution), #2 (undeclared-contact friction leak), #4 (contact normals are direction-only), #5 (weight arrow at the body origin), #6 (one-way gallery acknowledgement), #7 (StrictMode dev double notice), #8 (click-to-place palette) and #9 (μ edits rebuild) all stand. #3 was resolved in v3 (PHY-15). #10 is partly addressed: `src/test/browser.ts` drives a real Chromium for layout, but the rAF render loop is still not asserted by automation.
+
+**New in v4:**
+
+1. **The rope drains a fast swing**: about 4% of a 1 m loop's energy per turn at v₀² = 6gL, from the velocity projection in `correctRope`. It is marked `ponytail:`, and the upgrade path is a RATTLE-style projection (ADR-0004 Consequences).
+2. **Out of scope by spec**: a loose pulley (hung from another rope), rope–pulley friction, axle friction, ropes with mass or elasticity, and compatibility with older documents.
+3. **The >500 kB build advisory** remains on the lazy Rapier chunk (2.1 MB). Only the entry chunk was in scope.
+4. The readout-panel refinements (the step-0 estimate aside, see PHY-38) wait for the UX polish phase, per the spec.
+
+## Next Steps
+
+Following the v4 spec's roadmap (*Depois da v4*):
+
+- Triage PHY-36, PHY-37, PHY-38 (this pass) and PHY-34.
+- Mechanics roadmap, in order: restitution (elastic collisions) → energy, momentum and contact-force readouts (friction arrow, normal magnitude: v1 limitation #4) → pivot, rigid rod, ω₀ → variable force and accelerated frame → gravitation → buoyancy.
+- A preset curation stage, with its own grilling, at the end of mechanics.
+- A UX polish phase, including the readout panel.
+- `/audit` until the repo is in good shape, before publishing.
