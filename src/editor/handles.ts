@@ -1,4 +1,4 @@
-import type { Body, Vec2 } from '../scene'
+import type { Body, TriangleGeometry, Vec2 } from '../scene'
 import { worldToScreen, type ScreenTransform } from '../render/transform'
 
 /** Visual handle size in screen px (zoom-independent by construction). */
@@ -17,6 +17,11 @@ export interface Handle {
   kind: HandleKind
   sx: number
   sy: number
+}
+
+/** A right triangle's vertical leg: base · tan(α), the inverse of `alphaFromLocal`. */
+export function triangleHeight(body: Pick<TriangleGeometry, 'base' | 'alpha'>): number {
+  return body.base * Math.tan((body.alpha * Math.PI) / 180)
 }
 
 /** Forward body transform: R(rotation)·local + position (world, y-up meters). */
@@ -48,7 +53,7 @@ function localAnchors(body: Body): LocalAnchor[] {
         { kind: 'resize', lx: body.radius, ly: 0 },
       ]
     case 'triangle': {
-      const h = body.base * Math.tan((body.alpha * Math.PI) / 180)
+      const h = triangleHeight(body)
       return [
         { kind: 'rotate', lx: body.base / 2, ly: -0.4 },
         { kind: 'resize', lx: body.base, ly: 0 },
@@ -68,18 +73,23 @@ export function getHandles(body: Body, t: ScreenTransform): Handle[] {
   })
 }
 
-/** Closest handle within grab radius of a screen point, else null. */
-export function pickHandle(handles: Handle[], sx: number, sy: number): Handle | null {
-  let best: Handle | null = null
-  let bestD = HANDLE_HIT_RADIUS_PX
-  for (const h of handles) {
-    const d = Math.hypot(h.sx - sx, h.sy - sy)
+/** The item nearest by `distance` within `tolerance`, else null; a tie goes to the later item. */
+export function nearestWithin<T>(items: readonly T[], distance: (item: T) => number, tolerance: number): T | null {
+  let best: T | null = null
+  let bestD = tolerance
+  for (const item of items) {
+    const d = distance(item)
     if (d <= bestD) {
-      best = h
+      best = item
       bestD = d
     }
   }
   return best
+}
+
+/** Closest handle within grab radius of a screen point, else null. */
+export function pickHandle(handles: Handle[], sx: number, sy: number): Handle | null {
+  return nearestWithin(handles, (h) => Math.hypot(h.sx - sx, h.sy - sy), HANDLE_HIT_RADIUS_PX)
 }
 
 /** α clamp shared by α-handle drags and panel numeric entry. */

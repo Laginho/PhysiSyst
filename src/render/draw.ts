@@ -1,5 +1,6 @@
 import { bodyPointToWorld, scenePath } from '../scene'
 import type { Scene } from '../scene'
+import { triangleHeight } from '../editor/handles'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
 
 export interface DrawStyle {
@@ -134,7 +135,7 @@ function pathBody(ctx: CanvasRenderingContext2D, body: Scene['bodies'][number]):
     case 'triangle':
       ctx.moveTo(0, 0)
       ctx.lineTo(body.base, 0)
-      ctx.lineTo(body.base, body.base * Math.tan((body.alpha * Math.PI) / 180))
+      ctx.lineTo(body.base, triangleHeight(body))
       ctx.closePath()
       break
   }
@@ -227,7 +228,7 @@ export function drawScene(
     let ay = 0
     if (body.shape === 'triangle') {
       ax = (2 * body.base) / 3
-      ay = (body.base * Math.tan((body.alpha * Math.PI) / 180)) / 3
+      ay = triangleHeight(body) / 3
     }
     ctx.save()
     ctx.translate(s.x + ax * camera.pixelsPerMeter, s.y - ay * camera.pixelsPerMeter)
@@ -239,7 +240,7 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style, selectedConstraintId, selectedPulleyId)
+  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selectedConstraintId, selectedPulleyId)
   ctx.restore()
 }
 
@@ -249,7 +250,7 @@ export function drawScene(
  * Drawn in world meters under one y-flipped transform, so canvas arc angles
  * are the path's own angles.
  */
-function drawRopes(
+function drawConstraints(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
   t: ScreenTransform,

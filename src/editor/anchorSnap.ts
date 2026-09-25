@@ -1,5 +1,7 @@
 import { bodyPointToWorld, type Body, type Vec2 } from '../scene'
 import type { ScreenTransform } from '../render/transform'
+import { localVertices } from './contactSnap'
+import { nearestWithin } from './handles'
 import { worldToLocal } from './hitTest'
 
 export const ANCHOR_SNAP_TOLERANCE_PX = 10
@@ -9,28 +11,18 @@ export const ANCHOR_SNAP_TOLERANCE_PX = 10
  * face midpoints and vertices. A circle has no faces or vertices.
  */
 function candidates(body: Body): Vec2[] {
-  switch (body.shape) {
-    case 'rectangle': {
-      const w = body.width / 2
-      const h = body.height / 2
-      return [
-        { x: 0, y: 0 },
-        { x: w, y: 0 }, { x: -w, y: 0 }, { x: 0, y: h }, { x: 0, y: -h },
-        { x: w, y: h }, { x: -w, y: h }, { x: w, y: -h }, { x: -w, y: -h },
-      ]
-    }
-    case 'circle':
-      return [{ x: 0, y: 0 }]
-    case 'triangle': {
-      const b = body.base
-      const h = b * Math.tan((body.alpha * Math.PI) / 180)
-      return [
-        { x: (2 * b) / 3, y: h / 3 },
-        { x: b / 2, y: 0 }, { x: b, y: h / 2 }, { x: b / 2, y: h / 2 },
-        { x: 0, y: 0 }, { x: b, y: 0 }, { x: b, y: h },
-      ]
-    }
+  const vertices = localVertices(body)
+  if (vertices.length === 0) return [{ x: 0, y: 0 }]
+  const n = vertices.length
+  const center = {
+    x: vertices.reduce((sum, v) => sum + v.x, 0) / n,
+    y: vertices.reduce((sum, v) => sum + v.y, 0) / n,
   }
+  const midpoints = vertices.map((a, i) => {
+    const b = vertices[(i + 1) % n]!
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  })
+  return [center, ...midpoints, ...vertices]
 }
 
 /**
@@ -38,15 +30,13 @@ function candidates(body: Body): Vec2[] {
  * the nearest candidate within the screen tolerance, else the point itself.
  */
 export function anchorSnap(body: Body, world: Vec2, transform: ScreenTransform): Vec2 {
-  let best: Vec2 | null = null
-  let bestDistance = ANCHOR_SNAP_TOLERANCE_PX / transform.camera.pixelsPerMeter
-  for (const local of candidates(body)) {
-    const at = bodyPointToWorld(body, local)
-    const distance = Math.hypot(at.x - world.x, at.y - world.y)
-    if (distance <= bestDistance) {
-      best = local
-      bestDistance = distance
-    }
-  }
+  const best = nearestWithin(
+    candidates(body),
+    (local) => {
+      const at = bodyPointToWorld(body, local)
+      return Math.hypot(at.x - world.x, at.y - world.y)
+    },
+    ANCHOR_SNAP_TOLERANCE_PX / transform.camera.pixelsPerMeter,
+  )
   return best ?? worldToLocal(body, world)
 }

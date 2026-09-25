@@ -133,38 +133,54 @@ function messageOf(e: unknown): string {
  * projected over the document, so selection handles and force arrows ride the
  * moving body without any playback-specific drawing code.
  */
+/** What the editor has selected: one body, one constraint (spring or rope), one pulley, or nothing. */
+type Selection = { kind: 'body' | 'constraint' | 'pulley'; id: string } | null
+
+function selectedOf(selection: Selection, kind: NonNullable<Selection>['kind']): string | null {
+  return selection?.kind === kind ? selection.id : null
+}
+
+/** A screen-px circle at a screen point: filled in `color`, or stroked at `strokeWidth` when given. */
+function screenCircle(ctx: CanvasRenderingContext2D, at: { x: number; y: number }, radius: number, color: string, strokeWidth?: number): void {
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(at.x, at.y, radius, 0, Math.PI * 2)
+  if (strokeWidth === undefined) {
+    ctx.fillStyle = color
+    ctx.fill()
+  } else {
+    ctx.strokeStyle = color
+    ctx.lineWidth = strokeWidth
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function paint(
   ctx: CanvasRenderingContext2D,
   doc: Scene,
-  selectedId: string | null,
+  selection: Selection,
   states: ReadonlyMap<string, BodyState> | null,
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: {
     showGlobal: boolean
     contacts?: readonly ContactPoint[]
     draggingBody?: boolean
-    selectedConstraintId?: string | null
-    selectedPulleyId?: string | null
     /** The spring or rope tool's first anchor, until the tool finishes. */
     pendingAnchor?: ConstraintEnd | null
   },
 ): void {
   const { camera, transform, trash } = geometry
   const view = applyStates(doc, states)
+  const selectedId = selectedOf(selection, 'body')
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId, opts?.selectedConstraintId, opts?.selectedPulleyId)
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId, selectedOf(selection, 'constraint'), selectedOf(selection, 'pulley'))
 
   const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
   if (pendingBody) {
     const p = bodyPointToWorld(pendingBody, opts.pendingAnchor!.anchor)
-    const s = worldToScreen(transform, p.x, p.y)
-    ctx.save()
-    ctx.fillStyle = '#ff8c00'
-    ctx.beginPath()
-    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
+    screenCircle(ctx, worldToScreen(transform, p.x, p.y), 5, '#ff8c00')
   }
 
   // Trash target: invisible except while a Body is actively being dragged.
@@ -203,14 +219,7 @@ function paint(
       for (const a of appliedArrows(selView, camera.pixelsPerMeter)) {
         drawArrow(ctx, a.from, a.vec, transform)
         // The application point is draggable (PHY-27): a ring marks the grip.
-        const s = worldToScreen(transform, a.from.x, a.from.y)
-        ctx.save()
-        ctx.strokeStyle = '#d97742'
-        ctx.lineWidth = 1.5
-        ctx.beginPath()
-        ctx.arc(s.x, s.y, HANDLE_SIZE_PX / 2, 0, Math.PI * 2)
-        ctx.stroke()
-        ctx.restore()
+        screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
       }
     }
   }
@@ -579,18 +588,13 @@ export default function App() {
     const { scene } = loadSceneOrBlank(storage, currentId)
     return scene
   })
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  // Body, constraint (spring or rope) and pulley selections exclude each
-  // other: every place that selects one clears the others.
-  const [selectedConstraintId, setSelectedConstraintId] = useState<string | null>(null)
-  const [selectedPulleyId, setSelectedPulleyId] = useState<string | null>(null)
-  const [tool, setToolState] = useState<Tool>(null)
+  const [selection, setSelection] = useState<Selection>(null)
+  const selectedId = selectedOf(selection, 'body')
+  const selectedConstraintId = selectedOf(selection, 'constraint')
+  const selectedPulleyId = selectedOf(selection, 'pulley')
+  const [tool, setTool] = useState<Tool>(null)
   const [toolError, setToolError] = useState<string | null>(null)
   const toolRef = useRef<Tool>(tool)
-  function setTool(next: Tool) {
-    toolRef.current = next
-    setToolState(next)
-  }
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
@@ -631,9 +635,7 @@ export default function App() {
   // Mirrors so the imperative rAF loop reads the latest document without
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
-  const selectedIdRef = useRef<string | null>(selectedId)
-  const selectedConstraintIdRef = useRef<string | null>(selectedConstraintId)
-  const selectedPulleyIdRef = useRef<string | null>(selectedPulleyId)
+  const selectionRef = useRef<Selection>(selection)
   const showGlobalRef = useRef(showGlobal)
   const historyRef = useRef<History<Scene>>(history)
   const showShortcutsRef = useRef(showShortcuts)
@@ -663,9 +665,7 @@ export default function App() {
       setCurrentId(id)
       saveCurrentSceneId(storage, id)
       setDoc(scene)
-      setSelectedId(null)
-      setSelectedConstraintId(null)
-      setSelectedPulleyId(null)
+      setSelection(null)
       setImportError(null)
       // Switching/importing/creating/deleting a scene starts a fresh document
       // identity — undo history from the PREVIOUS scene makes no sense here.
@@ -691,22 +691,11 @@ export default function App() {
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
-    const constraintId = selectedConstraintIdRef.current
-    if (constraintId) {
-      commitDoc((d) => removeConstraint(d, constraintId))
-      setSelectedConstraintId(null)
-      return
-    }
-    const pulleyId = selectedPulleyIdRef.current
-    if (pulleyId) {
-      commitDoc((d) => removePulleyAndDependents(d, pulleyId))
-      setSelectedPulleyId(null)
-      return
-    }
-    const id = selectedIdRef.current
-    if (!id) return
-    commitDoc((d) => removeBodyAndDependents(d, id))
-    setSelectedId(null)
+    const sel = selectionRef.current
+    if (!sel) return
+    const remove = sel.kind === 'constraint' ? removeConstraint : sel.kind === 'pulley' ? removePulleyAndDependents : removeBodyAndDependents
+    commitDoc((d) => remove(d, sel.id))
+    setSelection(null)
   }, [commitDoc])
 
   // Drag interaction: kind + per-kind payload captured at pointer-down.
@@ -722,12 +711,10 @@ export default function App() {
   const repaint = useCallback(() => {
     const ctx = ctxRef.current
     if (ctx)
-      paint(ctx, docRef.current, selectedIdRef.current, statesRef.current, geometryFor(size.width, size.height), {
+      paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
         draggingBody: dragRef.current?.kind === 'move',
-        selectedConstraintId: selectedConstraintIdRef.current,
-        selectedPulleyId: selectedPulleyIdRef.current,
         pendingAnchor: toolRef.current && 'a' in toolRef.current ? toolRef.current.a : null,
       })
   }, [size.width, size.height])
@@ -789,7 +776,6 @@ export default function App() {
 
   useEffect(() => {
     docRef.current = doc
-    selectedIdRef.current = selectedId
     showGlobalRef.current = showGlobal
     if (simRef.current && builtDocRef.current !== doc) {
       // Live-vs-structural routing (T7/M2): value edits on existing records
@@ -815,13 +801,13 @@ export default function App() {
       }
     }
     repaint()
-  }, [doc, selectedId, showGlobal, repaint, fail])
+  }, [doc, showGlobal, repaint, fail])
 
   useEffect(() => {
-    selectedConstraintIdRef.current = selectedConstraintId
-    selectedPulleyIdRef.current = selectedPulleyId
+    selectionRef.current = selection
+    toolRef.current = tool
     repaint()
-  }, [selectedConstraintId, selectedPulleyId, tool, repaint])
+  }, [selection, tool, repaint])
 
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
@@ -842,7 +828,7 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => {
       setStepsTick(playbackRef.current.stepsTaken)
-      const constraintSel = selectedConstraintIdRef.current
+      const constraintSel = selectedOf(selectionRef.current, 'constraint')
       if (constraintSel) {
         // A world awaiting its rebuild still holds the old constraints: no reading.
         const sim = pendingRebuildRef.current ? null : simRef.current
@@ -850,7 +836,7 @@ export default function App() {
       } else {
         setConstraintReadout(null)
       }
-      const sel = selectedIdRef.current
+      const sel = selectedOf(selectionRef.current, 'body')
       if (!sel) {
         setReadout(null)
         return
@@ -1092,9 +1078,7 @@ export default function App() {
             setTool(null)
             setToolError(null)
           } else {
-            setSelectedId(null)
-            setSelectedConstraintId(null)
-            setSelectedPulleyId(null)
+            setSelection(null)
           }
           break
         case 'toggleHelp':
@@ -1183,9 +1167,7 @@ export default function App() {
     commitDoc(res.doc)
     setTool(null)
     setToolError(null)
-    setSelectedId(null)
-    setSelectedConstraintId(selects === 'constraint' ? res.newId : null)
-    setSelectedPulleyId(selects === 'pulley' ? res.newId : null)
+    setSelection(res.newId ? { kind: selects, id: res.newId } : null)
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1235,16 +1217,12 @@ export default function App() {
     // where they cross open space.
     const pulley = pulleyAtPoint(view, w)
     if (pulley) {
-      setSelectedId(null)
-      setSelectedConstraintId(null)
-      setSelectedPulleyId(pulley.id)
+      setSelection({ kind: 'pulley', id: pulley.id })
       return
     }
     const hit = bodyAtPoint(view.bodies, w)
     if (hit) {
-      setSelectedId(hit.id)
-      setSelectedConstraintId(null)
-      setSelectedPulleyId(null)
+      setSelection({ kind: 'body', id: hit.id })
       dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, startDoc: docRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
@@ -1252,9 +1230,7 @@ export default function App() {
     }
     const tolerance = LINE_HIT_TOLERANCE_PX / camera.pixelsPerMeter
     const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance)
-    setSelectedId(null)
-    setSelectedConstraintId(line?.id ?? null)
-    setSelectedPulleyId(null)
+    setSelection(line ? { kind: 'constraint', id: line.id } : null)
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1330,9 +1306,7 @@ export default function App() {
       const { sx, sy } = eventToScreen(e)
       if (pointInTrash(trashRectValue, sx, sy)) {
         setDoc((d) => removeBodyAndDependents(d, drag.id))
-        setSelectedId(null)
-        setSelectedConstraintId(null)
-        setSelectedPulleyId(null)
+        setSelection(null)
       } else if (drag.neighborId) {
         // Contact is declared here, on drop, never mid-drag; duplicate pairs
         // are a silent no-op (addContact's own guard).
@@ -1357,18 +1331,14 @@ export default function App() {
           ? { ...common, shape, radius: 0.75 }
           : { ...common, shape, base: 2, alpha: 30 }
     commitDoc({ ...doc, bodies: [...doc.bodies, body] })
-    setSelectedId(id)
-    setSelectedConstraintId(null)
-    setSelectedPulleyId(null)
+    setSelection({ kind: 'body', id })
   }
 
   /** Arms a palette tool; selection yields to it until it finishes or Esc cancels. */
   function armTool(next: Tool) {
     setTool(next)
     setToolError(null)
-    setSelectedId(null)
-    setSelectedConstraintId(null)
-    setSelectedPulleyId(null)
+    setSelection(null)
   }
 
   /** Refuses a spring edit that would not survive the codec (PHY-27, proxy decision on criterion 3). */
@@ -1615,12 +1585,7 @@ export default function App() {
             <input
               type="checkbox"
               checked={showGlobal}
-              onChange={(e) => {
-                const v = e.target.checked
-                setShowGlobal(v)
-                showGlobalRef.current = v
-                repaint()
-              }}
+              onChange={(e) => setShowGlobal(e.target.checked)}
             />{' '}
             {t('panel.showVectors')}
           </label>
@@ -1921,9 +1886,7 @@ export default function App() {
                 onClick={() => {
                   const { doc: next, newId } = duplicateBody(doc, selected.id)
                   commitDoc(next)
-                  if (newId) setSelectedId(newId)
-                  setSelectedConstraintId(null)
-                  setSelectedPulleyId(null)
+                  if (newId) setSelection({ kind: 'body', id: newId })
                 }}
               >
                 {t('panel.duplicate')}
