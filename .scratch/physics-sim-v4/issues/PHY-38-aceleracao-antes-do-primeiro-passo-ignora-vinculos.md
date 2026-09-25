@@ -1,5 +1,5 @@
 # PHY-38: Aceleração lida antes do primeiro passo ignora corda e mola
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent
