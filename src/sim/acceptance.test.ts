@@ -1379,8 +1379,11 @@ describe('acceptance: force anchor semantics (origin-relative contract)', () => 
   })
 
   // PHY-34: each step's off-COM torque must replace the last, not add to it.
-  // 1x1 m, 1 kg block, 1 N up at (0.5, 0): tau = 0.5, I = 1/6, omega(1 s) = 3.
-  it('off-COM torque does not accumulate across steps: omega(1 s) = tau/I * t', async () => {
+  // 1x1 m, 1 kg block, 1 N world-up at body-local (0.5, 0): the arm rides the
+  // body, so tau = 0.5 cos(theta) and energy gives (1/6)/2 * omega^2 = 0.5 sin(theta),
+  // omega = sqrt(6 sin(theta)). tau/I * t = 3 would assume a fixed arm; the block
+  // turns ~81 deg in the second.
+  it('off-COM torque does not accumulate across steps: omega = sqrt(6 sin theta) after 1 s', async () => {
     const sim = await createSimulator({
       version: 1,
       constants: { g: 0 },
@@ -1391,6 +1394,9 @@ describe('acceptance: force anchor semantics (origin-relative contract)', () => 
       contacts: [],
     })
     for (let i = 0; i < 60; i++) sim.step()
-    expect(Math.abs(sim.readStates().get('box')!.angvel - 3)).toBeLessThanOrEqual(0.02 * 3)
+    const { angvel, rotation } = sim.readStates().get('box')!
+    // Clamped so a spun-past-pi body fails on numbers, not NaN.
+    const expected = Math.sqrt(6 * Math.max(0, Math.sin(rotation)))
+    expect(Math.abs(angvel - expected)).toBeLessThanOrEqual(0.02 * expected)
   })
 })
