@@ -10,6 +10,8 @@ import { CANVAS_MIN_WIDTH } from './render/fitCanvas'
 import { trashRect } from './editor/trash'
 import { createSimulator, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
+import { en } from './i18n/en'
+import { setLang } from './i18n'
 import { blankScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import type { Scene } from './scene/types'
 
@@ -1484,5 +1486,58 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const reopened = renderApp()
     expect(sceneSelect(reopened).value).toBe('cena-1')
+  })
+})
+
+describe('galeria em árvore (PHY-31)', () => {
+  const name = (catalog: Record<string, string>, id: string): string | undefined => catalog[`preset.${id}.name`]
+
+  /** The gallery's groups in render order: the node heading and the preset names under it. */
+  function galleryGroups(host: HTMLElement, legend: string): { node: string | null; presets: string[] }[] {
+    const gallery = panel(host, legend)
+    if (!gallery) throw new Error('missing gallery')
+    return [...gallery.querySelectorAll('[role="group"]')].map((g) => ({
+      node: g.getAttribute('aria-label'),
+      presets: [...g.querySelectorAll('strong')].map((s) => s.textContent?.trim() ?? ''),
+    }))
+  }
+
+  it('agrupa por nó na ordem do livro, com os presets na ordem declarada, e só nós com preset aparecem', () => {
+    const host = renderApp()
+    const pt = ptBR as Record<string, string>
+    const names = (...ids: string[]) => ids.map((id) => name(pt, id))
+    expect(galleryGroups(host, ptBR['gallery.title'])).toStrictEqual([
+      { node: 'Mecânica / Dinâmica / Princípios', presets: names('atwood', 'table-hanging', 'movable-pulley', 'wedge-flagship') },
+      { node: 'Mecânica / Dinâmica / Atrito entre sólidos', presets: names('incline-block') },
+      { node: 'Mecânica / Dinâmica / Resultantes tangencial e centrípeta', presets: names('loop-pendulum') },
+      { node: 'Mecânica / Dinâmica / Movimentos em campo gravitacional uniforme', presets: names('free-fall', 'projectile') },
+      { node: 'Ondulatória / MHS', presets: names('spring-horizontal', 'spring-vertical', 'simple-pendulum', 'spring-damped') },
+    ])
+  })
+
+  it('usar um preset cria a cena com o nome no idioma atual e o conteúdo do preset', () => {
+    const host = renderApp()
+    const english = en as Record<string, string>
+    try {
+      const langSelect = [...host.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.value === 'en'))
+      if (!langSelect) throw new Error('missing language select')
+      act(() => setSelectValue(langSelect, 'en'))
+      // Node headings follow the language too.
+      expect(galleryGroups(host, en['gallery.title'])[0]?.node).toBe('Mechanics / Dynamics / Principles')
+
+      const gallery = panel(host, en['gallery.title'])!
+      const atwood = [...gallery.querySelectorAll('label')].find((l) => l.querySelector('strong')?.textContent?.trim() === name(english, 'atwood'))
+      if (!atwood) throw new Error('missing Atwood preset')
+      act(() => atwood.querySelector('input')?.click())
+      act(() => findButton(host, en['gallery.useSelected'])?.click())
+
+      const scenes = panel(host, en['scenes.title'])?.querySelector('select')
+      expect(scenes?.selectedOptions[0]?.textContent?.trim()).toBe(name(english, 'atwood'))
+      // The canvas doc is the preset's: its blocks are listed in the app.
+      expect(host.textContent).toContain('bloco-1')
+      expect(host.textContent).toContain('bloco-2')
+    } finally {
+      setLang('pt-BR')
+    }
   })
 })
