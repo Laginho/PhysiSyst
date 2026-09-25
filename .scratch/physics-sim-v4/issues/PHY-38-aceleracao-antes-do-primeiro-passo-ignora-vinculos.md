@@ -1,5 +1,5 @@
 # PHY-38: Aceleração lida antes do primeiro passo ignora corda e mola
-Stage: implementing
+Stage: to-review
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -35,3 +35,4 @@ Antes do primeiro passo, a leitura de um corpo preso a um vínculo não afirma u
 ## Comments
 
 - 2026-09-25 Aberto pelo passe manual do PHY-33, item 5. O corpo desse caso também está apoiado no chão sem Contact declarado, e a estimativa também ignora esse apoio. Isso vem de antes da v4 (limitação de leitura da v2) e o triage decide se entra aqui.
+- 2026-09-25 Stage 2: a leitura analítica leva `≈` quando o corpo é ponta de uma mola ou corda, ou carrega uma polia por onde passa uma corda. O apoio no chão sem Contact declarado ficou de fora (critérios não o pedem). Mutação: trocar a cláusula da polia por `false` deixa vermelho `accelerationTracker.test.ts:204` (carrier). Gate: 714/714, lint, typecheck e build verdes.
