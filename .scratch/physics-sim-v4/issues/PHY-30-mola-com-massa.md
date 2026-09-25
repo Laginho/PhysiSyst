@@ -1,5 +1,5 @@
 # PHY-30: Mola com massa (Realism option)
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-27, PHY-29
 Review: agent
@@ -93,3 +93,24 @@ Results at θ = 0.55: period within 0.12% of `2π√((m + mₛ/3)/k)` (the massl
 Mutations 11–14 are the DOM-seam record AGENTS.md asks for: each new `App.test.ts` test goes red under at least one of them, with the output above.
 
 **Gate** on `41ec7b8`: `npm test` 30 files, 680 passed; lint clean; typecheck clean; build ✓ (the >500 kB warning names only the late `sim` chunk, as PHY-32 documents).
+
+#### Resolution (2026-09-24)
+
+Verdict: Needs your call: every criterion is met, but a spring with mass kicks the block and rings for eight steps when the user drags an end mid-play (carry without that body); fix deferred to CLEAN-09, decide whether v4 ships with that edge.
+
+Stage 3 (claude-fable-5-1), branch `phy/PHY-30-mola-com-massa` (`664e362`, `41ec7b8`, `2f9a7f0`) merged `--no-ff` into `sweatshop/2026-09-24-1853` as `f8adf02`. Already on top of the session; no rebase needed.
+
+- Test-first: `664e362` touches only the four test files and the ticket; `41ec7b8` touches no test file; `2f9a7f0` only the ticket. Every touched source file is in Primary files (`types.ts` and `doc.ts` by the proxy decision below).
+- Criterion 1: `parseSpring` loops `c` and `mass` through one non-negative-finite check; absent stays absent (`serialize` round-trips without the key). Codec tests cover 0, 0.1, 2.5, absent, negative, string, Infinity.
+- Criterion 2: two horizontal cases at 3% of `2π√((m + mₛ/3)/k)` and nearer it than the massless period; stage 2 measured 0.12%.
+- Criterion 3: `F_b − F_a` against `mₛ·a/2`, least-squares slope within 10%; `mₛ = 0` reads `a === b` every step because `newChain(0)` is null and the PHY-26 path runs untouched.
+- Criterion 4: the nodes are plain numbers in `Chain`, never Rapier bodies, so `readStates` and collisions cannot see them (test with a fixed bar across the spring's line); carry resumes the chain by spring id, forces equal to 9 decimals across the rebuild and the block within 3% of A of an uninterrupted run.
+- Criterion 5: `elasticArrows` sizes each end by its own reading (mutation 10) and keys the label per end only when `mass > 0` (mutation 9): `F_el,1`/`F_el,2`, massless still `F_el`.
+- Criterion 6: `SpringPanel` gains `mₛ (kg)`, `commitSpringEdit` refuses `mass < 0` with the shared warning; the readout shows `F_el em <body>` per end when `mass > 0`, the single `F_el` otherwise.
+- Criterion 7: `spring.mass`, `readout.springForceAt` and the reworded `spring.invalid` in both catalogs; the parity test guards them (mutation 15).
+- Criterion 8: all 15 recorded mutations rerun by this review, each alone with its suite and reverted. Every one goes red as recorded; mutation 5 trips 3 tests (the carry test too), one more than recorded. Mutations 11–14 are the DOM-seam record.
+- Criterion 9: gate rerun on `2f9a7f0`: `npm test` 30 files / 680 tests, lint, typecheck, build green.
+- Reviewer probes (scratch test, deleted, not committed): damped chain `c = 0.5` and `c = 2` with `mₛ = 0.1` follows the ideal spring's peak envelope within 1% over 10 peaks; two dynamic blocks with `mₛ = 0.15`, `c = 0` and `c = 1`, keep |p| ≤ 0.02 kg·m/s and the gap amplitude to 0.1%/period. The `c` terms and the symmetric end handling are right, but no committed test pins them.
+- Finding, deferred to CLEAN-09: a carried rebuild whose carry lacks an end's body (the user dragged it mid-play, `carryOver` drops it) resumes the chain at the old node positions on the new axis. Measured with the block moved 0.5 m: first-step Δv −1.85 m/s against −0.40 for the ideal spring, then the block's F_el reads 110.7, −38.7, −9.1, 10.7 … N on a 24 N answer, the wall end −39.5 to 68.6 N. Not a criterion as written (criterion 4 compares against an uninterrupted run), not a regression (massless springs unchanged), and the fix needs a new test, so no small fix here.
+- Also noted, no criterion: the readout labels ends by body name while the arrows say `F_el,1`/`F_el,2` (rope readout mirrors its arrows); `readSpring` computes tensions it discards once `chain.force` is set; `pushChain` computes `before` twice. All in CLEAN-09's comments.
+- Proxy decided (stage 2): `src/scene/types.ts` and `src/editor/doc.ts` added to Primary files for the type-only lines; no criterion changed.
