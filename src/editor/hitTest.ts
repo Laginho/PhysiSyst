@@ -1,4 +1,6 @@
 import { bodyPointToWorld, scenePath, type Body, type Pulley, type Rope, type Scene, type Spring, type Vec2 } from '../scene'
+import { closestPoint } from './contactSnap'
+import { triangleHeight } from './handles'
 
 /** World point -> body-LOCAL frame: inverse of translate(position)·rotate(rotation). */
 function toLocal(body: Body, w: Vec2): Vec2 {
@@ -25,7 +27,7 @@ export function pointInBody(body: Body, w: Vec2): boolean {
       // Right triangle with vertices (0,0),(base,0),(base,h): inside the base
       // leg, inside the vertical leg at x=base, and BELOW the hypotenuse
       // y = (h/base)·x running from the α-corner at the origin.
-      const h = body.base * Math.tan((body.alpha * Math.PI) / 180)
+      const h = triangleHeight(body)
       return p.x >= 0 && p.x <= body.base && p.y >= 0 && p.y <= (h / body.base) * p.x
     }
   }
@@ -43,11 +45,8 @@ export function bodyAtPoint(bodies: Body[], w: Vec2): Body | null {
 }
 
 function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const lengthSquared = dx * dx + dy * dy
-  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+  const q = closestPoint(p, a, b)
+  return Math.hypot(p.x - q.x, p.y - q.y)
 }
 
 /** Topmost pulley whose circle holds a world point, at the poses the scene holds. */
