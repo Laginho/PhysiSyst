@@ -1,5 +1,5 @@
 # CLEAN-09: Cadeia da mola com massa re-assentada quando uma ponta muda no carry; nós como escalares no eixo
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -43,3 +43,30 @@ No mesmo toque, dois itens do mesmo review: os nós ficam como distâncias ao lo
   - sem a comparação de âncora em `same`: vermelho só "wall end re-anchored" — `expected 1.0742096602916718 to be less than or equal to 0.03792142868041992`
   - termo de `c` zerado em `chainTensions`: vermelho só o amortecido — `expected 0.20787462486069597 to be less than or equal to 0.015603285971181187`
 - Gate: `npm test` 30 arquivos, 683 testes verdes; `npm run lint` e `npm run typecheck` limpos; `npm run build` ✓ (só o aviso de chunk > 500 kB de sempre). Testes do PHY-30 sem mudança de texto nem tolerância, todos verdes (critérios 2 e 3).
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+**Decision.** Merged into `sweatshop/2026-09-24-1853` (`2d366e5`, `--no-ff`). Every criterion met on the contract as written; no small fix needed. The branch sat directly on the session tip, so the rebase was a no-op and the gate below is the merged tree.
+
+**Files.** `src/sim/simulator.ts` (code, `7d8df31`), `src/sim/acceptance.test.ts` (tests, `c89cf1d`). Test-first shape holds: the test commit touched only the test file and this ticket; the code commit touched only `simulator.ts`.
+
+**Findings.**
+
+- Criterion 1: the carry test drops `bloco` after moving it 0.5 m and asserts Δv within 10% of the ideal spring, then `|F_el| ≤ 2·k·|Δx|` per end for 8 steps. Stage 2 widened it to the other half of "What to build" (wall end re-anchored, both bodies carried) as a second `it.each` case. Both cases go red under their own mutation.
+- Criterion 2: `replaceScene with carry keeps the chain` untouched in the diff and green. `same()` holds for the wall because `readStates()` iterates every body, fixed ones included, and `carryOver` keeps an unchanged pose.
+- Criterion 3: `Chain.p` is `number[]`, distances from end a; `chainAxis` spreads it directly and `pushChain` stores `q − dt·v_a`, the end-a displacement `chainStep` assumes. That drops the old projection's absorption of axis rotation and of the O(dt²·a) gap between assumed and actual end motion; self-consistent with the chain's constant-velocity-ends step, and every PHY-30 number in the test file is unchanged.
+- Criterion 4: as rewritten by the proxy (peak-to-peak decrement within 2% per peak over 10 peaks, c = 0.5, mₛ = 0.1). The test does exactly that.
+- Criterion 5: gate green, below.
+- Proxy decided (stage 2): criterion 4 reworded from "envelope de picos" to the per-peak decrement, the reading that isolates the `c` term; the other two readings measured the effective mass m + mₛ/3 and failed for correct physics. Stage 2 folded it into the body as the protocol allows.
+- Also inside Primary files, no criterion, accepted: `placeChain` initialises `force` with the ideal spring's F_el, so `Chain.force` is non-nullable and `readSpring` lost its fallback and `lag` parameter (the first item of the opening comment); `PointBinding.bodyId` added for `same()`.
+- Standards, judgement calls, none fixed here: the new `peaks()` in the test repeats the peak finder of the damped-spring test at lines 1021–1024; `chainAxis` still recomputes what `springAt` yields; no ADR states the chain carry rule (resume onto the same two ends, both carried, else re-seat), the sibling of ADR-0004's disk-spin rule. All parked in CLEAN-10 with the two leftovers of the opening comment (`before` in `pushChain`, readout labels).
+
+**Mutations re-run by the review** (each applied to `simulator.ts`, `npx vitest run src/sim/acceptance.test.ts -t PHY-30`, reverted; every run 1 failed | 10 passed):
+
+- `carry.has` dropped from `same`: red only "block moved 0.5 m" — `expected 1.444934070110321 to be less than or equal to 0.04000000357627869`
+- anchor comparison dropped from `same`: red only "wall end re-anchored" — `expected 1.0742096602916718 to be less than or equal to 0.03792142868041992`
+- `c` term zeroed in `chainTensions`: red only the damped test — `expected 0.20787462486069597 to be less than or equal to 0.015603285971181187`
+
+**Gate** (on `5558edb`, the merged tree): `npm test` 30 files, 683 tests passed; `npm run lint` clean; `npm run typecheck` clean; `npm run build` ✓ (the usual chunk > 500 kB warning).
