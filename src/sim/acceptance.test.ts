@@ -1377,4 +1377,20 @@ describe('acceptance: force anchor semantics (origin-relative contract)', () => 
     // (~4e-7 rad/s here vs >0.05 rad/s for the torqued origin anchor).
     expect(Math.abs(centroidState.angvel)).toBeLessThan(1e-5)
   })
+
+  // PHY-34: each step's off-COM torque must replace the last, not add to it.
+  // 1x1 m, 1 kg block, 1 N up at (0.5, 0): tau = 0.5, I = 1/6, omega(1 s) = 3.
+  it('off-COM torque does not accumulate across steps: omega(1 s) = tau/I * t', async () => {
+    const sim = await createSimulator({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { id: 'box', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+      ],
+      forces: [{ id: 'f', bodyId: 'box', anchor: { x: 0.5, y: 0 }, magnitude: 1, direction: 90 }],
+      contacts: [],
+    })
+    for (let i = 0; i < 60; i++) sim.step()
+    expect(Math.abs(sim.readStates().get('box')!.angvel - 3)).toBeLessThanOrEqual(0.02 * 3)
+  })
 })

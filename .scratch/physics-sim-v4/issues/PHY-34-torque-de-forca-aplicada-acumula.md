@@ -1,5 +1,5 @@
 # PHY-34: Torque de força aplicada acumula entre passos
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent
