@@ -1043,7 +1043,7 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     expect(field(host, 'mola', 'mₛ (kg)')).toBe(0)
   })
 
-  it('com mₛ > 0, a leitura mostra F_el em cada ponta, cada uma com o seu valor (PHY-30)', async () => {
+  it('com mₛ > 0, a leitura mostra F_el,1 e F_el,2, cada ponta com o seu valor (PHY-30, CLEAN-10)', async () => {
     vi.mocked(createSimulator).mockImplementation(async () => ({
       ...makeFakeSimulator(),
       readConstraints: () => [{ id: 'mola', kind: 'spring' as const, dx: 0.1, force: { a: 2, b: 2.5 } }],
@@ -1063,8 +1063,11 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
       })
     }
 
-    expect(readout()).toContain('F_el em parede: 2.00 N')
-    expect(readout()).toContain('F_el em bloco: 2.50 N')
+    // The same labels as the arrows, in the order of the ends (CLEAN-10).
+    expect(readout()).toContain('F_el,1: 2.00 N')
+    expect(readout()).toContain('F_el,2: 2.50 N')
+    expect(readout().indexOf('F_el,1')).toBeLessThan(readout().indexOf('F_el,2'))
+    expect(readout()).not.toContain('F_el em')
     expect(readout()).not.toContain('F_el: ')
     expect(readout()).toContain('Δx: 0.100 m')
   }, 10000)

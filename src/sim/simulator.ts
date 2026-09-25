@@ -329,7 +329,7 @@ function springAt(s: SpringBinding, lead = 0) {
   const u = unit(pa!, pb!)
   const dx = Math.hypot(pb!.x - pa!.x, pb!.y - pa!.y) - s.x0
   const rate = (v[1].x - v[0].x) * u.x + (v[1].y - v[0].y) * u.y
-  return { now, u, dx, force: s.k * dx + s.c * rate }
+  return { now, v, u, dx, force: s.k * dx + s.c * rate }
 }
 
 function readSpring(s: SpringBinding): SpringState {
@@ -348,13 +348,10 @@ function dot(p: Vec2, q: Vec2): number {
  * there too, each at its velocity now.
  */
 function chainAxis(s: SpringBinding, chain: Chain, lag: number) {
-  const pa = worldPoint(s.a)
-  const pb = worldPoint(s.b)
-  const u = unit(pa, pb)
-  const x = Math.hypot(pb.x - pa.x, pb.y - pa.y)
-  const va = dot(pointVelocity(s.a.rigid, pa), u)
-  const vb = dot(pointVelocity(s.b.rigid, pb), u)
-  return { pa, pb, u, at: [-lag * va, ...chain.p, x - lag * vb], v: [va, ...chain.w, vb] }
+  const { now, v, u, dx } = springAt(s)
+  const va = dot(v[0], u)
+  const vb = dot(v[1], u)
+  return { now, u, at: [-lag * va, ...chain.p, dx + s.x0 - lag * vb], v: [va, ...chain.w, vb] }
 }
 
 /** The tension of each of the chain's springs, + pulling its two points together. */
@@ -367,9 +364,10 @@ function chainTensions(s: SpringBinding, at: readonly number[], v: readonly numb
  * The nodes after one θ-method step, the ends moving on at their velocity:
  * q with −κ q_{i−1} + (μ/θ²Δt² + 2κ) q_i − κ q_{i+1} = rhs_i, κ = k′ + c′/θΔt,
  * solved by the Thomas algorithm. θ > ½ keeps it stable for any mass and
- * damps the modes a 60 Hz step cannot follow.
+ * damps the modes a 60 Hz step cannot follow. Returns the tensions before
+ * the step (`T`) with the nodes.
  */
-function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: readonly number[], g: number): number[] {
+function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: readonly number[], g: number) {
   const n = CHAIN_NODES
   const dt = TIMESTEP
   const th = CHAIN_THETA
@@ -401,7 +399,7 @@ function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: rea
     d.push((rhs[i]! + kappa * (d[i - 2] ?? 0)) / m)
   }
   for (let i = n; i >= 1; i--) q[i] = d[i - 1]! - sweep[i - 1]! * (i < n ? q[i + 1]! : 0)
-  return q
+  return { q, T }
 }
 
 /** A chain for `mass`; null for the ideal spring. */
@@ -1013,12 +1011,11 @@ class RapierSimulator implements Simulator {
    * behind the bodies.
    */
   private pushChain(s: SpringBinding, chain: Chain): void {
-    const { pa, pb, u, at, v } = chainAxis(s, chain, this.chainLag())
+    const { now, u, at, v } = chainAxis(s, chain, this.chainLag())
     const n = CHAIN_NODES
-    const q = chainStep(s, chain, at, v, dot(this.world.gravity, u))
+    const { q, T: before } = chainStep(s, chain, at, v, dot(this.world.gravity, u))
     const th = CHAIN_THETA
     const w = q.map((p, j) => (j === 0 || j === n + 1 ? v[j]! : (p - at[j]!) / (th * TIMESTEP) - ((1 - th) / th) * v[j]!))
-    const before = chainTensions(s, at, v)
     const after = chainTensions(s, q, w)
     const fa = th * after[0]! + (1 - th) * before[0]!
     const fb = th * after[n]! + (1 - th) * before[n]!
@@ -1026,8 +1023,8 @@ class RapierSimulator implements Simulator {
     // Measured from end a after the step: it moves dt·v on, as chainStep took it.
     chain.p = q.slice(1, -1).map((p) => p - TIMESTEP * v[0]!)
     chain.w = w.slice(1, -1)
-    if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: fa * u.x, y: fa * u.y }, pa, true)
-    if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -fb * u.x, y: -fb * u.y }, pb, true)
+    if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: fa * u.x, y: fa * u.y }, now[0], true)
+    if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -fb * u.x, y: -fb * u.y }, now[1], true)
   }
 
   private chainLag(): number {
