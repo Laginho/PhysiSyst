@@ -880,6 +880,10 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     expect(field(host, 'mola', 'k (N/m)')).toBeGreaterThan(0)
     expect(field(host, 'mola', 'c (N·s/m)')).toBe(0)
     expect(panel(host, 'mola-2')).toBeUndefined()
+    // Exactly one spring: clicking the line picks the topmost, which is still 'mola'.
+    pressKey('Escape')
+    click(canvas, SPRING_MIDDLE)
+    expect(panel(host, 'mola')).toBeDefined()
 
     // Exactly one edit: one undo takes the scene back to where it was seeded.
     pressKey('z', { ctrlKey: true })
@@ -1033,6 +1037,10 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     pressKey('z', { ctrlKey: true })
     expect(field(host, 'forças de bloco', 'âncora x (m, local)')).toBe(0)
     expect(field(host, 'forças de bloco', 'âncora y (m, local)')).toBe(0)
+    // The drag was one step: the next undo already takes back adding the force.
+    pressKey('z', { ctrlKey: true })
+    expect(panel(host, 'forças de bloco')?.textContent).toContain('nenhuma')
+    expect(findButton(host, '↶')?.disabled).toBe(true)
   })
 })
 
