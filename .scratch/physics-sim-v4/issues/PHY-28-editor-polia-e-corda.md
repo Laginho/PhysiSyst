@@ -1,5 +1,5 @@
 # PHY-28: Editor II — ferramentas Polia e Corda
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-25, PHY-27
 Review: agent

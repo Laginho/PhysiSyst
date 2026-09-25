@@ -3,7 +3,12 @@ import type { Scene } from '../scene'
 import {
   addContact,
   addForce,
+  addPulley,
+  addRope,
   addSpring,
+  PULLEY_DEFAULT_RADIUS,
+  removePulleyAndDependents,
+  updatePulley,
   duplicateBody,
   freshId,
   removeBodyAndDependents,
@@ -392,6 +397,69 @@ describe('spring editing: k, c, x0 and the x0/Δx link', () => {
     expect(next.constraints!.map((c) => c.id)).toEqual(['mola-2'])
     expect(next.bodies).toBe(two.bodies)
     expect(removeConstraint(two, 'zz')).toBe(two)
+  })
+})
+
+// ---------- PHY-28: pulleys and ropes ----------
+
+describe('pulley and rope doc operations (PHY-28)', () => {
+  const up = { x: 0, y: 1 }
+  const ONE_PULLEY = addPulley(DOC, 'a', up).doc
+
+  it('addPulley mounts a massless pulley of the default radius at the anchor, with a fresh id', () => {
+    const { doc, newId, error } = addPulley(DOC, 'a', up)
+    expect(error).toBeNull()
+    expect(newId).toBe('polia')
+    expect(doc.pulleys).toEqual([{ id: 'polia', bodyId: 'a', anchor: up, radius: PULLEY_DEFAULT_RADIUS }])
+    expect(PULLEY_DEFAULT_RADIUS).toBeGreaterThan(0)
+    expect(DOC).not.toHaveProperty('pulleys')
+    expect(addPulley(doc, 'b', up).newId).toBe('polia-2')
+  })
+
+  it('addPulley rejects a missing body (same doc ref + reason key)', () => {
+    expect(addPulley(DOC, 'ghost', up)).toEqual({ doc: DOC, newId: null, error: 'error.corpoInexistente' })
+  })
+
+  it('updatePulley patches radius and mass immutably; unknown id is a no-op', () => {
+    const next = updatePulley(ONE_PULLEY, 'polia', { radius: 0.5, mass: 2 })
+    expect(next.pulleys![0]).toMatchObject({ radius: 0.5, mass: 2 })
+    expect(ONE_PULLEY.pulleys![0].radius).toBe(PULLEY_DEFAULT_RADIUS)
+    expect(updatePulley(ONE_PULLEY, 'zz', { radius: 1 })).toBe(ONE_PULLEY)
+  })
+
+  const A = { bodyId: 'a', anchor: { x: 0, y: 0 } }
+  const B = { bodyId: 'b', anchor: { x: 0, y: 0 } }
+  const TWO_PULLEYS = addPulley(ONE_PULLEY, 'b', up).doc
+
+  it('addRope keeps via in the order given, with a fresh id in the constraint namespace', () => {
+    const { doc, newId, error } = addRope(TWO_PULLEYS, A, ['polia-2', 'polia'], B)
+    expect(error).toBeNull()
+    expect(newId).toBe('corda')
+    expect(doc.constraints).toEqual([{ id: 'corda', kind: 'rope', a: A, b: B, via: ['polia-2', 'polia'] }])
+    expect(addRope(doc, A, [], B).newId).toBe('corda-2')
+  })
+
+  it('addRope accepts both ends on one body when the rope passes over a pulley', () => {
+    expect(addRope(ONE_PULLEY, A, ['polia'], { bodyId: 'a', anchor: { x: 1, y: 0 } }).error).toBeNull()
+  })
+
+  it('addRope rejects what the codec would (same doc ref + reason key)', () => {
+    expect(addRope(ONE_PULLEY, A, [], { bodyId: 'a', anchor: { x: 1, y: 0 } })).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.parConsigoMesmo' })
+    expect(addRope(ONE_PULLEY, A, ['polia'], { bodyId: 'ghost', anchor: { x: 0, y: 0 } })).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.corpoInexistente' })
+    expect(addRope(ONE_PULLEY, A, ['ghost'], B)).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.poliaInexistente' })
+    expect(addRope(ONE_PULLEY, A, ['polia', 'polia'], B)).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.poliaRepetida' })
+  })
+
+  it('removing a pulley removes every rope passing over it, and nothing else', () => {
+    let doc = addRope(TWO_PULLEYS, A, ['polia'], B).doc
+    doc = addRope(doc, A, ['polia-2'], B).doc
+    doc = addRope(doc, A, [], B).doc
+    doc = addSpring(doc, A, { bodyId: 'b', anchor: { x: -2, y: -5 } }).doc
+    const next = removePulleyAndDependents(doc, 'polia')
+    expect(next.pulleys!.map((p) => p.id)).toEqual(['polia-2'])
+    expect(next.constraints!.map((c) => c.id)).toEqual(['corda-2', 'corda-3', 'mola'])
+    expect(next.bodies).toBe(doc.bodies)
+    expect(removePulleyAndDependents(doc, 'zz')).toBe(doc)
   })
 })
 

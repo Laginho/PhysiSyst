@@ -1044,6 +1044,303 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
   })
 })
 
+describe('ferramentas Polia e Corda (PHY-28)', () => {
+  // Ceiling 4 × 0.5 at (6, 7): its bottom face midpoint (6, 6.75) takes the
+  // pulley at the default radius r = 0.25 m. Blocks 0.4 × 0.4 at x = 5.75 and
+  // 6.25 put both legs vertical, tangent to it, so L = 2 · 3.55 + π·r — only
+  // with every anchor snapped (raw clicks are a few cm off).
+  const TETO_CLICK = { x: 6.02, y: 6.78 }
+  const TETO_CORNER_CLICK = { x: 4.03, y: 6.78 }
+  const B1_CLICK = { x: 5.76, y: 3.19 }
+  const B2_CLICK = { x: 6.24, y: 3.19 }
+  const PULLEY_SPOT = { x: 6, y: 6.6 }
+  const CORNER_PULLEY_SPOT = { x: 4.05, y: 6.6 }
+  const LEFT_LEG = { x: 5.75, y: 5 }
+
+  function seedAtwood(): void {
+    const storage = window.localStorage as unknown as PersistStorage
+    const block = (id: string, x: number, mass: number) =>
+      ({ id, shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass, position: { x, y: 3 }, rotation: 0 }) as const
+    const scene: Scene = {
+      version: 1,
+      constants: { g: 9.81 },
+      bodies: [
+        { id: 'teto', shape: 'rectangle', width: 4, height: 0.5, fixed: true, mass: 0, position: { x: 6, y: 7 }, rotation: 0 },
+        block('bloco1', 5.75, 1),
+        block('bloco2', 6.25, 2),
+      ],
+      forces: [],
+      contacts: [],
+    }
+    saveIndex(storage, [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
+    saveScene(storage, 'cena-1', scene)
+    saveCurrentSceneId(storage, 'cena-1')
+  }
+
+  function click(canvas: Element, at: { x: number; y: number }): void {
+    const p = screen(at.x, at.y)
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', p.x, p.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', p.x, p.y)))
+  }
+
+  function panel(host: HTMLElement, legend: string): HTMLFieldSetElement | undefined {
+    return [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === legend)
+  }
+
+  function field(host: HTMLElement, legend: string, label: string): number {
+    const p = panel(host, legend)
+    if (!p) throw new Error(`missing panel ${legend}`)
+    return Number(inputForLabel(p, label).value)
+  }
+
+  function setup(): { host: HTMLElement; canvas: HTMLCanvasElement } {
+    seedAtwood()
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+    return { host, canvas }
+  }
+
+  function tool(host: HTMLElement, name: 'polia' | 'corda' | 'mola'): void {
+    act(() => findButton(host, name)?.click())
+  }
+
+  function buildAtwood(host: HTMLElement, canvas: Element): void {
+    tool(host, 'polia')
+    click(canvas, TETO_CLICK)
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, PULLEY_SPOT)
+    click(canvas, B2_CLICK)
+  }
+
+  const lengthText = (r: number) => `L: ${(2 * 3.55 + Math.PI * r).toFixed(3)} m`
+
+  it('Polia: um clique num corpo monta a polia na âncora do Anchor snap e a seleciona; clique fora de corpo é ignorado', () => {
+    const { host, canvas } = setup()
+    tool(host, 'polia')
+    click(canvas, { x: 3, y: 5 })
+    expect(panel(host, 'polia')).toBeUndefined()
+    click(canvas, TETO_CLICK)
+
+    expect(panel(host, 'polia')).toBeDefined()
+    const r = field(host, 'polia', 'raio (m)')
+    expect(r).toBeGreaterThan(0)
+    expect(field(host, 'polia', 'massa (kg)')).toBe(0)
+    expect(panel(host, 'polia-2')).toBeUndefined()
+
+    // The snapped center (6, 6.75) makes both legs vertical: L = 2 · 3.55 + π·r.
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, PULLEY_SPOT)
+    click(canvas, B2_CLICK)
+    expect(panel(host, 'corda')?.textContent).toContain(lengthText(r))
+
+    // Pulley and rope are one undo step each.
+    pressKey('z', { ctrlKey: true })
+    pressKey('z', { ctrlKey: true })
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('Corda: A → polias → B cria uma corda com via na ordem clicada e a seleciona', () => {
+    const { host, canvas } = setup()
+    tool(host, 'polia')
+    click(canvas, TETO_CLICK)
+    tool(host, 'polia')
+    click(canvas, TETO_CORNER_CLICK)
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, CORNER_PULLEY_SPOT)
+    click(canvas, PULLEY_SPOT)
+    click(canvas, B2_CLICK)
+
+    expect(panel(host, 'corda')?.textContent).toContain('bloco1 → polia-2 → polia → bloco2')
+    expect(panel(host, 'corda-2')).toBeUndefined()
+  })
+
+  it('clicar na mesma polia duas vezes seguidas é ignorado', () => {
+    const { host, canvas } = setup()
+    tool(host, 'polia')
+    click(canvas, TETO_CLICK)
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, PULLEY_SPOT)
+    click(canvas, PULLEY_SPOT)
+    click(canvas, B2_CLICK)
+
+    expect(panel(host, 'corda')?.textContent).toContain('bloco1 → polia → bloco2')
+  })
+
+  it('Esc no meio da corda cancela sem mexer no doc', () => {
+    const { host, canvas } = setup()
+    tool(host, 'polia')
+    click(canvas, TETO_CLICK)
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, PULLEY_SPOT)
+    pressKey('Escape')
+    click(canvas, B2_CLICK)
+
+    // Back to selection: the click selected the block, no rope exists.
+    expect(panel(host, 'bloco2')).toBeDefined()
+    expect(panel(host, 'corda')).toBeUndefined()
+    click(canvas, LEFT_LEG)
+    expect(panel(host, 'corda')).toBeUndefined()
+    // The only edit left to undo is the pulley.
+    pressKey('z', { ctrlKey: true })
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('sem polia, clicar em B = A não cria nada e a ferramenta continua esperando B', () => {
+    const { host, canvas } = setup()
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, { x: 5.75, y: 2.9 })
+    expect(panel(host, 'corda')).toBeUndefined()
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+    click(canvas, B2_CLICK)
+
+    expect(panel(host, 'corda')?.textContent).toContain('bloco1 → bloco2')
+  })
+
+  it('inspetor da polia edita raio e massa; inspetor da corda mostra o caminho e L sem campo editável', () => {
+    const { host, canvas } = setup()
+    buildAtwood(host, canvas)
+    click(canvas, PULLEY_SPOT)
+    const r = field(host, 'polia', 'raio (m)')
+    click(canvas, LEFT_LEG)
+    const rope = panel(host, 'corda')!
+    expect(rope.textContent).toContain('bloco1 → polia → bloco2')
+    expect(rope.textContent).toContain(lengthText(r))
+    expect(rope.querySelectorAll('input')).toHaveLength(0)
+
+    click(canvas, PULLEY_SPOT)
+    act(() => setNativeInputValue(inputForLabel(panel(host, 'polia')!, 'raio (m)'), 0.3))
+    act(() => setNativeInputValue(inputForLabel(panel(host, 'polia')!, 'massa (kg)'), 2))
+    expect(field(host, 'polia', 'raio (m)')).toBe(0.3)
+    expect(field(host, 'polia', 'massa (kg)')).toBe(2)
+
+    // L is derived, never stored: the new radius moves the tangent points.
+    click(canvas, LEFT_LEG)
+    expect(panel(host, 'corda')?.textContent).not.toContain(lengthText(r))
+  })
+
+  it('remover polia remove as cordas que passam por ela; Ctrl+Z restaura tudo de uma vez', () => {
+    const { host, canvas } = setup()
+    buildAtwood(host, canvas)
+    click(canvas, PULLEY_SPOT)
+    expect(panel(host, 'polia')).toBeDefined()
+
+    pressKey('Delete')
+    expect(panel(host, 'polia')).toBeUndefined()
+    click(canvas, PULLEY_SPOT)
+    expect(panel(host, 'polia')).toBeUndefined()
+    click(canvas, LEFT_LEG)
+    expect(panel(host, 'corda')).toBeUndefined()
+    click(canvas, { x: 7.5, y: 7.1 })
+    expect(panel(host, 'teto')).toBeDefined()
+
+    pressKey('Escape')
+    pressKey('z', { ctrlKey: true })
+    click(canvas, PULLEY_SPOT)
+    expect(panel(host, 'polia')).toBeDefined()
+    click(canvas, LEFT_LEG)
+    expect(panel(host, 'corda')).toBeDefined()
+  })
+
+  it('remover corpo remove as polias montadas nele, as molas presas e as cordas pelas polias; Ctrl+Z restaura tudo de uma vez', () => {
+    const { host, canvas } = setup()
+    buildAtwood(host, canvas)
+    // A spring from bloco2 to the ceiling's bottom-right corner (8, 6.75).
+    tool(host, 'mola')
+    click(canvas, B2_CLICK)
+    click(canvas, { x: 7.97, y: 6.78 })
+    const springMiddle = { x: (6.25 + 8) / 2, y: (3.2 + 6.75) / 2 }
+    pressKey('Escape')
+    click(canvas, springMiddle)
+    expect(panel(host, 'mola')).toBeDefined()
+
+    click(canvas, { x: 7.5, y: 7.1 })
+    expect(panel(host, 'teto')).toBeDefined()
+    pressKey('Delete')
+    for (const [spot, legend] of [[PULLEY_SPOT, 'polia'], [LEFT_LEG, 'corda'], [springMiddle, 'mola']] as const) {
+      click(canvas, spot)
+      expect(panel(host, legend)).toBeUndefined()
+    }
+
+    pressKey('z', { ctrlKey: true })
+    for (const [spot, legend] of [[PULLEY_SPOT, 'polia'], [LEFT_LEG, 'corda'], [springMiddle, 'mola'], [{ x: 7.5, y: 7.1 }, 'teto']] as const) {
+      click(canvas, spot)
+      expect(panel(host, legend)).toBeDefined()
+    }
+  })
+
+  it('clicar na corda seleciona; Delete remove só a corda', () => {
+    const { host, canvas } = setup()
+    buildAtwood(host, canvas)
+    pressKey('Escape')
+    expect(panel(host, 'corda')).toBeUndefined()
+    click(canvas, LEFT_LEG)
+    expect(panel(host, 'corda')).toBeDefined()
+
+    pressKey('Delete')
+    expect(panel(host, 'corda')).toBeUndefined()
+    click(canvas, LEFT_LEG)
+    expect(panel(host, 'corda')).toBeUndefined()
+    click(canvas, PULLEY_SPOT)
+    expect(panel(host, 'polia')).toBeDefined()
+  })
+
+  async function playAndRead(host: HTMLElement, until: string): Promise<string> {
+    await act(async () => {
+      findButton(host, '▶ reproduzir')?.click()
+    })
+    const readout = () => panel(host, 'leitura — corda')?.textContent ?? ''
+    for (let i = 0; i < 200 && !readout().includes(until); i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 5))
+      })
+    }
+    return readout()
+  }
+
+  it('durante o playback, com a corda selecionada, a leitura mostra T, e "frouxa" quando a corda afrouxa', async () => {
+    let state = { id: 'corda', kind: 'rope' as const, tension: 13.08, slack: false, segments: [13.08, 13.08] }
+    vi.mocked(createSimulator).mockImplementation(async () => ({ ...makeFakeSimulator(), readConstraints: () => [state] }))
+    const { host, canvas } = setup()
+    await settleSimImport()
+    buildAtwood(host, canvas)
+
+    const taut = await playAndRead(host, 'T:')
+    expect(taut).toContain('T: 13.08 N')
+    expect(taut).not.toContain('T₁')
+    expect(taut).not.toContain('frouxa')
+
+    state = { ...state, tension: 0, slack: true, segments: [0, 0] }
+    const slack = await playAndRead(host, 'frouxa')
+    expect(slack).toContain('T: 0.00 N')
+    expect(slack).toContain('frouxa')
+  }, 10000)
+
+  it('com polia de massa no caminho, a leitura mostra T₁, T₂ por segmento', async () => {
+    vi.mocked(createSimulator).mockImplementation(async () => ({
+      ...makeFakeSimulator(),
+      readConstraints: () => [{ id: 'corda', kind: 'rope' as const, tension: 13, slack: false, segments: [12, 13] }],
+    }))
+    const { host, canvas } = setup()
+    await settleSimImport()
+    buildAtwood(host, canvas)
+    click(canvas, PULLEY_SPOT)
+    act(() => setNativeInputValue(inputForLabel(panel(host, 'polia')!, 'massa (kg)'), 2))
+    click(canvas, LEFT_LEG)
+
+    const readout = await playAndRead(host, 'T₂')
+    expect(readout).toContain('T₁: 12.00 N')
+    expect(readout).toContain('T₂: 13.00 N')
+    expect(readout).not.toContain('T: ')
+  }, 10000)
+})
+
 describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
   // Each scene gets its own extra body (`marca-<id>`) so a test can tell
   // which scene's *content* loaded into the canvas, not just which id the
