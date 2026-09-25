@@ -1,5 +1,5 @@
 # CLEAN-06: Seleção como um valor só e geometria de corpo compartilhada entre os módulos do editor
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-28
 Review: agent
@@ -60,3 +60,25 @@ Bloqueado pelo PHY-28 porque ele mexe nos mesmos lugares (seleção, `hitTest`, 
   - `deleteSelected` com o despacho trocado → 3 vermelhos (Delete só a mola, só a corda, remover corpo).
   - Verdes, equivalentes na prática: `selectedOf` ignorando `kind` (ids são únicos entre corpos, vínculos e polias, então um id do tipo errado não acha nada); e o `setSelection(null)` do drop na lixeira removido — o corpo sai do doc, então a seleção órfã não aparece; só um Ctrl+Z logo depois o traria de volta já selecionado. Nenhum teste novo: o código já cumpre o critério 1, um teste agora nasceria verde e não vermelho, e o critério 6 fixa a contagem. Se o stage 3 quiser o pino, é um teste de lixeira + Ctrl+Z no espelho do pointer.
   - Notas do review do PHY-28 (a)–(e) não dobradas no corpo: continuam notas, não feitas.
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Review (stage 3) sobre `c1dba73` + fix próprio `eac63c8`, base `sweatshop/2026-09-24-1853`, dois eixos (Standards + Spec) em sub-agentes. Diff só nos Primary files; o commit de código não toca teste; nenhum teste novo, como o ticket previa.
+
+- Critério 1 ✅ Nenhum `setSelected*Id` sobrevive; o drop na lixeira chama `setSelection(null)` seja qual for a seleção. `deleteSelected` despacha por `kind`, equivalente porque só há uma seleção.
+- Critério 2 ✅ Um `Math.tan` sobre `alpha` em `src/editor` + `src/render` (`handles.triangleHeight`). `simulator`, `codec` e `presets` mantêm o seu, como o proxy decidiu.
+- Critério 3 ✅ Um `lengthSquared` (`contactSnap.closestPoint`, que ganhou a guarda de segmento nulo do `hitTest`), um `bestD` (`handles.nearestWithin`), um conjunto de vértices (`contactSnap.localVertices`). `candidates()` do `anchorSnap` conferido à mão: os mesmos 9 pontos do retângulo e 7 do triângulo; só a ordem dos pontos médios do retângulo mudou, o que só importa num empate exato de distância (medida zero).
+- Critério 4 ✅ `drawRopes` não existe em `src/`.
+- Critério 5 ❌→✅ (fix do stage 3, `eac63c8`) `setTool` embrulhado virou `useState` e `toolRef` sincroniza no `useEffect`, mas o checkbox de vetores ainda escrevia `showGlobalRef.current` e chamava `repaint()` à mão, e o efeito `[doc, showGlobal]` já faz os dois. Handler virou `setShowGlobal` puro: dentro dos Primary files, sem teste novo. `screenCircle` substitui os dois blocos save/arc/restore na mesma ordem de chamadas.
+- Critério 6 ✅ Gate antes e depois do fix: 30 arquivos / 642 testes; lint, typecheck e build verdes.
+- `toolRef` sincronizando no efeito em vez do setter: todos os leitores estão em handlers de eventos discretos, e o React descarrega efeitos passivos antes do próximo evento discreto. Sem mudança observável; o mutate-verify do stage 2 (`toolRef.current = tool` removido → 6+ vermelhos) fixa o efeito.
+- Proxy decided (stage 2): `triangleHeight` em `src/editor/handles.ts`, não no `scene`. Aceito no critério 2 como escrito; o efeito colateral (`src/render/draw.ts` importa de `src/editor`, e `handles` importa de `src/render/transform`: dependência bidirecional entre diretórios, com `handles.localToWorld` duplicando `scene.bodyPointToWorld`) vai para o CLEAN-07.
+- Proxy decided (stage 2): comentários de doc de `updateSpring`/`removeConstraint` não feitos (`doc.ts` fora dos Primary files). Nenhum critério os nomeia; vai para o CLEAN-07.
+- Fora do contrato, em CLEAN-07: `drawScene` ainda recebe três ids derivados da união; as notas (a)–(e) do review do PHY-28.
+- Juízos (smells de baseline), sem ação: `screenCircle` alterna fill/stroke pela presença de `strokeWidth` (dois chamadores, tolerável); `distanceToSegment` e `worldToLocal` do `hitTest` são wrappers de uma linha.
+
+Gate (`npm test && npm run lint && npm run typecheck && npm run build`, sobre `eac63c8`): Test Files 30 passed (30), Tests 642 passed (642); eslint limpo; tsc limpo; vite build ok.
+
+Merge: `0076dc1` (`--no-ff`) na `sweatshop/2026-09-24-1853`. Ledger: esta data, CLEAN-06.
