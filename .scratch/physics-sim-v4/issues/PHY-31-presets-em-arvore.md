@@ -1,5 +1,5 @@
 # PHY-31: Presets em árvore e os oito presets de vínculo
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-24, PHY-26
 Review: agent
@@ -68,3 +68,21 @@ Mutation record, `App.test.ts` › `galeria em árvore (PHY-31)` (criterion 8). 
 2. **Declared order ignored.** `galleryGroups` loses `.sort((a, b) => a.position - b.position)`, so Princípios comes out in array order (cunha first). Red: `agrupa por nó…` — `AssertionError: expected [ { …(2) }, … ] to strictly equal [ { …(2) }, … ]`.
 3. **Scene named in pt-BR whatever the language.** `createPresetScene` takes the name from `getCatalog('pt-BR')` instead of `t()`. Red: `usar um preset…` — `AssertionError: expected 'Máquina de Atwood' to be 'Atwood machine'`.
 4. **Node headings not translated.** The gallery heading reads the labels from `getCatalog('pt-BR')` instead of `t()`. Red: `usar um preset…` — `AssertionError: expected 'Mecânica / Dinâmica / Princípios' to be 'Mechanics / Dynamics / Principles'`.
+
+#### Resolution (2026-09-25)
+
+Verdict: Approve
+
+Merged into `sweatshop/2026-09-24-1853` as `0301265` (no-ff). Review on the branch's three commits plus one review fix.
+
+**Rules.** Test-only commit `6fa935d` touches only the three test files and the ticket; code commit `5503cc9` touches no test file; every file is in Primary files. No proxy decision on this ticket.
+
+**Criteria.** 1–9 all met. 1, 2: `presets.test.ts` holds the ticket's table against `PRESETS` and `TREE`, positions unique per topic, `TREE` only nodes in use. 3: `Preset` has no `name`/`description`; `preset.*` and `tree.*` keys present in both catalogs (`i18n.test.ts`). 4: `galleryGroups()` in book order (princípios, atrito, resultantes, campo-uniforme, MHS — gravitação skipped for having no preset), presets by `position`, empty nodes dropped. 5: 12 presets parse, round-trip and step 2 s without warnings. 6: tolerances match the physics tickets — Atwood 2 %/1 s, mesa+pendurado 5 % (PHY-23); polia móvel 2 %, volta completa T > 0 and L ± 1 mm, pêndulo simples 2 %/3 oscilações (PHY-24); mola horizontal período e amplitude 2 %, vertical mg/k e período 2 %, amortecida 5 % (PHY-26). 7: `createPresetScene` names the scene through `t()`. 8: four mutations recorded above with red output. 9: gate green.
+
+**Red-green.** Test commit `6fa935d` run over the base code (worktree): 16 tests fail (`TREE` undefined, four presets instead of twelve, `name` still on the preset, gallery groups `[]`) and `i18n.test.ts` fails at import. On `5503cc9`: `npx vitest run src/presets src/i18n src/App.test.ts` 111/111.
+
+**Review fix** (`2d595d9`, inside Primary files, no new test): the gallery group's React `key` was the translated label, so a language switch remounted the groups; it is now the topic's `tree.*` key.
+
+**Notes, not findings.** Simple pendulum uses L = 2 m (family uses 1 m), disclosed by stage 2, period still checked at 2 %. `createPresetScene` reads the ambient language through `t()` while `overlay.ts` takes `lang` explicitly — a convention question for a CLEAN ticket if it spreads. `Preset.position` sits beside body `position: {x, y}` literals; `order` would read better. The test's private `sameNode` and inline `DYN`/`MHS` table are an independent oracle, not duplication.
+
+**Gate** (after the fix): `npm test` 30 files, 703 tests passed; `npm run lint` clean; `npm run typecheck` clean; `npm run build` ok, only the Rapier chunk-size warning PHY-32 documents.
