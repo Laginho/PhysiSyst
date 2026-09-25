@@ -1060,7 +1060,7 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
   const CORNER_PULLEY_SPOT = { x: 4.05, y: 6.6 }
   const LEFT_LEG = { x: 5.75, y: 5 }
 
-  function seedAtwood(): void {
+  function seedAtwood(pulleys?: Scene['pulleys']): void {
     const storage = window.localStorage as unknown as PersistStorage
     const block = (id: string, x: number, mass: number) =>
       ({ id, shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass, position: { x, y: 3 }, rotation: 0 }) as const
@@ -1074,13 +1074,14 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
       ],
       forces: [],
       contacts: [],
+      ...(pulleys && { pulleys }),
     }
     saveIndex(storage, [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
     saveScene(storage, 'cena-1', scene)
     saveCurrentSceneId(storage, 'cena-1')
   }
 
-  const setup = () => setupWith(seedAtwood)
+  const setup = () => setupWith(() => seedAtwood())
 
   function tool(host: HTMLElement, name: 'polia' | 'corda' | 'mola'): void {
     act(() => findButton(host, name)?.click())
@@ -1121,6 +1122,20 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     pressKey('z', { ctrlKey: true })
     pressKey('z', { ctrlKey: true })
     expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('mola nova seleciona a mola mesmo com uma polia de mesmo id na cena (ids são por lista)', () => {
+    // Hand-edited JSON: a pulley named 'mola'. freshId only looks at constraints,
+    // so the new spring is born 'mola' too — both panels would read 'mola'.
+    const { host, canvas } = setupWith(() =>
+      seedAtwood([{ id: 'mola', bodyId: 'teto', anchor: { x: 0, y: -0.25 }, radius: 0.25 }]),
+    )
+    tool(host, 'mola')
+    click(canvas, B1_CLICK)
+    click(canvas, B2_CLICK)
+
+    expect(panel(host, 'mola')?.textContent).toContain('k (N/m)')
+    expect(panel(host, 'mola')?.textContent).not.toContain('raio (m)')
   })
 
   it('Corda: A → polias → B cria uma corda com via na ordem clicada e a seleciona', () => {

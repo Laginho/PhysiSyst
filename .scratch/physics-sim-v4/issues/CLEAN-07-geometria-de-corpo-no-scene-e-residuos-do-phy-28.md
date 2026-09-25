@@ -1,5 +1,5 @@
 # CLEAN-07: Geometria de corpo no `scene` (dissolve `render → editor`) e resíduos de forma do PHY-28
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent
