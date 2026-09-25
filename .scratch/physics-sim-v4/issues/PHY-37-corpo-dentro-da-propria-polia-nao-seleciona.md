@@ -1,5 +1,5 @@
 # PHY-37: Corpo coberto pela polia montada nele não pode ser selecionado
-Stage: to-review
+Stage: done
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -42,3 +42,27 @@ Um corpo que tem uma polia montada continua selecionável pelo canvas, qualquer 
   - "o eixo da polia continua selecionando a polia": mutation M1, `onPointerDown` passing axle radius `0`: `expected undefined to be defined` on `panel(host, 'movel')`, 1 failed | 2 passed. The first version clicked exactly on the axle (d = 0) and stayed green under M1, hollow; commit 2 moves the click 3 px off the axle.
   - "na ferramenta Corda, o eixo da polia entra na corda…": mutation M2, `onToolClick` passing axle radius `0`: `expected undefined to be defined` on `panel(host, 'corda-2')`, 1 failed | 2 passed.
   - Gate after restoring: 30 files, 712 tests passed; lint, typecheck, build clean.
+
+#### Resolution (2026-09-25)
+
+Verdict: Approve
+
+Findings:
+
+- Critério 1 ✅ — `pulleyAtPoint` recebe `axleTolerance` e, dentro do disco, só devolve a polia se `d <= axleTolerance` ou o ponto está fora do corpo de montagem (`!pointInBody(mount, w)`). Os dois callers em `App.tsx` (`onPointerDown` e o ramo Corda de `onToolClick`) passam `AXLE_HIT_RADIUS_PX / camera.pixelsPerMeter`. O teste clica no canto da `carga` do preset "Polia móvel" e lê o painel da `carga`, não o da `movel`.
+- Critério 2 ✅ — clique 3 px ao lado do eixo seleciona a `movel`; na ferramenta Corda o mesmo clique entra na `via` e a corda `corda-2` nasce. Fora do corpo de montagem o disco inteiro continua pegando: mutando `!pointInBody(mount, w)` para `false`, 8 testes do PHY-28 caem (`Polia: um clique num corpo monta a polia…`, `Corda: A → polias → B…`, …), 8 failed | 704 passed. O ramo já está pinado pelos testes existentes.
+- Critério 3 ✅ — o ledger de mutate-verify do stage 2 (M1, M2, M3 acima) está completo, uma mutação e um vermelho por teste; o registo do primeiro teste do eixo ter sido oco (d = 0) e corrigido no commit 2 é exatamente o que o `AGENTS.md` pede.
+- Critério 4 ✅ — gate verde (abaixo).
+- Test-first ✅ — `de18db5` toca `src/App.test.ts` + ticket; `deb76aa` só `src/App.test.ts`; `311871c` toca `src/App.tsx`, `src/editor/hitTest.ts` + ticket, nenhum teste. Tudo dentro dos Primary files. O fix está na função partilhada por todos os callers, não em cada caller.
+- Regressão: nenhuma. Dois efeitos da regra literal, ambos o que o ticket pede: (a) um corpo empilhado sobre o corpo de montagem, debaixo do disco e fora do eixo, ganha da polia (`bodyAtPoint` devolve o topo); (b) a `fixa` do preset perde para o `teto` na fatia do disco que entra no `teto`, sem impacto visível. Só juízo, sem ação.
+- Nota (fora dos Primary files, vai para o CLEAN-14): `axleTolerance = Infinity` como default em `pulleyAtPoint` existe só para os cinco call sites do `src/editor/hitTest.test.ts` (PHY-28) não mudarem. Um caller futuro que omita o argumento recupera em silêncio o bug do PHY-37. Tornar o parâmetro obrigatório toca `hitTest.test.ts`, fora dos Primary files.
+- Proxy decided: regra A (no corpo de montagem a polia só pega perto do eixo; fora dele, o disco inteiro); `AXLE_HIT_RADIUS_PX = 5`. Ambas as decisões estão no código e nos testes como descritas.
+- Standards: sem violações. O `Spec` sub-agent apontou "ramo fora do corpo de montagem sem teste"; verificado por mutação acima e descartado.
+
+Files: `src/editor/hitTest.ts` (`AXLE_HIT_RADIUS_PX`, `pulleyAtPoint(scene, w, axleTolerance)`), `src/App.tsx` (dois callers), `src/App.test.ts`.
+
+Red-green: com `src/App.tsx` e `src/editor/hitTest.ts` na versão do branch de sessão, `npx vitest run src/App.test.ts -t PHY-37` → 1 failed | 2 passed (`expected undefined to be defined` em `panel(host, 'carga')`). Com o fix: 3 passed.
+
+Gate: `npm test` 30 files, 712 passed; `npm run lint` limpo; `npm run typecheck` limpo; `npm run build` ok (aviso de chunk > 500 kB pré-existente).
+
+Merged into `sweatshop/2026-09-24-1853` at `b51e873`.
