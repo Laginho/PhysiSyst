@@ -15,7 +15,7 @@ import {
   type PlaybackState,
 } from './playback'
 import { DEMO_SCENE } from './scene/demo'
-import { createPresetScene, PRESETS } from './presets'
+import { createPresetScene, galleryGroups, nodeLabelKeys, PRESETS } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
 import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
@@ -631,7 +631,7 @@ export default function App() {
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [showGallery, setShowGallery] = useState(() => shouldShowGallery(storage))
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(PRESETS[0]?.id ?? null)
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(galleryGroups()[0]?.presets[0]?.id ?? null)
   const [lang, setLangState] = useState<Lang>(() => getLang(storage))
   const lastSavedRef = useRef<Map<string, string>>(new Map([[currentId, JSON.stringify(serialize(doc))]]))
   /**
@@ -1763,16 +1763,24 @@ export default function App() {
             <fieldset style={{ width: 220 }}>
               <legend>{t('gallery.title')}</legend>
               <div style={{ display: 'grid', gap: 6 }}>
-                {PRESETS.map((p) => (
-                  <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
-                    <input type="radio" name="preset" checked={selectedPreset === p.id} onChange={() => setSelectedPreset(p.id)} />
-                    <span style={{ fontSize: 12 }}>
-                      <strong>{t(`preset.${p.id}.name`)}</strong>
-                      <br />
-                      <span style={{ color: '#555' }}>{t(`preset.${p.id}.description`)}</span>
-                    </span>
-                  </label>
-                ))}
+                {galleryGroups().map(({ node, presets }) => {
+                  const path = nodeLabelKeys(node).map((k) => t(k)).join(' / ')
+                  return (
+                    <div key={path} role="group" aria-label={path} style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{path}</div>
+                      {presets.map((p) => (
+                        <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
+                          <input type="radio" name="preset" checked={selectedPreset === p.id} onChange={() => setSelectedPreset(p.id)} />
+                          <span style={{ fontSize: 12 }}>
+                            <strong>{t(`preset.${p.id}.name`)}</strong>
+                            <br />
+                            <span style={{ color: '#555' }}>{t(`preset.${p.id}.description`)}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )
+                })}
                 <button
                   onClick={() => {
                     const preset = PRESETS.find((x) => x.id === selectedPreset)
