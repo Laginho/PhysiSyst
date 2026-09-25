@@ -1,5 +1,5 @@
 # PHY-36: Trocar de cena herda o estado simulado da cena anterior
-Stage: to-review
+Stage: done
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -40,3 +40,27 @@ Ao trocar de cena (lista, galeria, nova, duplicar, importar, excluir), o playbac
   - Removed `dispatch({ type: 'reset' })` from `switchToScene`: `expected 'leiturapassos: 1velocidade: 1.00×selecione um corpo' to contain 'passos: 0'` (the red commit fails the same way).
   - Removed `statesRef.current = null` from the reset in `dispatch` (counter still zeroes): `expected 'leiturapassos: 0velocidade: 1.00×selecione um corpo' to contain 'posição: (6.00, 3.50) m'`. The click on the document pose finds no body, so the pose/velocity assertions stand on their own.
   Gate: 30 files, 709 tests passed; lint, typecheck clean; build OK (the >500 kB chunk warning is from before this change).
+
+#### Resolution (2026-09-25)
+
+Verdict: Approve
+
+Findings:
+
+- Critério 1 ✅ — `switchToScene` aponta `docRef` para a cena nova e despacha `reset` antes de o efeito do `doc` correr: `stepsTaken` 0, pausado, `replaceScene(novo doc)` sem estado anterior, `statesRef` null, `builtDocRef` = novo doc. O efeito vê `builtDocRef === doc` e não roteia nada, logo o `carryOver` nunca corre numa troca. O teste clica na pose do documento e lê (6.00, 3.50) m a 0.00 m/s.
+- Critério 2 ✅ — os oito call sites de `switchToScene` cobrem os seis caminhos (lista, nova ×2, duplicar, excluir ×2, galeria, importar); nenhum troca de cena por outra via. O teste exercita duplicar e lista.
+- Critério 3 ✅ — as duas mutações do ticket reproduzidas nesta revisão com o mesmo vermelho: sem `dispatch({ type: 'reset' })` → 2 failed (`expected 'leiturapassos: 1…' to contain 'passos: 0'`); sem `statesRef.current = null` → 2 failed (`expected 'leiturapassos: 0…' to contain 'posição: (6.00, 3.50) m'`). A segunda mostra que as asserções de pose/velocidade não dependem do contador.
+- Critério 4 ✅ — gate verde (abaixo).
+- Test-first ✅ — `1a08c61` toca só `src/App.test.ts` + ticket; `b6be6a7` toca só `src/App.tsx` + ticket. Tudo dentro dos Primary files. A mudança de posição de `switchToScene` para baixo de `dispatch` é a única forma de o fechar sobre `dispatch` sem hoisting; o diff é movimento + 5 linhas.
+- Regressão: nenhuma. Sim ainda a arrancar: o `reset` é no-op no mundo e o boot repõe `builtDocRef`/`pendingRebuildRef` como antes. Sim não iniciado: idem. O `repaint()` síncrono do `dispatch` pinta uma frame com a seleção antiga contra o doc novo; `paint` compara por id, então no pior caso uma frame de realce num corpo homónimo, apagada pelo efeito de seleção logo a seguir.
+- Nota (sem critério, não bloqueia): se `replaceScene` lançar durante a troca, o `reset` mantém `statesRef` e o efeito do `doc` faz `carryOver` — o mesmo comportamento do botão ⟲ numa falha, que o ticket toma como modelo.
+- Proxy decided: nenhum.
+- Standards: sem violações.
+
+Files: `src/App.tsx` (`switchToScene` movido abaixo de `dispatch`; `docRef.current = scene` + `dispatch({ type: 'reset' })`), `src/App.test.ts`.
+
+Red-green: mutação 1 acima é o estado sem o fix: `npx vitest run src/App.test.ts -t PHY-36` → 2 failed. Com o fix: 2 passed.
+
+Gate: `npm test` 30 files, 709 passed; `npm run lint` limpo; `npm run typecheck` limpo; `npm run build` ok (aviso de chunk > 500 kB pré-existente).
+
+Merged into `sweatshop/2026-09-24-1853` at `9547435`.
