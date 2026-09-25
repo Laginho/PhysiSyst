@@ -7,6 +7,7 @@ Review: agent
 - Primary files:
   - `src/App.tsx` (o efeito do autosave: gravar o pendente no `pagehide`)
   - `src/App.test.ts`
+  - `src/test/browser.ts` (`reset()`: storage must be cleared after the app's pagehide flush)
 
 #### What to build
 
@@ -34,3 +35,4 @@ Ao sair da página, o autosave pendente é gravado de forma síncrona. `Debounce
 ## Comments
 
 - 2026-09-24 Aberto a partir do achado 3 que o review do PHY-23 deixou no CLEAN-01, mais amplo do que o review descreveu: não existe flush no `pagehide`, então o F5 e o fechar da aba também perdem a última edição, não só o reload do CLEAN-01.
+- 2026-09-25 Proxy decided: add `src/test/browser.ts` to Primary files and fix `reset()` in its own test-only commit before the code commit — the PHY-35 fix invalidates the harness's "clear storage after load = fresh app" assumption (navigating away now flushes the last drag), so this is a Primary-files blank, not a new seam, and it's reversible. Evidence: with the fix and without the harness change, `src/App.browser.test.ts` is 8/10 (PHY-18 "drops at the same world position…" at 1280 and 1920: `missing caixa panel`); with it, 10/10. A CDP `Storage.clearDataForOrigin` from about:blank raced the flushed write and stayed red.
