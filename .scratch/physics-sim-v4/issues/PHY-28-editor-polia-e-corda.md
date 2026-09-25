@@ -40,3 +40,5 @@ O aluno monta Atwood, polia móvel e talha à mão. **Polia**: um clique num cor
 - `src/App.test.ts`, nos espelhos: as duas ferramentas, cancelamento, seleção, Delete, undo, leitura (1, 2, 4, 5, 6). Vermelho porque as ferramentas não existem.
 
 ## Comments
+
+- 2026-09-24 (review do PHY-27, stage 3) A seleção no `App.tsx` são duas strings anuláveis (`selectedId`, `selectedSpringId`) com "uma limpa a outra" à mão em seis lugares; polia e corda vão repetir o padrão. CLEAN-06 (bloqueado por este) unifica depois; aqui, seguir o padrão do PHY-27 e limpar as outras seleções em cada ponto que seleciona, inclusive o drop na lixeira em `onPointerUp`, que hoje limpa só o corpo.
