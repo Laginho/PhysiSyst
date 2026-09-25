@@ -1,5 +1,5 @@
 # CLEAN-08: Vértices do triângulo por `localVertices` no `simulator` e no `draw`, e nome do teste do overlay
-Stage: to-review
+Stage: done
 Status: needs-triage
 Blocked by: CLEAN-07
 Review: agent
@@ -43,3 +43,16 @@ Nenhum item muda comportamento; a suíte existente prova cada um.
   - Critério 1: `grep 'body\.base, 0|\[0, 0, body|lineTo\(body\.base' src` sem resultados.
   - Critério 4: 30 arquivos / 643 testes antes e depois; gate verde (test, lint, typecheck, build).
   - Mutação (sem teste novo, só para saber o que a suíte prende): hull com `[v.y, v.x]` → 6 testes falham em `src/sim` (entre eles, em `acceptance.test.ts`: plano inclinado com atrito ×3, cunha, âncora no triângulo). O `pathBody` não tem asserção geométrica em teste nenhum (`draw.test.ts:132` só conta `lineTo`); não mutado.
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+- Critério 1 ✅ `simulator.colliderDescFor` monta o hull de `localVertices(body).flatMap(v => [v.x, v.y])`; `triangleHeight` saiu do import. Grep de vértice literal (`body.base, 0`, `[0, 0, body`, `lineTo(body.base`) em `src/` sem resultados. `editor/handles.ts:44` põe o handle `resize` em `(base, 0)` — é a âncora de um handle, não a lista de vértices; fora do recorte e sem duplicar o hull. Não abre ticket.
+- Critério 2 ✅ `draw.pathBody` percorre `localVertices(body)`: `moveTo` no índice 0, `lineTo` nos demais, `closePath` — mesma sequência de chamadas que `draw.test.ts:132` conta.
+- Critério 3 ✅ `overlay.test.ts:82` diz `bodyPointToWorld`.
+- Critério 4 ✅ 30 arquivos / 643 testes, iguais aos de antes.
+- Regra test-first ✅ `facb977` toca só `overlay.test.ts` e o ticket; `2662e6f` toca só `draw.ts` e `simulator.ts`. Nenhum commit de código toca teste. Primary files respeitados.
+- Red-green: refactor sem efeito observável, nenhum teste novo por contrato. A mutação do stage 2 (hull transposto → 6 falhas em `src/sim`) mostra que a suíte prende o hull.
+- Gate (stage 3, na branch do ticket, base da sessão sem commits à frente): `npm test` 30 passed / 643 passed; `eslint .` limpo; `tsc --noEmit` limpo; `vite build` ok (aviso de chunk > 500 kB, pré-existente).
+- Merge: `git merge --no-ff` em `sweatshop/2026-09-24-1853` → `2696ff3`.
