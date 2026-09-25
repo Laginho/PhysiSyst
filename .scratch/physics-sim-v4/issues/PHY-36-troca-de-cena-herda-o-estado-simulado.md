@@ -1,5 +1,5 @@
 # PHY-36: Trocar de cena herda o estado simulado da cena anterior
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent
