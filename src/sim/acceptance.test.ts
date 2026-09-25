@@ -1304,6 +1304,29 @@ describe('acceptance: ideal spring (PHY-26)', () => {
       }
     })
 
+    // CLEAN-12: the nodes seat with velocities between the ends', not at rest with the wall.
+    it('replaceScene without the wall in the carry, the block passing X_EQ: the chain re-seats moving with its ends, and the block follows an uninterrupted run within 1% of A', async () => {
+      const scene = horizontalScene(1, 40, X_EQ + A, undefined, 0.1)
+      const cut = await load(scene)
+      const whole = await load(scene)
+      // A quarter period in: the block at full speed, the ends parting fastest.
+      for (let i = 0; i < 15; i++) {
+        cut.step()
+        whole.step()
+      }
+      expect(Math.abs(cut.readStates().get('bloco')!.linvel.x)).toBeGreaterThan(0.5)
+      const carry = new Map(cut.readStates())
+      carry.delete('parede')
+      cut.replaceScene(parse(scene), carry)
+      let worst = 0
+      for (let i = 0; i < 120; i++) {
+        cut.step()
+        whole.step()
+        worst = Math.max(worst, Math.abs(cut.readStates().get('bloco')!.position.x - whole.readStates().get('bloco')!.position.x))
+      }
+      expect(worst).toBeLessThanOrEqual(0.01 * A)
+    })
+
     it('damped, c = 0.5 and mₛ = 0.1: the peak-to-peak decrement follows the ideal spring with the same c within 2% over 10 peaks', async () => {
       const c = 0.5
       async function peaks(ms?: number): Promise<number[]> {

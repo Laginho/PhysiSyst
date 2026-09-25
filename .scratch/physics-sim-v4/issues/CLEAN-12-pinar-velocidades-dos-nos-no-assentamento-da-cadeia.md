@@ -1,5 +1,5 @@
 # CLEAN-12: Pinar as velocidades dos nós no assentamento da cadeia (`placeChain`)
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent
