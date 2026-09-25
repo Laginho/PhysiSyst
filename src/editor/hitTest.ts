@@ -1,6 +1,15 @@
-import { bodyPointToWorld, scenePath, type Body, type Pulley, type Rope, type Scene, type Spring, type Vec2 } from '../scene'
+import {
+  bodyPointToWorld,
+  scenePath,
+  triangleHeight,
+  type Body,
+  type Pulley,
+  type Rope,
+  type Scene,
+  type Spring,
+  type Vec2,
+} from '../scene'
 import { closestPoint } from './contactSnap'
-import { triangleHeight } from './handles'
 
 /** World point -> body-LOCAL frame: inverse of translate(position)·rotate(rotation). */
 function toLocal(body: Body, w: Vec2): Vec2 {

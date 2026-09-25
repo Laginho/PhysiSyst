@@ -1,6 +1,5 @@
-import { bodyPointToWorld, type Body, type Vec2 } from '../scene'
+import { bodyPointToWorld, localVertices, type Body, type Vec2 } from '../scene'
 import type { ScreenTransform } from '../render/transform'
-import { localVertices } from './contactSnap'
 import { nearestWithin } from './handles'
 import { worldToLocal } from './hitTest'
 

@@ -1,6 +1,5 @@
-import type { Scene } from '../scene'
+import { bodyPointToWorld, type Scene } from '../scene'
 import type { BodyState, ContactPoint } from '../sim/simulator'
-import { localToWorld } from '../editor/handles'
 
 /**
  * Pure overlay vector producers. No canvas, no engine imports — inputs are
@@ -64,7 +63,7 @@ export function appliedArrows(view: Scene, pixelsPerMeter: number): OverlayArrow
   for (const f of view.forces) {
     const body = byId.get(f.bodyId)
     if (!body) continue
-    const from = localToWorld(body, f.anchor.x, f.anchor.y)
+    const from = bodyPointToWorld(body, f.anchor)
     const rad = (f.direction * Math.PI) / 180
     const lenM = vectorArrowLengthPx(f.magnitude) / pixelsPerMeter
     out.push({ from, vec: { x: lenM * Math.cos(rad), y: lenM * Math.sin(rad) }, kind: 'applied' })

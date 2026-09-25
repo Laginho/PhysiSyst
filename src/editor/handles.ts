@@ -1,4 +1,4 @@
-import type { Body, TriangleGeometry, Vec2 } from '../scene'
+import { bodyPointToWorld, triangleHeight, type Body } from '../scene'
 import { worldToScreen, type ScreenTransform } from '../render/transform'
 
 /** Visual handle size in screen px (zoom-independent by construction). */
@@ -17,21 +17,6 @@ export interface Handle {
   kind: HandleKind
   sx: number
   sy: number
-}
-
-/** A right triangle's vertical leg: base · tan(α), the inverse of `alphaFromLocal`. */
-export function triangleHeight(body: Pick<TriangleGeometry, 'base' | 'alpha'>): number {
-  return body.base * Math.tan((body.alpha * Math.PI) / 180)
-}
-
-/** Forward body transform: R(rotation)·local + position (world, y-up meters). */
-export function localToWorld(body: Body, lx: number, ly: number): Vec2 {
-  const c = Math.cos(body.rotation)
-  const s = Math.sin(body.rotation)
-  return {
-    x: body.position.x + c * lx - s * ly,
-    y: body.position.y + s * lx + c * ly,
-  }
 }
 
 interface LocalAnchor {
@@ -67,7 +52,7 @@ function localAnchors(body: Body): LocalAnchor[] {
 /** Handles for the selected body, projected into screen px (zoom-independent). */
 export function getHandles(body: Body, t: ScreenTransform): Handle[] {
   return localAnchors(body).map(({ kind, lx, ly }) => {
-    const w = localToWorld(body, lx, ly)
+    const w = bodyPointToWorld(body, { x: lx, y: ly })
     const s = worldToScreen(t, w.x, w.y)
     return { kind, sx: s.x, sy: s.y }
   })

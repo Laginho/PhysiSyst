@@ -1,3 +1,4 @@
+import { triangleHeight } from '../scene'
 import type { Scene } from '../scene/types'
 import { groundBody, loadIndex, saveIndex, saveScene, sceneKey, type SceneIndexEntry } from '../persistence'
 
@@ -21,8 +22,8 @@ function wedgeFlagship(): Scene {
   const MW = 10
   const MB = 2
   const BASE = 8
-  const H = BASE * Math.tan((ALPHA * Math.PI) / 180)
-  const F = (MW + MB) * G * Math.tan((ALPHA * Math.PI) / 180)
+  const H = triangleHeight({ base: BASE, alpha: ALPHA })
+  const F = (MW + MB) * G * (H / BASE)
   const f = slopeFrame(ALPHA)
   const D = 2.6
   const R = 0.5

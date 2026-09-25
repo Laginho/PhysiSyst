@@ -212,6 +212,31 @@ function findButton(host: HTMLElement, text: string): HTMLButtonElement | undefi
   return [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 }
 
+function click(canvas: Element, at: { x: number; y: number }): void {
+  const p = screen(at.x, at.y)
+  act(() => canvas.dispatchEvent(pointerEvent('pointerdown', p.x, p.y)))
+  act(() => canvas.dispatchEvent(pointerEvent('pointerup', p.x, p.y)))
+}
+
+function panel(host: HTMLElement, legend: string): HTMLFieldSetElement | undefined {
+  return [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === legend)
+}
+
+function field(host: HTMLElement, legend: string, label: string): number {
+  const p = panel(host, legend)
+  if (!p) throw new Error(`missing panel ${legend}`)
+  return Number(inputForLabel(p, label).value)
+}
+
+/** Seeds storage with a scene, then renders the app on it. */
+function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasElement } {
+  seed()
+  const host = renderApp()
+  const canvas = host.querySelector('canvas')
+  if (!canvas) throw new Error('missing canvas')
+  return { host, canvas }
+}
+
 // The loading overlay is the canvas's only sibling in its box — whatever it
 // renders (joke badge or error panel) sits right next to <canvas> in the DOM.
 function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
@@ -840,29 +865,7 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     saveCurrentSceneId(storage, 'cena-1')
   }
 
-  function click(canvas: Element, at: { x: number; y: number }): void {
-    const p = screen(at.x, at.y)
-    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', p.x, p.y)))
-    act(() => canvas.dispatchEvent(pointerEvent('pointerup', p.x, p.y)))
-  }
-
-  function panel(host: HTMLElement, legend: string): HTMLFieldSetElement | undefined {
-    return [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === legend)
-  }
-
-  function field(host: HTMLElement, legend: string, label: string): number {
-    const p = panel(host, legend)
-    if (!p) throw new Error(`missing panel ${legend}`)
-    return Number(inputForLabel(p, label).value)
-  }
-
-  function setup(): { host: HTMLElement; canvas: HTMLCanvasElement } {
-    seedWallAndBlock()
-    const host = renderApp()
-    const canvas = host.querySelector('canvas')
-    if (!canvas) throw new Error('missing canvas')
-    return { host, canvas }
-  }
+  const setup = () => setupWith(seedWallAndBlock)
 
   function buildSpring(host: HTMLElement, canvas: Element): void {
     act(() => findButton(host, 'mola')?.click())
@@ -1057,7 +1060,7 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
   const CORNER_PULLEY_SPOT = { x: 4.05, y: 6.6 }
   const LEFT_LEG = { x: 5.75, y: 5 }
 
-  function seedAtwood(): void {
+  function seedAtwood(pulleys?: Scene['pulleys']): void {
     const storage = window.localStorage as unknown as PersistStorage
     const block = (id: string, x: number, mass: number) =>
       ({ id, shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass, position: { x, y: 3 }, rotation: 0 }) as const
@@ -1071,35 +1074,14 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
       ],
       forces: [],
       contacts: [],
+      ...(pulleys && { pulleys }),
     }
     saveIndex(storage, [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
     saveScene(storage, 'cena-1', scene)
     saveCurrentSceneId(storage, 'cena-1')
   }
 
-  function click(canvas: Element, at: { x: number; y: number }): void {
-    const p = screen(at.x, at.y)
-    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', p.x, p.y)))
-    act(() => canvas.dispatchEvent(pointerEvent('pointerup', p.x, p.y)))
-  }
-
-  function panel(host: HTMLElement, legend: string): HTMLFieldSetElement | undefined {
-    return [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === legend)
-  }
-
-  function field(host: HTMLElement, legend: string, label: string): number {
-    const p = panel(host, legend)
-    if (!p) throw new Error(`missing panel ${legend}`)
-    return Number(inputForLabel(p, label).value)
-  }
-
-  function setup(): { host: HTMLElement; canvas: HTMLCanvasElement } {
-    seedAtwood()
-    const host = renderApp()
-    const canvas = host.querySelector('canvas')
-    if (!canvas) throw new Error('missing canvas')
-    return { host, canvas }
-  }
+  const setup = () => setupWith(() => seedAtwood())
 
   function tool(host: HTMLElement, name: 'polia' | 'corda' | 'mola'): void {
     act(() => findButton(host, name)?.click())
@@ -1140,6 +1122,20 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     pressKey('z', { ctrlKey: true })
     pressKey('z', { ctrlKey: true })
     expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('mola nova seleciona a mola mesmo com uma polia de mesmo id na cena (ids são por lista)', () => {
+    // Hand-edited JSON: a pulley named 'mola'. freshId only looks at constraints,
+    // so the new spring is born 'mola' too — both panels would read 'mola'.
+    const { host, canvas } = setupWith(() =>
+      seedAtwood([{ id: 'mola', bodyId: 'teto', anchor: { x: 0, y: -0.25 }, radius: 0.25 }]),
+    )
+    tool(host, 'mola')
+    click(canvas, B1_CLICK)
+    click(canvas, B2_CLICK)
+
+    expect(panel(host, 'mola')?.textContent).toContain('k (N/m)')
+    expect(panel(host, 'mola')?.textContent).not.toContain('raio (m)')
   })
 
   it('Corda: A → polias → B cria uma corda com via na ordem clicada e a seleciona', () => {

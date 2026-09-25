@@ -1,4 +1,4 @@
-import type { Body, Rope, Scene, Vec2 } from './types'
+import type { Body, Rope, Scene, TriangleGeometry, Vec2 } from './types'
 
 export interface RopeSegment {
   from: Vec2
@@ -91,6 +91,32 @@ function tangent(p: Node, q: Node): RopeSegment {
   return {
     from: { x: p.center.x - p.rho * nx, y: p.center.y - p.rho * ny },
     to: { x: q.center.x - q.rho * nx, y: q.center.y - q.rho * ny },
+  }
+}
+
+/** A right triangle's vertical leg: base · tan(α). */
+export function triangleHeight(body: Pick<TriangleGeometry, 'base' | 'alpha'>): number {
+  return body.base * Math.tan((body.alpha * Math.PI) / 180)
+}
+
+/** A body's polygon vertices in its local, origin-relative frame, in order around the edge. A circle has none. */
+export function localVertices(body: Body): Vec2[] {
+  switch (body.shape) {
+    case 'rectangle':
+      return [
+        { x: -body.width / 2, y: -body.height / 2 },
+        { x: body.width / 2, y: -body.height / 2 },
+        { x: body.width / 2, y: body.height / 2 },
+        { x: -body.width / 2, y: body.height / 2 },
+      ]
+    case 'triangle':
+      return [
+        { x: 0, y: 0 },
+        { x: body.base, y: 0 },
+        { x: body.base, y: triangleHeight(body) },
+      ]
+    case 'circle':
+      return []
   }
 }
 
