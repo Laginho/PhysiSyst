@@ -1,5 +1,5 @@
 # CLEAN-07: Geometria de corpo no `scene` (dissolve `render → editor`) e resíduos de forma do PHY-28
-Stage: to-review
+Stage: done
 Status: needs-triage
 Blocked by: none
 Review: agent
@@ -32,7 +32,7 @@ Nenhum item muda comportamento; a suíte existente prova cada um.
 2. `updateSpring` e `removeConstraint` têm comentário de doc
 3. `drawScene` recebe uma seleção só (a união de `App.tsx`, exportada de onde couber)
 4. O traço de seleção de `draw.ts` existe uma vez
-5. `tool.kind` lido em dois lugares só no `App.tsx` — `onToolClick` (comportamento) e `toolHint` (dica); `finishTool` sem o parâmetro `selects` ❌ review 2026-09-24: regressão — `finishTool` decide `pulley` por `res.doc.pulleys.some((p) => p.id === res.newId)`, mas `freshId` escopa ids por lista (`doc.ts:34`, e o codec só rejeita duplicata dentro de cada lista), então uma cena com uma polia de id `mola` ou `corda` (JSON editado à mão) faz a mola/corda nova nascer selecionada como polia: legenda e Delete miram a polia. Antes do diff o tipo vinha do chamador e isso não acontecia.
+5. `tool.kind` lido em dois lugares só no `App.tsx` — `onToolClick` (comportamento) e `toolHint` (dica); `finishTool` sem o parâmetro `selects` ❌→✅ (re-review 2026-09-24, fix `5963d26`) review 2026-09-24: regressão — `finishTool` decide `pulley` por `res.doc.pulleys.some((p) => p.id === res.newId)`, mas `freshId` escopa ids por lista (`doc.ts:34`, e o codec só rejeita duplicata dentro de cada lista), então uma cena com uma polia de id `mola` ou `corda` (JSON editado à mão) faz a mola/corda nova nascer selecionada como polia: legenda e Delete miram a polia. Antes do diff o tipo vinha do chamador e isso não acontecia.
 6. A legenda da leitura avalia a seleção uma vez; nenhum `'a' in` sobre `Tool`
 7. Os helpers do bloco PHY-28 do `App.test.ts` são os do PHY-27, parametrizados pela semente
 8. `npm test` com os mesmos números de antes; gate verde
@@ -86,3 +86,16 @@ Review (stage 3) sobre `0f74823` + `0c3ea4b`, base `sweatshop/2026-09-24-1853`, 
 - Fix em `App.tsx` `finishTool`: o tipo vem de a lista de polias ter crescido (`res.doc.pulleys.length > docRef.current.pulleys.length`, lido antes do `commitDoc`), a sugestão do review. Mantém a decisão do proxy (tipo derivado do resultado, não da ferramenta).
 - Mutate-verify (seam DOM): `>` → `>=` (todo resultado vira polia) → 13 vermelhos em `App.test.ts`, entre eles o teste novo com a mesma saída acima; revertido → 54/54.
 - Gate: `npm test` 643/643 (642 do review + o teste novo; o critério 8 falava da contagem do refactor, o teste é do reopen), lint, typecheck e build verdes.
+
+#### Resolution (2026-09-24)
+
+Verdict: Approve
+
+Re-review (stage 3) sobre `e142b72` + `5963d26`, diff desde o review anterior (`0c3ea4b`), base `sweatshop/2026-09-24-1853`, dois eixos (Standards + Spec) em sub-agentes. Só o critério 5 estava aberto; os outros sete foram lidos no primeiro passo e o diff do reopen não toca o que eles cobrem. Regra test-first cumprida: `e142b72` toca só `App.test.ts` + ticket; `5963d26` toca só `App.tsx` + ticket.
+
+- Critério 5 ❌→✅ `finishTool` decide `pulley` por `res.doc.pulleys.length > docRef.current.pulleys.length`, calculado antes do `commitDoc`. Conferido: os dois chamadores (`App.tsx:1154`, `:1163`) constroem o resultado de `docRef.current`, nada assíncrono entre a chamada e a comparação; só `addPulley` mexe em `pulleys`, e acrescenta exatamente uma (`doc.ts:230-330`); `freshId` escopa por lista (`doc.ts:34`). A colisão do lado da corda (polia de id `corda`) cai pelo mesmo `>`; sem teste próprio, e o reopen só pediu o caso da mola. `tool.kind` lido em `toolHint` (linhas 120–121) e `onToolClick` (1142, 1153, 1162, 1163) e em mais nenhum lugar; `selects` não existe no arquivo.
+- Red-green (rerodado pelo review): teste novo sobre `App.tsx` de `0c3ea4b` → `1 failed | 53 skipped`, `expected 'molaraio (m)massa (kg)excluir' to contain 'k (N/m)'`; sobre HEAD → 54/54. Mutação registrada `>` → `>=` rerodada → `13 failed | 41 passed`, o teste novo entre eles com a mesma saída; revertida, árvore limpa.
+- Critério 8 ✅ Gate sobre `5963d26`: Test Files 30 passed (30), Tests 643 passed (643) (642 do refactor + o teste do reopen); eslint limpo; tsc limpo; vite build ok.
+- Proxy decided (stage 2, critério 5): `onToolClick` + `toolHint` como os dois despachos, `finishTool(res)` deriva o tipo do resultado — mantido pelo fix.
+- Juízo (Standards, sem ação): `MutationResult.newId` é uma string nua, e `finishTool` reconstrói o tipo comparando os dois docs quando `addPulley`/`addSpring`/`addRope` já sabem o que criaram; devolver o tipo com o id seria mais direto, mas alarga `doc.ts` e seus testes — fora do reopen. O `pulleys?` opcional em `seedAtwood` tem um chamador; reaproveitar a semente vence copiá-la.
+- Merge `--no-ff` na sessão: `dff58cb`.
