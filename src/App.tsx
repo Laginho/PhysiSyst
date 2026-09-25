@@ -686,25 +686,6 @@ export default function App() {
       else setSceneIndex(loadIndex(storage))
     })
   }
-  const switchToScene = useCallback(
-    (id: string) => {
-      saverRef.current?.flush()
-      const { scene, warning } = loadSceneOrBlank(storage, id)
-      if (warning) setStorageWarning(warning)
-      lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
-      setSceneIndex(loadIndex(storage))
-      setCurrentId(id)
-      saveCurrentSceneId(storage, id)
-      setDoc(scene)
-      setSelection(null)
-      setImportError(null)
-      // Switching/importing/creating/deleting a scene starts a fresh document
-      // identity — undo history from the PREVIOUS scene makes no sense here.
-      setHistory(clearHistory())
-    },
-    [storage],
-  )
-
   /**
    * Every doc mutation that should be one undo step routes through here: it
    * snapshots the doc as it stood BEFORE the edit onto the history stack, then
@@ -984,6 +965,30 @@ export default function App() {
       if (t.steps > 0) runSteps(t.steps)
     },
     [repaint, runSteps],
+  )
+
+  const switchToScene = useCallback(
+    (id: string) => {
+      saverRef.current?.flush()
+      const { scene, warning } = loadSceneOrBlank(storage, id)
+      if (warning) setStorageWarning(warning)
+      lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
+      setSceneIndex(loadIndex(storage))
+      setCurrentId(id)
+      saveCurrentSceneId(storage, id)
+      setDoc(scene)
+      setSelection(null)
+      setImportError(null)
+      // Switching/importing/creating/deleting a scene starts a fresh document
+      // identity — undo history from the PREVIOUS scene makes no sense here.
+      setHistory(clearHistory())
+      // Nor does its playback: carry-over would keep the state of every body
+      // sharing an id and pose with the new scene (PHY-36). Reset against the
+      // new doc now, so the doc effect finds the world already built from it.
+      docRef.current = scene
+      dispatch({ type: 'reset' })
+    },
+    [storage, dispatch],
   )
 
   /**
