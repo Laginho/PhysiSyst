@@ -7,6 +7,9 @@ import { bodyPointToWorld, type AppliedForce, type Body, type ConstraintEnd, typ
  * validation (finiteness, positivity, soft warnings) stays the codec's job at
  * the import/export/save boundary; the UI's NumField supplies finite values by
  * construction. Do not scatter per-field runtime checks through the editor.
+ * One recorded exception (PHY-27, proxy decision on criterion 3): the spring
+ * inspector refuses an edit the codec would reject (k ≤ 0, x₀ ≤ 0, c < 0)
+ * instead of clamping, because a clamp would change the physics silently.
  */
 
 /**

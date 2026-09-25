@@ -793,6 +793,8 @@ export default function App() {
         const sim = pendingRebuildRef.current ? null : simRef.current
         const s = sim?.readConstraints().find((c) => c.id === springSel)
         setSpringReadout(s?.kind === 'spring' ? { force: s.force.a, dx: s.dx } : null)
+      } else {
+        setSpringReadout(null)
       }
       const sel = selectedIdRef.current
       if (!sel) {
