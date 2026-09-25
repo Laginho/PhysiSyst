@@ -1,5 +1,5 @@
 # CLEAN-11: Sobras do CLEAN-10: `x` da mola em `springAt`, velocidades em `placeChain`, subscrito do painel
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent

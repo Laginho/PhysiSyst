@@ -12,6 +12,7 @@ import {
   elasticArrows,
   initialVelocityArrows,
   normalArrows,
+  numberedSymbol,
   tensionArrows,
   vectorLabels,
   weightArrows,
@@ -455,6 +456,13 @@ describe('elasticArrows', () => {
   it('ropes and springs with no reading are ignored', () => {
     const scene: Scene = { ...sceneWithBodies([block('a', 0, 0), block('b', 0, 2)]), constraints: [spring('s', 'a', 'b'), rope('r', 'a', 'b')] }
     expect(elasticArrows(scene, [ropeState('r', [3])], PPM)).toEqual([])
+  })
+})
+
+describe('numberedSymbol (CLEAN-11)', () => {
+  it('a symbol with a subscript takes ,n; a bare one takes _n', () => {
+    expect(numberedSymbol('F_el', 2)).toBe('F_el,2')
+    expect(numberedSymbol('T', 2)).toBe('T_2')
   })
 })
 
