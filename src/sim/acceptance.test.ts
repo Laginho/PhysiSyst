@@ -961,6 +961,15 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     return out
   }
 
+  /** Tick indices of the samples' positive peaks. */
+  function peakTicks(samples: readonly number[]): number[] {
+    const out: number[] = []
+    for (let i = 1; i < samples.length - 1; i++) {
+      if (samples[i]! > 0 && samples[i]! >= samples[i - 1]! && samples[i]! > samples[i + 1]!) out.push(i)
+    }
+    return out
+  }
+
   it.each([
     { m: 1, k: 40 },
     { m: 2, k: 50 },
@@ -1018,10 +1027,7 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     const damped = 2 * Math.PI / Math.sqrt(k / m - (c / (2 * m)) ** 2)
     const sim = await load(horizontalScene(m, k, X_EQ + A, c))
     const d = run(sim, Math.ceil((5.5 * damped) / TIMESTEP), () => sim.readStates().get('bloco')!.position.x - X_EQ)
-    const peaks: Array<{ t: number; value: number }> = []
-    for (let i = 1; i < d.length - 1; i++) {
-      if (d[i]! > 0 && d[i]! >= d[i - 1]! && d[i]! > d[i + 1]!) peaks.push({ t: i * TIMESTEP, value: d[i]! })
-    }
+    const peaks = peakTicks(d).map((i) => ({ t: i * TIMESTEP, value: d[i]! }))
     expect(peaks.length).toBeGreaterThanOrEqual(5)
     for (const { t, value } of peaks) {
       const envelope = A * Math.exp((-c * t) / (2 * m))
@@ -1303,8 +1309,7 @@ describe('acceptance: ideal spring (PHY-26)', () => {
       async function peaks(ms?: number): Promise<number[]> {
         const sim = await load(horizontalScene(1, 40, X_EQ + A, c, ms))
         const d = run(sim, Math.ceil(12 / TIMESTEP), () => sim.readStates().get('bloco')!.position.x - X_EQ)
-        const out: number[] = []
-        for (let i = 1; i < d.length - 1; i++) if (d[i]! > 0 && d[i]! >= d[i - 1]! && d[i]! > d[i + 1]!) out.push(d[i]!)
+        const out = peakTicks(d).map((i) => d[i]!)
         expect(out.length).toBeGreaterThanOrEqual(10)
         return out.slice(0, 10)
       }

@@ -1,5 +1,5 @@
 # CLEAN-10: Sobras da cadeia da mola com massa: rótulos do painel, duplicações e a regra de carry no ADR
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: none
 Review: agent
