@@ -1,5 +1,5 @@
 # CLEAN-08: Vértices do triângulo por `localVertices` no `simulator` e no `draw`, e nome do teste do overlay
-Stage: to-implement
+Stage: implementing
 Status: needs-triage
 Blocked by: CLEAN-07
 Review: agent
