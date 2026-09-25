@@ -1494,7 +1494,8 @@ describe('corpo coberto pela polia montada nele (PHY-37)', () => {
   // Preset "Polia móvel": pulley `movel` r 0.25 on the CM of `carga`
   // (0.3 × 0.3 at (6, 2.5)), so the disk covers the whole load.
   const CARGA_CORNER = { x: 6.14, y: 2.64 }
-  const MOVEL_AXLE = { x: 6, y: 2.5 }
+  // 3 px beside the axle at 60 px/m: on the drawn dot, never exactly on the axle.
+  const MOVEL_AXLE = { x: 6.05, y: 2.5 }
   const setup = () =>
     setupWith(() => {
       const storage = window.localStorage as unknown as PersistStorage
