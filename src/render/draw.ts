@@ -180,6 +180,7 @@ export function drawScene(
   height: number,
   style: DrawStyle = DEFAULT_STYLE,
   selectedId?: string | null,
+  selectedConstraintId?: string | null,
 ): void {
   const t = makeTransform(camera, width, height)
   const labels = massLabels(scene)
@@ -237,7 +238,7 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style)
+  drawRopes(ctx, scene, t, camera.pixelsPerMeter, style, selectedConstraintId)
   ctx.restore()
 }
 
@@ -247,7 +248,14 @@ export function drawScene(
  * Drawn in world meters under one y-flipped transform, so canvas arc angles
  * are the path's own angles.
  */
-function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransform, ppm: number, style: DrawStyle): void {
+function drawRopes(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  t: ScreenTransform,
+  ppm: number,
+  style: DrawStyle,
+  selectedConstraintId?: string | null,
+): void {
   const pulleys = scene.pulleys ?? []
   const constraints = scene.constraints ?? []
   if (pulleys.length === 0 && constraints.length === 0) return
@@ -276,7 +284,16 @@ function drawRopes(ctx: CanvasRenderingContext2D, scene: Scene, t: ScreenTransfo
     if (constraint.kind === 'spring') {
       const a = bodies.get(constraint.a.bodyId)
       const b = bodies.get(constraint.b.bodyId)
-      if (a && b) drawSpring(ctx, bodyPointToWorld(a, constraint.a.anchor), bodyPointToWorld(b, constraint.b.anchor), ppm)
+      if (!a || !b) continue
+      // Selected spring (PHY-27): the same bright stroke as a selected body.
+      const selected = constraint.id === selectedConstraintId
+      ctx.save()
+      if (selected) {
+        ctx.lineWidth = 3 / ppm
+        ctx.strokeStyle = '#ff8c00'
+      }
+      drawSpring(ctx, bodyPointToWorld(a, constraint.a.anchor), bodyPointToWorld(b, constraint.b.anchor), ppm)
+      ctx.restore()
       continue
     }
     const path = scenePath(scene, constraint)

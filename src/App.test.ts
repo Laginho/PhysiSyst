@@ -813,6 +813,237 @@ describe('loading screen (PHY-16)', () => {
   })
 })
 
+describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', () => {
+  // Wall face midpoint (1.5, 2) and block center (5, 0.5): the relaxed x₀
+  // between the snapped anchors is √(3.5² + 1.5²). Raw clicks near them are
+  // √(3.6² + 1.51²) apart, so x₀ alone tells snapped from unsnapped.
+  const SNAPPED_X0 = Math.hypot(3.5, 1.5)
+  const WALL_CLICK = { x: 1.45, y: 2.03 }
+  const BLOCK_CLICK = { x: 5.05, y: 0.52 }
+  const SPRING_MIDDLE = { x: 3.25, y: 1.25 }
+
+  function seedWallAndBlock(): void {
+    const storage = window.localStorage as unknown as PersistStorage
+    const scene: Scene = {
+      version: 1,
+      constants: { g: 9.81 },
+      bodies: [
+        { id: 'chao', shape: 'rectangle', width: 14, height: 1, fixed: true, mass: 0, position: { x: 7, y: -0.5 }, rotation: 0 },
+        { id: 'parede', shape: 'rectangle', width: 1, height: 4, fixed: true, mass: 0, position: { x: 1, y: 2 }, rotation: 0 },
+        { id: 'bloco', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 5, y: 0.5 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+    }
+    saveIndex(storage, [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
+    saveScene(storage, 'cena-1', scene)
+    saveCurrentSceneId(storage, 'cena-1')
+  }
+
+  function click(canvas: Element, at: { x: number; y: number }): void {
+    const p = screen(at.x, at.y)
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', p.x, p.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', p.x, p.y)))
+  }
+
+  function panel(host: HTMLElement, legend: string): HTMLFieldSetElement | undefined {
+    return [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === legend)
+  }
+
+  function field(host: HTMLElement, legend: string, label: string): number {
+    const p = panel(host, legend)
+    if (!p) throw new Error(`missing panel ${legend}`)
+    return Number(inputForLabel(p, label).value)
+  }
+
+  function setup(): { host: HTMLElement; canvas: HTMLCanvasElement } {
+    seedWallAndBlock()
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')
+    if (!canvas) throw new Error('missing canvas')
+    return { host, canvas }
+  }
+
+  function buildSpring(host: HTMLElement, canvas: Element): void {
+    act(() => findButton(host, 'mola')?.click())
+    click(canvas, WALL_CLICK)
+    click(canvas, BLOCK_CLICK)
+  }
+
+  it('clique em A, clique em B cria exatamente uma mola relaxada, com as âncoras do snap, e a seleciona', () => {
+    const { host, canvas } = setup()
+    buildSpring(host, canvas)
+
+    expect(panel(host, 'mola')).toBeDefined()
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(SNAPPED_X0, 6)
+    expect(field(host, 'mola', 'Δx (m)')).toBeCloseTo(0, 6)
+    expect(field(host, 'mola', 'k (N/m)')).toBeGreaterThan(0)
+    expect(field(host, 'mola', 'c (N·s/m)')).toBe(0)
+    expect(panel(host, 'mola-2')).toBeUndefined()
+    // Exactly one spring: clicking the line picks the topmost, which is still 'mola'.
+    pressKey('Escape')
+    click(canvas, SPRING_MIDDLE)
+    expect(panel(host, 'mola')).toBeDefined()
+
+    // Exactly one edit: one undo takes the scene back to where it was seeded.
+    pressKey('z', { ctrlKey: true })
+    expect(panel(host, 'mola')).toBeUndefined()
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('clique fora de Corpo é ignorado e a ferramenta continua esperando a âncora', () => {
+    const { host, canvas } = setup()
+    act(() => findButton(host, 'mola')?.click())
+    click(canvas, { x: 3, y: 6 })
+    click(canvas, WALL_CLICK)
+    click(canvas, BLOCK_CLICK)
+
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(SNAPPED_X0, 6)
+  })
+
+  it('clique em B = A é ignorado: a âncora A fica e o próximo corpo fecha a mola', () => {
+    const { host, canvas } = setup()
+    act(() => findButton(host, 'mola')?.click())
+    click(canvas, WALL_CLICK)
+    click(canvas, { x: 1, y: 3.2 })
+    expect(panel(host, 'mola')).toBeUndefined()
+    click(canvas, BLOCK_CLICK)
+
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(SNAPPED_X0, 6)
+  })
+
+  it('Esc entre os cliques cancela sem mexer no doc', () => {
+    const { host, canvas } = setup()
+    act(() => findButton(host, 'mola')?.click())
+    click(canvas, WALL_CLICK)
+    pressKey('Escape')
+    click(canvas, BLOCK_CLICK)
+
+    // Back to selection: the second click selected the block, nothing was created.
+    expect(panel(host, 'bloco')).toBeDefined()
+    expect(panel(host, 'mola')).toBeUndefined()
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('clicar na mola seleciona; Delete remove só a mola; Ctrl+Z restaura', () => {
+    const { host, canvas } = setup()
+    buildSpring(host, canvas)
+    pressKey('Escape')
+    expect(panel(host, 'mola')).toBeUndefined()
+
+    click(canvas, SPRING_MIDDLE)
+    expect(panel(host, 'mola')).toBeDefined()
+
+    pressKey('Delete')
+    expect(panel(host, 'mola')).toBeUndefined()
+    click(canvas, SPRING_MIDDLE)
+    expect(panel(host, 'mola')).toBeUndefined()
+    click(canvas, { x: 5, y: 0.5 })
+    expect(panel(host, 'bloco')).toBeDefined()
+    click(canvas, { x: 1, y: 2 })
+    expect(panel(host, 'parede')).toBeDefined()
+
+    pressKey('z', { ctrlKey: true })
+    click(canvas, SPRING_MIDDLE)
+    expect(panel(host, 'mola')).toBeDefined()
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(SNAPPED_X0, 6)
+  })
+
+  it('arrastar um corpo ligado mantém x₀ e muda o Δx mostrado', () => {
+    const { host, canvas } = setup()
+    buildSpring(host, canvas)
+
+    // Grabbed at its center, where the spring is anchored: the body under
+    // the pointer wins over the spring end drawn on top of it.
+    dragTo(canvas, { x: 5, y: 0.5 }, { x: 6, y: 0.5 })
+    const moved = currentPosition(host, 'bloco')
+    expect(moved.x).toBeCloseTo(6, 9)
+    expect(moved.y).toBeCloseTo(0.5, 9)
+    click(canvas, { x: 3.75, y: 1.25 })
+
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(SNAPPED_X0, 6)
+    expect(field(host, 'mola', 'Δx (m)')).toBeCloseTo(Math.hypot(4.5, 1.5) - SNAPPED_X0, 6)
+  })
+
+  it('inspetor edita k, c, x₀; Δx grava x₀ = x − Δx; valor que o codec rejeita não entra e avisa', () => {
+    const { host, canvas } = setup()
+    buildSpring(host, canvas)
+    const input = (label: string) => inputForLabel(panel(host, 'mola')!, label)
+
+    act(() => setNativeInputValue(input('k (N/m)'), 80))
+    act(() => setNativeInputValue(input('c (N·s/m)'), 0.5))
+    act(() => setNativeInputValue(input('Δx (m)'), -0.1))
+    expect(field(host, 'mola', 'k (N/m)')).toBe(80)
+    expect(field(host, 'mola', 'c (N·s/m)')).toBe(0.5)
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(SNAPPED_X0 + 0.1, 6)
+    expect(field(host, 'mola', 'Δx (m)')).toBeCloseTo(-0.1, 6)
+
+    act(() => setNativeInputValue(input('x₀ (m)'), 3))
+    expect(field(host, 'mola', 'Δx (m)')).toBeCloseTo(SNAPPED_X0 - 3, 6)
+    expect(panel(host, 'mola')?.textContent).not.toContain('k e x₀ devem ser positivos')
+
+    act(() => setNativeInputValue(input('k (N/m)'), -5))
+    expect(field(host, 'mola', 'k (N/m)')).toBe(80)
+    expect(panel(host, 'mola')?.textContent).toContain('k e x₀ devem ser positivos')
+
+    // Δx ≥ x would make x₀ ≤ 0.
+    act(() => setNativeInputValue(input('Δx (m)'), 5))
+    expect(field(host, 'mola', 'x₀ (m)')).toBe(3)
+
+    act(() => setNativeInputValue(input('c (N·s/m)'), -1))
+    expect(field(host, 'mola', 'c (N·s/m)')).toBe(0.5)
+    expect(panel(host, 'mola')?.textContent).toContain('k e x₀ devem ser positivos')
+
+    act(() => setNativeInputValue(input('k (N/m)'), 60))
+    expect(panel(host, 'mola')?.textContent).not.toContain('k e x₀ devem ser positivos')
+  })
+
+  it('durante o playback, com a mola selecionada, a leitura mostra F_el e Δx do simulador', async () => {
+    vi.mocked(createSimulator).mockImplementation(async () => ({
+      ...makeFakeSimulator(),
+      readConstraints: () => [{ id: 'mola', kind: 'spring' as const, dx: -0.1, force: { a: 2, b: 2 } }],
+    }))
+    const { host, canvas } = setup()
+    await settleSimImport()
+    buildSpring(host, canvas)
+
+    await act(async () => {
+      findButton(host, '▶ reproduzir')?.click()
+    })
+    const readout = () => panel(host, 'leitura — mola')?.textContent ?? ''
+    for (let i = 0; i < 200 && !readout().includes('F_el'); i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 5))
+      })
+    }
+
+    expect(readout()).toContain('F_el: 2.00 N')
+    expect(readout()).toContain('Δx: -0.100 m')
+  }, 10000)
+
+  it('arrastar o ponto de aplicação de uma força move a âncora com Anchor snap, em um passo de undo', () => {
+    const { host, canvas } = setup()
+    click(canvas, { x: 5.2, y: 0.7 })
+    act(() => findButton(host, 'adicionar força')?.click())
+    expect(field(host, 'forças de bloco', 'âncora x (m, local)')).toBe(0)
+
+    // From the force's point (the block center) to near the right-face midpoint.
+    dragTo(canvas, { x: 5, y: 0.5 }, { x: 5.46, y: 0.53 })
+
+    expect(field(host, 'forças de bloco', 'âncora x (m, local)')).toBe(0.5)
+    expect(field(host, 'forças de bloco', 'âncora y (m, local)')).toBe(0)
+    expect(currentPosition(host, 'bloco')).toEqual({ x: 5, y: 0.5 })
+
+    pressKey('z', { ctrlKey: true })
+    expect(field(host, 'forças de bloco', 'âncora x (m, local)')).toBe(0)
+    expect(field(host, 'forças de bloco', 'âncora y (m, local)')).toBe(0)
+    // The drag was one step: the next undo already takes back adding the force.
+    pressKey('z', { ctrlKey: true })
+    expect(panel(host, 'forças de bloco')?.textContent).toContain('nenhuma')
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+})
+
 describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
   // Each scene gets its own extra body (`marca-<id>`) so a test can tell
   // which scene's *content* loaded into the canvas, not just which id the

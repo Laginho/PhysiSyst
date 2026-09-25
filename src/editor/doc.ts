@@ -1,4 +1,4 @@
-import type { AppliedForce, Body, Contact, Scene } from '../scene'
+import { bodyPointToWorld, type AppliedForce, type Body, type ConstraintEnd, type Contact, type Scene, type Spring } from '../scene'
 
 /**
  * Editor doc-op GUARD DOCTRINE: guards here exist only for USER-ACTIONABLE
@@ -7,6 +7,9 @@ import type { AppliedForce, Body, Contact, Scene } from '../scene'
  * validation (finiteness, positivity, soft warnings) stays the codec's job at
  * the import/export/save boundary; the UI's NumField supplies finite values by
  * construction. Do not scatter per-field runtime checks through the editor.
+ * One recorded exception (PHY-27, proxy decision on criterion 3): the spring
+ * inspector refuses an edit the codec would reject (k ≤ 0, x₀ ≤ 0, c < 0)
+ * instead of clamping, because a clamp would change the physics silently.
  */
 
 /**
@@ -19,9 +22,10 @@ export type BodyPatch = DistributivePartialOmit<Body, 'id'>
 /** bodyId is IMMUTABLE: retargeting a force is delete+add, not a patch. */
 export type ForcePatch = Partial<Omit<AppliedForce, 'id' | 'bodyId'>>
 
-type IdScope = 'bodies' | 'forces'
+type IdScope = 'bodies' | 'forces' | 'constraints'
 
 function scopedIds(doc: Scene, scope: IdScope): string[] {
+  if (scope === 'constraints') return (doc.constraints ?? []).map((c) => c.id)
   return scope === 'bodies' ? doc.bodies.map((b) => b.id) : doc.forces.map((f) => f.id)
 }
 
@@ -203,6 +207,61 @@ export function removeContact(doc: Scene, a: string, b: string): Scene {
 
 export function updateG(doc: Scene, g: number): Scene {
   return { ...doc, constants: { ...doc.constants, g } }
+}
+
+// ---------- PHY-27: springs ----------
+
+/** Stiffness of a spring fresh from the palette, N/m; the student edits it in the inspector. */
+export const SPRING_DEFAULT_K = 20
+
+export type SpringPatch = Partial<Pick<Spring, 'k' | 'x0' | 'c'>>
+
+/** x, the current anchor-to-anchor distance at the document's poses; null when an end dangles. */
+function springLength(doc: Scene, a: ConstraintEnd, b: ConstraintEnd): number | null {
+  const bodyA = doc.bodies.find((x) => x.id === a.bodyId)
+  const bodyB = doc.bodies.find((x) => x.id === b.bodyId)
+  if (!bodyA || !bodyB) return null
+  const pa = bodyPointToWorld(bodyA, a.anchor)
+  const pb = bodyPointToWorld(bodyB, b.anchor)
+  return Math.hypot(pb.x - pa.x, pb.y - pa.y)
+}
+
+/**
+ * Appends a relaxed spring (x0 = x) between two anchors. STRUCTURAL GUARDS,
+ * as the codec would reject: both bodies must exist and differ, and the
+ * anchors must not coincide (x0 > 0).
+ */
+export function addSpring(doc: Scene, a: ConstraintEnd, b: ConstraintEnd): MutationResult {
+  if (a.bodyId === b.bodyId) return { doc, newId: null, error: 'error.parConsigoMesmo' }
+  const x0 = springLength(doc, a, b)
+  if (x0 === null) return { doc, newId: null, error: 'error.corpoInexistente' }
+  if (x0 === 0) return { doc, newId: null, error: 'error.molaSemComprimento' }
+  const newId = freshId(doc, 'mola', 'constraints')
+  const spring: Spring = { id: newId, kind: 'spring', a, b, k: SPRING_DEFAULT_K, x0 }
+  return { doc: { ...doc, constraints: [...(doc.constraints ?? []), spring] }, newId, error: null }
+}
+
+export function updateSpring(doc: Scene, id: string, patch: SpringPatch): Scene {
+  if (!doc.constraints?.some((c) => c.id === id && c.kind === 'spring')) return doc
+  return { ...doc, constraints: doc.constraints.map((c) => (c.id === id && c.kind === 'spring' ? { ...c, ...patch } : c)) }
+}
+
+/** Δx = x − x0 at the document's poses (0 when an end dangles). */
+export function springDx(doc: Scene, spring: Spring): number {
+  return (springLength(doc, spring.a, spring.b) ?? spring.x0) - spring.x0
+}
+
+/** The x0/Δx link: typing Δx writes x0 = x − Δx. */
+export function setSpringDx(doc: Scene, id: string, dx: number): Scene {
+  const spring = doc.constraints?.find((c): c is Spring => c.id === id && c.kind === 'spring')
+  const x = spring && springLength(doc, spring.a, spring.b)
+  if (x == null) return doc
+  return updateSpring(doc, id, { x0: x - dx })
+}
+
+export function removeConstraint(doc: Scene, id: string): Scene {
+  if (!doc.constraints?.some((c) => c.id === id)) return doc
+  return { ...doc, constraints: doc.constraints.filter((c) => c.id !== id) }
 }
 
 /** Toggles particle mode (T7/M2). Structural: the world rebuilds with locked rotations. */

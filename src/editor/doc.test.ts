@@ -3,16 +3,21 @@ import type { Scene } from '../scene'
 import {
   addContact,
   addForce,
+  addSpring,
   duplicateBody,
   freshId,
   removeBodyAndDependents,
+  removeConstraint,
   removeContact,
   removeForce,
+  setSpringDx,
+  springDx,
   updateBody,
   updateContact,
   updateForce,
   updateG,
   updateParticleMode,
+  updateSpring,
 } from './doc'
 
 const DOC: Scene = {
@@ -302,6 +307,91 @@ describe('updateG', () => {
   it('preserves sibling constants fields (particleMode) — T7/M2', () => {
     const withParticles: typeof DOC = { ...DOC, constants: { g: 9.81, particleMode: true } }
     expect(updateG(withParticles, 3.72).constants.particleMode).toBe(true)
+  })
+})
+
+// ---------- PHY-27: springs ----------
+
+describe('addSpring', () => {
+  // a sits at (0,0); b's anchor (-2,-5) lands at world (3,0): 3 m apart.
+  const A = { bodyId: 'a', anchor: { x: 0, y: 0 } }
+  const B = { bodyId: 'b', anchor: { x: -2, y: -5 } }
+  const spring = (doc: Scene, id: string) => {
+    const found = doc.constraints?.find((c) => c.id === id)
+    if (found?.kind !== 'spring') throw new Error(`no spring ${id}`)
+    return found
+  }
+
+  it('adds exactly one relaxed spring: x0 is the current anchor distance, no damping', () => {
+    const { doc, newId, error } = addSpring(DOC, A, B)
+    expect(error).toBeNull()
+    expect(newId).toBe('mola')
+    expect(doc.constraints).toHaveLength(1)
+    const s = spring(doc, 'mola')
+    expect(s).toMatchObject({ kind: 'spring', a: A, b: B })
+    expect(s.x0).toBeCloseTo(3, 12)
+    expect(s.k).toBeGreaterThan(0)
+    expect(s).not.toHaveProperty('c')
+    expect(DOC).not.toHaveProperty('constraints')
+  })
+
+  it('measures x0 between the anchors in the world, through each body rotation', () => {
+    // Rotated +90°, b's anchor (-5, 3) lands at (5,5) + (-3,-5) = (2, 0).
+    const turned = updateBody(DOC, 'b', { rotation: Math.PI / 2 })
+    const s = spring(addSpring(turned, A, { bodyId: 'b', anchor: { x: -5, y: 3 } }).doc, 'mola')
+    expect(s.x0).toBeCloseTo(2, 12)
+  })
+
+  it('gives a second spring a fresh id in the constraint namespace', () => {
+    const once = addSpring(DOC, A, B).doc
+    expect(addSpring(once, B, A).newId).toBe('mola-2')
+  })
+
+  it('rejects a spring from a body to itself, a missing body, or with coincident anchors (same doc ref + reason key)', () => {
+    expect(addSpring(DOC, A, { bodyId: 'a', anchor: { x: 1, y: 0 } })).toEqual({ doc: DOC, newId: null, error: 'error.parConsigoMesmo' })
+    expect(addSpring(DOC, A, { bodyId: 'ghost', anchor: { x: 0, y: 0 } })).toEqual({ doc: DOC, newId: null, error: 'error.corpoInexistente' })
+    // b's anchor (-5,-5) lands exactly on a's center: x0 = 0 is not a spring.
+    expect(addSpring(DOC, A, { bodyId: 'b', anchor: { x: -5, y: -5 } })).toEqual({ doc: DOC, newId: null, error: 'error.molaSemComprimento' })
+  })
+})
+
+describe('spring editing: k, c, x0 and the x0/Δx link', () => {
+  const SPRUNG = addSpring(DOC, { bodyId: 'a', anchor: { x: 0, y: 0 } }, { bodyId: 'b', anchor: { x: -2, y: -5 } }).doc
+  const theSpring = (doc: Scene) => {
+    const s = doc.constraints![0]
+    if (s.kind !== 'spring') throw new Error('not a spring')
+    return s
+  }
+
+  it('updateSpring patches k, c and x0 immutably; unknown id is a no-op', () => {
+    const next = updateSpring(SPRUNG, 'mola', { k: 80, c: 0.4, x0: 2.5 })
+    expect(theSpring(next)).toMatchObject({ k: 80, c: 0.4, x0: 2.5 })
+    expect(theSpring(SPRUNG).x0).toBeCloseTo(3, 12)
+    expect(updateSpring(SPRUNG, 'zz', { k: 1 })).toBe(SPRUNG)
+  })
+
+  it('a relaxed spring has Δx = 0', () => {
+    expect(springDx(SPRUNG, theSpring(SPRUNG))).toBeCloseTo(0, 12)
+  })
+
+  it('setSpringDx writes x0 = x − Δx', () => {
+    const next = setSpringDx(SPRUNG, 'mola', -0.1)
+    expect(theSpring(next).x0).toBeCloseTo(3.1, 12)
+    expect(springDx(next, theSpring(next))).toBeCloseTo(-0.1, 12)
+  })
+
+  it('moving a linked body keeps x0 and changes Δx', () => {
+    const moved = updateBody(SPRUNG, 'b', { position: { x: 6, y: 5 } })
+    expect(theSpring(moved).x0).toBeCloseTo(3, 12)
+    expect(springDx(moved, theSpring(moved))).toBeCloseTo(1, 12)
+  })
+
+  it('removeConstraint removes only that constraint', () => {
+    const two = addSpring(SPRUNG, { bodyId: 'b', anchor: { x: 0, y: 0 } }, { bodyId: 'a', anchor: { x: 0, y: 0 } }).doc
+    const next = removeConstraint(two, 'mola')
+    expect(next.constraints!.map((c) => c.id)).toEqual(['mola-2'])
+    expect(next.bodies).toBe(two.bodies)
+    expect(removeConstraint(two, 'zz')).toBe(two)
   })
 })
 

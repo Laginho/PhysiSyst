@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Body } from '../scene'
-import { bodyAtPoint, pointInBody } from './hitTest'
+import type { Body, Scene } from '../scene'
+import { bodyAtPoint, pointInBody, springAtPoint } from './hitTest'
 
 // Partial-union spread can't be proven to re-form the Body union; runtime
 // overrides always come from concrete per-shape literals below.
@@ -110,5 +110,47 @@ describe('bodyAtPoint', () => {
   it('returns null on empty space without bodies or on misses', () => {
     expect(bodyAtPoint([], { x: 0, y: 0 })).toBeNull()
     expect(bodyAtPoint([a], { x: 50, y: 50 })).toBeNull()
+  })
+})
+
+describe('springAtPoint (PHY-27)', () => {
+  // Wall at the origin, block at (4, 0): spring s1 runs from (0.5, 0) to (3.5, 0).
+  const wall = rect({ id: 'wall', width: 1, height: 1, fixed: true })
+  const block = rect({ id: 'block', width: 1, height: 1, position: { x: 4, y: 0 } })
+  const end = (bodyId: string, x: number) => ({ bodyId, anchor: { x, y: 0 } })
+  const SCENE: Scene = {
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [wall, block],
+    forces: [],
+    contacts: [],
+    constraints: [{ id: 's1', kind: 'spring', a: end('wall', 0.5), b: end('block', -0.5), k: 20, x0: 3 }],
+  }
+
+  it('hits a point within the tolerance of the segment between the anchors', () => {
+    expect(springAtPoint(SCENE, { x: 2, y: 0.08 }, 0.1)?.id).toBe('s1')
+    expect(springAtPoint(SCENE, { x: 0.55, y: -0.05 }, 0.1)?.id).toBe('s1')
+  })
+
+  it('misses beside the segment and past its ends', () => {
+    expect(springAtPoint(SCENE, { x: 2, y: 0.2 }, 0.1)).toBeNull()
+    expect(springAtPoint(SCENE, { x: 3.7, y: 0 }, 0.1)).toBeNull()
+  })
+
+  it('follows the bodies it is anchored to', () => {
+    const raised: Scene = { ...SCENE, bodies: [wall, { ...block, position: { x: 4, y: 3 } }] }
+    // Now from (0.5, 0) to (3.5, 3): its midpoint is (2, 1.5).
+    expect(springAtPoint(raised, { x: 2, y: 1.5 }, 0.1)?.id).toBe('s1')
+    expect(springAtPoint(raised, { x: 2, y: 0 }, 0.1)).toBeNull()
+  })
+
+  it('the topmost spring wins, and a rope is never a spring hit', () => {
+    const layered: Scene = {
+      ...SCENE,
+      constraints: [...SCENE.constraints!, { id: 's2', kind: 'spring', a: end('wall', 0.5), b: end('block', -0.5), k: 20, x0: 3 }],
+    }
+    expect(springAtPoint(layered, { x: 2, y: 0 }, 0.1)?.id).toBe('s2')
+    const roped: Scene = { ...SCENE, constraints: [{ id: 'r1', kind: 'rope', a: end('wall', 0.5), b: end('block', -0.5), via: [] }] }
+    expect(springAtPoint(roped, { x: 2, y: 0 }, 0.1)).toBeNull()
   })
 })
