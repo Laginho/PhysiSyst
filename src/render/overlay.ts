@@ -1,5 +1,6 @@
-import { bodyPointToWorld, type Scene } from '../scene'
-import type { BodyState, ContactPoint } from '../sim/simulator'
+import { getCatalog, type I18nKey, type Lang } from '../i18n'
+import { bodyPointToWorld, scenePath, type Scene, type Vec2 } from '../scene'
+import type { BodyState, ConstraintState, ContactPoint } from '../sim/simulator'
 
 /**
  * Pure overlay vector producers. No canvas, no engine imports — inputs are
@@ -34,10 +35,14 @@ export function vectorArrowLengthPx(magnitude: number): number {
   return Math.min(ARROW_MAX_PX, Math.max(ARROW_MIN_PX, ARROW_SCALE_PX * Math.sqrt(magnitude)))
 }
 
+export type ArrowKind = 'weight' | 'applied' | 'normal' | 'initial-velocity' | 'tension' | 'elastic'
+
 export interface OverlayArrow {
   from: { x: number; y: number }
   vec: { x: number; y: number }
-  kind: 'weight' | 'applied' | 'normal' | 'initial-velocity'
+  kind: ArrowKind
+  /** The quantity the arrow draws: arrows sharing a key share a Vector label. */
+  key: string
 }
 
 export function weightArrows(scene: Scene, states: ReadonlyMap<string, BodyState> | null, pixelsPerMeter: number): OverlayArrow[] {
@@ -52,7 +57,7 @@ export function weightArrows(scene: Scene, states: ReadonlyMap<string, BodyState
     // for triangle the true centroid is offset (2b/3,h/3) but the body origin is
     // the visual anchor contract, so the arrow rides the body visibly.
     const lenM = vectorArrowLengthPx(body.mass * g) / pixelsPerMeter
-    out.push({ from: { x: s.position.x, y: s.position.y }, vec: { x: 0, y: -lenM }, kind: 'weight' })
+    out.push({ from: { x: s.position.x, y: s.position.y }, vec: { x: 0, y: -lenM }, kind: 'weight', key: `weight:${body.id}` })
   }
   return out
 }
@@ -66,7 +71,7 @@ export function appliedArrows(view: Scene, pixelsPerMeter: number): OverlayArrow
     const from = bodyPointToWorld(body, f.anchor)
     const rad = (f.direction * Math.PI) / 180
     const lenM = vectorArrowLengthPx(f.magnitude) / pixelsPerMeter
-    out.push({ from, vec: { x: lenM * Math.cos(rad), y: lenM * Math.sin(rad) }, kind: 'applied' })
+    out.push({ from, vec: { x: lenM * Math.cos(rad), y: lenM * Math.sin(rad) }, kind: 'applied', key: `applied:${f.id}` })
   }
   return out
 }
@@ -84,6 +89,7 @@ export function initialVelocityArrows(view: Scene, pixelsPerMeter: number): Over
       from: { x: body.position.x, y: body.position.y },
       vec: { x: (lenM * vx) / magnitude, y: (lenM * vy) / magnitude },
       kind: 'initial-velocity',
+      key: `initial-velocity:${body.id}`,
     })
   }
   return out
@@ -94,7 +100,117 @@ export function normalArrows(contacts: readonly ContactPoint[]): OverlayArrow[] 
     from: { x: c.point.x, y: c.point.y },
     vec: { x: c.normal.x * NORMAL_LEN, y: c.normal.y * NORMAL_LEN },
     kind: 'normal',
+    // The pair, not the point: every point of one Contact carries the same N.
+    key: `normal:${c.aId < c.bId ? `${c.aId}|${c.bId}` : `${c.bId}|${c.aId}`}`,
   }))
+}
+
+/** `magnitude` along from → toward (negative points away), sized by the shared rule; null when there is no direction. */
+function arrowToward(from: Vec2, toward: Vec2, magnitude: number, pixelsPerMeter: number): Vec2 | null {
+  const dx = toward.x - from.x
+  const dy = toward.y - from.y
+  const d = Math.hypot(dx, dy)
+  if (d === 0 || magnitude === 0) return null
+  const lenM = (Math.sign(magnitude) * vectorArrowLengthPx(Math.abs(magnitude))) / pixelsPerMeter
+  return { x: (lenM * dx) / d, y: (lenM * dy) / d }
+}
+
+/**
+ * T on every dynamic body a rope pulls: at each dynamic end's anchor, toward
+ * the next point of the path; on a dynamic body mounting a pulley, one arrow
+ * per adjacent segment at the pulley center, along that segment away from it.
+ * A slack rope (T = 0) or one with no reading draws nothing.
+ */
+export function tensionArrows(view: Scene, constraints: readonly ConstraintState[], pixelsPerMeter: number): OverlayArrow[] {
+  const bodies = new Map(view.bodies.map((b) => [b.id, b]))
+  const pulleys = new Map((view.pulleys ?? []).map((p) => [p.id, p]))
+  const out: OverlayArrow[] = []
+  for (const rope of view.constraints ?? []) {
+    if (rope.kind !== 'rope') continue
+    const state = constraints.find((c) => c.id === rope.id)
+    if (state?.kind !== 'rope') continue
+    const path = scenePath(view, rope)
+    if (!path) continue
+    // With a pulley of mass T differs per segment, and so does the label.
+    const perSegment = rope.via.some((id) => (pulleys.get(id)?.mass ?? 0) > 0)
+    const push = (at: Vec2, toward: Vec2, segment: number) => {
+      const vec = arrowToward(at, toward, state.segments[segment] ?? state.tension, pixelsPerMeter)
+      if (vec) out.push({ from: at, vec, kind: 'tension', key: perSegment ? `tension:${rope.id}#${segment}` : `tension:${rope.id}` })
+    }
+    const first = path.segments[0]!
+    const last = path.segments.length - 1
+    if (bodies.get(rope.a.bodyId)?.fixed === false) push(first.from, first.to, 0)
+    rope.via.forEach((id, i) => {
+      // scenePath returned a path, so every pulley and mount resolves.
+      const pulley = pulleys.get(id)!
+      const mount = bodies.get(pulley.bodyId)!
+      if (mount.fixed) return
+      const c = bodyPointToWorld(mount, pulley.anchor)
+      const into = path.segments[i]!
+      const outOf = path.segments[i + 1]!
+      push(c, { x: c.x + into.from.x - into.to.x, y: c.y + into.from.y - into.to.y }, i)
+      push(c, { x: c.x + outOf.to.x - outOf.from.x, y: c.y + outOf.to.y - outOf.from.y }, i + 1)
+    })
+    if (bodies.get(rope.b.bodyId)?.fixed === false) push(path.segments[last]!.to, path.segments[last]!.from, last)
+  }
+  return out
+}
+
+/**
+ * F_el at every dynamic end of a spring, at the anchor, along its axis:
+ * toward the other end while stretched, away while compressed. A spring with
+ * no reading, or F_el = 0 at that end, draws nothing there.
+ */
+export function elasticArrows(view: Scene, constraints: readonly ConstraintState[], pixelsPerMeter: number): OverlayArrow[] {
+  const bodies = new Map(view.bodies.map((b) => [b.id, b]))
+  const out: OverlayArrow[] = []
+  for (const spring of view.constraints ?? []) {
+    if (spring.kind !== 'spring') continue
+    const state = constraints.find((c) => c.id === spring.id)
+    const a = bodies.get(spring.a.bodyId)
+    const b = bodies.get(spring.b.bodyId)
+    if (state?.kind !== 'spring' || !a || !b) continue
+    const pa = bodyPointToWorld(a, spring.a.anchor)
+    const pb = bodyPointToWorld(b, spring.b.anchor)
+    for (const [body, at, other, force] of [[a, pa, pb, state.force.a], [b, pb, pa, state.force.b]] as const) {
+      if (body.fixed) continue
+      const vec = arrowToward(at, other, force, pixelsPerMeter)
+      if (vec) out.push({ from: at, vec, kind: 'elastic', key: `elastic:${spring.id}` })
+    }
+  }
+  return out
+}
+
+const SYMBOL_KEY: Record<ArrowKind, I18nKey> = {
+  weight: 'vector.weight',
+  normal: 'vector.normal',
+  applied: 'vector.applied',
+  tension: 'vector.tension',
+  elastic: 'vector.elastic',
+  'initial-velocity': 'vector.initialVelocity',
+}
+
+/**
+ * Vector labels, derived from the arrows on every render and never stored:
+ * the kind's symbol in `lang`, numbered 1, 2, … in the order the arrows come
+ * (document order) only when two or more quantities of that kind are drawn.
+ * Keyed by OverlayArrow.key; `_` opens the subscript (`F_el`, `T_1`, `F_el,2`).
+ */
+export function vectorLabels(arrows: readonly OverlayArrow[], lang: Lang): Map<string, string> {
+  const keysByKind = new Map<ArrowKind, string[]>()
+  for (const a of arrows) {
+    const keys = keysByKind.get(a.kind) ?? []
+    if (!keys.includes(a.key)) keys.push(a.key)
+    keysByKind.set(a.kind, keys)
+  }
+  const out = new Map<string, string>()
+  for (const [kind, keys] of keysByKind) {
+    const symbol: string = getCatalog(lang)[SYMBOL_KEY[kind]]
+    keys.forEach((key, i) => {
+      out.set(key, keys.length < 2 ? symbol : symbol.includes('_') ? `${symbol},${i + 1}` : `${symbol}_${i + 1}`)
+    })
+  }
+  return out
 }
 
 /**

@@ -360,14 +360,22 @@ export interface ArrowStyle {
   headLenPx: number
 }
 
+const VECTOR_LABEL_FONT = 'italic 15px system-ui, sans-serif'
+const VECTOR_SUB_FONT = 'italic 11px system-ui, sans-serif'
+/** How far to the side of the tip, px, the label sits: off the arrow's line, and so off the rope or spring it draws on. */
+const VECTOR_LABEL_GAP_PX = 18
+
 /** Reusable overlay arrow from a world point along a world vector (for force vectors in T8).
- * Takes the ScreenTransform (not raw canvas dims) so it stays correct under DPR pre-scaling. */
+ * Takes the ScreenTransform (not raw canvas dims) so it stays correct under DPR pre-scaling.
+ * `label` (a Vector label, PHY-29) is drawn just past the tip; after its first
+ * `_` comes the subscript, in a smaller font. */
 export function drawArrow(
   ctx: CanvasRenderingContext2D,
   fromWorld: { x: number; y: number },
   vecWorld: { x: number; y: number },
   t: ScreenTransform,
   style?: Partial<ArrowStyle>,
+  label?: string,
 ): void {
   const s: ArrowStyle = { color: '#d97742', widthPx: 2, headLenPx: 10, ...style }
   const from = worldToScreen(t, fromWorld.x, fromWorld.y)
@@ -387,5 +395,21 @@ export function drawArrow(
   ctx.lineTo(to.x - s.headLenPx * Math.cos(angle + Math.PI / 6), to.y - s.headLenPx * Math.sin(angle + Math.PI / 6))
   ctx.closePath()
   ctx.fill()
+  if (label) {
+    // Base right-aligned and subscript left-aligned on one junction point, so
+    // no text measuring is needed to butt them together.
+    const [base, sub] = label.split(/_(.*)/s)
+    const x = to.x - VECTOR_LABEL_GAP_PX * Math.sin(angle)
+    const y = to.y + VECTOR_LABEL_GAP_PX * Math.cos(angle)
+    ctx.textBaseline = 'middle'
+    ctx.font = VECTOR_LABEL_FONT
+    ctx.textAlign = sub ? 'right' : 'center'
+    ctx.fillText(base!, x, y)
+    if (sub) {
+      ctx.font = VECTOR_SUB_FONT
+      ctx.textAlign = 'left'
+      ctx.fillText(sub, x, y + 4)
+    }
+  }
   ctx.restore()
 }
