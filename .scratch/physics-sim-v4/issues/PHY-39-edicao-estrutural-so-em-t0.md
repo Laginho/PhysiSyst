@@ -1,5 +1,5 @@
 # PHY-39: Edição estrutural só com `passos = 0`
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -53,3 +53,5 @@ Trocar de cena, importar, nova cena e ⟲ continuam liberados sempre, porque zer
 ## Comments
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9 (Sol, Sonnet, Opus em sessões dedicadas). Junta o F1 do Opus (corda) e o CLEAN-13 item 1 (mola), que eram o mesmo defeito: a edição estrutural no meio da corrida mistura a pose do documento com a pose viva. A trava foi decidida no grilling com o dono. `Review: human` porque é uma mudança de comportamento do editor que ele quer ver. O mecanismo de carry que fica quase morto depois deste ticket sai no CLEAN-16.
+
+- 2026-09-30 Attempt 1 stopped to ask: Implementação salva em `43cab05`; gate verde com 728 testes. PHY-39 ficou `blocked`: o teste novo de força/`g` falha isoladamente, mesmo sem mutação. /  / A [skill ticket-flow](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. Diagnóstico e evidências registrados no ticket.
