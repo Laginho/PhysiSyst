@@ -5,7 +5,6 @@ import {
   advance,
   applyLiveOps,
   applyStates,
-  carryOver,
   initialPlayback,
   routeDocChange,
   SPEED_MAX,
@@ -667,7 +666,7 @@ export default function App() {
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
-  /** Document the running world was built from — the carry-over baseline. */
+  /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
   // Mirrors so the imperative rAF loop reads the latest document without
@@ -804,35 +803,6 @@ export default function App() {
   }, [showShortcuts])
 
   useEffect(() => {
-    docRef.current = doc
-    showGlobalRef.current = showGlobal
-    if (simRef.current && builtDocRef.current !== doc) {
-      // Live-vs-structural routing (T7/M2): value edits on existing records
-      // and g mutate the RUNNING world right now; everything else rebuilds at
-      // the frame boundary with carried kinematic state.
-      const route = routeDocChange(builtDocRef.current, doc)
-      if (route.kind === 'structural') {
-        // Bodies whose pose the user changed lose their carried state right
-        // now, so an explicit placement is visible immediately instead of
-        // being overpainted by the simulated position it replaces.
-        statesRef.current = carryOver(statesRef.current, builtDocRef.current, doc)
-        pendingRebuildRef.current = true
-      } else {
-        try {
-          applyLiveOps(simRef.current, route.ops)
-          builtDocRef.current = doc
-        } catch (e) {
-          fail(e)
-          // Keep builtDoc as-is: the next frame-boundary rebuild reconciles
-          // world and document from the correct baseline.
-          pendingRebuildRef.current = true
-        }
-      }
-    }
-    repaint()
-  }, [doc, showGlobal, repaint, fail])
-
-  useEffect(() => {
     selectionRef.current = selection
     toolRef.current = tool
     repaint()
@@ -904,8 +874,7 @@ export default function App() {
   }, [])
 
   /**
-   * Applies pending document edits by rebuilding the world at a frame boundary,
-   * carrying surviving bodies' kinematic state across (T7 rebuild policy).
+   * Applies pending document edits by rebuilding from the document at a frame boundary.
    * Returns false when the new document cannot be simulated at all.
    */
   const syncWorld = useCallback((): boolean => {
@@ -913,7 +882,7 @@ export default function App() {
     if (!sim || !pendingRebuildRef.current) return true
     try {
       const prev = statesRef.current
-      sim.replaceScene(docRef.current, prev ?? undefined)
+      sim.replaceScene(docRef.current)
       builtDocRef.current = docRef.current
       const next = sim.readStates()
       accelRef.current = onRebuild(accelRef.current, prev, next)
@@ -965,13 +934,16 @@ export default function App() {
       setStepsTick(t.state.stepsTaken)
       if (t.rebuild) {
         setToolError(null)
-        // Reset: fresh world straight from document, nothing carried — commit
-        // refs only on success so a failed reset preserves the old baseline.
+        // Clear readings before rebuilding: a failed reset must still show the document.
+        accelRef.current = onReset()
+        statesRef.current = null
+        contactsRef.current = []
+        constraintsRef.current = []
+        setReadout(null)
+        setConstraintReadout(null)
         try {
           simRef.current?.replaceScene(docRef.current)
           pendingRebuildRef.current = false
-          accelRef.current = onReset()
-          statesRef.current = null
           contactsRef.current = simRef.current ? simRef.current.readContacts() : []
           constraintsRef.current = simRef.current ? simRef.current.readConstraints() : []
           builtDocRef.current = docRef.current
@@ -986,6 +958,28 @@ export default function App() {
     },
     [repaint, runSteps],
   )
+
+  useEffect(() => {
+    docRef.current = doc
+    showGlobalRef.current = showGlobal
+    if (simRef.current && builtDocRef.current !== doc) {
+      // Live edits mutate the running world; structural edits rebuild at t = 0 (PHY-39).
+      const route = routeDocChange(builtDocRef.current, doc)
+      if (route.kind === 'structural') {
+        statesRef.current = null
+        pendingRebuildRef.current = true
+      } else {
+        try {
+          applyLiveOps(simRef.current, route.ops)
+          builtDocRef.current = doc
+        } catch (e) {
+          dispatch({ type: 'reset' })
+          setSimError(messageOf(e))
+        }
+      }
+    }
+    repaint()
+  }, [doc, showGlobal, repaint, dispatch])
 
   const switchToScene = useCallback(
     (id: string) => {
@@ -1004,9 +998,7 @@ export default function App() {
       // Switching/importing/creating/deleting a scene starts a fresh document
       // identity — undo history from the PREVIOUS scene makes no sense here.
       setHistory(clearHistory())
-      // Nor does its playback: carry-over would keep the state of every body
-      // sharing an id and pose with the new scene (PHY-36). Reset against the
-      // new doc now, so the doc effect finds the world already built from it.
+      // Reset playback against the new document (PHY-36).
       docRef.current = scene
       dispatch({ type: 'reset' })
     },

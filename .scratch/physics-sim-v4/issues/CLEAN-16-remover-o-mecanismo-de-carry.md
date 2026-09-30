@@ -1,5 +1,5 @@
 # CLEAN-16: Remover o mecanismo de carry
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-39
 Review: agent
@@ -48,3 +48,53 @@ Isto também fecha, por construção, o vazamento de uma troca de cena que falha
 ## Comments
 
 - 2026-09-30 Aberto como consequência do PHY-39, por decisão do grilling com o dono. Absorve o achado da troca de cena que falha (Opus F4, Sonnet F4b), que no plano era um PHY próprio. Ele deixou de ser preciso porque, sem carry, o vazamento não existe.
+
+#### Etapa 2 - commit vermelho (2026-09-30)
+
+`npx vitest run src/App.test.ts -t CLEAN-16 --no-color`: **2 failed | 79 skipped (81)**. Edição ao vivo: `expected ... to contain passos: 0`, recebido `passos: 1`, pose `(9.00, 6.00)`, velocidade `5.00 m/s`. Troca de cena: esperado `(6.00, 3.50)`, recebido `(9.00, 6.00)` com velocidade `5.00 m/s` da cena antiga. Simulador falso na seam já autorizada; eventos e leituras via DOM.
+
+Testes exclusivos de carry removidos (19 casos):
+
+- `src/playback/view.test.ts` - `keeps kinematic state for bodies the edit did not move`.
+- `src/playback/view.test.ts` - `drops a body the user repositioned in the document (an explicit placement wins)`.
+- `src/playback/view.test.ts` - `drops a body the user re-rotated in the document`.
+- `src/playback/view.test.ts` - `drops removed ids and never invents state for new ids`.
+- `src/playback/view.test.ts` - `drops ids the world was not built with (nothing to carry from)`.
+- `src/playback/view.test.ts` - `returns an empty map when there is no state yet`.
+- `src/sim/simulator.test.ts` - `carries surviving ids, spawns new ids at doc-initial state, drops removed ids`.
+- `src/sim/simulator.test.ts` - `a carried rebuild is transparent: the trajectory continues as if nothing happened`.
+- `src/sim/simulator.test.ts` - `ignores carry entries for ids absent from the new document`.
+- `src/sim/simulator.test.ts` - `carries fixed bodies without choking on their absent velocity state`.
+- `src/sim/simulator.test.ts` - `toggling particle mode mid-flight is structural: carried position/linvel survive exactly, spin freezes`.
+- `src/sim/simulator.test.ts` - `a paused/rebuilt world preserves the carried Initial-velocity-driven state exactly`.
+- `src/sim/simulator.test.ts` - `a carried structural rebuild mid-flight does not restart the body: trajectory continues as if untouched`.
+- `src/sim/acceptance.test.ts` - `replaceScene with carry keeps the document length L, not the length at the carried poses`.
+- `src/sim/acceptance.test.ts` - `replaceScene with carry keeps the disk spinning: the blocks carry on at the closed-form a, no jolt (3%)`.
+- `src/sim/acceptance.test.ts` - `replaceScene with carry keeps the chain: F_el per end reads the same across the rebuild, and the block follows an uninterrupted run within 3% of A`.
+- `src/sim/acceptance.test.ts` - `CLEAN-09: replaceScene with carry after the block moved 0.5 m (chain re-seats)`.
+- `src/sim/acceptance.test.ts` - `CLEAN-09: replaceScene with carry after the wall end re-anchored 0.5 m (chain re-seats)`.
+- `src/sim/acceptance.test.ts` - `CLEAN-12: replaceScene without the wall in the carry, the block passing X_EQ (chain re-seats moving with its ends)`.
+
+Mantidos os testes de reset, velocidade inicial, modos de partícula, rebuild transacional e retry. A recuperação transacional e o retry passaram a comparar o estado inicial do documento, acompanhando a assinatura sem carry; sua prova de erro/mundo antigo intacto permanece. O adaptador PHY-36 agora recebe só o documento. `integration.test.ts` não passava carry: só os comentários foram corrigidos.
+
+Nota fora dos Primary files: o comentário de `src/playback/routing.ts` ainda menciona carry; não muda o comportamento e fica para limpeza documental própria.
+
+Recorte completo antes da produção: **2 failed | 170 passed (172), 1 test file failed | 5 passed (6)**; typecheck e lint verdes.
+
+#### Etapa 2 — implementação e mutate-verify (2026-09-30)
+
+Commit vermelho: `b9fadb1`. Produção: `carryOver`, `samePose`, parâmetro de carry, retomada de giro dos discos, `regrip`, retomada/reassentamento das cadeias e os campos usados só pelo carry removidos. A construção normal da cadeia com velocidade inicial e o bloqueio de rotação do modo partícula permanecem. `replaceScene(scene)` continua transacional e inicia na pose/velocidade do documento.
+
+O fallback de `applyLiveOps` chama o reset existente e mantém o erro visível. O reset limpa estados, aceleração, contatos, vínculos e leituras DOM antes de tentar reconstruir; se a tentativa falha, o documento fica visível e a reconstrução continua pendente para retry. O efeito de documento foi movido abaixo de `dispatch` para reutilizar esse caminho. ADR-0004 atualizado conforme o critério 5.
+
+Sem mutação: `npx vitest run src/App.test.ts -t CLEAN-16 --no-color`: **2 passed | 79 skipped (81)**. Os testes também verificam o primeiro passo após reset/retry para provar que o mundo reinicia junto com a tela.
+
+| Teste novo | Mutação aplicada em `src/App.tsx` | Comando e saída vermelha |
+| --- | --- | --- |
+| Uma edição ao vivo que falha mostra o erro, pausa e reinicia nas poses do documento | M1: no catch de `applyLiveOps`, substituir `dispatch({ type: 'reset' }); setSimError(messageOf(e))` por `fail(e); pendingRebuildRef.current = true` | `npx vitest run src/App.test.ts -t 'uma edi' --no-color`: **1 failed | 1 passed | 79 skipped (81)**. `App.test.ts:1789`: esperado `passos: 0`, recebido `passos: 1`, pose `(9.00, 6.00)`, velocidade `5.00 m/s`. |
+| Uma edição ao vivo que falha mostra o erro, pausa e reinicia nas poses do documento | M3: remover a chamada `simRef.current?.replaceScene(docRef.current)` do reset, preservando a limpeza das leituras | Mesmo comando: **1 failed | 1 passed | 79 skipped (81)**. `App.test.ts:1795`: no passo após reset, esperado `(9.00, 6.00)`, recebido `(12.00, 8.50)` com velocidade `10.00 m/s`; a tela limpa sozinha não passa. |
+| Uma troca de cena cujo replaceScene falha não mostra poses ou velocidades da cena anterior, nem após o retry | M2: remover `statesRef.current = null` tanto do reset quanto do ramo estrutural do efeito de documento | `npx vitest run src/App.test.ts -t 'uma troca de cena cujo' --no-color`: **1 failed | 80 skipped (81)**. `App.test.ts:1812`: esperado `(6.00, 3.50)`, recebido `(9.00, 6.00)` e velocidade `5.00 m/s` da cena anterior. |
+
+Cada mutação foi executada separadamente; a produção foi restaurada byte a byte em `finally` antes do gate. O primeiro ensaio de M1 falhou ao imprimir a saída Unicode no console Python; foi repetido com saída UTF-8 e é a execução acima que fornece a evidência.
+
+Gate completo, em primeiro plano, com a produção restaurada: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0**. **30 test files passed; 716 tests passed (716)**, lint/typecheck/build verdes. Nenhum teste foi alterado no commit de produção. Etapa 2 concluída; revisão pendente na branch `phy/CLEAN-16-remover-carry`, sobre `sweatshop/2026-09-24-1853`.

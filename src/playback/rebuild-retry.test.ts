@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Scene } from '../scene'
 import { createSimulator, type Simulator } from '../sim'
-import { carryOver } from './view'
 import { routeDocChange } from './routing'
 
 function fallingScene(mass = 1): Scene {
@@ -18,7 +17,6 @@ function makeAppLike(sim: Simulator, doc: Scene) {
   let builtDoc: Scene = doc
   let currentDoc: Scene = doc
   let pending = false
-  let states: ReturnType<Simulator['readStates']> | null = sim.readStates()
   let error: string | null = null
   return {
     get builtDoc() { return builtDoc },
@@ -29,16 +27,14 @@ function makeAppLike(sim: Simulator, doc: Scene) {
       currentDoc = next
       const route = routeDocChange(builtDoc, currentDoc)
       if (route.kind === 'structural') {
-        states = carryOver(states, builtDoc, currentDoc)
         pending = true
       }
     },
     syncWorld(): boolean {
       if (!pending) return true
       try {
-        sim.replaceScene(currentDoc, states ?? undefined)
+        sim.replaceScene(currentDoc)
         builtDoc = currentDoc
-        states = sim.readStates()
         pending = false
         error = null
         return true
@@ -52,13 +48,11 @@ function makeAppLike(sim: Simulator, doc: Scene) {
       if (!n) return
       if (!this.syncWorld()) return
       for (let i = 0; i < n; i++) sim.step()
-      states = sim.readStates()
     },
     reset(): void {
       try {
         sim.replaceScene(currentDoc)
         builtDoc = currentDoc
-        states = null
         pending = false
         error = null
       } catch (e) {
@@ -92,13 +86,12 @@ describe('failed structural rebuild must not clear retry flag (T7-M2 blocker)', 
     expect(app.pending).toBe(true)
     expect(sim.readStates().get('ball')!.position.y).toBe(yBeforeStep)
 
-    // fix → next step rebuilds successfully from carried state and continues falling
+    // fix → next step rebuilds successfully from the document and starts falling
     app.edit(fallingScene(1))
-    const yBeforeFix = sim.readStates().get('ball')!.position.y
     app.runSteps(1)
     expect(app.pending).toBe(false)
     expect(app.error).toBeNull()
-    expect(sim.readStates().get('ball')!.position.y).toBeLessThan(yBeforeFix)
+    expect(sim.readStates().get('ball')!.position.y).toBeLessThan(10)
   })
 
   it('(b) reset-to-invalid-doc preserves pending and does not diverge on next step', async () => {

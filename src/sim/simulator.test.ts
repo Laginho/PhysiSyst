@@ -396,7 +396,7 @@ describe('structural rebuild (M3)', () => {
   })
 })
 
-describe('structural rebuild with kinematic carry-over (T7/M1 policy)', () => {
+describe('structural rebuild recovery', () => {
   const ball = (id: string, x: number): Scene['bodies'][number] => ({
     id,
     shape: 'circle',
@@ -412,67 +412,6 @@ describe('structural rebuild with kinematic carry-over (T7/M1 policy)', () => {
     bodies,
     forces: [],
     contacts: [],
-  })
-
-  it('carries surviving ids, spawns new ids at doc-initial state, drops removed ids', async () => {
-    const sim = await createSimulator(sceneOf(ball('a', -5), ball('b', 5)))
-    for (let i = 0; i < 30; i++) sim.step()
-    const before = sim.readStates()
-    const carriedA = before.get('a')!
-    expect(carriedA.linvel.y).toBeLessThan(-1)
-
-    // 'b' removed, 'c' added: a structural edit that must not disturb 'a'.
-    sim.replaceScene(sceneOf(ball('a', -5), ball('c', 8)), before)
-
-    const after = sim.readStates()
-    expect(after.has('b')).toBe(false)
-    expect(after.get('a')).toStrictEqual(carriedA)
-    expect(after.get('c')).toStrictEqual({
-      position: { x: 8, y: 10 },
-      rotation: 0,
-      linvel: { x: 0, y: 0 },
-      angvel: 0,
-    })
-  })
-
-  it('a carried rebuild is transparent: the trajectory continues as if nothing happened', async () => {
-    const scene = () => sceneOf(ball('a', -5), ball('b', 5))
-    const sim = await createSimulator(scene())
-    const control = await createSimulator(scene())
-    for (let i = 0; i < 30; i++) {
-      sim.step()
-      control.step()
-    }
-    sim.replaceScene(scene(), sim.readStates())
-    for (let i = 0; i < 30; i++) {
-      sim.step()
-      control.step()
-    }
-    expect(sim.readStates()).toStrictEqual(control.readStates())
-  })
-
-  it('ignores carry entries for ids absent from the new document', async () => {
-    const sim = await createSimulator(sceneOf(ball('a', -5), ball('ghost', 5)))
-    for (let i = 0; i < 10; i++) sim.step()
-    const stale = sim.readStates()
-    expect(() => sim.replaceScene(sceneOf(ball('a', -5)), stale)).not.toThrow()
-    expect([...sim.readStates().keys()]).toEqual(['a'])
-  })
-
-  it('carries fixed bodies without choking on their absent velocity state', async () => {
-    const withFloor = (): Scene => ({
-      ...sceneOf(ball('a', 0)),
-      bodies: [
-        { id: 'floor', shape: 'rectangle', width: 20, height: 1, fixed: true, mass: 0, position: { x: 0, y: -0.5 }, rotation: 0 },
-        ball('a', 0),
-      ],
-    })
-    const sim = await createSimulator(withFloor())
-    for (let i = 0; i < 20; i++) sim.step()
-    const before = sim.readStates()
-    sim.replaceScene(withFloor(), before)
-    expect(sim.readStates().get('floor')).toStrictEqual(before.get('floor'))
-    expect(sim.readStates().get('a')).toStrictEqual(before.get('a'))
   })
 
   it('without a carry map the rebuild still restarts from the document (default unchanged)', async () => {
@@ -497,7 +436,7 @@ describe('structural rebuild with kinematic carry-over (T7/M1 policy)', () => {
 
     // Invalid structural edit (mass<=0): refused, and the refusal must not
     // poison the simulator that raised it.
-    expect(() => sim.replaceScene(broken(), sim.readStates())).toThrow(RangeError)
+    expect(() => sim.replaceScene(broken())).toThrow(RangeError)
 
     // Old world untouched: same id set, exact same state, still steppable.
     expect([...sim.readStates().keys()]).toEqual(['a'])
@@ -505,10 +444,10 @@ describe('structural rebuild with kinematic carry-over (T7/M1 policy)', () => {
     sim.step()
     expect(sim.readStates().get('a')!.position.y).toBeLessThan(healthy.get('a')!.position.y)
 
-    // User fixes the mass -> next rebuild succeeds and playback resumes from
-    // the carried state instead of needing an app reboot.
-    const atRecovery = sim.readStates()
-    expect(() => sim.replaceScene(fixed(), atRecovery)).not.toThrow()
+    // User fixes the mass -> next rebuild succeeds from the document
+    // without needing an app reboot.
+    const atRecovery = (await createSimulator(fixed())).readStates()
+    expect(() => sim.replaceScene(fixed())).not.toThrow()
     expect(sim.readStates()).toStrictEqual(atRecovery)
     for (let i = 0; i < 10; i++) sim.step()
     expect(sim.readStates().get('a')!.position.y).toBeLessThan(atRecovery.get('a')!.position.y)
@@ -575,25 +514,6 @@ describe('particle mode (T7/M2)', () => {
     expect(b.rotation).toBe(0)
   })
 
-  it('toggling particle mode mid-flight is structural: carried position/linvel survive exactly, spin freezes', async () => {
-    const sim = await createSimulator(spinner())
-    for (let i = 0; i < 60; i++) sim.step()
-    const carried = sim.readStates()
-    expect(Math.abs(carried.get('b')!.angvel)).toBeGreaterThan(0.1)
-
-    sim.replaceScene(spinner(true), carried)
-    const after = sim.readStates().get('b')!
-    expect(after.position).toStrictEqual(carried.get('b')!.position)
-    expect(after.linvel).toStrictEqual(carried.get('b')!.linvel)
-    expect(after.rotation).toBe(carried.get('b')!.rotation)
-    expect(after.angvel).toBe(0)
-
-    // Torque stays active but can no longer spin the locked body.
-    for (let i = 0; i < 30; i++) sim.step()
-    const later = sim.readStates().get('b')!
-    expect(later.angvel).toBe(0)
-    expect(later.rotation).toBe(after.rotation)
-  })
 })
 
 describe('no invisible walls (T7/M2)', () => {
@@ -673,16 +593,6 @@ describe('Initial velocity (ticket 04)', () => {
     expect(s.linvel.x).toBeCloseTo(3, 6)
   })
 
-  it('a paused/rebuilt world preserves the carried Initial-velocity-driven state exactly', async () => {
-    const sim = await createSimulator(projectileScene())
-    for (let i = 0; i < 30; i++) sim.step()
-    const before = sim.readStates().get('shell')!
-    expect(before.linvel.y).toBeLessThan(7) // gravity has been integrating
-
-    sim.replaceScene(projectileScene(), sim.readStates())
-    expect(sim.readStates().get('shell')).toStrictEqual(before)
-  })
-
   it('a structural rebuild WITHOUT carry restarts from the document including its Initial velocity', async () => {
     const sim = await createSimulator(projectileScene())
     for (let i = 0; i < 30; i++) sim.step()
@@ -695,23 +605,4 @@ describe('Initial velocity (ticket 04)', () => {
     })
   })
 
-  it('a carried structural rebuild mid-flight does not restart the body: trajectory continues as if untouched', async () => {
-    const sim = await createSimulator(projectileScene())
-    const control = await createSimulator(projectileScene())
-    for (let i = 0; i < 30; i++) {
-      sim.step()
-      control.step()
-    }
-    // Structural edit (unrelated second body added) with kinematic carry.
-    const doc = projectileScene()
-    sim.replaceScene(
-      { ...doc, bodies: [...doc.bodies, { id: 'pebble', shape: 'circle', radius: 0.2, fixed: false, mass: 1, position: { x: -5, y: 10 }, rotation: 0 }] },
-      sim.readStates(),
-    )
-    for (let i = 0; i < 30; i++) {
-      sim.step()
-      control.step()
-    }
-    expect(sim.readStates().get('shell')).toStrictEqual(control.readStates().get('shell'))
-  })
 })

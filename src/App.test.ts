@@ -1653,7 +1653,7 @@ describe('autosave pendente grava no pagehide (PHY-35)', () => {
 
 describe('trocar de cena zera o playback (PHY-36)', () => {
   const storage = () => window.localStorage as unknown as PersistStorage
-  // Same id and same pose in both scenes: the case carry-over keeps.
+  // Same id and same pose in both scenes.
   const ballScene = (): Scene => ({
     ...blankScene(),
     bodies: [...blankScene().bodies, { shape: 'circle', radius: 0.5, id: 'bola', fixed: false, mass: 1, position: { x: 6, y: 3.5 }, rotation: 0 }],
@@ -1679,8 +1679,8 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
   ])('via %s: a cena nova começa em passos 0, na pose e na velocidade do documento', async (_, switchScene) => {
     // Steps advance the live world; only replaceScene resets it to the document.
     vi.mocked(createSimulator).mockImplementation(async (scene) => {
-      const statesFor = (doc: Scene, carry?: ReadonlyMap<string, BodyState>) =>
-        new Map(doc.bodies.map((body) => [body.id, carry?.get(body.id) ?? {
+      const statesFor = (doc: Scene) =>
+        new Map(doc.bodies.map((body) => [body.id, {
           position: { ...body.position }, rotation: body.rotation,
           linvel: { x: body.vx ?? 0, y: body.vy ?? 0 }, angvel: 0,
         }]))
@@ -1696,7 +1696,7 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
           })
         },
         readStates: () => new Map(states),
-        replaceScene: (doc, carry) => { states = statesFor(doc, carry) },
+        replaceScene: (doc) => { states = statesFor(doc) },
       }
     })
     const { host, canvas } = setupWith(seed)
@@ -1726,6 +1726,99 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
   }, 10000)
 })
 
+
+describe('falhas de edição e troca de cena sem carry (CLEAN-16)', () => {
+  const scene = (vx = 0): Scene => ({
+    version: 1, constants: { g: 0 },
+    bodies: [{ id: 'bola', shape: 'circle', radius: 5, fixed: false, mass: 1, position: { x: 6, y: 3.5 }, rotation: 0, vx }],
+    forces: [], contacts: [],
+  })
+  function fakeSimulator(doc: Scene): Simulator {
+    const statesFor = (next: Scene): Map<string, BodyState> => new Map(next.bodies.map((body) => [body.id, {
+      position: { ...body.position }, rotation: body.rotation,
+      linvel: { x: body.vx ?? 0, y: body.vy ?? 0 }, angvel: 0,
+    }]))
+    let states = statesFor(doc)
+    return {
+      ...makeFakeSimulator(),
+      step: () => {
+        const ball = states.get('bola')!
+        states = new Map(states).set('bola', {
+          ...ball, position: { x: ball.position.x + 3, y: ball.position.y + 2.5 },
+          linvel: { x: ball.linvel.x + 5, y: 0 },
+        })
+      },
+      readStates: () => new Map(states),
+      replaceScene: (next) => { states = statesFor(next) },
+    }
+  }
+  async function setup(sim: Simulator) {
+    vi.useFakeTimers()
+    vi.mocked(createSimulator).mockResolvedValue(sim)
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [
+        { id: 'cena-1', name: 'Cena 1', updatedAt: 1 },
+        { id: 'cena-2', name: 'Cena 2', updatedAt: 2 },
+      ])
+      saveScene(storage, 'cena-1', scene())
+      saveScene(storage, 'cena-2', scene(2))
+      saveCurrentSceneId(storage, 'cena-1')
+    })
+    await settleSimImport()
+    expect(loadingOverlay(host)).toBeUndefined()
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    click(canvas, { x: 9, y: 6 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9.00, 6.00) m')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5.00 m/s')
+    return { host, canvas }
+  }
+
+  it('uma edição ao vivo que falha mostra o erro, pausa e reinicia nas poses do documento', async () => {
+    const sim = fakeSimulator(scene())
+    sim.setGravity = () => { throw new Error('falha ao editar g') }
+    const { host } = await setup(sim)
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 2))
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+
+    expect(panel(host, ptBR['simError.title'])!.textContent).toContain('falha ao editar g')
+    expect(findButton(host, ptBR['playback.play'])).toBeDefined()
+    const text = panel(host, 'leitura — bola')!.textContent
+    expect(text).toContain('passos: 0')
+    expect(text).toContain('posição: (6.00, 3.50) m')
+    expect(text).toContain('velocidade: 0.00 m/s')
+    // A resumed step also starts in the rebuilt world, rather than old UI refs.
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9.00, 6.00) m')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5.00 m/s')
+  })
+
+  it('uma troca de cena cujo replaceScene falha não mostra poses ou velocidades da cena anterior, nem após o retry', async () => {
+    const sim = fakeSimulator(scene())
+    const replace = vi.spyOn(sim, 'replaceScene')
+    replace.mockImplementationOnce(() => { throw new Error('falha ao trocar cena') })
+    const { host, canvas } = await setup(sim)
+    act(() => setSelectValue(sceneSelect(host), 'cena-2'))
+    expect(panel(host, ptBR['simError.title'])!.textContent).toContain('falha ao trocar cena')
+    // The wide body contains this point even at the old simulated pose: a
+    // stale projection is selected too, so the readout must expose the leak.
+    click(canvas, { x: 6, y: 3.5 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    const text = panel(host, 'leitura — bola')!.textContent
+    expect(text).toContain('passos: 0')
+    expect(text).toContain('posição: (6.00, 3.50) m')
+    expect(text).toContain('velocidade: 2.00 m/s')
+
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('passos: 1')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9.00, 6.00) m')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 7.00 m/s')
+  })
+})
 
 describe('edição estrutural só em t0 (PHY-39)', () => {
   const storage = () => window.localStorage as unknown as PersistStorage
