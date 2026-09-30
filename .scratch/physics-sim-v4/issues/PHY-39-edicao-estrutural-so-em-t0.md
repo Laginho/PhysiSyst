@@ -1,5 +1,5 @@
 # PHY-39: Edição estrutural só com `passos = 0`
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -52,6 +52,8 @@ Trocar de cena, importar, nova cena e ⟲ continuam liberados sempre, porque zer
 
 ## Comments
 
+- 2026-09-30 Aberto a partir do review de benchmark do PR 9 (Sol, Sonnet, Opus em sessões dedicadas). Junta o F1 do Opus (corda) e o CLEAN-13 item 1 (mola), que eram o mesmo defeito: a edição estrutural no meio da corrida mistura a pose do documento com a pose viva. A trava foi decidida no grilling com o dono. `Review: human` porque é uma mudança de comportamento do editor que ele quer ver. O mecanismo de carry que fica quase morto depois deste ticket sai no CLEAN-16.
+
 - 2026-09-30 Etapa 2, commit vermelho: `npx vitest run src/App.test.ts`: **13 failed | 66 passed (79)**; `npm run typecheck` verde. Os testes atingem o App por eventos DOM; os casos de força/g e Atwood usam o simulador real.
 - Critério 7: reescrito `undo during playback pauses transport, then restores the doc` como `undo estrutural durante playback é recusado depois de um passo (PHY-39)`, avançando explicitamente um passo antes de reproduzir. Vermelho: `expected undefined to be defined` para o botão de pausa, pois o undo indevido pausa e remove o corpo. `src/playback/integration.test.ts` e `rebuild-retry.test.ts` não montam o App: seus adaptadores locais continuam testando o rebuild do motor, portanto não foram reescritos.
 
@@ -94,8 +96,6 @@ Comando de cada mutação: `npx vitest run src/App.test.ts -t PHY-39 --reporter=
 
 Atwood sem mutação passou tanto no conjunto completo quanto no recorte: após a tentativa recusada e o passo 31, `T` fica dentro de 1% de **23.544 N**, `slack = false`, e a leitura DOM mostra **T: 23.54 N**.
 
-- 2026-09-30 Aberto a partir do review de benchmark do PR 9 (Sol, Sonnet, Opus em sessões dedicadas). Junta o F1 do Opus (corda) e o CLEAN-13 item 1 (mola), que eram o mesmo defeito: a edição estrutural no meio da corrida mistura a pose do documento com a pose viva. A trava foi decidida no grilling com o dono. `Review: human` porque é uma mudança de comportamento do editor que ele quer ver. O mecanismo de carry que fica quase morto depois deste ticket sai no CLEAN-16.
-
 - 2026-09-30 Attempt 1 stopped to ask: Implementação salva em `43cab05`; gate verde com 728 testes. PHY-39 ficou `blocked`: o teste novo de força/`g` falha isoladamente, mesmo sem mutação. /  / A [skill ticket-flow](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. Diagnóstico e evidências registrados no ticket.
 
 - 2026-09-30 Proxy decided: retomar de `refs/foreman/phy-39-attempt1` (`1acc7fa` vermelho, `43cab05` produção, gate verde com 728 testes), sem recomeçar; um commit só de teste corrige o `step()` do bloco PHY-39 para esperar o boot do motor real, depois refazer a M3 (inverter `canEditDoc`) e trocar a linha "prova pendente" da tabela pela saída vermelha, gate em primeiro plano, `to-review` — a falha isolada é timing do harness: `settleSimImport()` não espera `ensureInit()`, o clique de passo cai depois das edições e dá dois passos pós-edição (0,2 em vez de 0,1); a asserção física e a guarda estão certas. Contrato inalterado, só a linha do teste de força/`g` ganhou a nota do boot.
@@ -107,3 +107,32 @@ Retomada autorizada pelo proxy: commits originais recuperados sobre `sweatshop/2
 O bloqueio anterior está resolvido. Sem mutação, o teste real de força/g passou isoladamente: `npx vitest run src/App.test.ts -t 'força, direção, ponto' --reporter=verbose --no-color`: **1 passed | 78 skipped (79)**. A M3 foi refeita com `npx vitest run src/App.test.ts -t PHY-39 --no-color`: **12 failed | 2 passed | 65 skipped (79)**; o teste ao vivo falhou na âncora recusada (`x: 0`, esperado `0.5`), conforme a tabela. Produção restaurada em `finally`; essa falha agora é prova válida, substituindo a falha de timing da primeira tentativa.
 
 Após restaurar a produção, `npx vitest run src/App.test.ts --no-color`: **79 passed (79)**. Gate completo executado em primeiro plano, com interrupção em qualquer erro: **30 test files passed; 733 tests passed**, lint, typecheck e build verdes. Permanece apenas o aviso já existente sobre o tamanho do chunk do simulador. Critério 8 concluído; entregue para revisão em `Stage: to-review`.
+
+#### Resolution (2026-09-30)
+Verdict: Approve
+
+Revisão contra `f002867` (base da sessão), HEAD `186a37b`; commits `d347cc4`, `eb0da83`, `153c86a` e `186a37b`. Arquivos revisados: `src/App.tsx`, `src/App.test.ts`, os dois catálogos i18n e este ticket. Rebase sobre `sweatshop/2026-09-24-1853` já atualizado; merge sem squash em `e601f91`. `Review: human` acompanha a revisão na sessão, conforme o fluxo.
+
+##### Standards
+
+Um achado documental corrigido: o comentário original de abertura estava depois dos registros da etapa 2, contrariando `docs/agents/issue-tracker.md` (histórico acrescentado ao final). Ele foi movido para o início de `## Comments`, preservando seu conteúdo e todas as evidências. Nenhuma violação de produção ou smell encontrada. Os arquivos respeitam o escopo; `d347cc4` contém os testes vermelhos, `eb0da83` contém produção sem testes e `153c86a` contém somente a correção autorizada do harness e seu registro.
+
+##### Spec
+
+Zero falhas nos critérios numerados, no escopo ou no protocolo. A guarda reaproveita `routeDocChange` e recusa antes de alterar documento, histórico e seleção; todos os setters, gestos, ferramentas, Delete e undo/redo passam por ela (critérios 1 e 4). Força, direção, âncora e `g` chegam ao mundo real; undo/redo ao vivo continuam disponíveis (2). Boot, reset e troca de cena liberam a edição; seleção e leituras continuam ativas (3 e 5). Atwood preserva o documento após 30 passos e a tensão no passo 31 fica dentro de 1% de 23.544 N, sem folga, com leitura DOM `T: 23.54 N` (6).
+
+O teste antigo de undo foi reescrito no commit vermelho. Os adaptadores em `integration.test.ts` e `rebuild-retry.test.ts` não montam o App e permanecem fora do recorte do critério 7. As provas por teste da tabela acima foram reproduzidas, e o gate passou (8 e 9).
+
+`Proxy decided` revisado: autorizou recuperar os commits, corrigir apenas a espera do boot em commit de teste, repetir M3 e concluir o gate. `153c86a` implementa essa decisão sem mudar as asserções físicas ou o contrato; a exceção à parada do harness foi expressamente autorizada.
+
+##### Red-green e gate reproduzidos na revisão
+
+Comando das três mutações registradas: `npx vitest run src/App.test.ts -t PHY-39 --reporter=verbose --no-color`. Cada execução terminou vermelha, com `src/App.tsx` restaurado byte a byte em `finally`.
+
+| Mutação registrada | Resultado reproduzido | Falha observada |
+| --- | --- | --- |
+| M1 — atravessar a guarda | 11 failed / 3 passed / 65 skipped (79) | mesmas recusas estruturais da tabela: pose, alpha, ferramentas, massa, undo/redo, Delete em inglês e Atwood |
+| M2 — `structuralLocked = false` | 7 failed / 7 passed / 65 skipped (79) | `expected false to be true` nos controles de ferramentas, corpo, vínculos/polias e redo |
+| M3 — aceitar estrutural e recusar live após passos | 12 failed / 2 passed / 65 skipped (79) | teste ao vivo, `src/App.test.ts:1905`: âncora `{ x: 0, y: 0 }`, esperado `{ x: 0.5, y: 0 }` |
+
+M1/M2 têm uma falha a menos que na primeira tentativa porque o teste ao vivo agora passa sem mutação. Produção restaurada: `npx vitest run src/App.test.ts -t PHY-39 --no-color`: **14 passed / 65 skipped (79)**. Gate executado novamente após o rebase: **30 test files passed; 733 tests passed**, lint, typecheck e build verdes (exit 0). Apenas o aviso já existente do chunk tardio do simulador. Fechado na sessão com esta resolução e a linha do ledger no mesmo commit.
