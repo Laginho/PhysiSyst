@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -140,3 +140,25 @@ Mutate-verify do novo teste R1, na interface pública do simulador:
 
 - Produção restaurada byte a byte após a mutação, antes do gate. Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed (30), 718 tests passed (718)**; lint, typecheck e build exit 0. Aviso existente de chunk acima de 500 kB mantido.
 - `Stage: to-review` neste commit de produção, ADR e metadados, sem alterar testes. R1 resolvida; revisão e merge ficam para a etapa 3.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+Re-revisão fixada em `git diff ccabb269a23ce85561365432ccb042b11e8ea84b...7304ce76f14172afda5b11f8c0db3d52e4602bf0`: R1 e o diff desde a revisão anterior. Commits examinados: `13a5096` (teste e metadados) e `7304ce7` (produção, ADR e metadados, sem alterar testes). Revisões Standards e Spec em sub-agentes independentes; reprodução da mutação e gate pelo agente principal.
+
+**Standards:** nenhuma violação obrigatória e nenhum novo smell. A correção fica no `solveLinear` compartilhado pela previsão livre e por `tautTensions` na predição/correção. Teste na costura pública já autorizada, separação entre commits de teste e produção preservada, limite da regularização registrado com `ponytail:` e no ADR. A duplicação escalar/matricial continua autorizada pelo ADR; a enumeração dos corpos/discos já observada na revisão anterior não mudou neste diff.
+
+**Spec:** nenhum requisito escrito ausente, ampliação de escopo ou nova regressão concreta encontrada. **✅ R1 resolvida:** cordas colineares mantêm a partícula sustentada durante os 300 passos, sem exigir uma repartição única da tensão. Os cinco critérios originais permanecem atendidos: o cenário original passa, PHY-23/24/25 continuam verdes sem alterar tolerâncias, o ADR descreve o solve por grupo, a prova de mutação foi repetida e o gate está verde. A decisão `Proxy decided` que preservou o teste original e aceitou a correção sequencial como mutação equivalente foi conferida e permanece válida; as evidências anteriores desse teste continuam aplicáveis.
+
+Prova independente do novo teste `PHY-41 R1`, na interface pública `parse` → `createSimulator` → `step` → `readStates`:
+
+| Produção / comando | Resultado |
+| --- | --- |
+| Produção entregue; `npx vitest run src/sim/acceptance.test.ts` | **50 passed (50)**. |
+| Mutação: ao encontrar pivô singular, `solveLinear` retorna `null` incondicionalmente, desativando a tentativa regularizada; `npx vitest run src/sim/acceptance.test.ts -t 'PHY-41 R1'` | **1 failed, 49 skipped (50)**; `expected 122.72676849365234 to be less than 0.001`, em `acceptance.test.ts:556`; exit 1. |
+| Produção restaurada byte a byte; gate completo `npm test && npm run lint && npm run typecheck && npm run build` | **30 test files passed (30), 718 tests passed (718)**; lint, typecheck e build exit 0. |
+
+Sem correção de produção nesta revisão. A regularização mantém a pequena complacência numérica documentada para sistemas singulares; tensões redundantes exatas continuam fora do contrato. Aviso existente do chunk acima de 500 kB mantido.
+
+Arquivos entregues: `src/sim/simulator.ts`, `src/sim/acceptance.test.ts`, `docs/adr/0004-rope-as-own-constraint-around-world-step.md`; fechamento neste ticket e em `.scratch/physics-sim-v4/ledger.md`. Rebase em `sweatshop/2026-09-24-1853` já atualizado, sem conflitos. Merge `--no-ff` na sessão: `ba1fc7c`. `Stage: done` e linha no ledger no mesmo commit de fechamento. Totais: Standards **0 violações / 0 novos juízos**; Spec **0 achados pendentes**, R1 encerrada.
