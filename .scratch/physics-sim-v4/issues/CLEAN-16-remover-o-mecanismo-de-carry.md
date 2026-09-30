@@ -1,5 +1,5 @@
 # CLEAN-16: Remover o mecanismo de carry
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-39
 Review: agent
@@ -98,3 +98,40 @@ Sem mutação: `npx vitest run src/App.test.ts -t CLEAN-16 --no-color`: **2 pass
 Cada mutação foi executada separadamente; a produção foi restaurada byte a byte em `finally` antes do gate. O primeiro ensaio de M1 falhou ao imprimir a saída Unicode no console Python; foi repetido com saída UTF-8 e é a execução acima que fornece a evidência.
 
 Gate completo, em primeiro plano, com a produção restaurada: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0**. **30 test files passed; 716 tests passed (716)**, lint/typecheck/build verdes. Nenhum teste foi alterado no commit de produção. Etapa 2 concluída; revisão pendente na branch `phy/CLEAN-16-remover-carry`, sobre `sweatshop/2026-09-24-1853`.
+
+#### Resolution (2026-09-30)
+Verdict: Approve
+
+Revisão contra `d37ee61` (`sweatshop/2026-09-24-1853`), HEAD `621ae88`; commits `b9fadb1` e `621ae88`. Todo o diff foi lido, com os eixos Standards e Spec em agentes independentes. Arquivos revisados: `src/App.tsx`, `src/App.test.ts`, `src/playback/{view,index}.ts`, `src/playback/{view,integration,rebuild-retry}.test.ts`, `src/sim/simulator.ts`, `src/sim/{simulator,acceptance}.test.ts`, ADR-0004 e este ticket. Rebase confirmou a branch atualizada; merge sem squash na sessão em `70af278`.
+
+##### Standards
+
+Nenhuma violação documentada; uma observação heurística sem fundamento para reabrir.
+
+- A remoção fica no mecanismo contratado, reutiliza o reset existente e preserva a construção normal e transacional. Sem conflito com `CONTEXT.md` ou ADRs; ADR-0004 acompanha PHY-39.
+- `b9fadb1` contém testes e ticket; `621ae88` contém produção, ADR e ticket, sem alterar testes. Todos os arquivos estão no escopo. O ticket lista os 19 casos removidos.
+- A regra Mutate-verify de `AGENTS.md` está atendida por teste DOM: M1 prova o reset de passos; M3 prova a reconstrução do mundo além da limpeza da tela; M2 prova a remoção das poses e velocidades antigas. Cada registro inclui comando e saída vermelha, reproduzidos abaixo.
+- **Possível Duplicated Code — julgamento:** `src/App.test.ts:1682` e `:1737` repetem a projeção inicial `position: { ...body.position }, rotation: body.rotation, linvel: { x: body.vx ?? 0, y: body.vy ?? 0 }, angvel: 0`. Um helper local poderia compartilhar esses campos dos simuladores falsos. Observação de limpeza, sem requisito ou alteração neste ticket.
+
+##### Spec
+
+Nenhum achado: critérios atendidos, sem regressão ou comportamento fora do escopo identificado.
+
+- **1:** `replaceScene(scene)` mantém a construção transacional e elimina carry de corpos, discos e cadeias. A inicialização normal da cadeia e o modo partícula permanecem.
+- **2–3:** o catch da edição chama reset e preserva o erro. O reset limpa estados e leituras antes de reconstruir; a troca atualiza o documento antes do reset. O retry reconstrói desse documento, e leituras sem estados usam suas poses e velocidades. Os testes verificam também o primeiro passo após reset/retry.
+- **4:** os 19 casos removidos correspondem à lista: seis de `carryOver`, sete do simulador e seis de aceitação. Os ajustes nos testes mantidos acompanham a assinatura sem carry e preservam as verificações de transação e retry.
+- **5–7:** ADR registra edição estrutural somente em t = 0; função e comentário T7 saíram de `view.ts`. Mutações por teste e gate foram reproduzidos. A descrição histórica de carry na spec v4 foi superada expressamente pelas decisões PHY-39 e CLEAN-16; a spec permanece fora dos Primary files.
+
+##### Red-green e gate reproduzidos na revisão
+
+As três mutações registradas foram executadas separadamente, com `src/App.tsx` restaurado byte a byte em `finally` depois de cada execução. Nenhum teste foi editado na revisão.
+
+| Mutação registrada | Comando | Resultado e falha observada |
+| --- | --- | --- |
+| M1 — trocar o reset no catch de `applyLiveOps` por pausa e rebuild pendente | `npx vitest run src/App.test.ts -t 'uma edi' --no-color` | **1 failed / 1 passed / 79 skipped (81)**, exit 1. `App.test.ts:1789`: esperado `passos: 0`, recebido `passos: 1`, posição `(9.00, 6.00)` e velocidade `5.00 m/s`. |
+| M2 — remover a limpeza de `statesRef` no reset e no ramo estrutural | `npx vitest run src/App.test.ts -t 'uma troca de cena cujo' --no-color` | **1 failed / 80 skipped (81)**, exit 1. `App.test.ts:1812`: esperado `(6.00, 3.50)`, recebido `(9.00, 6.00)` e velocidade `5.00 m/s` da cena anterior. |
+| M3 — remover `replaceScene` do reset, mantendo a limpeza das leituras | `npx vitest run src/App.test.ts -t 'uma edi' --no-color` | **1 failed / 1 passed / 79 skipped (81)**, exit 1. `App.test.ts:1795`: no passo retomado, esperado `(9.00, 6.00)`, recebido `(12.00, 8.50)` e velocidade `10.00 m/s`. |
+
+Após restaurar a produção e confirmar o rebase, gate completo em primeiro plano: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0**, **30 test files passed; 716 tests passed (716)**; lint, typecheck e build verdes. Apenas o aviso já existente do tamanho do chunk tardio do simulador. O merge preservou a árvore verificada. Fechado na sessão com esta resolução e a linha do ledger no mesmo commit.
+
+Achados por eixo: Standards — **0 violações, 1 observação de duplicação nas fixtures**; Spec — **0 achados**.
