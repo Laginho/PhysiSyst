@@ -1,5 +1,5 @@
 # PHY-39: Edição estrutural só com `passos = 0`
-Stage: blocked
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human

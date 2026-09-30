@@ -1747,6 +1747,10 @@ describe('edição estrutural só em t0 (PHY-39)', () => {
   }
   async function step(host: HTMLElement, n = 1) {
     await settleSimImport()
+    for (let i = 0; i < 100 && loadingOverlay(host); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(5) })
+    }
+    expect(loadingOverlay(host)).toBeUndefined()
     for (let i = 0; i < n; i++) await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
   }
   function savedDoc() {
