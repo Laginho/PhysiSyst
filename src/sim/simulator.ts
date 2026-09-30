@@ -481,14 +481,23 @@ function lengtheningRate(along: readonly RopePull[], v: readonly Vec2[]): number
   return rate
 }
 
-/** x with K x = b (Gaussian elimination, partial pivoting); null when K is singular. */
-function solveLinear(K: readonly (readonly number[])[], b: readonly number[]): number[] | null {
+/** x with K x = b (Gaussian elimination, partial pivoting); regularizes redundant constraints once. */
+function solveLinear(K: readonly (readonly number[])[], b: readonly number[], regularized = false): number[] | null {
   const n = b.length
+  const scale = Math.max(0, ...K.flat().map(Math.abs))
   const rows = K.map((row, i) => [...row, b[i]!])
   for (let c = 0; c < n; c++) {
     let pivot = c
     for (let r = c + 1; r < n; r++) if (Math.abs(rows[r]![c]!) > Math.abs(rows[pivot]![c]!)) pivot = r
-    if (Math.abs(rows[pivot]![c]!) < 1e-12) return null
+    if (scale === 0 || Math.abs(rows[pivot]![c]!) < 1e-12 * scale) {
+      if (scale === 0 || regularized) return null
+      // ponytail: tiny compliance for redundant rows; rank-revealing solve if exact redundant tensions matter.
+      return solveLinear(
+        K.map((row, i) => row.map((value, j) => value + (i === j ? 1e-9 * scale : 0))),
+        b,
+        true,
+      )
+    }
     ;[rows[c], rows[pivot]] = [rows[pivot]!, rows[c]!]
     const top = rows[c]!
     for (let r = c + 1; r < n; r++) {
@@ -855,9 +864,16 @@ class RapierSimulator implements Simulator {
 
   step(): void {
     const touched = new Set<RAPIER.RigidBody>()
+    const shared = new Map<RAPIER.RigidBody, RopeBinding[]>()
     for (const binding of this.forces.values()) touched.add(binding.rigid)
     for (const rope of this.ropes) {
       for (const point of [rope.a, ...rope.via, rope.b]) touched.add(point.rigid)
+      for (const rigid of [...[rope.a, ...rope.via, rope.b].map((p) => p.rigid), ...rope.grips.map((g) => g.disk)]) {
+        if (!rigid.isDynamic()) continue
+        const ropes = shared.get(rigid) ?? []
+        ropes.push(rope)
+        shared.set(rigid, ropes)
+      }
     }
     for (const s of this.springs) touched.add(s.a.rigid).add(s.b.rigid)
     // resetForces leaves torques: an off-COM addForceAtPoint would pile its
@@ -891,15 +907,30 @@ class RapierSimulator implements Simulator {
       if (s.chain) rebaseChains.push(this.pushChain(s, s.chain))
       else this.pushSpring(s)
     }
-    for (const rope of this.ropes) {
-      if (rope.grips.length) this.pullPieces(rope)
-      else this.pullRope(rope)
+    // Connected ropes share a solve; fixed anchors do not couple their motion.
+    const remaining = new Set(this.ropes)
+    const groups: RopeBinding[][] = []
+    for (const rope of remaining) {
+      const group = [rope]
+      remaining.delete(rope)
+      for (const member of group) {
+        for (const rigid of [...[member.a, ...member.via, member.b].map((p) => p.rigid), ...member.grips.map((g) => g.disk)]) {
+          for (const neighbour of shared.get(rigid) ?? []) {
+            if (remaining.delete(neighbour)) group.push(neighbour)
+          }
+        }
+      }
+      groups.push(group)
+    }
+    for (const group of groups) {
+      if (group.length > 1 || group[0]!.grips.length) this.pullPieces(group)
+      else this.pullRope(group[0]!)
     }
     this.world.step()
     for (const rebase of rebaseChains) rebase()
-    for (const rope of this.ropes) {
-      if (rope.grips.length) this.correctPieces(rope)
-      else this.correctRope(rope)
+    for (const group of groups) {
+      if (group.length > 1 || group[0]!.grips.length) this.correctPieces(group)
+      else this.correctRope(group[0]!)
     }
   }
 
@@ -1044,93 +1075,101 @@ class RapierSimulator implements Simulator {
   }
 
   /**
-   * A rope over pulleys with mass (PHY-25): pullRope's prediction, once per
-   * piece. The pieces couple through the disks they share and any body two
-   * of them pull, so K is a matrix and the tensions solve together.
+   * PullRope's prediction, once per piece across a connected group (PHY-41).
+   * A rope without massive pulleys is one piece; all tensions solve together.
    */
-  private pullPieces(rope: RopeBinding): void {
-    this.placeDisks(rope)
+  private pullPieces(ropes: readonly RopeBinding[]): void {
     const g = this.world.gravity
     const phi = this.substepFactor()
-    const frame = ropeFrame(rope)
-    const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
-    // Each disk's free turn over the step, the same way.
-    const spin = rope.grips.map(({ disk }) => {
-      const w0 = disk.angvel()
-      const w1 = w0 + TIMESTEP * disk.userTorque() * disk.effectiveWorldInvInertia()
-      return TIMESTEP * (w0 + phi * (w1 - w0))
+    const rows = ropes.flatMap((rope) => {
+      this.placeDisks(rope)
+      const frame = ropeFrame(rope)
+      const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
+      // Each disk's free turn over the step, the same way.
+      const spin = rope.grips.map(({ disk }) => {
+        const w0 = disk.angvel()
+        const w1 = w0 + TIMESTEP * disk.userTorque() * disk.effectiveWorldInvInertia()
+        return TIMESTEP * (w0 + phi * (w1 - w0))
+      })
+      const endFrame = ropeFrame(rope, free)
+      const midFrame = ropeFrame(
+        rope,
+        free.map((q, i) => ({ x: (q.x + frame.pulls[i]!.p.x) / 2, y: (q.y + frame.pulls[i]!.p.y) / 2 })),
+      )
+      const now = piecePulls(rope, frame)
+      const mid = piecePulls(rope, midFrame)
+      const end = piecePulls(rope, endFrame)
+      const nowLengths = pieceLengths(rope, frame.path, gripShares(rope, frame.path))
+      const endLengths = pieceLengths(rope, endFrame.path, gripShares(rope, endFrame.path, spin))
+      // J along the mid-step legs, J′ along the end-step ones, both at today's points.
+      const pulls = now.map((piece, l) => piece.map((pull, i) => ({ ...pull, u: mid[l]![i]!.u })))
+      const along = now.map((piece, k) => piece.map((pull, i) => ({ ...pull, u: end[k]![i]!.u })))
+      const pieces = rope.grips.length ? rope.pieces : [rope]
+      return pieces.map((piece, k) => {
+        const target = Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length))
+        return {
+          piece,
+          pulls: pulls[k]!,
+          along: along[k]!,
+          toTarget: (endLengths[k]! - piece.length - target) / (phi * TIMESTEP * TIMESTEP),
+          rate: (lengtheningRate(end[k]!, now[k]!.map(({ rigid, p }) => freePointVelocity(rigid, p, g))) - ropeAllowance(target)) / TIMESTEP,
+        }
+      })
     })
-    const endFrame = ropeFrame(rope, free)
-    const midFrame = ropeFrame(
-      rope,
-      free.map((q, i) => ({ x: (q.x + frame.pulls[i]!.p.x) / 2, y: (q.y + frame.pulls[i]!.p.y) / 2 })),
-    )
-    const now = piecePulls(rope, frame)
-    const mid = piecePulls(rope, midFrame)
-    const end = piecePulls(rope, endFrame)
-    const nowLengths = pieceLengths(rope, frame.path, gripShares(rope, frame.path))
-    const endLengths = pieceLengths(rope, endFrame.path, gripShares(rope, endFrame.path, spin))
-    // J along the mid-step legs, J′ along the end-step ones, both at today's points.
-    const pulls = now.map((piece, l) => piece.map((pull, i) => ({ ...pull, u: mid[l]![i]!.u })))
-    const along = now.map((piece, k) => piece.map((pull, i) => ({ ...pull, u: end[k]![i]!.u })))
-    const K = along.map((a) => pulls.map((p) => ropeInvMass(p, a)))
-    const target = rope.pieces.map((piece, k) => Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length)))
-    const toTarget = rope.pieces.map(
-      (piece, k) => (endLengths[k]! - piece.length - target[k]!) / (phi * TIMESTEP * TIMESTEP),
-    )
-    const rates = now.map((piece, k) =>
-      lengtheningRate(
-        end[k]!,
-        piece.map(({ rigid, p }) => freePointVelocity(rigid, p, g)),
-      ),
-    )
+    const K = rows.map((a) => rows.map((p) => ropeInvMass(p.pulls, a.along)))
     const predicted = solveLinear(
       K,
-      rates.map((rate, k) => (rate - ropeAllowance(target[k]!)) / TIMESTEP),
+      rows.map((r) => r.rate),
     )
     const tensions = tautTensions(
       K,
-      toTarget,
-      rope.pieces.map((p) => p.residual),
+      rows.map((r) => r.toTarget),
+      rows.map((r) => r.piece.residual),
     )
-    rope.pieces.forEach((piece, k) => {
+    rows.forEach(({ piece, pulls }, k) => {
       piece.predicted = predicted?.[k] ?? 0
       piece.tension = tensions[k]!
-      if (piece.tension > 0) applyPulls(pulls[k]!, piece.tension, false)
+      if (piece.tension > 0) applyPulls(pulls, piece.tension, false)
     })
   }
 
   /** correctRope, once per piece and solved together; first the shares catch up with the disks' turn. */
-  private correctPieces(rope: RopeBinding): void {
-    this.placeDisks(rope)
-    const frame = ropeFrame(rope)
-    const shares = gripShares(rope, frame.path)
-    rope.grips.forEach((grip, k) => {
-      grip.share = shares[k]!
-      grip.start = frame.path.arcs[grip.at]!.start
-      grip.rotation = grip.disk.rotation()
+  private correctPieces(ropes: readonly RopeBinding[]): void {
+    const rows = ropes.flatMap((rope) => {
+      this.placeDisks(rope)
+      const frame = ropeFrame(rope)
+      const shares = gripShares(rope, frame.path)
+      rope.grips.forEach((grip, k) => {
+        grip.share = shares[k]!
+        grip.start = frame.path.arcs[grip.at]!.start
+        grip.rotation = grip.disk.rotation()
+      })
+      const now = piecePulls(rope, frame)
+      const lengths = pieceLengths(rope, frame.path, shares)
+      const pieces = rope.grips.length ? rope.pieces : [rope]
+      return pieces.map((piece, k) => ({ piece, pulls: now[k]!, length: lengths[k]! }))
     })
-    const now = piecePulls(rope, frame)
-    const lengths = pieceLengths(rope, frame.path, shares)
-    const K = now.map((a) => now.map((p) => ropeInvMass(p, a)))
+    const K = rows.map((a) => rows.map((p) => ropeInvMass(p.pulls, a.pulls)))
     // ponytail: the same chord-velocity projection as correctRope, same energy drain and upgrade path.
-    const b = now.map((piece, k) => {
-      const v = piece.map(({ rigid, p }) => pointVelocity(rigid, p))
-      return (lengtheningRate(piece, v) - ropeAllowance(lengths[k]! - rope.pieces[k]!.length)) / TIMESTEP
+    const b = rows.map(({ piece, pulls, length }) => {
+      const v = pulls.map(({ rigid, p }) => pointVelocity(rigid, p))
+      return (lengtheningRate(pulls, v) - ropeAllowance(length - piece.length)) / TIMESTEP
     })
     const corrected = tautTensions(
       K,
       b,
-      rope.pieces.map((p) => p.tension),
+      rows.map((r) => r.piece.tension),
     )
-    rope.pieces.forEach((piece, k) => {
+    rows.forEach(({ piece, pulls }, k) => {
       const impulse = (corrected[k]! - piece.tension) * TIMESTEP
-      if (impulse !== 0) applyPulls(now[k]!, impulse, true)
+      if (impulse !== 0) applyPulls(pulls, impulse, true)
       piece.tension = corrected[k]!
       piece.residual = piece.tension > 0 ? piece.tension - piece.predicted : 0
     })
-    rope.tension = Math.max(...corrected)
-    rope.slack = rope.tension === 0
+    for (const rope of ropes) {
+      if (rope.grips.length) rope.tension = Math.max(...rope.pieces.map((p) => p.tension))
+      rope.slack = rope.tension === 0
+    }
   }
 
   /** T per leg: each piece's tension on every leg it spans. */
