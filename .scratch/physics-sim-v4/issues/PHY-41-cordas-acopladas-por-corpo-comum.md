@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -43,3 +43,37 @@ As cordas que compartilham um corpo dinâmico formam um grupo, e cada grupo reso
 - 2026-09-30 Attempt 1 stopped to ask: Implementação salva em `9b76293`; gate verde com 720 testes. PHY-41 ficou `blocked`: o teste não detecta a volta da correção sequencial. /  / A [skill ticket-flow](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. Evidências registradas no ticket; sem merge.
 
 - 2026-09-30 Proxy decided: manter o teste PHY-41 como está e retomar de `refs/foreman/phy-41-attempt1` (`43724f9` vermelho, `9b76293` verde) até `to-review`, sem novo teste vermelho — a mutação "correção sequencial, predição por grupo" é equivalente frente aos critérios (partícula totalmente restrita: a correção faz trabalho ~0 e nenhuma tolerância mais apertada que a atual a separa do solve conjunto); o teste mata a regressão que mira (solve sequencial, 33 mm), e o mutate-verify da tentativa, com o sobrevivente registrado como equivalente, cumpre o critério de mutate-verify. Contrato inalterado.
+#### Etapa 2 — implementação salva, prova incompleta (2026-09-30)
+
+- Branch: `phy/PHY-41-cordas-acopladas`, a partir da sessão `sweatshop/2026-09-24-1853`. Commit vermelho: `43724f9`, apenas teste e metadados do ticket. Produção e ADR são salvos no commit deste bloqueio, sem alterar testes.
+- Implementação: grupos conexos por corpos dinâmicos (incluindo montagens de polias e discos compartilhados), com todas as peças no mesmo `K` em predição e correção. Cordas sem polias com massa contribuem uma peça; cordas isoladas conservam seus caminhos anteriores. Reutilizados `ropeInvMass`, `solveLinear` e `tautTensions`, sem dependências novas. ADR-0004 atualizado para retirar a solução sequencial e o plano B de iterar a correção.
+- Verde: `npx vitest run src/sim/acceptance.test.ts` → **54 passed**, sem mudar tolerâncias existentes. Probe descartável via Vite SSR, no motor real: deslocamento máximo **0,06181285425554961 mm**, erro máximo de tensão desde o passo 10 **0,8747548731790921%**, nenhuma corda slack; passo 300: **48,85883543038126 N** e **48,85883543038103 N**.
+
+Mutate-verify do novo teste de equilíbrio PHY-41, na interface pública do simulador:
+
+| Mutação em produção | Resultado do teste PHY-41 | Evidência |
+|---|---|---|
+| Predição volta a chamar `pullRope` separadamente para cada corda; correção permanece por grupo | **1 failed, 53 skipped** | `expected 0.05660960959768512 to be less than 0.001` |
+| Correção volta a chamar `correctRope` separadamente para cada corda; predição permanece por grupo | **1 passed, 53 skipped** — mutação sobrevivente | O cenário de equilíbrio não distingue a correção conjunta da sequencial. |
+| `correctPieces` substitui todas as tensões resolvidas por zero | **1 failed, 53 skipped** | `expected 0.009705823846161366 to be less than 0.001` |
+
+- Todas as mutações foram restauradas byte a byte. Gate completo executado após a restauração: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed, 720 tests passed**; lint, typecheck e build com exit 0. Permanece o aviso existente de chunks acima de 500 kB.
+- **Bloqueio:** embora o novo teste detecte a predição sequencial e a remoção das tensões na correção, ele sobrevive à regressão que desfaz especificamente o solve por grupo na correção. A prova de regressão desse comportamento é insuficiente. O `AGENTS.md` exige corrigir testes que sobrevivem à mutação; como o teste já foi comprometido, a skill `ticket-flow` exige parar quando um teste se prova errado depois do commit. Não houve alteração posterior no teste, revisão ou merge. É necessário corrigir a prova de correção conjunta antes de retomar a etapa 2; o gate verde não substitui essa evidência.
+
+#### Etapa 2 — retomada concluída (2026-09-30)
+
+- Retomada conforme a decisão do proxy acima, que supera o bloqueio da tentativa 1: teste preservado, sem novo teste vermelho. Branch `phy/PHY-41-cordas-acopladas`, a partir da sessão atual `abca2bf`. Recuperados `43724f9` como `94a352e` (teste e metadados apenas) e a implementação de `9b76293` no commit desta entrega, sem alterar testes. Conflitos resolvidos preservando o rebase da cadeia após `world.step()` (PHY-42), a remoção do carry (CLEAN-16), o ADR atual e os comentários do proxy.
+- Vermelho reproduzido antes de recuperar produção: `npx vitest run src/sim/acceptance.test.ts -t PHY-41` → **1 failed, 48 skipped (49)**; `expected 0.03299476053301212 to be less than 0.001`.
+- Verde após recuperar produção: `npx vitest run src/sim/acceptance.test.ts` → **49 passed**, incluindo PHY-23, PHY-24 e PHY-25 sem mudar tolerâncias.
+
+Mutate-verify repetido no código recuperado, pelo mesmo teste PHY-41 na interface pública:
+
+| Mutação em produção | Resultado | Evidência |
+|---|---|---|
+| Predição sequencial por corda, correção por grupo | **1 failed, 48 skipped (49)** | `expected 0.05660960959768512 to be less than 0.001` |
+| Correção sequencial por corda, predição por grupo | **1 passed, 48 skipped (49)** | Sobrevivente equivalente frente aos critérios, conforme a decisão registrada do proxy; contrato e teste preservados. |
+| Tensões de `correctPieces` substituídas por zero | **1 failed, 48 skipped (49)** | `expected 0.009705823846161366 to be less than 0.001` |
+
+- Mutações restauradas byte a byte antes do gate. Primeira execução: **716 passed, 1 failed**, em PHY-20 (`src/App.browser.test.ts`, viewport 600 px), por `SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.` Arquivo isolado → **10 passed**; nenhuma alteração no harness.
+- Gate completo repetido: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed, 717 tests passed**, exit 0; lint, typecheck e build verdes. Mantém-se o aviso existente de chunk acima de 500 kB.
+- `Stage: to-review` nesta entrega; revisão e merge ficam para a etapa 3.
