@@ -20,6 +20,7 @@ export const ptBR = {
   'shortcuts.deselectOrClose': 'desmarcar, cancelar a mola, a corda ou a polia em criação (ou fechar este menu)',
   'shortcuts.toggleHelp': 'abrir/fechar este menu',
   'palette.rectangle': 'retângulo',
+  'editor.resetToEdit': 'reinicie (⟲) para editar',
   'palette.circle': 'bola',
   'palette.triangle': 'cunha',
   'palette.spring': 'mola',

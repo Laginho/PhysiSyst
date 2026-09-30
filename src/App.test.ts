@@ -19,7 +19,7 @@ import { presetById } from './presets'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 // The real simulator boots real wasm (rapier2d-compat) — fine for the app,
-// but nothing in this file asserts actual physics, only doc/UI state, so a
+// most tests here assert doc/UI state; PHY-39 opts into real physics. A
 // no-op fake removes real-boot timing from every test and lets the loading-
 // screen tests below control exactly when boot resolves/rejects.
 vi.mock('./sim', async (importOriginal) => ({
@@ -532,11 +532,13 @@ describe('undo/redo, delete, atalhos (PHY-14)', () => {
   })
 
   it(
-    'undo during playback pauses transport, then restores the doc',
+    'undo estrutural durante playback é recusado depois de um passo (PHY-39)',
     async () => {
       const host = renderApp()
       act(() => findButton(host, 'retângulo')?.click())
 
+      await settleSimImport()
+      await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
       await act(async () => {
         findButton(host, '▶ reproduzir')?.click()
       })
@@ -549,8 +551,9 @@ describe('undo/redo, delete, atalhos (PHY-14)', () => {
 
       pressKey('z', { ctrlKey: true })
 
-      expect(findButton(host, '▶ reproduzir')).toBeDefined()
-      expect([...host.querySelectorAll('fieldset')].some((f) => f.querySelector('legend')?.textContent?.trim() === 'retangulo')).toBe(false)
+      expect(findButton(host, '⏸ pausar')).toBeDefined()
+      expect(panel(host, 'retangulo')).toBeDefined()
+      expect(host.textContent).toContain('reinicie (⟲) para editar')
     },
     10000,
   )
@@ -1721,4 +1724,217 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
     expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (9.00, 6.00) m`)
     expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 5.00 m/s`)
   }, 10000)
+})
+
+
+describe('edição estrutural só em t0 (PHY-39)', () => {
+  const storage = () => window.localStorage as unknown as PersistStorage
+  const hint = 'reinicie (⟲) para editar'
+  const scene = (): Scene => ({
+    version: 1, constants: { g: 0 },
+    bodies: [
+      { id: 'parede', shape: 'rectangle', width: 1, height: 2, fixed: true, mass: 0, position: { x: 2, y: 4 }, rotation: 0 },
+      { id: 'bloco', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 5, y: 4 }, rotation: 0 },
+    ], forces: [{ id: 'F', bodyId: 'bloco', anchor: { x: 0, y: 0 }, magnitude: 0, direction: 0 }], contacts: [],
+  })
+  function setup(doc = scene()) {
+    vi.useFakeTimers()
+    return setupWith(() => {
+      saveIndex(storage(), [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
+      saveScene(storage(), 'cena-1', doc)
+      saveCurrentSceneId(storage(), 'cena-1')
+    })
+  }
+  async function step(host: HTMLElement, n = 1) {
+    await settleSimImport()
+    for (let i = 0; i < 100 && loadingOverlay(host); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(5) })
+    }
+    expect(loadingOverlay(host)).toBeUndefined()
+    for (let i = 0; i < n; i++) await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+  }
+  function savedDoc() {
+    act(() => { window.dispatchEvent(new Event('pagehide')) })
+    return loadScene(storage(), 'cena-1')
+  }
+  function expectUnchanged(before: Scene, host: HTMLElement) {
+    expect(savedDoc()).toStrictEqual(before)
+    expect(host.textContent).toContain(hint)
+  }
+
+  it.each(['pausado', 'rodando'])('recusa mover, girar, redimensionar e jogar no lixo, %s', async (mode) => {
+    const before = scene()
+    const { host, canvas } = setup(before)
+    await step(host)
+    if (mode === 'rodando') await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    click(canvas, { x: 5.2, y: 4.2 })
+    for (const [from, to] of [
+      [{ x: 5.2, y: 4.2 }, { x: 6.2, y: 4.2 }],
+      [{ x: 5, y: 3.1 }, { x: 5.9, y: 4 }],
+      [{ x: 5.5, y: 4.5 }, { x: 6, y: 5 }],
+    ]) {
+      dragTo(canvas, from!, to!)
+      expectUnchanged(before, host)
+    }
+    const p = screen(5.2, 4.2)
+    const trash = trashRect(900, 600)
+    act(() => canvas.dispatchEvent(pointerEvent('pointerdown', p.x, p.y)))
+    act(() => canvas.dispatchEvent(pointerEvent('pointerup', trash.x + trash.w / 2, trash.y + trash.h / 2)))
+    expectUnchanged(before, host)
+    expect(panel(host, 'bloco')).toBeDefined()
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+  })
+
+  it('recusa o arrasto de alpha da cunha', async () => {
+    const before = scene()
+    before.bodies[1] = { id: 'bloco', shape: 'triangle', base: 2, alpha: 45, fixed: false, mass: 1, position: { x: 5, y: 4 }, rotation: 0 }
+    const { host, canvas } = setup(before)
+    await step(host)
+    click(canvas, { x: 5.5, y: 4.2 })
+    dragTo(canvas, { x: 6, y: 5 }, { x: 6, y: 6 })
+    expectUnchanged(before, host)
+  })
+
+  it.each(['mola', 'corda', 'polia'])('recusa a ferramenta %s armada antes do primeiro passo', async (name) => {
+    const before = scene()
+    const { host, canvas } = setup(before)
+    act(() => findButton(host, name)!.click())
+    await step(host)
+    click(canvas, { x: 2, y: 4 })
+    click(canvas, { x: 5, y: 4 })
+    expectUnchanged(before, host)
+    expect(findButton(host, name)!.disabled).toBe(true)
+  })
+
+  it('recusa Delete, Backspace e campos estruturais; desabilita controles e libera depois do reset', async () => {
+    const before = scene()
+    const { host, canvas } = setup(before)
+    await step(host)
+    click(canvas, { x: 5.2, y: 4.2 })
+    const properties = panel(host, 'bloco')!
+    const structural = [...properties.querySelectorAll('input')]
+    for (const input of structural) {
+      expect(input.matches(':disabled')).toBe(true)
+      if (input.type === 'number') {
+        act(() => setNativeInputValue(input, Number(input.value) + 1))
+        expectUnchanged(before, host)
+      }
+    }
+    for (const key of ['Delete', 'Backspace']) {
+      pressKey(key)
+      expectUnchanged(before, host)
+      expect(panel(host, 'bloco')).toBeDefined()
+    }
+    for (const text of ['retângulo', 'bola', 'cunha', 'mola', 'polia', 'corda', ptBR['panel.delete'], ptBR['panel.duplicate'], ptBR['forces.add']]) {
+      expect(findButton(host, text)!.matches(':disabled')).toBe(true)
+    }
+    expect(panel(host, ptBR['forces.title'].replace('{id}', 'bloco'))!.querySelector('button')!.matches(':disabled')).toBe(true)
+    expect(inputForLabel(host, ptBR['panel.particleMode']).matches(':disabled')).toBe(true)
+    expect([...panel(host, ptBR['contacts.title'])!.querySelectorAll('input, select, button')].every((el) => el.matches(':disabled'))).toBe(true)
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    expect(structural.every((el) => !el.matches(':disabled'))).toBe(true)
+    expect(findButton(host, 'mola')!.disabled).toBe(false)
+    act(() => setNativeInputValue(inputForLabel(properties, ptBR['properties.mass']), 2))
+    expect(field(host, 'bloco', ptBR['properties.mass'])).toBe(2)
+    expect(host.textContent).not.toContain(hint)
+  })
+
+  it.each(['atwood', 'spring-horizontal'])('desabilita o inspetor de vínculos e polias de %s', async (preset) => {
+    const before = presetById(preset)!.buildScene()
+    const { host, canvas } = setup(before)
+    await step(host)
+    // Pulley axle and spring midpoint are stable after one step.
+    const spots = preset === 'atwood' ? [{ x: 6, y: 7 }, { x: 5.75, y: 5 }] : [{ x: 5, y: 0.2 }]
+    for (const spot of spots) {
+      click(canvas, spot)
+      const id = preset === 'atwood' ? (spot.y === 7 ? before.pulleys![0]!.id : before.constraints![0]!.id) : before.constraints![0]!.id
+      const inspector = panel(host, id)!
+      expect(inspector).toBeDefined()
+      expect([...inspector.querySelectorAll('input, button')].every((el) => el.matches(':disabled'))).toBe(true)
+    }
+  })
+
+  it('bloqueia undo/redo estrutural sem consumir o histórico; libera após reset', async () => {
+    const { host } = setup()
+    act(() => findButton(host, 'bola')!.click())
+    pressKey('z', { ctrlKey: true })
+    await step(host)
+    expect(findButton(host, '↷')!.disabled).toBe(true)
+    pressKey('y', { ctrlKey: true })
+    expect(savedDoc()!.bodies.some((b) => b.id === 'bola')).toBe(false)
+    expect(host.textContent).toContain(hint)
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    pressKey('y', { ctrlKey: true })
+    expect(panel(host, 'bola')).toBeDefined()
+    await step(host)
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    pressKey('z', { ctrlKey: true })
+    expect(panel(host, 'bola')).toBeDefined()
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    pressKey('z', { ctrlKey: true })
+    expect(savedDoc()!.bodies.some((b) => b.id === 'bola')).toBe(false)
+  })
+
+  it('a recusa acompanha o idioma inglês', async () => {
+    const { host, canvas } = setup()
+    await step(host)
+    const language = [...host.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.value === 'en'))!
+    try {
+      act(() => setSelectValue(language, 'en'))
+      click(canvas, { x: 5.2, y: 4.2 })
+      pressKey('Delete')
+      expect(savedDoc()).toStrictEqual(scene())
+      expect(host.textContent).toContain('reset (⟲) to edit')
+    } finally {
+      setLang('pt-BR')
+    }
+  })
+
+  it('força, direção, ponto de aplicação e g continuam chegando ao mundo; undo/redo ao vivo funcionam', async () => {
+    const real = await vi.importActual<typeof import('./sim')>('./sim')
+    let sim!: Simulator
+    vi.mocked(createSimulator).mockImplementation(async (doc) => (sim = await real.createSimulator(doc)))
+    const { host, canvas } = setup()
+    await step(host)
+    click(canvas, { x: 5.2, y: 4.2 })
+    const forces = panel(host, ptBR['forces.title'].replace('{id}', 'bloco'))!
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.magnitude']), 12))
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.direction']), 90))
+    dragTo(canvas, { x: 5, y: 4 }, { x: 5.5, y: 4 })
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 6))
+    expect(savedDoc()!.forces[0]!.anchor).toStrictEqual({ x: 0.5, y: 0 })
+    await step(host)
+    const state = sim.readStates().get('bloco')!
+    expect(state.linvel.x).toBeCloseTo(0, 5)
+    expect(state.linvel.y).toBeCloseTo(0.1, 5)
+    expect(state.angvel).toBeGreaterThan(0)
+    expect(findButton(host, '↶')!.disabled).toBe(false)
+    pressKey('z', { ctrlKey: true })
+    expect(savedDoc()!.constants.g).toBe(0)
+    expect(findButton(host, '↷')!.disabled).toBe(false)
+    pressKey('y', { ctrlKey: true })
+    expect(savedDoc()!.constants.g).toBe(6)
+    expect(host.textContent).not.toContain(hint)
+  })
+
+  it('Atwood após 30 passos: arrasto recusado preserva documento e T dentro de 1%', async () => {
+    const real = await vi.importActual<typeof import('./sim')>('./sim')
+    let sim!: Simulator
+    vi.mocked(createSimulator).mockImplementation(async (doc) => (sim = await real.createSimulator(doc)))
+    const before = presetById('atwood')!.buildScene()
+    const { host, canvas } = setup(before)
+    await step(host, 30)
+    const from = sim.readStates().get('bloco-1')!.position
+    dragTo(canvas, from, { x: from.x + 0.01, y: from.y })
+    expectUnchanged(before, host)
+    await step(host)
+    const rope = sim.readConstraints()[0]!
+    expect(rope.kind).toBe('rope')
+    if (rope.kind !== 'rope') throw new Error('missing rope')
+    expect(Math.abs(rope.tension / 23.544 - 1)).toBeLessThan(0.01)
+    expect(rope.slack).toBe(false)
+    click(canvas, { x: 5.75, y: 5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(panel(host, 'leitura — corda')!.textContent).toContain('T: 23.54 N')
+  })
 })
