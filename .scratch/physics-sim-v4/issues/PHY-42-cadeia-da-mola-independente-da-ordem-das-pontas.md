@@ -1,5 +1,5 @@
 # PHY-42: A mola com massa não depende de qual ponta é `a`
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -35,5 +35,10 @@ A correção rebaseia os nós pelo deslocamento real da origem ao longo do eixo,
 ## Comments
 
 - 2026-09-30 Stage 2: regressão escrita na interface pública `createSimulator` → `step` → `readStates`, comparando as duas ordens das pontas por 600 passos. Red antes da correção: `npx vitest run src/sim/acceptance.test.ts -t PHY-42` → 1 failed, 53 skipped (54); `AssertionError: expected 0.008981645107269287 to be less than 0.0001`.
+
+- 2026-09-30 Stage 2 concluído: `pushChain` mantém os nós na origem anterior e retorna o rebase executado por `step` imediatamente depois de `world.step()`. O deslocamento real da âncora `a` é projetado no eixo usado pelo passo da cadeia, incluindo aceleração e rotação da âncora. Teste separado no commit `9304327`; o commit de produção não altera testes.
+- Mutate-verify do teste `PHY-42: swapping the spring ends keeps the block trajectory within 0.1 mm over 600 steps`: na produção corrigida, trocar temporariamente `chain.p = chain.p.map((p) => p - moved)` por `chain.p = chain.p.map((p) => p - TIMESTEP * v[0]!)`, restaurando o rebase antigo. `npx vitest run src/sim/acceptance.test.ts -t PHY-42` → 1 failed, 53 skipped (54); `AssertionError: expected 0.008981645107269287 to be less than 0.0001`. Mutação removida, mesmo comando → 1 passed, 53 skipped (54).
+- Aceitação PHY-30: `npx vitest run src/sim/acceptance.test.ts -t PHY-30` → 13 passed, 41 skipped (54), incluindo CLEAN-09 e CLEAN-12 sem alteração de tolerâncias.
+- Gate final: `npm test && npm run lint && npm run typecheck && npm run build` → exit 0; 30 arquivos, 720 testes verdes; lint, typecheck e build verdes. Na primeira execução, PHY-18 no navegador falhou com `canvas geometry did not settle` (719 passed, 1 failed); seu arquivo isolado passou com 10 testes e a repetição do gate completo passou. Build mantém o aviso de chunks acima de 500 kB.
 
 - 2026-09-30 Aberto a partir do F3 do Sol no review de benchmark do PR 9. A divergência de 8,98 mm foi reproduzida por probe descartável no motor real.
