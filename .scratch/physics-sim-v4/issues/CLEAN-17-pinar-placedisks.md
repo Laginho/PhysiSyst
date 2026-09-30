@@ -1,5 +1,5 @@
 # CLEAN-17: Pinar o `placeDisks`
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -29,5 +29,8 @@ Falta um teste de aceitação em que o disco fique fora do eixo sem `placeDisks`
 - O teste do critério 1. É um ticket só de cobertura: o teste nasce verde no código atual, e a prova é a mutação (`placeDisks` esvaziado) aplicada e revertida, com a saída vermelha registrada em `## Comments`. Sem commit de código.
 
 ## Comments
+
+- 2026-09-30 Stage 2: added one acceptance test in the PHY-25 block, through `parse`, `createSimulator`, `step`, `readStates` and `readConstraints`. It reuses the Atwood scene with a dynamic 10 kg mount, a 200 N upward force, and compares runs with horizontal initial velocities 0 and 2 m/s. Galilean invariance requires identical vertical motion and segment tensions, with horizontal displacement differing by `2t`.
+- Mutation evidence for the new test: temporarily removed the sole statement in `RapierSimulator.placeDisks`, leaving its body empty apart from a comment, then ran `npx vitest run src/sim/acceptance.test.ts -t PHY-25`. Exit 1; `1 failed | 5 passed | 43 skipped (49)`. The new test failed on the vertical-velocity invariant: `AssertionError: expected 0.0012905076146125793 to be less than or equal to 0.001` at `src/sim/acceptance.test.ts:841`. The five existing PHY-25 cases stayed green. Restored the production file byte for byte after the run.
 
 - 2026-09-30 Aberto a partir do F3 do Sonnet no review de benchmark do PR 9. Mutação reproduzida: `placeDisks` com `return` na primeira linha, `npx vitest run src/sim` → 86 passed.

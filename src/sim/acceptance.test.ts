@@ -821,6 +821,33 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     expect(rope(sim).slack).toBe(false)
   })
 
+  it('a massive pulley on a horizontally moving mount preserves vertical motion and tensions under a Galilean boost (CLEAN-17)', async () => {
+    const scene = atwoodScene(3, 2, 2)
+    // All bodies are free to translate; an upward force keeps the rope loaded.
+    // A common horizontal velocity changes neither vertical motion nor tension.
+    scene.bodies = scene.bodies.map((body) => ({ ...body, fixed: false, mass: body.id === 'teto' ? 10 : body.mass }))
+    scene.forces = [{ id: 'lift', bodyId: 'teto', anchor: CM, magnitude: 200, direction: 90 }]
+    const still = await load(scene)
+    const speed = 2
+    const moving = await load({ ...scene, bodies: scene.bodies.map((body) => ({ ...body, vx: speed })) })
+    for (let tick = 1; tick <= 60; tick++) {
+      still.step()
+      moving.step()
+      const reference = still.readStates()
+      for (const [id, state] of moving.readStates()) {
+        const expected = reference.get(id)!
+        expect(Math.abs(state.position.x - expected.position.x - speed * tick * TIMESTEP)).toBeLessThanOrEqual(0.001)
+        expect(Math.abs(state.position.y - expected.position.y)).toBeLessThanOrEqual(0.001)
+        expect(Math.abs(state.linvel.y - expected.linvel.y)).toBeLessThanOrEqual(0.001)
+      }
+      const tensions = rope(still).segments
+      expect(rope(still).slack).toBe(false)
+      for (const [leg, tension] of rope(moving).segments.entries()) {
+        expect(Math.abs(tension - tensions[leg]!)).toBeLessThanOrEqual(0.03 * tensions[leg]!)
+      }
+    }
+  })
+
   it('movable pulley of mass M on a load m, counterweight m₂: a = g(m + M − 2m₂)/(m + 3M/2 + 4m₂) within 3%', async () => {
     // With y up, 2y_load + y_counterweight is constant; the disk spins at
     // ω = v_load/R (the ceiling leg is still), and its weight rides the load.
