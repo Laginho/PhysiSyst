@@ -38,3 +38,4 @@ Descartados pelo review, já decididos em tickets fechados:
 ## Comments
 
 - 2026-09-25 Aberto pelo review do CLEAN-12 (stage 3). `Stage: blocked` porque nada aqui está verificado nem tem critério: o stage 1 confere cada item no código, descarta ou abre um ticket por achado aceito, e fecha este.
+- 2026-09-30 Review de benchmark do PR 9. O item 1 foi confirmado no Chromium (Sol) e resolvido de outro jeito pelo PHY-39: edição estrutural só com `passos = 0`, e aí a pose viva é a pose do documento. O item 6 foi confirmado no Chromium (Sol) e virou o PHY-44. Os itens 2 a 5 continuam aqui para triagem.
