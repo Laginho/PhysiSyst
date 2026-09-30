@@ -187,7 +187,7 @@ All ten v1 items stand, with one change: **#3 (window resize during playback) is
 
 # physics-sim v4 — Vínculos: corda, polia e mola
 
-**Closeout PHY-33, 2026-09-25.** Ten tickets (PHY-23–PHY-32) and twelve cleanups (CLEAN-01–CLEAN-12) add the first Constraints to the Scene: an ideal rope over any sequence of pulleys, fixed and movable pulleys (mass is a Realism option), and an ideal spring (damping; mass is a Realism option). The palette gains Rope, Pulley and Spring tools with Anchor snap. Every vector carries a letter. The gallery becomes a Preset tree with eight new presets, and the Rapier wasm moves out of the entry chunk. The whole cycle ran unattended in one sweatshop session (`sweatshop/2026-09-24-1853`).
+**Initial closeout PHY-33, 2026-09-25; refreshed by CLEAN-19, 2026-09-30.** Ten feature tickets (PHY-23–PHY-32) and twelve cleanups (CLEAN-01–CLEAN-12) add the first Constraints to the Scene: an ideal rope over any sequence of pulleys, fixed and movable pulleys (mass is a Realism option), and an ideal spring (damping; mass is a Realism option). The palette gains Rope, Pulley and Spring tools with Anchor snap. Every vector carries a letter. The gallery becomes a Preset tree with eight new presets, and the Rapier wasm moves out of the entry chunk. The session (`sweatshop/2026-09-24-1853`, PR #9) also delivered PHY-33–PHY-44 and CLEAN-14–CLEAN-18 after the initial closeout; CLEAN-13 retains four findings awaiting triage.
 
 ## Scope Delivered (PHY-23–PHY-32)
 
@@ -204,17 +204,40 @@ All ten v1 items stand, with one change: **#3 (window resize during playback) is
 | PHY-31 Preset tree | Area → part → topic (*Tópicos de Física*); only nodes holding a preset are shown; names/descriptions in i18n; eight new presets (Atwood, table-hanging, movable pulley, loop pendulum, simple pendulum, three mass-springs) |
 | PHY-32 Code-split of the wasm | Rapier in a lazily loaded chunk; entry chunk under 500 kB |
 
-The CLEAN tickets kept ADR-0004 and the code in step with each other. They covered position-based prediction, the pieces of a pulley with mass, the spring as a force, and the re-seated spring chain in the carry. They also removed the geometry that the editor modules duplicated, and hardened the code split (CLEAN-01/02).
+The CLEAN tickets kept ADR-0004 and the code in step with each other. They covered position-based prediction, the pieces of a pulley with mass, the spring as a force, and the re-seated spring chain in the carry. They also removed the geometry that the editor modules duplicated, and hardened the code split (CLEAN-01/02). **CLEAN-09 fixed the drag-induced kick found in PHY-30's spring with mass**; it is no longer deferred. PHY-39 subsequently restricted structural editing to `passos = 0`, and CLEAN-16 removed the carry mechanism and its exclusive tests.
+
+### Delivered after the initial closeout
+
+| Ticket | Deliverable |
+|---|---|
+| PHY-34 | Applied-force torque no longer accumulates between steps |
+| PHY-35 | The last edit is saved on reload or tab close |
+| PHY-36 | Switching scenes resets the simulated world and playback |
+| PHY-37 | A body inside its mounted pulley can be selected on the canvas |
+| PHY-38 | Step-0 acceleration is marked approximate when ropes or springs are present |
+| CLEAN-14 | `pulleyAtPoint` requires an explicit axle tolerance |
+| CLEAN-15 | Body-dependent constraints use one shared predicate |
+| PHY-39 | Structural editing requires `passos = 0`; live parameter edits remain available |
+| PHY-40 | Implicit damping stabilizes the ideal spring for every `c ≥ 0` |
+| PHY-41 | Ropes sharing dynamic bodies solve together, including redundant constraints |
+| PHY-42 | A spring with mass behaves independently of which end is `a` |
+| PHY-43 | A taut pulley leg keeps supporting its body when another leg goes slack |
+| PHY-44 | Numeric fields keep drafts so values such as `0.5` can be typed digit by digit |
+| CLEAN-16 | Carry removed; failed live edits reset to t = 0, and failed scene switches cannot inherit old poses |
+| CLEAN-17 | Simulator acceptance test pins `placeDisks` for a pulley with mass |
+| CLEAN-18 | PHY-36's DOM tests go red when the simulated world is not reset |
+
+This refresh (CLEAN-19) records the session gate and synchronizes the two root versions in `package-lock.json` with `package.json` at `0.4.0`, without changing dependencies.
 
 ## Gate Outcomes
 
-- **703 tests / 30 files, all green** (`npm test`); `eslint .`, `tsc --noEmit` and `vite build` clean. Rerun for this closeout on `phy/PHY-33-closeout-v4`, cut from the session branch at `edf6b16`.
-- Build: entry `index-*.js` 285.67 kB (gzip 88.13 kB), lazy `sim-*.js` 2,132.26 kB (gzip 809.71 kB). The >500 kB advisory still prints, but only the lazy Rapier chunk is over the limit (PHY-32 criterion 2).
-- CI green on the latest merge on `main` (`ca9aab8`, PR #8): https://github.com/Laginho/PhysiSyst/actions/runs/36055658405, Deploy green on the same commit: https://github.com/Laginho/PhysiSyst/actions/runs/36055754319. **v4 itself has not been through CI yet.** It lives on the session branch, and CI runs on pull requests and on `main`. It will run when the driver opens the session PR.
+- **721 tests / 30 files, all green** (`npm test`); `npm run lint`, `npm run typecheck` and `npm run build` clean. Latest local session gate rerun on 2026-09-30 for CLEAN-19, on `phy/CLEAN-19-final-report-e-lockfile-em-dia` from session tip `0f85552`, with the lockfile synchronized. All prerequisite tickets are `done`.
+- Build: entry `index-DZgXFqyG.js` 286.70 kB (gzip 88.45 kB), lazy `sim-DYvorojc.js` 2,132.06 kB (gzip 809.68 kB). The >500 kB advisory still prints, but only the lazy Rapier chunk is over the limit (PHY-32 criterion 2).
+- **v4 has passed CI on [PR #9](https://github.com/Laginho/PhysiSyst/pull/9)**: [CI green](https://github.com/Laginho/PhysiSyst/actions/runs/36764148783) on the pushed session commit `0f85552`, covering every prerequisite delivered above. The CLEAN-19 report and lockfile refresh is covered by the local gate above; CI must rerun when the driver pushes the completed session. The latest published `main` remains `32d14dc`, with [CI green](https://github.com/Laginho/PhysiSyst/actions/runs/36146349640) and [Deploy green](https://github.com/Laginho/PhysiSyst/actions/runs/36146456525).
 
 ## Desktop Manual Pass (1–8)
 
-Run in headless Chromium at 1280×1080, pt-BR, against the Vite dev server of this branch. The published site still serves v3. The pass drove the repo's own CDP harness (`src/test/browser.ts`), with the real palette buttons, pointer clicks on the canvas and the inspector's fields. It read the results off the readout panel and took canvas screenshots. No scene document was written by hand. **All eight items pass. The pass found three defects, each opened as its own `needs-triage` ticket.**
+Historical pass from PHY-33 (2026-09-25), run in headless Chromium at 1280×1080, pt-BR, against the Vite dev server of that branch. The published site still serves v3. The pass drove the repo's own CDP harness (`src/test/browser.ts`), with the real palette buttons, pointer clicks on the canvas and the inspector's fields. It read the results off the readout panel and took canvas screenshots. No scene document was written by hand. **All eight items passed. The pass found three defects, subsequently fixed by PHY-36–PHY-38.** The observations below describe that historical run; CLEAN-19 did not repeat the manual pass.
 
 | Item | Result |
 |---|---|
@@ -235,24 +258,24 @@ Run in headless Chromium at 1280×1080, pt-BR, against the Vite dev server of th
 | **PHY-37** | A pulley wins the click over its mount body across its whole disk. A body that fits inside its pulley (the "Polia móvel" preset's load) can't be selected, dragged or deleted on the canvas. |
 | **PHY-38** | Before the first step, the readout's analytic acceleration ignores ropes and springs, and marks `≈` only for Contacts. A block on a stretched spring reads g as if exact. |
 
-Also open at closeout, filed during the run: **PHY-34** (applied-force torque accumulates between steps, `needs-triage`), **PHY-35** (the last edit is lost on reload or tab close, `ready-for-agent`) and **CLEAN-13** (unverified findings from the CLEAN-12 review, `needs-triage`, `Stage: blocked` until stage 1 answers). Loose end: `package-lock.json` still records `version` 0.3.0. It is outside PHY-33's files, and the next `npm install` rewrites it.
+**PHY-34–PHY-38 are now `done`**, as are the benchmark-review tickets listed above. **CLEAN-13 remains `needs-triage`, `Stage: blocked`**: item 1 (structural editing against live poses) was resolved by PHY-39, and item 6 (rejected numeric drafts) by PHY-44. Only items 2–5 remain for stage 1: feedback for invalid rope-tool clicks; unmeasured arrow construction cost with global vectors off; positional coupling of the initial-velocity arrow style; and duplicate `freePointVelocity` computation in `pullPieces`. These are pending findings, not verified regressions or delivered fixes. The lockfile version loose end is resolved by CLEAN-19.
 
 ## Known Limitations
 
-**Carried from v1 §4:** #1 (no restitution), #2 (undeclared-contact friction leak), #4 (contact normals are direction-only), #5 (weight arrow at the body origin), #6 (one-way gallery acknowledgement), #7 (StrictMode dev double notice), #8 (click-to-place palette) and #9 (μ edits rebuild) all stand. #3 was resolved in v3 (PHY-15). #10 is partly addressed: `src/test/browser.ts` drives a real Chromium for layout, but the rAF render loop is still not asserted by automation.
+**Carried from v1 §4:** #1 (no restitution), #2 (undeclared-contact friction leak), #4 (contact normals are direction-only), #5 (weight arrow at the body origin), #6 (one-way gallery acknowledgement), #7 (StrictMode dev double notice) and #8 (click-to-place palette) all stand. #9 (μ edits rebuild) now requires `passos = 0` under PHY-39; the rebuild no longer carries simulated state (CLEAN-16). #3 was resolved in v3 (PHY-15). #10 is partly addressed: `src/test/browser.ts` drives a real Chromium for layout and editor regressions, but the rAF render loop is still not asserted by automation.
 
 **New in v4:**
 
 1. **The rope drains a fast swing**: about 4% of a 1 m loop's energy per turn at v₀² = 6gL, from the velocity projection in `correctRope`. It is marked `ponytail:`, and the upgrade path is a RATTLE-style projection (ADR-0004 Consequences).
 2. **Out of scope by spec**: a loose pulley (hung from another rope), rope–pulley friction, axle friction, ropes with mass or elasticity, and compatibility with older documents.
 3. **The >500 kB build advisory** remains on the lazy Rapier chunk (2.1 MB). Only the entry chunk was in scope.
-4. The readout-panel refinements (the step-0 estimate aside, see PHY-38) wait for the UX polish phase, per the spec.
+4. The readout-panel refinements (apart from the corrected step-0 approximation marker delivered by PHY-38) wait for the UX polish phase, per the spec.
 
 ## Next Steps
 
 Following the v4 spec's roadmap (*Depois da v4*):
 
-- Triage PHY-36, PHY-37, PHY-38 (this pass) and PHY-34.
+- Triage the four remaining CLEAN-13 findings (items 2–5); PHY-34–PHY-44 are delivered.
 - Mechanics roadmap, in order: restitution (elastic collisions) → energy, momentum and contact-force readouts (friction arrow, normal magnitude: v1 limitation #4) → pivot, rigid rod, ω₀ → variable force and accelerated frame → gravitation → buoyancy.
 - A preset curation stage, with its own grilling, at the end of mechanics.
 - A UX polish phase, including the readout panel.
