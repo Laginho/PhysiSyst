@@ -1,5 +1,5 @@
 # PHY-44: Dá para digitar `0.5` dígito a dígito num campo numérico
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -64,3 +64,46 @@ Comando de cada mutação: `npx vitest run src/App.test.ts -t PHY-44`. Cada exec
 Verde com produção corrigida: `npx vitest run src/App.test.ts` → **83 passed (83)**. Os dois testes verificam `0`, o intermediário incompleto `-`, a sequência nativa `0` → `.` → `5` (cinco eventos `input` no total), autosave inalterado e undo desabilitado durante os intermediários; depois de `0.5`, um único undo restaura o documento original e esgota o histórico. Os testes existentes do painel do corpo continuam verificando clamps de dimensões, base e alpha.
 
 Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 arquivos, 721 testes passando**; lint, typecheck e build concluídos com exit 0. Vite manteve o aviso de chunks acima de 500 kB. Stage 2 concluído, pronto para revisão na branch `phy/PHY-44-numfield-com-rascunho`, baseada em `sweatshop/2026-09-24-1853`.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+Revisão fixada em `git diff c712721f8723a0473fe7ba8365ab6849d03ec9a2...3e3686a`, base `sweatshop/2026-09-24-1853`. Standards e Spec examinados por sub-agentes independentes; gate, reprodução do vermelho e repetição das mutações pelo agente principal. Commits: `4e04128` e `8b85fac` (testes e metadados), depois `3e3686a` (produção e metadados, sem alterar testes).
+
+##### Standards
+
+Nenhuma violação documentada ou smell relevante no diff.
+
+- `src/App.tsx`: alteração restrita a `NumField` e à propagação de aceitação em `SpringPanel`, dentro dos Primary files. Rascunho e validação ficam no componente compartilhado; os clamps existentes permanecem nos seus callbacks.
+- `src/App.test.ts`: reutiliza `src/test/browser.ts` e observa DOM, persistência e undo, conforme Testing Decisions. Os commits de teste precedem a produção; a correção do harness em outro commit de testes foi autorizada pelo proxy.
+- Ticket: mantém `Stage:` separado de `Status:` e registra, para cada teste novo, mutações e saídas vermelhas, conforme `AGENTS.md`.
+
+A decisão **Proxy decided** de retomar os testes e ler o autosave pelas chaves `SCENE_KEY_PREFIX`/`CURRENT_SCENE_KEY` após o debounce foi respeitada em `8b85fac`: sem import dinâmico ou `pagehide`, espera de `AUTOSAVE_DELAY_MS + 50`. Nenhuma nova decisão de proxy nesta revisão.
+
+##### Spec
+
+Nenhum critério ausente ou parcial, aumento material de escopo ou comportamento incorreto identificado.
+
+Os critérios 1–3 estão implementados pelo rascunho local em `NumField`, pelo retorno ao valor do documento no blur e pela aplicação imediata dos valores aceitos. `SpringPanel.edit` propaga a aceitação; `commitSpringEdit` continua recusando valores inválidos antes de `commitDoc` e do histórico. Os dois testes usam edição nativa no Chromium, conferem autosave e demonstram um único undo após `0.5`.
+
+O critério 4 mantém os clamps existentes de dimensões, base e alpha, com suas verificações preservadas. O critério 5 tem mutação e saída vermelha registradas por teste e reproduzidas abaixo. O critério 6 foi confirmado pelo gate independente antes da revisão e após restaurar a produção.
+
+Prova independente com os testes finais inalterados:
+
+| Produção / comando | Resultado |
+| --- | --- |
+| Produção anterior, do commit de testes `8b85fac`; `npx vitest run src/App.test.ts` | **2 failed, 81 passed (83)**. `x₀`: `expected '1.5' to be '0'`; `k`: `expected '40' to be '0'`, ambos na primeira tecla, linha 1571. |
+| Produção corrigida e restaurada; mesmo comando | **83 passed (83)**. |
+
+Repetição das três mutações registradas no stage 2, isoladamente, via `npx vitest run src/App.test.ts -t PHY-44`. Cada execução produziu **2 failed, 81 skipped (83)**:
+
+| Mutação em `NumField` | Vermelho do teste de `x₀ (m)` | Vermelho do teste de `k (N/m)` |
+| --- | --- | --- |
+| `value={draft?.text ?? value}` → `value={value}` | `expected '1.5' to be '0'`, linha 1571 | `expected '40' to be '0'`, linha 1571 |
+| `onBlur={() => setDraft(null)}` → callback vazio | `expected '0' to be '1.5'`, linha 1575 | `expected '0' to be '40'`, linha 1575 |
+| `onChange(v) !== false` → `false`, sem editar o documento | `expected 1.5 to be 0.5`, linha 1592 | `expected 40 to be 0.5`, linha 1592 |
+
+Produção restaurada byte a byte após cada execução; diff vazio e hashes Git de produção e testes iguais aos blobs de `HEAD`. Rebase sobre a sessão já atualizado, sem conflitos. Gate final `npm test && npm run lint && npm run typecheck && npm run build`: **30 test files passed (30), 721 tests passed (721)**; lint, typecheck e build exit 0. Permanece o aviso existente do chunk tardio do simulador acima de 500 kB.
+
+Sem correção de produção nesta revisão. Arquivos entregues: `src/App.tsx` e `src/App.test.ts`; fechamento neste ticket e em `.scratch/physics-sim-v4/ledger.md`. Merge `--no-ff` na sessão: `274bdf1`. `Stage: done` e linha do ledger no mesmo commit de fechamento. Totais: Standards **0 achados**; Spec **0 achados**.
