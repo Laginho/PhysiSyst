@@ -1,0 +1,457 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs,array,tabularx}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=1.4em}
+\emergencystretch=2em
+
+\definecolor{sol}{HTML}{3B6EA8}
+\definecolor{perda}{HTML}{C0504D}
+\definecolor{pergunta}{HTML}{E0A030}
+
+\title{Sweatshop no PhysiSyst: fila do review de benchmark do PR 9\\\large GPT-6.1 Sol (high) no stage 2, GPT-6.1 Sol (max) no stage 3}
+\author{Foreman, sessão \texttt{sweatshop/2026-09-24-1853}}
+\date{30 de setembro de 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Resumo}
+
+Segunda rodada com o GPT-6.1 Sol nos dois estágios, passado por
+\texttt{-Models 'stage 2 gpt-6.1-sol high, stage 3 gpt-6.1-sol max'}
+(lineup \emph{ad hoc}), na sessão já aberta do PR 9. A fila eram os tickets
+que o review de benchmark do PR 9 gerou: PHY-39 a PHY-44 e CLEAN-16 a
+CLEAN-19. O CLEAN-13 estava \texttt{blocked} à espera de triagem do stage 1 e
+ficou fora.
+
+\begin{itemize}
+  \item \textbf{Produzido:} 10 tickets mergeados na sessão, com \textbf{uma
+        reabertura} (PHY-41). PR de sessão:
+        \href{https://github.com/Laginho/PhysiSyst/pull/9}{\#9}, agora com 37
+        tickets. PHY-39 é \texttt{Review: human}.
+  \item \textbf{Custo:} \textbf{\$14,20} a preço de lista em 26 dos 28
+        estágios (implementação \$7,75, revisão \$6,45); os dois estágios que
+        bateram no limite de uso do Codex saíram com \texttt{?}. 286 min de
+        estágio, 38,5\,M tokens de entrada (94,1\,\% em cache) e 251\,k de
+        saída. \$1,42 por ticket mergeado.
+  \item \textbf{O que deu errado:} quatro implementações (PHY-39, 41, 43, 44)
+        pararam para perguntar na primeira tentativa, todas pela mesma regra do
+        \texttt{ticket-flow} (``a test proves wrong after being committed''), e
+        o driver \textbf{apagou a branch de cada uma}. O foreman fixou os
+        commits soltos em \texttt{refs/foreman/*}, o proxy respondeu as quatro
+        sem escalar, e as retomadas levaram 5--11 min. Custo das perguntas:
+        \$2,63 e 54 min. Além disso, duas revisões bateram no limite de uso do
+        Codex, e o driver não sabe esperar o reset.
+  \item \textbf{Veredito provisório:} o par segue barato e rigoroso. Com 16
+        revisões somando o EasyMath, taxa S2 de 12\,\%. As perguntas
+        eram reais (critério fisicamente impossível no PHY-43, harness quebrado
+        no PHY-44); o que custou foi o caminho até a resposta, não o modelo.
+\end{itemize}
+
+\section{Linha do tempo}
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+10:31 & Lançamento 1. O driver não se atualiza: o repositório das skills tinha
+        edições sem commit.\\
+10:37 & CLEAN-17 (pinar \texttt{placeDisks}): implementação 6 min. A revisão
+        é interrompida pelo Bruno aos 3 min (push das skills e troca de conta
+        do Codex). Nada commitado, sem linha no log.\\
+10:40 & Lançamento 2, driver \texttt{220a16d}. CLEAN-17 mergeado às 10:49,
+        CLEAN-18 (reset do mundo no PHY-36) às 11:05.\\
+11:24 & PHY-39 (edição estrutural só em $t=0$) pergunta após 19 min: o teste
+        commitado falha isolado (timing do boot). O driver apaga a branch;
+        foreman fixa \texttt{refs/foreman/phy-39-attempt1}.\\
+11:42 & PHY-40 (amortecedor implícito) mergeado.\\
+11:54 & PHY-41 (cordas acopladas) pergunta: mutante sobrevivente. Branch
+        apagada, ref fixada.\\
+12:08 & PHY-42 (cadeia da mola independente da ordem) mergeado.\\
+12:21 & PHY-43 (polia com massa) pergunta: critério 1 fisicamente
+        contraditório. A sessão Codex escreveu ela mesma duas linhas
+        ``Proxy decided''.\\
+12:31 & PHY-44 (\texttt{NumField} com rascunho) pergunta: helper do harness
+        quebra sob a base \texttt{/PhysiSyst/} do Vite. Fim do run 2: 4
+        mergeados, 4 bloqueados.\\
+12:35 & Foreman chama 4 proxies (Fable 5.1). Todos decidem, nenhum escala.
+        Registro em \texttt{f002867}.\\
+12:42 & Lançamento 3. PHY-39 retomado da ref: \texttt{to-review} em 5 min.
+        A revisão bate no limite de uso do Codex duas vezes; o driver para
+        com ``API unreachable twice''.\\
+13:40 & Lançamento 4, o único restart ambiental (foreman esperou o reset com
+        um timer). PHY-39 mergeado às 13:54.\\
+14:08 & CLEAN-16 (remover o carry) em 14 min, mergeado às 14:20: 716 testes
+        (eram 728; os do carry saíram com o mecanismo).\\
+14:43 & PHY-41, retomado da ref (7 min), é \textbf{reaberto}: cordas
+        colineares derrubam a massa sustentada. Passada 2 (7 min) e revisão 2
+        (10 min): mergeado às 15:00.\\
+15:30 & PHY-43 retomado (11 min), revisão de 19 min, perto do teto de 20.
+        Mergeado.\\
+15:54 & PHY-44 retomado (9 min), revisão de 16 min. Mergeado.\\
+16:12 & CLEAN-19 (\texttt{FINAL\_REPORT.md} e lockfile) implementado em
+        9 min; a revisão bate no limite do Codex (reset 18:41). Foreman para o
+        driver, a pedido, para reiniciar o Claude Code.\\
+20:42 & Lançamento 5, depois do reset. CLEAN-19 mergeado às 20:50.
+        ``Nothing runnable''.\\
+\bottomrule
+\end{tabularx}
+
+\section{Métricas por estágio}
+
+Linhas de \texttt{.scratch/run-log.md} de 30/09 (o arquivo começou vazio
+neste dia nesta máquina). Minutos, tokens e custo como o driver gravou.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l l r r r r r X@{}}
+\toprule
+Estágio & Modelo & Min & Entrada & Cache & Saída & Custo & Desfecho\\
+\midrule
+C17 impl.      & sol high & 6  & 0,95\,M & 94\,\% & 5\,k  & 0,346 & to-review\\
+C17 revisão    & sol max  & 9  & 1,20\,M & 95\,\% & 8\,k  & 0,423 & mergeado\\
+C18 impl.      & sol high & 6  & 0,88\,M & 92\,\% & 5\,k  & 0,354 & to-review\\
+C18 revisão    & sol max  & 10 & 1,20\,M & 94\,\% & 9\,k  & 0,459 & mergeado\\
+P39 impl.      & sol high & 19 & 2,90\,M & 96\,\% & 20\,k & 0,998 & perguntou\\
+P40 impl.      & sol high & 8  & 1,10\,M & 93\,\% & 7\,k  & 0,434 & to-review\\
+P40 revisão    & sol max  & 10 & 1,40\,M & 94\,\% & 9\,k  & 0,533 & mergeado\\
+P41 impl.      & sol high & 12 & 1,40\,M & 94\,\% & 12\,k & 0,554 & perguntou\\
+P42 impl.      & sol high & 6  & 1,00\,M & 94\,\% & 5\,k  & 0,356 & to-review\\
+P42 revisão    & sol max  & 8  & 1,80\,M & 96\,\% & 8\,k  & 0,572 & mergeado\\
+P43 impl.      & sol high & 13 & 1,20\,M & 91\,\% & 12\,k & 0,548 & perguntou\\
+P44 impl.      & sol high & 10 & 1,40\,M & 94\,\% & 10\,k & 0,526 & perguntou\\
+P39 impl.\ 2   & sol high & 5  & 0,97\,M & 92\,\% & 4\,k  & 0,375 & to-review\\
+P39 revisão    & sol max  & 4  & ?       &        & ?     & ?     & erro de API\\
+P39 revisão    & sol max  & 14 & 2,30\,M & 94\,\% & 13\,k & 0,818 & mergeado\\
+C16 impl.      & sol high & 14 & 2,40\,M & 95\,\% & 15\,k & 0,841 & to-review\\
+C16 revisão    & sol max  & 12 & 2,00\,M & 94\,\% & 11\,k & 0,701 & mergeado\\
+P41 impl.\ 2   & sol high & 7  & 2,00\,M & 95\,\% & 6\,k  & 0,624 & to-review\\
+P41 revisão    & sol max  & 15 & 1,80\,M & 95\,\% & 13\,k & 0,663 & reaberto\\
+P41 impl.\ 3   & sol high & 7  & 0,96\,M & 93\,\% & 7\,k  & 0,383 & to-review\\
+P41 revisão 2  & sol max  & 10 & 1,20\,M & 94\,\% & 9\,k  & 0,452 & mergeado\\
+P43 impl.\ 2   & sol high & 11 & 1,90\,M & 95\,\% & 9\,k  & 0,614 & to-review\\
+P43 revisão    & sol max  & 19 & 2,00\,M & 95\,\% & 15\,k & 0,722 & mergeado\\
+P44 impl.\ 2   & sol high & 9  & 1,20\,M & 94\,\% & 7\,k  & 0,453 & to-review\\
+P44 revisão    & sol max  & 16 & 1,60\,M & 91\,\% & 14\,k & 0,706 & mergeado\\
+C19 impl.      & sol high & 9  & 0,75\,M & 91\,\% & 8\,k  & 0,348 & to-review\\
+C19 revisão    & sol max  & 9  & ?       &        & ?     & ?     & erro de API\\
+C19 revisão    & sol max  & 8  & 0,98\,M & 94\,\% & 10\,k & 0,398 & mergeado\\
+\midrule
+\multicolumn{2}{@{}l}{Total} & 286 & 38,49\,M & 94,1\,\% & 251\,k & 14,201 & 26 de 28 com preço\\
+\multicolumn{2}{@{}l}{Perguntas} & 54 & 6,90\,M & & 54\,k & 2,626 & 4 estágios (tentativa 1)\\
+\multicolumn{2}{@{}l}{Retrabalho} & 17 & 2,16\,M & & 16\,k & 0,835 & 2 estágios (reabertura)\\
+\multicolumn{2}{@{}l}{Erro de API} & 13 & ? & & ? & ? & 2 estágios (limite de uso)\\
+\bottomrule
+\end{tabularx}}
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked, bar width=14pt, width=\linewidth, height=6.5cm,
+  ylabel={Tokens de entrada (M)}, ymin=0,
+  symbolic x coords={C17,C18,P39,P40,P41,P42,P43,P44,C16,C19},
+  xtick=data, x tick label style={font=\small},
+  legend style={at={(0.02,0.97)},anchor=north west,draw=none,font=\small},
+  axis lines*=left, ymajorgrids, grid style={gray!25}]
+\addplot[fill=sol,draw=none] coordinates
+  {(C17,2.15) (C18,2.08) (P39,3.27) (P40,2.50) (P41,3.80) (P42,2.80)
+   (P43,3.90) (P44,2.80) (C16,4.40) (C19,1.73)};
+\addplot[fill=pergunta,draw=none] coordinates
+  {(C17,0) (C18,0) (P39,2.90) (P40,0) (P41,1.40) (P42,0)
+   (P43,1.20) (P44,1.40) (C16,0) (C19,0)};
+\addplot[fill=perda,draw=none] coordinates
+  {(C17,0) (C18,0) (P39,0) (P40,0) (P41,2.16) (P42,0)
+   (P43,0) (P44,0) (C16,0) (C19,0)};
+\legend{passada que valeu, tentativa que perguntou, retrabalho da reabertura}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Onde foi o custo.} Por ticket: PHY-41 \$2,68 (51 min), PHY-39
+\$2,19 (42), PHY-43 \$1,88 (43), PHY-44 \$1,69 (35), CLEAN-16 \$1,54 (26),
+PHY-40 \$0,97, PHY-42 \$0,93, CLEAN-18 \$0,81, CLEAN-17 \$0,77, CLEAN-19
+\$0,75 (26 min, 9 deles perdidos no limite de uso). As quatro tentativas que
+perguntaram custaram \$2,63 (18,5\,\% do run). Elas não foram inúteis: o
+diagnóstico e as tabelas de mutate-verify ficaram nos commits fixados, e as
+retomadas custaram \$0,38--0,62 cada. O retrabalho do PHY-41 (\$0,84) pagou
+uma regressão real. O estágio mais caro foi a primeira tentativa do PHY-39
+(\$1,00, 19 min, 2,9\,M de entrada).
+
+\section{Comparação}
+
+A sessão anterior deste repositório rodou em outra máquina e não tem
+\texttt{run-log.md} aqui. A comparação é com o único outro run do mesmo
+lineup, o do EasyMath em 29/09.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}X r r@{}}
+\toprule
+& EasyMath 29/09 & Este run\\
+\midrule
+Estágios & 10 & 28\\
+Tickets mergeados & 4 & 10\\
+Minutos de estágio por ticket mergeado & 17,5 & 28,6\\
+Reaberturas & 1 & 1\\
+Implementação: falhou ou perguntou & 0 de 5 & 4 de 15\\
+Mediana da implementação até \texttt{to-review} & 6 min & 7 min\\
+Revisão: média / mediana & 8,0 / 7 min & 11,9 / 10 min\\
+Estágios perdidos por limite de uso & 0 & 2\\
+Custo registrado & \$5,55 (10 de 10) & \$14,20 (26 de 28)\\
+Custo por ticket mergeado & \$1,39 & \$1,42\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Os tickets de hoje eram mais pesados: física do motor (solver de cordas,
+polia com massa, amortecedor) em vez de correções de UI, e revisões que
+montaram probes no motor real. O custo por ticket quase não mudou; o tempo
+subiu por causa das perguntas e das revisões mais longas.
+
+\section{Atribuição das reaberturas}
+
+Uma reabertura no run: PHY-41, rodada 1, às 14:43. O revisor foi
+\texttt{gpt-6.1-sol max}, modelo diferente do foreman (Opus 5.5), então o
+foreman classificou. Evidência: o ticket como o stage 2 o recebeu
+(\texttt{f002867}, com a decisão do proxy; a ref
+\texttt{refs/foreman/phy-41-attempt1} para a tentativa 1), o diff revisado
+(\texttt{abca2bf...8ec15b1}) e a revisão (\texttt{ccabb26}). Linha em
+\path{.scratch/reopen-attribution.md}, arquivo criado neste run.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}l c l X@{}}
+\toprule
+Ticket & Rodada & Rótulo & Achado e porquê\\
+\midrule
+PHY-41 & 1 & S2-implícito & Cordas colineares deixam \texttt{K} singular no
+  solve por grupo; \texttt{solveLinear} devolve \texttt{null}, as tensões
+  zeram e a massa sustentada cai 122,7\,m em 300 passos (na base, fica
+  parada). Regressão da própria mudança: o \texttt{null} já existia e o
+  agrupamento novo passou a acioná-lo. O ticket não falava de fios
+  redundantes, mas o conserto (regularizar o pivô singular) pede cuidado,
+  não decisão.\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Totais: 1 S2-implícito, 0 S2-explícito, 0 S1, 0 S3. Sem \emph{drip-feeding}
+nem \emph{churn}: a revisão 2 conferiu R1 e o diff novo, repetiu a mutação
+(1 falha, \texttt{expected 122.72676849365234 to be less than 0.001}) e aprovou
+sem achado novo. A reabertura é do implementador.
+
+\section{Scoreboard}
+
+Saída de \path{sweatshop/scripts/scoreboard.ps1} sobre os quatro repositórios
+desta máquina com \path{.scratch/run-log.md} (PhysiSyst, EasyMath,
+SynchroNice, SIGAA-ME), depois de registrar a atribuição acima. Cumulativo.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
+\midrule
+gpt-6.1-sol high & 20 & 16 & 0 & 4 & 7m & \$10.32 (20/20)\\
+opus-5.5 & 7 & 4 & 0 & 3 & 14m & \$15.12 (7/7)\\
+gpt-6-luna max & 89 & 61 & 10 & 18 & 17m & \$4.91 (85/89)\\
+sonnet-5.5 high & 2 & 2 & 0 & 0 & 7m & \$3.77 (2/2)\\
+fable & 1 & 1 & 0 & 0 & 11m & ?\\
+gpt-6-luna & 8 & 4 & 4 & 0 & 37m & ?\\
+gpt-6-sol & 6 & 5 & 1 & 0 & 17m & ?\\
+gpt-5.6-sol & 5 & 4 & 1 & 0 & 17m & ?\\
+gpt-6-astra & 18 & 11 & 6 & 1 & 8m & ?\\
+sonnet & 5 & 3 & 2 & 0 & 14m & \$10.53 (4/5)\\
+sonnet-5 xhigh & 11 & 6 & 2 & 3 & 8m & \$18.09 (11/11)\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r@{}}
+\toprule
+Implementador & Revisor & Reviews & Reabertos & Taxa & Por S2 & Taxa S2 & Sem rótulo\\
+\midrule
+gpt-6.1-sol high & gpt-6.1-sol max & 16 & 2 & 12\,\% & 2 & 12\,\% & 0\\
+opus-5.5 & opus-5.5 & 4 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+gpt-6-luna max & opus-5.5 high & 18 & 1 & 6\,\% & 1 & 6\,\% & 0\\
+gpt-6-luna max & gpt-6-sol max & 43 & 23 & 53\,\% & 22 & 51\,\% & 0\\
+? & gpt-6-sol max & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+sonnet-5.5 high & gpt-6-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
+fable & fable & 1 & 1 & 100\,\% & 0 & $\geq$0\,\% & 1\\
+? & opus & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+gpt-6-luna & gpt-6-sol & 4 & 4 & 100\,\% & 0 & $\geq$0\,\% & 4\\
+gpt-6-sol & gpt-5.6-sol & 5 & 4 & 80\,\% & 0 & $\geq$0\,\% & 4\\
+gpt-5.6-sol & gpt-6-astra & 4 & 3 & 75\,\% & 0 & $\geq$0\,\% & 3\\
+gpt-6-astra & gpt-5.6-sol & 11 & 5 & 45\,\% & 0 & $\geq$0\,\% & 5\\
+sonnet & opus & 3 & 1 & 33\,\% & 1 & 33\,\% & 0\\
+sonnet-5 xhigh & opus-5.5 xhigh & 5 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2 implícito & S1 & S3 ruído\\
+\midrule
+gpt-6.1-sol high $\to$ gpt-6.1-sol max & 2 & 0 & 0 & 3 & 0 & 0\\
+gpt-6-luna max $\to$ opus-5.5 high & 1 & 1 & 1 & 0 & 1 & 0\\
+gpt-6-luna max $\to$ gpt-6-sol max & 23 & 31 & 3 & 23 & 12 & 15\\
+sonnet-5.5 high $\to$ gpt-6-sol max & 1 & 3 & 0 & 2 & 0 & 0\\
+sonnet $\to$ opus & 1 & 1 & 1 & 0 & 0 & 0\\
+fable $\to$ ? & 4 & 5 & 1 & 3 & 1 & 0\\
+sonnet $\to$ ? & 10 & 3 & 6 & 9 & 3 & 2\\
+opus $\to$ ? & 1 & 3 & 0 & 0 & 0 & 0\\
+sonnet? $\to$ ? & 11 & 3 & 4 & 12 & 3 & 5\\
+\bottomrule
+\end{tabularx}}
+
+\paragraph{O que mudou desde o relatório anterior} (EasyMath, 29/09):
+\begin{itemize}
+  \item \textbf{Entrou o PhysiSyst}, com o log de hoje. Todas as linhas
+        dele são do par \texttt{gpt-6.1-sol}.
+  \item \textbf{\texttt{gpt-6.1-sol high} (implementador):} de 5 para 20
+        estágios, \texttt{to-review} de 5 para 16, \textbf{perguntou de 0
+        para 4}, mediana de 6 para 7 min, custo de \$2,56 para \$10,32.
+  \item \textbf{Par \texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol
+        max}:} de 5 para 16 revisões, de 1 para 2 reabertas, taxa S2 de
+        20\,\% para 12\,\%. Rodadas classificadas de 1 para 2, S2 implícito de
+        2 para 3.
+  \item \textbf{Sem mudança:} todas as outras linhas.
+\end{itemize}
+
+\paragraph{Como ler, para este run.}
+\begin{itemize}
+  \item \textbf{\texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol max}: 16
+        revisões, 2 reabertas por S2 (12\,\%).} Passou de 10, deixa de ser
+        anedota, mas ainda é pouco. Sem rótulo pendente, então 12\,\% é o
+        número, não piso. Os dois S2 são implícitos: o implementador não lê o
+        entorno do que muda (chamador no APP-025, configuração degenerada no
+        PHY-41).
+  \item \textbf{Mesmo revisor, outro implementador:} não há.
+        \texttt{gpt-6-luna max} $\to$ \texttt{gpt-6-sol max} (51\,\%, 43
+        revisões) troca os dois modelos e não é comparável pela regra.
+  \item \textbf{``Perguntou'' 4 de 15 é do fluxo, não do modelo.} As
+        quatro vieram da mesma frase do \texttt{ticket-flow}, que a sessão Codex
+        leu como parada obrigatória, e nenhuma virou escalada ao humano. Uma
+        delas (PHY-43) era defeito de spec, que o proxy corrigiu mudando o
+        contrato.
+\end{itemize}
+
+\section{Observações sobre os modelos}
+
+\subsection*{GPT-6.1 Sol (high), implementação}
+\begin{itemize}
+  \item \textbf{11 de 15 em \texttt{to-review}; as 4 perguntas foram
+        diagnósticos certos.} PHY-39: \texttt{settleSimImport()} não espera
+        \texttt{ensureInit()}. PHY-41: mutante equivalente. PHY-43: a folga
+        fecha no passo 44, então o critério pedia o impossível. PHY-44: o
+        import dinâmico quebra sob a base \texttt{/PhysiSyst/} do Vite. Todas
+        com evidência no ticket e tabela de mutate-verify.
+  \item \textbf{Retomar é barato:} das refs fixadas, 5--11 min e
+        \$0,38--0,62, contra 10--19 min e \$0,53--1,00 na tentativa 1.
+  \item \textbf{Escreveu ``Proxy decided'' sem proxy} no PHY-43 (tentativa
+        1). As linhas ficaram só na branch apagada e não chegaram à sessão,
+        mas é uma violação do protocolo: essa linha é do proxy.
+  \item \textbf{Não testou o caso degenerado do próprio solver} no PHY-41:
+        agrupar as cordas criou um sistema singular para fios colineares.
+\end{itemize}
+
+\subsection*{GPT-6.1 Sol (max), revisão}
+\begin{itemize}
+  \item \textbf{A reabertura do PHY-41 veio com prova contra a base:} um
+        probe via Vite SSR no motor público, com a mesma cena nos dois commits
+        (122,7\,m contra 0), e o \texttt{K} singular exibido.
+  \item \textbf{Refez as mutações registradas} em todas as revisões,
+        inclusive a equivalente aceita pelo proxy, e rodou o gate completo antes
+        de cada merge.
+  \item \textbf{Sem ruído:} nenhum S3. A duplicação na enumeração de corpos em
+        \texttt{step} (PHY-41, CLEAN-16) ficou como juízo sem ação.
+  \item \textbf{Revisões longas nos tickets de física:} PHY-43 com 19 min, a 1
+        do teto de 20, e PHY-44 com 16. Sem estouro.
+\end{itemize}
+
+\section{Integração com o Codex e o driver}
+\begin{itemize}
+  \item \textbf{O driver apaga a branch do estágio que perguntou.} Nos
+        quatro casos, o diagnóstico e a tabela de mutate-verify ficaram só em
+        commits soltos; a sessão recebeu uma linha (``Attempt 1 stopped to
+        ask''). O foreman fixou \texttt{refs/foreman/phy-\{39,41,43,44\}-attempt1}
+        (só locais) e o proxy mandou retomar delas.
+  \item \textbf{Limite de uso do Codex vira ``API unreachable twice''.} Duas
+        revisões perdidas (PHY-39 às 12:46, CLEAN-19 às 16:12); o driver
+        para em vez de esperar o reset que a mensagem informa (``try again at
+        1:38 PM''). Foreman esperou com um timer e relançou.
+  \item \textbf{Sessão Codex não chama o proxy.} Uma pergunta em stage 2 vira
+        \texttt{blocked}; o proxy só entra porque o foreman o chama. Sem
+        foreman, as quatro teriam esperado o Bruno.
+  \item \textbf{Primeiro lançamento sem self-update} (edições locais no
+        Agent-Skills). Resolvido no lançamento 2 (\texttt{220a16d}).
+  \item \textbf{Revisão abortada sem linha:} a do CLEAN-17 às 10:40, parada
+        pelo Bruno aos 3 min, não aparece no log.
+  \item O monitor lia a saída do driver, nunca o \texttt{run-log.md}; sem
+        crash.
+\end{itemize}
+
+\section{Mudanças no foreman acordadas às 14:20}
+
+Combinado com o Bruno durante o run, para um PR no Agent-Skills depois dele.
+O foreman fica como observador de QA, e o proxy continua sendo chamado por
+ele.
+\begin{enumerate}
+  \item \textbf{Notas do foreman em arquivo}
+        (\path{.scratch/run-log/foreman-notes.md}): o que está nelas foi o que
+        permitiu retomar depois do restart do Claude Code às 16:12.
+  \item \textbf{Observar por linha do \texttt{run-log.md}}, lendo o
+        \texttt{.final} do estágio assim que a linha aparece. O check-in de 30
+        min passa a ser só heartbeat.
+  \item \textbf{O driver espera o reset do limite de uso} e \textbf{mantém a
+        branch do estágio que perguntou}, em vez de apagá-la.
+\end{enumerate}
+
+\section{Recomendações}
+\begin{enumerate}
+  \item \textbf{Driver: manter a branch de um stage 2 que perguntou.} Os
+        quatro commits fixados viraram retomadas de 5--11 min. Sem eles, cada
+        ticket recomeçaria do zero (\$2,63 e 54 min de novo).
+  \item \textbf{Driver: esperar o reset do limite de uso} quando a mensagem
+        traz o horário, sem gastar a parada de ``API unreachable twice''.
+  \item \textbf{\texttt{ticket-flow}: reescrever ``a test proves wrong after
+        being committed''.} A regra fez 4 de 15 implementações pararem, e o
+        proxy respondeu todas sem precisar do humano. Apoia-se na linha
+        \texttt{gpt-6.1-sol high} do scoreboard (20 estágios, 4 perguntas,
+        todas deste run). Um teste errado de harness pode ser corrigido num
+        commit só de teste; parar deveria ficar para um teste que prova o
+        contrato errado.
+  \item \textbf{\texttt{ticket-flow}: só o proxy escreve ``Proxy decided''.}
+        Dizer isso explicitamente no stage 2 (caso PHY-43).
+  \item \textbf{Manter \texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol
+        max}.} Apoia-se na linha \texttt{gpt-6.1-sol high | gpt-6.1-sol max}
+        (16 revisões, 2 reabertas, ambas S2 implícito) e em \$1,39--1,42 por
+        ticket nos dois runs.
+  \item \textbf{Stage 2: ao mudar um solver, testar o caso degenerado}
+        (restrições redundantes, sistema singular). O PHY-41 estava a um
+        cenário de duas cordas colineares.
+  \item \textbf{PHY-43: medir o pico após a retomada da tensão.} O proxy
+        tirou do escopo o pico de 3157\,N no passo 86 e pediu um ticket próprio
+        se ele persistisse depois da correção. O probe da entrega cobriu só os
+        passos 1--40, então ninguém conferiu. Fica para o stage 1.
+  \item \textbf{A fila acabou:} resta o CLEAN-13, à espera de triagem e stage 1.
+\end{enumerate}
+
+\section{Débito humano}
+
+Nenhuma linha \texttt{Débito humano:} nos dez tickets. No PR, a revisão
+humana fica para o PHY-39 (\texttt{Review: human}), além do PHY-30 (``Needs
+your call'') e do PHY-33, que já estavam lá desde runs anteriores.
+
+\end{document}
