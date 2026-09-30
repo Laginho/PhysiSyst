@@ -1,5 +1,5 @@
 # PHY-39: Edição estrutural só com `passos = 0`
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -51,6 +51,9 @@ Trocar de cena, importar, nova cena e ⟲ continuam liberados sempre, porque zer
 - Os testes existentes do critério 7, reescritos.
 
 ## Comments
+
+- 2026-09-30 Etapa 2, commit vermelho: `npx vitest run src/App.test.ts`: **13 failed | 66 passed (79)**; `npm run typecheck` verde. Os testes atingem o App por eventos DOM; os casos de força/g e Atwood usam o simulador real.
+- Critério 7: reescrito `undo during playback pauses transport, then restores the doc` como `undo estrutural durante playback é recusado depois de um passo (PHY-39)`, avançando explicitamente um passo antes de reproduzir. Vermelho: `expected undefined to be defined` para o botão de pausa, pois o undo indevido pausa e remove o corpo. `src/playback/integration.test.ts` e `rebuild-retry.test.ts` não montam o App: seus adaptadores locais continuam testando o rebuild do motor, portanto não foram reescritos.
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9 (Sol, Sonnet, Opus em sessões dedicadas). Junta o F1 do Opus (corda) e o CLEAN-13 item 1 (mola), que eram o mesmo defeito: a edição estrutural no meio da corrida mistura a pose do documento com a pose viva. A trava foi decidida no grilling com o dono. `Review: human` porque é uma mudança de comportamento do editor que ele quer ver. O mecanismo de carry que fica quase morto depois deste ticket sai no CLEAN-16.
 
