@@ -1,5 +1,5 @@
 # PHY-43: O lado tenso de uma polia com massa não cai em queda livre quando o outro afrouxa
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -69,3 +69,54 @@ O Sonnet também mostrou que o laço de re-solve não tem teste: trocar `taut = 
   - Previsão unilateral com base zero → `solveLinear` irrestrito: `T₂ at step 30: expected 49027.152451571965 to be less than or equal to 0.19619999999999999`.
 - Green: `npx vitest run src/sim/acceptance.test.ts -t PHY-25` → 6 passed, 45 skipped (51), incluindo os testes existentes sem alterar tolerâncias. Gate `npm test && npm run lint && npm run typecheck && npm run build` → exit 0; 30 arquivos, 719 testes aprovados. Build emite aviso de tamanho de chunk.
 - Probe descartável no motor público, passos 1–40: T₁ = 0 e corda tensa; T₂ = 6,540025 N no passo 1, 6,540301 N no 8, 6,547108 N no 28, 6,548402 N no 30 e 6,556097 N no 40. Não houve pico inicial nem leitura fora dos 3% nesse intervalo; máximo 6,556097 N no passo 40. Janela 30–40: erro máximo de T₂ = 0,2461%; Δv_b = −1,088963 m/s, esperado −1,09 m/s (erro 0,0951%). Depois da retomada da tensão permanece fora do critério e não foi avaliado nesta entrega.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+Revisão completa fixada em `git diff f28a7d0728996167b8fc3f325755cc927b9f22c4...8a84919`, base `sweatshop/2026-09-24-1853`. Standards e Spec examinados por sub-agentes independentes; gate e repetição das mutações pelo agente principal. Commits: `20d165e` (teste vermelho e metadados), `cd62f9b` (bloqueio documental da tentativa), `a3c263d` (segundo commit só de teste e metadados com a janela aprovada) e `8a84919` (produção e metadados, sem alterar testes).
+
+##### Standards
+
+Nenhum achado bloqueante ou smell. Primary files e costura pública respeitados; a revisão da janela antecede a produção, preservando a separação teste/código. A correção compartilhada alcança a previsão e a correção, sem abstração nova. A duplicação escalar/matricial permanece autorizada pelo ADR-0004.
+
+Uma nota documental não bloqueante: as evidências históricas recuperadas foram inseridas no começo de `## Comments`, antes de comentários existentes; `docs/agents/issue-tracker.md` orienta acrescentar ao final. Isso não é critério descumprido, violação de Primary files/test-first ou regressão, portanto não justifica reabrir. Histórico preservado nesta revisão.
+
+As cinco decisões `Proxy decided` foram conferidas:
+
+1. Bloqueio histórico da janela impossível 30–90, restauração da produção e preservação do teste vermelho: mantidos no histórico, com os commits reaplicados identificados no handoff.
+2. Expansão histórica para a tensão prevista unilateral: reafirmada no contrato aceito e implementada pelo solver compartilhado com base zero.
+3. Janela aprovada 30–40: aplicada no segundo commit de teste antes da correção; critérios não reescritos nesta revisão.
+4. Previsão no escopo, retomada com segundo commit só de teste e exclusão do pico após retomada da tensão: respeitados.
+5. Folga negativa preservada no `rate` por `ropeAllowance(Math.min(target, nowLengths[k]! - piece.length))`: implementada exatamente no escopo autorizado.
+
+As decisões históricas de expansão da previsão e do `rate` registram uso do modelo herdado pelo proxy porque o modelo Claude Fable do card estava indisponível; não houve nova decisão de proxy nesta revisão.
+
+##### Spec
+
+Nenhum requisito escrito ausente, ampliação não autorizada ou implementação incorreta identificados. Os três usos de `tautTensions` foram rastreados: previsão da leitura, força com residual e correção com a tensão aplicada. O conjunto vazio retorna zeros; a remoção individual recalcula o acoplamento antes de retirar outra peça. O readout usa as tensões corrigidas por segmento e só marca a corda como frouxa quando todas são zero.
+
+| Critério | Resultado da revisão |
+| --- | --- |
+| 1 | ✅ Regressão pública percorre os passos 30–40 no cenário aprovado, verificando T₁ = 0, T₂ dentro de 3% de 6,54 N, corda tensa e Δv de b dentro de 3% de −1,09 m/s. |
+| 2 | ✅ Bloco PHY-25: 6 passed, 45 skipped (51); testes anteriores e tolerâncias intactos no diff. |
+| 3 | ✅ As quatro mutações registradas foram repetidas e falharam pelo motivo esperado, incluindo `taut = still` → `return T`; evidências abaixo. |
+| 4 | ✅ Gate independente antes da revisão e novamente após restaurar as mutações: 30 arquivos, 719 testes; lint, typecheck e build exit 0. |
+
+Prova independente da única regressão nova, pela interface pública `parse` → `createSimulator` → `step` → `readStates`/`readConstraints`:
+
+| Produção / comando | Resultado reproduzido |
+| --- | --- |
+| Produção do commit vermelho `a3c263d`, teste final inalterado; `npx vitest run src/sim/acceptance.test.ts -t PHY-25` | **1 failed, 5 passed, 45 skipped (51)**; `T₂ at step 30: expected 6.54 to be less than or equal to 0.19619999999999999`. |
+| `taut = still` → `return T`; `npx vitest run src/sim/acceptance.test.ts -t PHY-43` | **1 failed, 50 skipped (51)**; `T₁ at step 30: expected 19.800741150548525 to be +0`. |
+| Remoção individual → filtro original de todas as peças com T ≤ 0; mesmo comando PHY-43 | **1 failed, 50 skipped (51)**; `T₂ at step 30: expected 6.54 to be less than or equal to 0.19619999999999999`. |
+| Allowance da previsão → `ropeAllowance(target)`; mesmo comando PHY-43 | **1 failed, 50 skipped (51)**; `T₂ at step 30: expected 0.22392030779169314 to be less than or equal to 0.19619999999999999`. |
+| Previsão unilateral com base zero → `solveLinear` irrestrito; mesmo comando PHY-43 | **1 failed, 50 skipped (51)**; `T₂ at step 30: expected 49027.152451571965 to be less than or equal to 0.19619999999999999`. |
+| Produção restaurada; `npx vitest run src/sim/acceptance.test.ts -t PHY-25` | **6 passed, 45 skipped (51)**. |
+| Produção restaurada; `npm test && npm run lint && npm run typecheck && npm run build` | **30 test files passed (30), 719 tests passed (719)**; demais comandos exit 0. |
+
+Cada mutação foi aplicada isoladamente e restaurada byte a byte; hash SHA-256 e diff confirmam restauração sem mudanças em produção ou testes. O script inicial de mutação parou ao tentar casar um trecho com quebras de linha mistas, após restaurar a primeira mutação; as três restantes foram repetidas com substituições por linha. Nenhum resultado vermelho decorreu desse problema do script.
+
+Sem correção de produção nesta revisão. A retomada da tensão após a janela aceita continua fora do contrato e não foi avaliada; aviso existente do chunk tardio acima de 500 kB mantido. Arquivos entregues: `src/sim/simulator.ts` e `src/sim/acceptance.test.ts`; fechamento neste ticket e em `.scratch/physics-sim-v4/ledger.md`.
+
+Rebase sobre a sessão já atualizado, sem conflitos. Merge `--no-ff` na sessão: `8e97790`. `Stage: done` e linha no ledger no mesmo commit de fechamento. Totais: Standards **0 achados reabríveis / 1 nota documental não bloqueante**; Spec **0 achados**.
