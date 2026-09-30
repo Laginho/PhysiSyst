@@ -1,5 +1,5 @@
 # PHY-44: Dá para digitar `0.5` dígito a dígito num campo numérico
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -41,3 +41,5 @@ O `NumField` passa a guardar um rascunho de texto. Cada tecla que resulta num va
 - 2026-09-30 Attempt 1 stopped to ask: PHY-44 ficou `blocked` no commit `0013122`: os testes reproduzem o bug, mas o harness falha ao ler o documento. A alteração de produção foi revertida; working tree limpa. /  / A [skill ticket-flow](C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. É preciso corrigir o harness antes de retomar.
 
 - 2026-09-30 Proxy decided: retomar de `refs/foreman/phy-44-attempt1` mantendo `3b24466`; novo commit só de teste corrige `storedSpring()` em `src/App.test.ts` (sem import dinâmico, sem `pagehide`: espera `AUTOSAVE_DELAY_MS + 50` e lê `localStorage` por `SCENE_KEY_PREFIX`/`CURRENT_SCENE_KEY`), vermelho igual ao original (`expected '1.5' to be '0'` / `expected '40' to be '0'`) antes da produção — causa: a base `'/PhysiSyst/'` do Vite quebra a URL do import e nada escuta `pagehide`, então o autosave não era descarregado. Contrato inalterado.
+- 2026-09-30 Stage 2, seam aprovado: DOM de `App`, com Chromium para a edição nativa de `0.` (jsdom sanitiza esse intermediário). Reutilizado `src/test/browser.ts`; cada caractere usa uma edição nativa e um evento `input`. Os testes existentes que observavam a recusa imediata de k, c e mₛ passam a observar o valor após blur, conforme o critério 3.
+- Red antes da produção: `npx vitest run src/App.test.ts` → **2 failed | 66 passed (68)**. Caso `x₀ (m)`: `expected '1.5' to be '0'`; caso `k (N/m)`: `expected '40' to be '0'`. Ambos falham na primeira tecla, antes de qualquer alteração em `NumField`.

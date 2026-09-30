@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { createElement } from 'react'
+import { createRequire } from 'node:module'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +16,7 @@ import { setLang } from './i18n'
 import { AUTOSAVE_DELAY_MS, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import type { Scene } from './scene/types'
 import { presetById } from './presets'
+import { withBrowserSession } from './test/browser'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -103,6 +105,7 @@ afterEach(() => {
   if (root) act(() => root?.unmount())
   root = null
   vi.useRealTimers()
+  vi.unstubAllGlobals()
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
     configurable: true,
     value: originalGetContext,
@@ -992,6 +995,7 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     expect(panel(host, 'mola')?.textContent).not.toContain('k e x₀ devem ser positivos')
 
     act(() => setNativeInputValue(input('k (N/m)'), -5))
+    act(() => input('k (N/m)').dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
     expect(field(host, 'mola', 'k (N/m)')).toBe(80)
     expect(panel(host, 'mola')?.textContent).toContain('k e x₀ devem ser positivos')
 
@@ -1000,6 +1004,7 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     expect(field(host, 'mola', 'x₀ (m)')).toBe(3)
 
     act(() => setNativeInputValue(input('c (N·s/m)'), -1))
+    act(() => input('c (N·s/m)').dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
     expect(field(host, 'mola', 'c (N·s/m)')).toBe(0.5)
     expect(panel(host, 'mola')?.textContent).toContain('k e x₀ devem ser positivos')
 
@@ -1041,6 +1046,7 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     expect(panel(host, 'mola')?.textContent).not.toContain('k e x₀ devem ser positivos')
 
     act(() => setNativeInputValue(input(), -1))
+    act(() => input().dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
     expect(field(host, 'mola', 'mₛ (kg)')).toBe(0.2)
     expect(panel(host, 'mola')?.textContent).toContain('k e x₀ devem ser positivos')
 
@@ -1529,6 +1535,70 @@ describe('corpo coberto pela polia montada nele (PHY-37)', () => {
     click(canvas, { x: 6.75, y: 1.5 })
     expect(panel(host, 'corda-2')).toBeDefined()
   })
+})
+
+describe('rascunho numérico no Chromium (PHY-44)', () => {
+  it.each([
+    ['x₀ (m)', 'x0', 1.5],
+    ['k (N/m)', 'k', 40],
+  ] as const)('%s aceita 0.5 tecla por tecla, reverte no blur e só desfaz a edição aceita', async (label, property, original) => {
+    // jsdom's WebSocket sends an Origin that Chromium's CDP endpoint rejects.
+    vi.stubGlobal('WebSocket', createRequire(import.meta.url)('ws'))
+    await withBrowserSession(1280, 25000, async (session) => {
+      await session.reset()
+      await session.evaluate(`[...document.querySelectorAll('label')].find(el => el.querySelector('strong')?.textContent === 'Massa-mola horizontal').querySelector('input').click()`)
+      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent === 'usar cena selecionada').click()`)
+      await session.select(5, 0.2)
+      await session.evaluate(`window.numericField = [...document.querySelectorAll('fieldset')]
+        .find(el => el.querySelector('legend')?.textContent === 'mola');
+        window.numericField = [...numericField.querySelectorAll('label')]
+          .find(el => el.textContent === ${JSON.stringify(label)}).querySelector('input');
+        window.numericInputs = 0;
+        numericField.addEventListener('input', () => numericInputs++);
+        window.storedSpring = async () => {
+          dispatchEvent(new Event('pagehide'));
+          const persistence = await import('/src/persistence/index.ts');
+          return persistence.loadScene(localStorage, persistence.loadCurrentSceneId(localStorage, persistence.loadIndex(localStorage))).constraints.find(c => c.id === 'mola');
+        }`)
+      const stored = () => session.evaluate<Record<string, number>>('storedSpring()')
+      const text = () => session.evaluate<string>('numericField.value')
+      const type = (character: string) => session.evaluate(`document.execCommand('insertText', false, ${JSON.stringify(character)})`)
+      const selectAll = () => session.evaluate("numericField.focus(); document.execCommand('selectAll')")
+
+      // Each execCommand performs native editing and emits one input. In particular,
+      // Chromium retains the visible decimal point while value reports "0".
+      await selectAll()
+      await type('0')
+      expect(await text()).toBe('0')
+      expect((await stored())[property]).toBe(original)
+      expect(await session.evaluate<boolean>("[...document.querySelectorAll('button')].find(el => el.textContent === '↶').disabled")).toBe(true)
+      await session.evaluate('numericField.blur()')
+      expect(await text()).toBe(String(original))
+
+      await selectAll()
+      await type('-')
+      expect((await stored())[property]).toBe(original)
+      await session.evaluate('numericField.blur()')
+      expect(await text()).toBe(String(original))
+
+      await selectAll()
+      await type('0')
+      expect(await text()).toBe('0')
+      expect((await stored())[property]).toBe(original)
+      await type('.')
+      expect((await stored())[property]).toBe(original)
+      expect(await session.evaluate<boolean>("[...document.querySelectorAll('button')].find(el => el.textContent === '↶').disabled")).toBe(true)
+      await type('5')
+      expect(await text()).toBe('0.5')
+      expect((await stored())[property]).toBe(0.5)
+      expect(await session.evaluate<number>('numericInputs')).toBe(5)
+
+      await session.evaluate("numericField.blur(); [...document.querySelectorAll('button')].find(el => el.textContent === '↶').click()")
+      expect(await text()).toBe(String(original))
+      expect((await stored())[property]).toBe(original)
+      expect(await session.evaluate<boolean>("[...document.querySelectorAll('button')].find(el => el.textContent === '↶').disabled")).toBe(true)
+    })
+  }, 30000)
 })
 
 describe('galeria em árvore (PHY-31)', () => {
