@@ -1201,6 +1201,21 @@ describe('acceptance: ideal spring (PHY-26)', () => {
   describe('with mass (PHY-30)', () => {
     const A = 0.1
 
+    it('PHY-42: swapping the spring ends keeps the block trajectory within 0.1 mm over 600 steps', async () => {
+      const scene = horizontalScene(1, 40, X_EQ + A, 0, 0.1)
+      const original = await load(scene)
+      const s = scene.constraints![0]!
+      ;[s.a, s.b] = [s.b, s.a]
+      const swapped = await load(scene)
+      let worst = 0
+      for (let i = 0; i < 600; i++) {
+        original.step()
+        swapped.step()
+        worst = Math.max(worst, Math.abs(original.readStates().get('bloco')!.position.x - swapped.readStates().get('bloco')!.position.x))
+      }
+      expect(worst).toBeLessThan(1e-4)
+    })
+
     /** Mean period over `count` up-crossings of the block through X_EQ. */
     function period(sim: Sim, count: number, estimate: number): { measured: number; x: number[] } {
       const x = run(sim, Math.ceil(((count + 1) * estimate) / TIMESTEP), () => sim.readStates().get('bloco')!.position.x)

@@ -900,8 +900,9 @@ class RapierSimulator implements Simulator {
         true,
       )
     }
+    const rebaseChains: Array<() => void> = []
     for (const s of this.springs) {
-      if (s.chain) this.pushChain(s, s.chain)
+      if (s.chain) rebaseChains.push(this.pushChain(s, s.chain))
       else this.pushSpring(s)
     }
     for (const rope of this.ropes) {
@@ -909,6 +910,7 @@ class RapierSimulator implements Simulator {
       else this.pullRope(rope)
     }
     this.world.step()
+    for (const rebase of rebaseChains) rebase()
     for (const rope of this.ropes) {
       if (rope.grips.length) this.correctPieces(rope)
       else this.correctRope(rope)
@@ -1019,7 +1021,7 @@ class RapierSimulator implements Simulator {
    * thirds of its amplitude in 10 periods), so the chain runs (θ − 1 + φ)Δt
    * behind the bodies.
    */
-  private pushChain(s: SpringBinding, chain: Chain): void {
+  private pushChain(s: SpringBinding, chain: Chain): () => void {
     const { now, u, at, v } = chainAxis(s, chain, this.chainLag())
     const n = CHAIN_NODES
     const { q, T: before } = chainStep(s, chain, at, v, dot(this.world.gravity, u))
@@ -1029,11 +1031,16 @@ class RapierSimulator implements Simulator {
     const fa = th * after[0]! + (1 - th) * before[0]!
     const fb = th * after[n]! + (1 - th) * before[n]!
     chain.force = { a: fa, b: fb }
-    // Measured from end a after the step: it moves dt·v on, as chainStep took it.
-    chain.p = q.slice(1, -1).map((p) => p - TIMESTEP * v[0]!)
+    chain.p = q.slice(1, -1)
     chain.w = w.slice(1, -1)
     if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: fa * u.x, y: fa * u.y }, now[0], true)
     if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -fb * u.x, y: -fb * u.y }, now[1], true)
+    // Rebase after Rapier moves end a, including acceleration and anchor rotation.
+    return () => {
+      const a = worldPoint(s.a)
+      const moved = (a.x - now[0].x) * u.x + (a.y - now[0].y) * u.y
+      chain.p = chain.p.map((p) => p - moved)
+    }
   }
 
   private chainLag(): number {
