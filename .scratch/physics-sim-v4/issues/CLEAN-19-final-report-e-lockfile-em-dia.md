@@ -1,5 +1,5 @@
 # CLEAN-19: `FINAL_REPORT.md` e `package-lock.json` em dia com o que o PR 9 entrega
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-39, PHY-40, PHY-41, PHY-42, PHY-43, PHY-44, CLEAN-16, CLEAN-17, CLEAN-18
 Review: agent
@@ -38,3 +38,4 @@ Este ticket roda por último na sessão, para os números valerem para o que rea
 ## Comments
 
 - 2026-09-30 Aberto a partir do F5 do Opus e do F5 do Sonnet no review de benchmark do PR 9. A frase "deferred to CLEAN-09" do corpo do PR 9 também está velha; esse texto é do driver da sessão e fica fora deste ticket.
+- 2026-09-30 Stage 2: dependências conferidas em `done` na sessão `sweatshop/2026-09-24-1853`, base `0f85552`. Nenhum teste novo, conforme o contrato de documentação. A verificação direta das versões falhou antes da mudança: `AssertionError: '0.3.0' !== '0.4.0'` no `lock.version`; a versão do pacote raiz no lockfile também era `0.3.0`.
