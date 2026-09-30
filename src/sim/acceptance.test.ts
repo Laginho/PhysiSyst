@@ -495,6 +495,41 @@ describe('acceptance: general rope (PHY-24)', () => {
   const rope = (sim: Sim) => sim.readConstraints().find((c) => c.id === 'corda') as RopeState
   const CM = { x: 0, y: 0 }
 
+  it('two ropes supporting one particle hold equilibrium within 1 mm and each T within 1% of 49.29 N for 300 steps (PHY-41)', async () => {
+    const sim = await load({
+      version: 1,
+      constants: { g: G, particleMode: true },
+      bodies: [
+        { shape: 'circle', radius: 0.02, id: 'esquerda', fixed: true, mass: 0, position: { x: -1, y: 0.1 }, rotation: 0 },
+        { shape: 'circle', radius: 0.02, id: 'direita', fixed: true, mass: 0, position: { x: 1, y: 0.1 }, rotation: 0 },
+        { shape: 'circle', radius: 0.05, id: 'bola', fixed: false, mass: 1, position: CM, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [
+        { id: 'fio-esquerdo', kind: 'rope', a: { bodyId: 'esquerda', anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [] },
+        { id: 'fio-direito', kind: 'rope', a: { bodyId: 'direita', anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [] },
+      ],
+    })
+    // Textbook equilibrium: 2T sin(arctan(0.1)) = mg, T = 49.29 N.
+    let maxDisplacement = 0
+    let maxTensionError = 0
+    let wentSlack = false
+    for (let tick = 1; tick <= 300; tick++) {
+      sim.step()
+      const p = sim.readStates().get('bola')!.position
+      maxDisplacement = Math.max(maxDisplacement, Math.hypot(p.x, p.y))
+      for (const id of ['fio-esquerdo', 'fio-direito']) {
+        const state = sim.readConstraints().find((c) => c.id === id) as RopeState
+        wentSlack ||= state.slack
+        if (tick >= 10) maxTensionError = Math.max(maxTensionError, Math.abs(state.tension - 49.29))
+      }
+    }
+    expect(maxDisplacement).toBeLessThan(0.001)
+    expect(maxTensionError).toBeLessThan(0.01 * 49.29)
+    expect(wentSlack).toBe(false)
+  })
+
   function pendulumScene(bob: { x: number; y: number }, vx = 0): Scene {
     return {
       version: 1,

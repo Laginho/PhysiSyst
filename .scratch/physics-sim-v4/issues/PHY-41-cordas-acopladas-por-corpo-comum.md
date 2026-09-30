@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -35,6 +35,8 @@ As cordas que compartilham um corpo dinâmico formam um grupo, e cada grupo reso
 - `src/sim/acceptance.test.ts`, bloco PHY-24: o cenário do critério 1. Vermelho porque o solve sequencial deixa a partícula oscilar 33 mm.
 
 ## Comments
+
+- 2026-09-30 Etapa 2: regressão escrita na interface pública `createSimulator` → `step` → `readStates`/`readConstraints`, no bloco PHY-24. Antes de alterar produção, `npx vitest run src/sim/acceptance.test.ts -t PHY-41` → **1 failed, 53 skipped**: `expected 0.03299476053301212 to be less than 0.001` (32,99 mm ao longo de 300 passos).
 
 - 2026-09-30 Aberto a partir do F2 do Sol no review de benchmark do PR 9. Números reproduzidos por probe descartável no motor real. A decisão de juntar as cordas num solve e emendar o ADR, em vez de documentar como limitação, é do grilling de 2026-09-30.
 
