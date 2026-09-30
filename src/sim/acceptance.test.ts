@@ -1062,6 +1062,48 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     }
   })
 
+  it.each([
+    { c: 200, fixed: true },
+    { c: 2000, fixed: true },
+    { c: 200, fixed: false },
+    { c: 2000, fixed: false },
+  ])('PHY-40: c=$c, fixed end=$fixed: mechanical energy never increases over 600 steps; free ends conserve momentum', async ({ c, fixed }) => {
+    const sim = await load({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed, mass: fixed ? 0 : 1, position: { x: 0, y: 0 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'b', fixed: false, mass: 1, position: { x: 1.1, y: 0 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [{ id: 'mola', kind: 'spring', a: { bodyId: 'a', anchor: { x: 0, y: 0 } }, b: { bodyId: 'b', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c }],
+    })
+    const energy = () => {
+      const states = sim.readStates()
+      const a = states.get('a')!
+      const b = states.get('b')!
+      const dx = Math.hypot(b.position.x - a.position.x, b.position.y - a.position.y) - 1
+      return 0.5 * (a.linvel.x ** 2 + a.linvel.y ** 2 + b.linvel.x ** 2 + b.linvel.y ** 2) + 20 * dx ** 2
+    }
+    const initial = energy()
+    expect(initial).toBeCloseTo(0.2, 6)
+    let previous = initial
+    for (let i = 0; i < 600; i++) {
+      sim.step()
+      const now = energy()
+      expect(now, `energy increase at step ${i + 1}`).toBeLessThanOrEqual(previous + 1e-9)
+      previous = now
+      if (!fixed) {
+        const states = sim.readStates()
+        const a = states.get('a')!.linvel
+        const b = states.get('b')!.linvel
+        expect(Math.hypot(a.x + b.x, a.y + b.y)).toBeLessThanOrEqual(1e-9)
+      }
+    }
+    expect(previous).toBeLessThan(initial)
+  })
+
   it('the readout gives Δx signed (+ stretched), and F_el = kΔx + c·ẋ at each end', async () => {
     const m = 1
     const k = 40

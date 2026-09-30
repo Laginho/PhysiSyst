@@ -330,7 +330,7 @@ function springAt(s: SpringBinding, lead = 0) {
   const x = Math.hypot(pb!.x - pa!.x, pb!.y - pa!.y)
   const dx = x - s.x0
   const rate = (v[1].x - v[0].x) * u.x + (v[1].y - v[0].y) * u.y
-  return { now, v, u, x, dx, force: s.k * dx + s.c * rate }
+  return { now, v, u, x, dx, rate, force: s.k * dx + s.c * rate }
 }
 
 function readSpring(s: SpringBinding): SpringState {
@@ -1001,9 +1001,14 @@ class RapierSimulator implements Simulator {
    * ahead makes the step area-preserving for a linear spring.
    */
   private pushSpring(s: SpringBinding): void {
-    const { now, u, force } = springAt(s, (1 - this.substepFactor()) * TIMESTEP)
-    if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: force * u.x, y: force * u.y }, now[0], true)
-    if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -force * u.x, y: -force * u.y }, now[1], true)
+    const { now, u, dx, rate } = springAt(s, (1 - this.substepFactor()) * TIMESTEP)
+    const pulls = [
+      { rigid: s.a.rigid, p: now[0], u },
+      { rigid: s.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
+    ]
+    // PHY-40: backward Euler for damping, including the anchors' rotational inertia.
+    const force = s.k * dx + (s.c * rate) / (1 + s.c * TIMESTEP * ropeInvMass(pulls))
+    applyPulls(pulls, force, false)
   }
 
   /**
