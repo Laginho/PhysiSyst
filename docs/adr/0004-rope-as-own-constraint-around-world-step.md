@@ -10,7 +10,7 @@ A rope is not a Rapier joint. The simulator solves it itself, once per step, in 
 
 ## Mechanism
 
-`L` is the rope's path length (tangent legs plus wrapped arcs, `ropePath`) at the **document** poses, computed when the world is built. `replaceScene` applies any carry only after the build, so a structural edit during playback never changes `L`.
+`L` is the rope's path length (tangent legs plus wrapped arcs, `ropePath`) at the **document** poses, computed when the world is built. Structural editing is allowed only at t = 0 (PHY-39); `replaceScene` always starts from the document.
 
 The rope pulls at each of its points in path order: each end along its one leg, and each pulley along the sum of the leg that arrives and the leg that leaves — so a pulley on a dynamic body (a movable pulley) is pulled at its axle. Per unit tension that pull `u` is also minus the gradient of the path length at the point. Pulls that land on one body (a movable pulley and a rope end on the same body) are summed before the body's mass enters. Each step, for each rope:
 
@@ -34,8 +34,6 @@ A pulley with `mass > 0` is a disk the rope does not slip on, so it turns and th
 - **No slip, at position level.** Each grip keeps a **share**: the angle of its arc that belongs to the arriving piece, measured from where the rope meets the disk; the leaving piece holds the rest. The mark turns with the disk: `gripShares` adds the disk's turn since the last update and subtracts the meeting point's drift, both through `wrapAngle`, so either may change by less than π per step (≈ 47 m/s of rope at `R = 0.25`). `pieceLengths` sums each piece's legs, the arcs inside it and its shares of the grips at its ends. The shares start mid-arc and catch up with the disks after every step in `correctPieces`.
 - **Tensions solve together.** Prediction (`pullPieces`) and correction (`correctPieces`) are the scalar rope's, once per piece: the disk's free turn joins the free motion, and the allowance and 20% pull-back apply per piece. Two pieces couple through the disk they share and any body both pull, so `K` is a matrix, `Kₖₗ = J′ₖ M⁻¹ Jₗᵀ` (`ropeInvMass(pulls, along)`), and `tautTensions` solves `K(T − base) = b` with `solveLinear` (partial pivoting) as an active set: a piece whose `T` would go negative goes slack and the rest re-solve. `RopeState.tension` is the largest piece's, `slack` only when every piece is; `segments` gives each leg its piece's `T`.
 - **Torques.** `resetForces` does not clear torques, and nothing but the rope drives a disk, so `step()` clears the disks' torques every step as well (bodies: PHY-34).
-- **Carry.** The disks are not bodies of the document, so `replaceScene` takes each surviving disk's spin from the live world, and `regrip` resets every share so each piece holds its length again at the carried poses — as if the rope had never slipped.
-- **Carry of a spring with mass (PHY-30, CLEAN-09).** Its chain is not in the document either: `replaceScene` resumes a surviving spring's nodes only when it joins the same two ends (same bodies, same anchors) and both were carried; otherwise `placeChain` re-seats the chain evenly between the ends where they are.
 
 The scalar path (`pullRope`/`correctRope`) stays separate even though one piece is the scalar rope: PHY-25 criterion 4 wants `mass` absent or 0 to run bit for bit like PHY-24, and folding the scalar rope into the matrix path would reorder its arithmetic. The duplication between `pullPieces`/`pullRope` and `correctPieces`/`correctRope` is that price.
 
@@ -76,7 +74,6 @@ PHY-25 families, pulley radius 0.25 m, 60-step window after a 0.5 s settle; `T` 
 | Family | Measured | Tolerance |
 |---|---|---|
 | Atwood 3 / 2 kg over a fixed pulley, `M = 2` | `a` error −0.001%, max `T₁` / `T₂` error 0.016% / 0.015%, max \|path − L\| 0.074 mm | 3% |
-| Same, `replaceScene` with carry at 0.5 s | `a` error −0.002%, max `T₁` / `T₂` error 0.013% / 0.014%, max \|path − L\| 0.074 mm | 3% |
 | Movable pulley `M = 2` on a 3 kg load, counterweight 2 kg | `a` error −0.003%, max counterweight-leg `T` error 0.029%, max \|path − L\| 0.006 mm | 3% |
 | `mass: 0` vs absent, Atwood and movable pulley | states and readout bit for bit equal over 90 steps | exact |
 

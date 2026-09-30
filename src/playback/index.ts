@@ -8,6 +8,6 @@ export {
   SPEED_STEP,
 } from './scheduler'
 export type { PlaybackAction, PlaybackState, PlaybackStatus, PlaybackTransition } from './scheduler'
-export { applyStates, carryOver } from './view'
+export { applyStates } from './view'
 export { applyLiveOps, routeDocChange } from './routing'
 export type { DocRoute, LiveOp } from './routing'

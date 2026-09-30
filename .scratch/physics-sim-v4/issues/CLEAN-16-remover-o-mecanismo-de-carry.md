@@ -1,5 +1,5 @@
 # CLEAN-16: Remover o mecanismo de carry
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-39
 Review: agent
@@ -80,3 +80,21 @@ Mantidos os testes de reset, velocidade inicial, modos de partícula, rebuild tr
 Nota fora dos Primary files: o comentário de `src/playback/routing.ts` ainda menciona carry; não muda o comportamento e fica para limpeza documental própria.
 
 Recorte completo antes da produção: **2 failed | 170 passed (172), 1 test file failed | 5 passed (6)**; typecheck e lint verdes.
+
+#### Etapa 2 — implementação e mutate-verify (2026-09-30)
+
+Commit vermelho: `b9fadb1`. Produção: `carryOver`, `samePose`, parâmetro de carry, retomada de giro dos discos, `regrip`, retomada/reassentamento das cadeias e os campos usados só pelo carry removidos. A construção normal da cadeia com velocidade inicial e o bloqueio de rotação do modo partícula permanecem. `replaceScene(scene)` continua transacional e inicia na pose/velocidade do documento.
+
+O fallback de `applyLiveOps` chama o reset existente e mantém o erro visível. O reset limpa estados, aceleração, contatos, vínculos e leituras DOM antes de tentar reconstruir; se a tentativa falha, o documento fica visível e a reconstrução continua pendente para retry. O efeito de documento foi movido abaixo de `dispatch` para reutilizar esse caminho. ADR-0004 atualizado conforme o critério 5.
+
+Sem mutação: `npx vitest run src/App.test.ts -t CLEAN-16 --no-color`: **2 passed | 79 skipped (81)**. Os testes também verificam o primeiro passo após reset/retry para provar que o mundo reinicia junto com a tela.
+
+| Teste novo | Mutação aplicada em `src/App.tsx` | Comando e saída vermelha |
+| --- | --- | --- |
+| Uma edição ao vivo que falha mostra o erro, pausa e reinicia nas poses do documento | M1: no catch de `applyLiveOps`, substituir `dispatch({ type: 'reset' }); setSimError(messageOf(e))` por `fail(e); pendingRebuildRef.current = true` | `npx vitest run src/App.test.ts -t 'uma edi' --no-color`: **1 failed | 1 passed | 79 skipped (81)**. `App.test.ts:1789`: esperado `passos: 0`, recebido `passos: 1`, pose `(9.00, 6.00)`, velocidade `5.00 m/s`. |
+| Uma edição ao vivo que falha mostra o erro, pausa e reinicia nas poses do documento | M3: remover a chamada `simRef.current?.replaceScene(docRef.current)` do reset, preservando a limpeza das leituras | Mesmo comando: **1 failed | 1 passed | 79 skipped (81)**. `App.test.ts:1795`: no passo após reset, esperado `(9.00, 6.00)`, recebido `(12.00, 8.50)` com velocidade `10.00 m/s`; a tela limpa sozinha não passa. |
+| Uma troca de cena cujo replaceScene falha não mostra poses ou velocidades da cena anterior, nem após o retry | M2: remover `statesRef.current = null` tanto do reset quanto do ramo estrutural do efeito de documento | `npx vitest run src/App.test.ts -t 'uma troca de cena cujo' --no-color`: **1 failed | 80 skipped (81)**. `App.test.ts:1812`: esperado `(6.00, 3.50)`, recebido `(9.00, 6.00)` e velocidade `5.00 m/s` da cena anterior. |
+
+Cada mutação foi executada separadamente; a produção foi restaurada byte a byte em `finally` antes do gate. O primeiro ensaio de M1 falhou ao imprimir a saída Unicode no console Python; foi repetido com saída UTF-8 e é a execução acima que fornece a evidência.
+
+Gate completo, em primeiro plano, com a produção restaurada: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0**. **30 test files passed; 716 tests passed (716)**, lint/typecheck/build verdes. Nenhum teste foi alterado no commit de produção. Etapa 2 concluída; revisão pendente na branch `phy/CLEAN-16-remover-carry`, sobre `sweatshop/2026-09-24-1853`.

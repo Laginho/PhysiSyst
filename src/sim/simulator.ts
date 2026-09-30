@@ -60,16 +60,8 @@ export interface Simulator {
   /** Live edit for an existing force binding's anchor (body-local, origin-relative). */
   setForceAnchor(forceId: string, anchor: { x: number; y: number }): void
   setBodyMass(bodyId: string, mass: number): void
-  /**
-   * Structural rebuild from the document. Pass `carry` (normally the last
-   * `readStates()`) to preserve per-id kinematic state across the rebuild:
-   * surviving ids resume from their carried position/rotation/velocity, ids
-   * absent from `carry` spawn at their document-initial state, and carried ids
-   * absent from `scene` are dropped. Omit it to restart the whole world from
-   * the document. With `carry`, pulleys with mass that survive keep their
-   * spin from the live world (PHY-25).
-   */
-  replaceScene(scene: Scene, carry?: ReadonlyMap<string, BodyState>): void
+  /** Rebuild the whole world at its document-initial state. */
+  replaceScene(scene: Scene): void
 }
 
 let initPromise: Promise<unknown> | undefined
@@ -87,7 +79,6 @@ interface ForceBinding {
 }
 
 interface PointBinding {
-  bodyId: string
   rigid: RAPIER.RigidBody
   anchorLocal: Vec2
 }
@@ -703,7 +694,6 @@ class RapierSimulator implements Simulator {
   /** The disks of pulleys with mass, by pulley id (PHY-25). */
   private disks = new Map<string, RAPIER.RigidBody>()
   private readonly _warnings: string[] = []
-  private particleMode = false
 
   constructor(scene: Scene) {
     const built = this.buildWorld(scene)
@@ -714,7 +704,6 @@ class RapierSimulator implements Simulator {
     this.ropes = built.ropes
     this.springs = built.springs
     this.disks = built.disks
-    this.particleMode = built.particleMode
     this._warnings.push(...built.warnings)
   }
 
@@ -733,7 +722,6 @@ class RapierSimulator implements Simulator {
     springs: SpringBinding[]
     disks: Map<string, RAPIER.RigidBody>
     warnings: string[]
-    particleMode: boolean
   } {
     const world = new RAPIER.World({ x: 0, y: -scene.constants.g })
     world.timestep = TIMESTEP
@@ -783,14 +771,12 @@ class RapierSimulator implements Simulator {
         })
       }
 
-      // Ropes (ADR-0004): L comes from the DOCUMENT poses, never from the
-      // rigid bodies — replaceScene applies any carry only after this build,
-      // so a carried rebuild keeps the rope length the scene started with.
+      // Ropes (ADR-0004): L comes from the document poses at t = 0.
       const pulleys = new Map((scene.pulleys ?? []).map((p) => [p.id, p]))
       const point = (bodyId: string, anchorLocal: Vec2): PointBinding => {
         const rigid = bodies.get(bodyId)
         if (!rigid) throw new Error(`constraint references missing body '${bodyId}'`)
-        return { bodyId, rigid, anchorLocal }
+        return { rigid, anchorLocal }
       }
       // A pulley with mass (PHY-25) is a disk body of its own that only
       // spins, I = ½MR², kept on its axle by the rope code; its mass rides the
@@ -864,7 +850,7 @@ class RapierSimulator implements Simulator {
       world.free()
       throw e
     }
-    return { world, bodies, colliders, forces, ropes, springs, disks, warnings, particleMode: scene.constants.particleMode === true }
+    return { world, bodies, colliders, forces, ropes, springs, disks, warnings }
   }
 
   step(): void {
@@ -1147,23 +1133,6 @@ class RapierSimulator implements Simulator {
     rope.slack = rope.tension === 0
   }
 
-  /**
-   * After a carried rebuild the bodies sit where the run left them, not at
-   * the document poses: set each grip's share so the pieces before it hold
-   * their length again, as a rope that never slipped would.
-   */
-  private regrip(rope: RopeBinding): void {
-    this.placeDisks(rope)
-    const { path } = ropeFrame(rope)
-    rope.grips.forEach((grip, k) => {
-      grip.share = 0
-      grip.start = path.arcs[grip.at]!.start
-      grip.rotation = grip.disk.rotation()
-      const length = pieceLengths(rope, path, gripShares(rope, path))[k]!
-      grip.share = (rope.pieces[k]!.length - length) / path.arcs[grip.at]!.radius
-    })
-  }
-
   /** T per leg: each piece's tension on every leg it spans. */
   private segmentTensions(rope: RopeBinding): number[] {
     if (!rope.grips.length) return [...rope.via.map(() => rope.tension), rope.tension]
@@ -1302,17 +1271,12 @@ class RapierSimulator implements Simulator {
     collider.setMass(mass)
   }
 
-  replaceScene(scene: Scene, carry?: ReadonlyMap<string, BodyState>): void {
+  replaceScene(scene: Scene): void {
     // Transactional: build the next world BEFORE touching any live state. A
     // throw here (e.g. mass<=0) leaves the current world fully valid, so the
     // caller's error panel works and playback can resume once the doc is
     // fixed — no reboot, no double-free of an already-freed world.
     const next = this.buildWorld(scene)
-    // The disks are not bodies of the document, so `carry` cannot hold them:
-    // a carried rebuild takes each surviving pulley's spin from the live world.
-    const spins = new Map([...this.disks].map(([id, disk]) => [id, disk.angvel()]))
-    // Nor the chains of springs with mass: theirs resume with the spring's id.
-    const live = new Map(this.springs.map((s) => [s.id, s]))
     this.world.free()
     this.world = next.world
     this.bodies = next.bodies
@@ -1323,42 +1287,6 @@ class RapierSimulator implements Simulator {
     this.disks = next.disks
     this._warnings.length = 0
     this._warnings.push(...next.warnings)
-    this.particleMode = next.particleMode
-    if (!carry) return
-    // Restore the kinematic state a structural edit should not disturb. Only
-    // ids present in BOTH maps are touched: new bodies keep their doc-initial
-    // state, and stale carry entries for removed bodies are ignored.
-    for (const [id, rigid] of this.bodies) {
-      const state = carry.get(id)
-      if (!state) continue
-      rigid.setTranslation({ x: state.position.x, y: state.position.y }, true)
-      rigid.setRotation(state.rotation, true)
-      rigid.setLinvel({ x: state.linvel.x, y: state.linvel.y }, true)
-      rigid.setAngvel(state.angvel, true)
-    }
-    // Particle mode must survive the carry: restoring kinematics would
-    // otherwise resurrect angular velocity on rotation-locked bodies.
-    if (this.particleMode) {
-      for (const rigid of this.bodies.values()) {
-        rigid.setAngvel(0, false)
-        rigid.lockRotations(true, true)
-      }
-    }
-    for (const [id, disk] of this.disks) {
-      const spin = spins.get(id)
-      if (spin !== undefined) disk.setAngvel(spin, true)
-    }
-    for (const rope of this.ropes) if (rope.grips.length) this.regrip(rope)
-    // Only onto the same ends, both carried: a moved or re-attached end would
-    // leave the old nodes off the new axis, so the chain re-seats (CLEAN-09).
-    const same = (p: PointBinding, q: PointBinding) =>
-      p.bodyId === q.bodyId && p.anchorLocal.x === q.anchorLocal.x && p.anchorLocal.y === q.anchorLocal.y && carry.has(p.bodyId)
-    for (const s of this.springs) {
-      if (!s.chain) continue
-      const was = live.get(s.id)
-      if (was?.chain && same(s.a, was.a) && same(s.b, was.b)) Object.assign(s.chain, { p: was.chain.p, w: was.chain.w, force: was.chain.force })
-      else placeChain(s, s.chain)
-    }
   }
 }
 
