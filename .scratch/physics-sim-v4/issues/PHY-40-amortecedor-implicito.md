@@ -1,5 +1,5 @@
 # PHY-40: Amortecedor da mola ideal implícito, estável para todo `c ≥ 0`
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -40,3 +40,21 @@ A correção resolve o termo de amortecimento de forma implícita, contra a mass
 - 2026-09-30 Aberto a partir do F1 do Sol no review de benchmark do PR 9. Números reproduzidos por probe descartável no motor real (`parse` → `createSimulator`).
 
 - 2026-09-30 Stage 2, red: `npx vitest run src/sim/acceptance.test.ts -t PHY-40` → 4 failed, 49 skipped. Os quatro casos exercitam `parse` → `createSimulator` → `step` → `readStates`, com energia calculada das posições e velocidades, por 600 passos. Todos falham no passo 2 por crescimento de energia (J): ponta fixa, c=200: 0.199453911844 → 0.203307456578; ponta fixa, c=2000: 0.199453911844 → 2.474434926636; duas pontas livres, c=200: 0.198927293195 → 0.315242885680; duas pontas livres, c=2000: 0.198927293195 → 19.302521775345. O código de produção ainda não foi alterado.
+
+#### Stage 2 — implementação e verificação (2026-09-30)
+
+- Commit de testes vermelhos: `b2f453b`. Branch: `phy/PHY-40-amortecedor-implicito`, baseada em `sweatshop/2026-09-24-1853`.
+- `springAt` expõe a velocidade relativa axial; `pushSpring` aplica `k·Δx + c·ẋ/(1 + c·Δt·K)`. Reutiliza `ropeInvMass` para as duas pontas, incluindo inércia no ponto de ancoragem e rotações bloqueadas, e `applyPulls` para forças opostas. O termo elástico conserva o lead anterior. O readout continua `k·Δx + c·ẋ` no estado atual; a cadeia PHY-30 permanece igual. ADR-0004 documenta a correção.
+- Mutate-verify no seam de integração: após obter verde, substituí em `pushSpring` a força aplicada por `s.k * dx + s.c * rate`, removendo o denominador implícito. Comando: `npx vitest run src/sim/acceptance.test.ts -t PHY-40` → **4 failed, 49 skipped**. Evidência por caso (saída vermelha, passo 2):
+
+| Novo teste | Mutação aplicada | Saída vermelha |
+|---|---|---|
+| c=200, fixed end=true | Amortecimento explícito em `pushSpring` | `expected 0.2033074565777944 to be less than or equal to 0.19945391284389985` |
+| c=2000, fixed end=true | Amortecimento explícito em `pushSpring` | `expected 2.4744349266360928 to be less than or equal to 0.19945391284389985` |
+| c=200, fixed end=false | Amortecimento explícito em `pushSpring` | `expected 0.3152428856797645 to be less than or equal to 0.19892729419457963` |
+| c=2000, fixed end=false | Amortecimento explícito em `pushSpring` | `expected 19.30252177534476 to be less than or equal to 0.19892729419457963` |
+
+- Restaurado o denominador: `npx vitest run src/sim/acceptance.test.ts -t PHY-40` → **4 passed, 49 skipped**, cobrindo energia não crescente em todos os 600 passos e momento linear conservado nas duas pontas livres, ambos com tolerância 1e-9.
+- `npx vitest run src/sim/acceptance.test.ts -t PHY-26` → **26 passed, 27 skipped**, sem alterar tolerâncias existentes.
+- Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed, 719 tests passed**; lint, typecheck e build com exit 0. Vite emite apenas o aviso de chunks acima de 500 kB.
+- Handoff: etapa 2 concluída; revisão e merge ficam para a etapa 3.
