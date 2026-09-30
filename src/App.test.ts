@@ -13,7 +13,7 @@ import { createSimulator, type BodyState, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang } from './i18n'
-import { AUTOSAVE_DELAY_MS, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import type { Scene } from './scene/types'
 import { presetById } from './presets'
 import { withBrowserSession } from './test/browser'
@@ -1556,9 +1556,8 @@ describe('rascunho numérico no Chromium (PHY-44)', () => {
         window.numericInputs = 0;
         numericField.addEventListener('input', () => numericInputs++);
         window.storedSpring = async () => {
-          dispatchEvent(new Event('pagehide'));
-          const persistence = await import('/src/persistence/index.ts');
-          return persistence.loadScene(localStorage, persistence.loadCurrentSceneId(localStorage, persistence.loadIndex(localStorage))).constraints.find(c => c.id === 'mola');
+          await new Promise(resolve => setTimeout(resolve, ${AUTOSAVE_DELAY_MS + 50}));
+          return JSON.parse(localStorage.getItem(${JSON.stringify(SCENE_KEY_PREFIX)} + localStorage.getItem(${JSON.stringify(CURRENT_SCENE_KEY)}))).constraints.find(c => c.id === 'mola');
         }`)
       const stored = () => session.evaluate<Record<string, number>>('storedSpring()')
       const text = () => session.evaluate<string>('numericField.value')
