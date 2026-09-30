@@ -481,14 +481,23 @@ function lengtheningRate(along: readonly RopePull[], v: readonly Vec2[]): number
   return rate
 }
 
-/** x with K x = b (Gaussian elimination, partial pivoting); null when K is singular. */
-function solveLinear(K: readonly (readonly number[])[], b: readonly number[]): number[] | null {
+/** x with K x = b (Gaussian elimination, partial pivoting); regularizes redundant constraints once. */
+function solveLinear(K: readonly (readonly number[])[], b: readonly number[], regularized = false): number[] | null {
   const n = b.length
+  const scale = Math.max(0, ...K.flat().map(Math.abs))
   const rows = K.map((row, i) => [...row, b[i]!])
   for (let c = 0; c < n; c++) {
     let pivot = c
     for (let r = c + 1; r < n; r++) if (Math.abs(rows[r]![c]!) > Math.abs(rows[pivot]![c]!)) pivot = r
-    if (Math.abs(rows[pivot]![c]!) < 1e-12) return null
+    if (scale === 0 || Math.abs(rows[pivot]![c]!) < 1e-12 * scale) {
+      if (scale === 0 || regularized) return null
+      // ponytail: tiny compliance for redundant rows; rank-revealing solve if exact redundant tensions matter.
+      return solveLinear(
+        K.map((row, i) => row.map((value, j) => value + (i === j ? 1e-9 * scale : 0))),
+        b,
+        true,
+      )
+    }
     ;[rows[c], rows[pivot]] = [rows[pivot]!, rows[c]!]
     const top = rows[c]!
     for (let r = c + 1; r < n; r++) {

@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -128,3 +128,15 @@ Todas as mutações e a troca temporária de produção para comparar com a base
 
 - Novo teste no bloco PHY-24, na mesma costura pública `parse` → `createSimulator` → `step` → `readStates`: duas cordas colineares até âncoras em `(0, 1)` e `(0, 2)` sustentando a partícula de 1 kg em `(0, 0)`, por 300 passos. Mede deslocamento máximo abaixo de 1 mm, sem impor repartição de tensão entre fios redundantes.
 - Vermelho antes de alterar produção: `npx vitest run src/sim/acceptance.test.ts -t 'PHY-41 R1'` → **1 failed, 49 skipped (50)**; `expected 122.72676849365234 to be less than 0.001`. Este commit contém apenas teste e metadados; teste original e critérios preservados.
+
+- Commit vermelho: `13a5096`. Correção no solver compartilhado `solveLinear`, chamado pela predição livre e por `tautTensions` na predição/correção: um pivô numericamente singular dispara uma única tentativa com regularização diagonal de `10⁻⁹` da maior entrada de `K`. Pivôs são comparados à escala da matriz; matriz nula continua sem solução. Não muda o cálculo dos sistemas acima desse limiar nem o caminho escalar das cordas isoladas. Limite deliberado registrado com `ponytail:` e no ADR: pequena complacência numérica para redundância, substituível por solve com revelação de posto se tensões redundantes exatas forem necessárias.
+- Verde: `npx vitest run src/sim/acceptance.test.ts` → **50 passed (50)**, incluindo R1, cenário original do PHY-41 e PHY-23/24/25 sem alterar testes anteriores ou tolerâncias.
+
+Mutate-verify do novo teste R1, na interface pública do simulador:
+
+| Mutação em produção | Resultado | Evidência |
+| --- | --- | --- |
+| `solveLinear` retorna `null` ao encontrar pivô singular, desativando a tentativa regularizada na predição e correção | **1 failed, 49 skipped (50)** | `expected 122.72676849365234 to be less than 0.001` |
+
+- Produção restaurada byte a byte após a mutação, antes do gate. Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed (30), 718 tests passed (718)**; lint, typecheck e build exit 0. Aviso existente de chunk acima de 500 kB mantido.
+- `Stage: to-review` neste commit de produção, ADR e metadados, sem alterar testes. R1 resolvida; revisão e merge ficam para a etapa 3.
