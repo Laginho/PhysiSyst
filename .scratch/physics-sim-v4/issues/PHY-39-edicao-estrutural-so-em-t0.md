@@ -1,5 +1,5 @@
 # PHY-39: Edição estrutural só com `passos = 0`
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -89,7 +89,7 @@ Comando de cada mutação: `npx vitest run src/App.test.ts -t PHY-39 --reporter=
 | desabilita o inspetor de vínculos e polias — spring-horizontal | M2 | `expected false to be true` para controles `:disabled` |
 | bloqueia undo/redo estrutural sem consumir o histórico; libera após reset | M1 / M2 | M1: `expected true to be false` (bola reaparece); M2: `expected false to be true` para redo desabilitado |
 | a recusa acompanha o idioma inglês | M1 | documento diferente: corpo `bloco` removido |
-| força, direção, ponto de aplicação e g continuam chegando ao mundo; undo/redo ao vivo funcionam | M3, prova pendente | `vy: 0.20000003278255463` em vez de `0.1`; mesma falha sem mutação no recorte |
+| força, direção, ponto de aplicação e g continuam chegando ao mundo; undo/redo ao vivo funcionam | M3, refeita após corrigir a espera do boot | `AssertionError: expected { x: +0, y: +0 } to strictly equal { x: 0.5, y: +0 }`, `src/App.test.ts:1905`: a guarda invertida recusa o arrasto da âncora |
 | Atwood após 30 passos: arrasto recusado preserva documento e T dentro de 1% | M1 | documento diferente: `(5.75, 3) -> (5.76, 2.752706289291382)` |
 
 Atwood sem mutação passou tanto no conjunto completo quanto no recorte: após a tentativa recusada e o passo 31, `T` fica dentro de 1% de **23.544 N**, `slack = false`, e a leitura DOM mostra **T: 23.54 N**.
@@ -99,3 +99,11 @@ Atwood sem mutação passou tanto no conjunto completo quanto no recorte: após 
 - 2026-09-30 Attempt 1 stopped to ask: Implementação salva em `43cab05`; gate verde com 728 testes. PHY-39 ficou `blocked`: o teste novo de força/`g` falha isoladamente, mesmo sem mutação. /  / A [skill ticket-flow](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. Diagnóstico e evidências registrados no ticket.
 
 - 2026-09-30 Proxy decided: retomar de `refs/foreman/phy-39-attempt1` (`1acc7fa` vermelho, `43cab05` produção, gate verde com 728 testes), sem recomeçar; um commit só de teste corrige o `step()` do bloco PHY-39 para esperar o boot do motor real, depois refazer a M3 (inverter `canEditDoc`) e trocar a linha "prova pendente" da tabela pela saída vermelha, gate em primeiro plano, `to-review` — a falha isolada é timing do harness: `settleSimImport()` não espera `ensureInit()`, o clique de passo cai depois das edições e dá dois passos pós-edição (0,2 em vez de 0,1); a asserção física e a guarda estão certas. Contrato inalterado, só a linha do teste de força/`g` ganhou a nota do boot.
+
+#### Etapa 2 retomada e concluída (2026-09-30)
+
+Retomada autorizada pelo proxy: commits originais recuperados sobre `sweatshop/2026-09-24-1853`, mantendo a separação teste/produção (`d347cc4`, vermelho; `eb0da83`, produção). O commit só de teste `153c86a` corrige `step()` para esperar o overlay de boot desaparecer, avançando o relógio falso em intervalos de 5 ms e verificando a prontidão antes dos cliques. Nenhum código de produção precisou mudar nesta retomada.
+
+O bloqueio anterior está resolvido. Sem mutação, o teste real de força/g passou isoladamente: `npx vitest run src/App.test.ts -t 'força, direção, ponto' --reporter=verbose --no-color`: **1 passed | 78 skipped (79)**. A M3 foi refeita com `npx vitest run src/App.test.ts -t PHY-39 --no-color`: **12 failed | 2 passed | 65 skipped (79)**; o teste ao vivo falhou na âncora recusada (`x: 0`, esperado `0.5`), conforme a tabela. Produção restaurada em `finally`; essa falha agora é prova válida, substituindo a falha de timing da primeira tentativa.
+
+Após restaurar a produção, `npx vitest run src/App.test.ts --no-color`: **79 passed (79)**. Gate completo executado em primeiro plano, com interrupção em qualquer erro: **30 test files passed; 733 tests passed**, lint, typecheck e build verdes. Permanece apenas o aviso já existente sobre o tamanho do chunk do simulador. Critério 8 concluído; entregue para revisão em `Stage: to-review`.
