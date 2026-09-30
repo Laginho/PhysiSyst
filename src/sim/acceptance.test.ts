@@ -861,6 +861,29 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     expect(rope(sim).slack).toBe(false)
   })
 
+  it('PHY-43: launching a upward leaves b supported by the massive pulley with T₂ = M·a/2, within 3%', async () => {
+    const m = 2
+    const M = 2
+    const aClosed = (m * G) / (m + M / 2)
+    const tClosed = (M * aClosed) / 2
+    const scene = atwoodScene(m, m, M)
+    scene.bodies.find((body) => body.id === 'a')!.vy = 6
+    const sim = await load(scene)
+    let v30 = 0
+    for (let step = 1; step <= 90; step++) {
+      sim.step()
+      if (step === 30) v30 = sim.readStates().get('b')!.linvel.y
+      if (step < 30) continue
+      const state = rope(sim)
+      expect(state.segments, `segments at step ${step}`).toHaveLength(2)
+      expect(state.segments[0], `T₁ at step ${step}`).toBe(0)
+      expect(Math.abs(state.segments[1]! - tClosed), `T₂ at step ${step}`).toBeLessThanOrEqual(0.03 * tClosed)
+      expect(state.slack, `slack at step ${step}`).toBe(false)
+    }
+    const dvB = sim.readStates().get('b')!.linvel.y - v30
+    expect(Math.abs(dvB + aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
+  })
+
   it('a massive pulley on a horizontally moving mount preserves vertical motion and tensions under a Galilean boost (CLEAN-17)', async () => {
     const scene = atwoodScene(3, 2, 2)
     // All bodies are free to translate; an upward force keeps the rope loaded.

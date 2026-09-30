@@ -1,5 +1,5 @@
 # PHY-43: O lado tenso de uma polia com massa não cai em queda livre quando o outro afrouxa
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -35,6 +35,8 @@ O Sonnet também mostrou que o laço de re-solve não tem teste: trocar `taut = 
 - `src/sim/acceptance.test.ts`, bloco PHY-25: o cenário do critério 1, passos 30–40. O commit `7356ba8` já traz o teste com a janela 30–90; um segundo commit só de teste encurta o laço para 40 e o `Δv` para 10 passos. Vermelho porque hoje as duas peças saem juntas e `b` cai livre: `T₂ at step 30: expected 6.54 to be less than or equal to 0.1962`.
 
 ## Comments
+
+- 2026-09-30 Stage 2 — regressão pelo motor público (`createSimulator` → `step` → `readConstraints`/`readStates`), no bloco PHY-25. Antes da correção: `npx vitest run src/sim/acceptance.test.ts -t PHY-25` → 1 failed, 6 passed, 48 skipped (55). Vermelho no passo 30: `T₂ at step 30: expected 6.54 to be less than or equal to 0.19619999999999999`; T₂ observado = 0 N, esperado = 6,54 N. O teste verifica cada leitura dos passos 30–90 e Δv entre os passos 30 e 90, sem alterar testes ou tolerâncias existentes.
 
 - 2026-09-30 Aberto a partir do F1 do Sonnet no review de benchmark do PR 9. A queda livre foi reproduzida por probe descartável no motor real. O stage 2 registra aqui o transiente do início (o pico e até que passo ele dura) depois da correção. O transiente não é critério; se parecer grande demais, vira um ticket próprio.
 
