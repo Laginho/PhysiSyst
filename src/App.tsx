@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
 import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
 import {
@@ -273,7 +273,7 @@ function paint(
   }
 }
 
-/** Number field that only forwards real numbers (empty input is ignored). */
+/** Rejected or incomplete numbers stay local until blur; accepted edits still apply immediately. */
 function NumField({
   label,
   value,
@@ -283,20 +283,24 @@ function NumField({
   label: string
   value: number
   step?: number
-  onChange: (v: number) => void
+  onChange: (v: number) => boolean | void
 }) {
+  const [draft, setDraft] = useState<{ value: number; text: string } | null>(null)
+  if (draft && draft.value !== value) setDraft(null)
   return (
     <label style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
       {label}
       <input
         type="number"
         step={step ?? 'any'}
-        value={value}
+        value={draft?.text ?? value}
         style={{ width: 80 }}
         onChange={(e) => {
           const v = e.target.valueAsNumber
-          if (!Number.isNaN(v)) onChange(v)
+          if (Number.isFinite(v) && onChange(v) !== false) setDraft(null)
+          else setDraft({ value, text: e.target.value })
         }}
+        onBlur={() => setDraft(null)}
       />
     </label>
   )
@@ -503,7 +507,11 @@ function SpringPanel({
   onDelete: () => void
 }) {
   const [invalid, setInvalid] = useState(false)
-  const edit = (e: (d: Scene) => Scene) => setInvalid(!onEdit(e))
+  const edit = (e: (d: Scene) => Scene) => {
+    const accepted = onEdit(e)
+    setInvalid(!accepted)
+    return accepted
+  }
   return (
     <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{spring.id}</legend>

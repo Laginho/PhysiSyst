@@ -1,5 +1,5 @@
 # PHY-44: Dá para digitar `0.5` dígito a dígito num campo numérico
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -45,3 +45,22 @@ O `NumField` passa a guardar um rascunho de texto. Cada tecla que resulta num va
 - Red antes da produção: `npx vitest run src/App.test.ts` → **2 failed | 66 passed (68)**. Caso `x₀ (m)`: `expected '1.5' to be '0'`; caso `k (N/m)`: `expected '40' to be '0'`. Ambos falham na primeira tecla, antes de qualquer alteração em `NumField`.
 
 - 2026-09-30 Retomada: o commit original de testes `3b24466` foi recuperado como `4e04128` sobre a sessão atual, preservando os tickets já concluídos desde a tentativa anterior. Harness corrigido conforme a decisão do proxy: aguarda 450 ms e lê o autosave com `SCENE_KEY_PREFIX` e `CURRENT_SCENE_KEY`, sem import dinâmico ou `pagehide`. `npx vitest run src/App.test.ts` antes da produção → **2 failed | 81 passed (83)**; `x₀ (m)`: `expected '1.5' to be '0'`; `k (N/m)`: `expected '40' to be '0'`.
+
+#### Stage 2 — mutate-verify (2026-09-30)
+
+`NumField` mantém localmente o texto recusado ou incompleto; `SpringPanel.edit` devolve a aceitação já determinada por `onEdit`. Entradas aceitas continuam aplicadas imediatamente, incluindo os clamps existentes. Blur descarta o rascunho; uma alteração externa do valor também o descarta. Nenhum teste foi alterado depois do commit de harness `8b85fac`.
+
+Comando de cada mutação: `npx vitest run src/App.test.ts -t PHY-44`. Cada execução produziu **2 failed | 81 skipped (83)**; produção restaurada depois de cada uma.
+
+| Teste de regressão | Mutação em `NumField` | Saída vermelha |
+| --- | --- | --- |
+| `x₀ (m) aceita 0.5 tecla por tecla, reverte no blur e só desfaz a edição aceita` | Substituir `value={draft?.text ?? value}` por `value={value}` | `expected '1.5' to be '0'` na primeira tecla (linha 1571) |
+| Mesmo teste de `x₀ (m)` | Substituir `onBlur={() => setDraft(null)}` por callback vazio | `expected '0' to be '1.5'` após blur (linha 1575) |
+| Mesmo teste de `x₀ (m)` | Substituir `onChange(v) !== false` por `false`, mantendo o rascunho visível sem editar o documento | `expected 1.5 to be 0.5` na leitura do autosave (linha 1592) |
+| `k (N/m) aceita 0.5 tecla por tecla, reverte no blur e só desfaz a edição aceita` | Substituir `value={draft?.text ?? value}` por `value={value}` | `expected '40' to be '0'` na primeira tecla (linha 1571) |
+| Mesmo teste de `k (N/m)` | Substituir `onBlur={() => setDraft(null)}` por callback vazio | `expected '0' to be '40'` após blur (linha 1575) |
+| Mesmo teste de `k (N/m)` | Substituir `onChange(v) !== false` por `false`, mantendo o rascunho visível sem editar o documento | `expected 40 to be 0.5` na leitura do autosave (linha 1592) |
+
+Verde com produção corrigida: `npx vitest run src/App.test.ts` → **83 passed (83)**. Os dois testes verificam `0`, o intermediário incompleto `-`, a sequência nativa `0` → `.` → `5` (cinco eventos `input` no total), autosave inalterado e undo desabilitado durante os intermediários; depois de `0.5`, um único undo restaura o documento original e esgota o histórico. Os testes existentes do painel do corpo continuam verificando clamps de dimensões, base e alpha.
+
+Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 arquivos, 721 testes passando**; lint, typecheck e build concluídos com exit 0. Vite manteve o aviso de chunks acima de 500 kB. Stage 2 concluído, pronto para revisão na branch `phy/PHY-44-numfield-com-rascunho`, baseada em `sweatshop/2026-09-24-1853`.
