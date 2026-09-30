@@ -1,5 +1,5 @@
 # PHY-42: A mola com massa não depende de qual ponta é `a`
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -42,3 +42,25 @@ A correção rebaseia os nós pelo deslocamento real da origem ao longo do eixo,
 - Gate final: `npm test && npm run lint && npm run typecheck && npm run build` → exit 0; 30 arquivos, 720 testes verdes; lint, typecheck e build verdes. Na primeira execução, PHY-18 no navegador falhou com `canvas geometry did not settle` (719 passed, 1 failed); seu arquivo isolado passou com 10 testes e a repetição do gate completo passou. Build mantém o aviso de chunks acima de 500 kB.
 
 - 2026-09-30 Aberto a partir do F3 do Sol no review de benchmark do PR 9. A divergência de 8,98 mm foi reproduzida por probe descartável no motor real.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+##### Standards
+
+Nenhuma violação documentada ou smell relevante. `simulator.ts` preserva a dinâmica do Rapier (ADR-0001), a massa como opção da mola (ADR-0002) e as forças das molas antes da predição das cordas (ADR-0004). Os callbacks locais capturam a posição anterior da âncora e o eixo necessários ao rebase após o passo. A regressão reutiliza o cenário existente e a interface do simulador; a evidência de mutação atende ao `AGENTS.md`.
+
+##### Spec
+
+Nenhum achado. Critério 1: o teste compara duas cenas independentes por 600 passos, com `m = 1`, `k = 40`, `mₛ = 0,1`, `c = 0` e deslocamento inicial de 0,1 m; `parse` recria as constraints antes da troca das pontas. O único caller de `pushChain`, `step`, executa o rebase imediatamente após `world.step()`, projetando o deslocamento real de `worldPoint(a)` no eixo da integração. Critério 2: os 13 testes PHY-30 passam com as tolerâncias existentes, incluindo CLEAN-09 e CLEAN-12. Critérios 3 e 4: mutação repetida e gate verde. Primary files e separação dos commits respeitados.
+
+Standards: 0 achados; Spec: 0 achados.
+
+##### Verificação e encerramento
+
+- Arquivos revisados: `src/sim/simulator.ts`, `src/sim/acceptance.test.ts` e este ticket. `9304327` adiciona a regressão antes da correção; `2a5e445` altera produção e documentação sem tocar testes.
+- Mutate-verify repetido na etapa 3 para `PHY-42: swapping the spring ends keeps the block trajectory within 0.1 mm over 600 steps`: substituído temporariamente `chain.p = chain.p.map((p) => p - moved)` por `chain.p = chain.p.map((p) => p - TIMESTEP * v[0]!)`. `npx vitest run src/sim/acceptance.test.ts -t PHY-42` → **1 failed, 53 skipped (54)**; saída: `AssertionError: expected 0.008981645107269287 to be less than 0.0001`.
+- Mutação removida e fonte conferida sem diff: `npx vitest run src/sim/acceptance.test.ts -t PHY-30` → **13 passed, 41 skipped (54)**, incluindo a regressão PHY-42.
+- Rebase na sessão já atualizado; gate `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed, 720 tests passed**, exit 0; lint, typecheck e build verdes. Vite mantém o aviso existente de chunks acima de 500 kB.
+- Merge sem squash: `50df434`, em `sweatshop/2026-09-24-1853`. `Stage: done` e ledger registrados juntos no commit de encerramento.
