@@ -1,11 +1,11 @@
 # PHY-43: O lado tenso de uma polia com massa não cai em queda livre quando o outro afrouxa
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
 
 - Primary files:
-  - `src/sim/simulator.ts` (`tautTensions`; e a linha `predicted` de `pullPieces`, hoje `solveLinear` irrestrito, que deve usar o solver unilateral com base zero)
+  - `src/sim/simulator.ts` (`tautTensions`; e a previsão de `pullPieces`: solver unilateral com base zero e preservação da folga negativa no cálculo de `rate`)
   - `src/sim/acceptance.test.ts` (bloco `pulley with mass (PHY-25)`)
 
 #### What to build
@@ -55,3 +55,17 @@ O Sonnet também mostrou que o laço de re-solve não tem teste: trocar `taut = 
 - 2026-09-30 Proxy decided: a previsão `piece.predicted` em `pullPieces` entra no escopo (solver unilateral com base zero no lugar de `solveLinear` irrestrito) — sem ela T₂ = 6,75 N no passo 30 (3,2%) e o critério 1 falha; com ela 6,548 N. Retomar de `refs/foreman/phy-43-attempt1` (`7356ba8` + `20ba572`) com um segundo commit só de teste. O pico de 3157 N no passo 86 após a retomada da tensão fica fora deste ticket; abrir ticket próprio se persistir depois da correção.
 
 - 2026-09-30 Stage 2 retomado de `refs/foreman/phy-43-attempt1`, rebaseado sobre `sweatshop/2026-09-24-1853`; conflito documental resolvido preservando o contrato revisado e as evidências históricas. Segundo commit só de teste: janela 30–40 e Δv em 10·TIMESTEP. `npx vitest run src/sim/acceptance.test.ts -t PHY-25` → 1 failed, 5 passed, 45 skipped (51): `T₂ at step 30: expected 6.54 to be less than or equal to 0.19619999999999999`. Produção ainda intacta.
+
+- 2026-09-30 Proxy decided: ampliar o escopo de `pullPieces` para preservar a folga negativa no cálculo de `rate`, usando `ropeAllowance(Math.min(target, nowLengths[k]! - piece.length))` — só trocar o solver previsto ainda produz T₂ = 6,763920 N no passo 30 (3,42%); a allowance com `target` descarta a folga e contamina o residual. Mesma costura pública, critérios e teste mantidos. O modelo Claude Fable do card não está disponível neste runtime; o proxy usou o modelo herdado da sessão.
+
+#### Stage 2 handoff (2026-09-30)
+
+- Correção: `tautTensions` remove só a peça de menor tensão por iteração e retorna zeros quando o conjunto fica vazio. `pullPieces` prevê a leitura pelo mesmo solver unilateral com base zero, preservando a folga negativa na allowance. Nenhum teste ou tolerância alterado no commit de produção.
+- Red: segundo commit só de teste `a3c263d`, depois dos commits da tentativa anterior reaplicados como `20d165e` e `cd62f9b`; motor público com janela 30–40 falha por T₂ = 0 N no passo 30 (1 failed, 5 passed, 45 skipped).
+- Mutate-verify da única regressão nova, `PHY-43: launching a upward leaves b supported by the massive pulley with T₂ = M·a/2, within 3%`, via `npx vitest run src/sim/acceptance.test.ts -t PHY-43`. Cada mutação foi aplicada isoladamente sobre a correção e restaurada antes do gate; cada execução deu 1 failed, 50 skipped (51):
+  - `taut = still` → `return T`: `T₁ at step 30: expected 19.800741150548525 to be +0`.
+  - Remoção individual → filtro original de todas as peças com T ≤ 0: `T₂ at step 30: expected 6.54 to be less than or equal to 0.19619999999999999` (T₂ = 0 N).
+  - Allowance da previsão → `ropeAllowance(target)`, descartando a folga: `T₂ at step 30: expected 0.22392030779169314 to be less than or equal to 0.19619999999999999` (T₂ = 6,763920 N).
+  - Previsão unilateral com base zero → `solveLinear` irrestrito: `T₂ at step 30: expected 49027.152451571965 to be less than or equal to 0.19619999999999999`.
+- Green: `npx vitest run src/sim/acceptance.test.ts -t PHY-25` → 6 passed, 45 skipped (51), incluindo os testes existentes sem alterar tolerâncias. Gate `npm test && npm run lint && npm run typecheck && npm run build` → exit 0; 30 arquivos, 719 testes aprovados. Build emite aviso de tamanho de chunk.
+- Probe descartável no motor público, passos 1–40: T₁ = 0 e corda tensa; T₂ = 6,540025 N no passo 1, 6,540301 N no 8, 6,547108 N no 28, 6,548402 N no 30 e 6,556097 N no 40. Não houve pico inicial nem leitura fora dos 3% nesse intervalo; máximo 6,556097 N no passo 40. Janela 30–40: erro máximo de T₂ = 0,2461%; Δv_b = −1,088963 m/s, esperado −1,09 m/s (erro 0,0951%). Depois da retomada da tensão permanece fora do critério e não foi avaliado nesta entrega.
