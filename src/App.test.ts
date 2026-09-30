@@ -8,7 +8,7 @@ import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
 import { CANVAS_MIN_WIDTH } from './render/fitCanvas'
 import { trashRect } from './editor/trash'
-import { createSimulator, type Simulator } from './sim'
+import { createSimulator, type BodyState, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang } from './i18n'
@@ -1674,11 +1674,28 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
     ['duplicar', (host: HTMLElement) => findButton(host, ptBR['scenes.duplicate'])?.click()],
     ['lista de cenas', (host: HTMLElement) => setSelectValue(sceneSelect(host), 'cena-2')],
   ])('via %s: a cena nova começa em passos 0, na pose e na velocidade do documento', async (_, switchScene) => {
-    // Every step lands `bola` far from its document pose, moving.
-    vi.mocked(createSimulator).mockImplementation(async () => ({
-      ...makeFakeSimulator(),
-      readStates: () => new Map([['bola', { position: { x: 9, y: 6 }, rotation: 0, linvel: { x: 5, y: 0 }, angvel: 0 }]]),
-    }))
+    // Steps advance the live world; only replaceScene resets it to the document.
+    vi.mocked(createSimulator).mockImplementation(async (scene) => {
+      const statesFor = (doc: Scene, carry?: ReadonlyMap<string, BodyState>) =>
+        new Map(doc.bodies.map((body) => [body.id, carry?.get(body.id) ?? {
+          position: { ...body.position }, rotation: body.rotation,
+          linvel: { x: body.vx ?? 0, y: body.vy ?? 0 }, angvel: 0,
+        }]))
+      let states = statesFor(scene)
+      return {
+        ...makeFakeSimulator(),
+        step: () => {
+          const ball = states.get('bola')!
+          states = new Map(states).set('bola', {
+            ...ball,
+            position: { x: ball.position.x + 3, y: ball.position.y + 2.5 },
+            linvel: { x: ball.linvel.x + 5, y: 0 },
+          })
+        },
+        readStates: () => new Map(states),
+        replaceScene: (doc, carry) => { states = statesFor(doc, carry) },
+      }
+    })
     const { host, canvas } = setupWith(seed)
     await settleSimImport()
     for (let i = 0; i < 100 && loadingOverlay(host); i++) await wait(5)
@@ -1696,5 +1713,12 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
     await wait(150)
     expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (6.00, 3.50) m`)
     expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 0.00 m/s`)
+
+    // Read the next simulated state, so clearing the UI refs alone cannot pass.
+    act(() => findButton(host, ptBR['playback.step'])?.click())
+    await wait(150)
+    expect(readoutText(host)).toContain(`${ptBR['readout.steps']}: 1`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (9.00, 6.00) m`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 5.00 m/s`)
   }, 10000)
 })

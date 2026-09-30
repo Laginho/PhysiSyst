@@ -1,5 +1,5 @@
 # CLEAN-18: Os testes do PHY-36 ficam vermelhos se o mundo não for reiniciado
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -30,5 +30,12 @@ O Sol achou isso, e eu reproduzi. Tirar só `simRef.current?.replaceScene(docRef
 - Os testes do PHY-36 passam a exigir que o mundo recebeu o documento novo, sem carry. Por exemplo: o falso guarda o que `replaceScene` recebeu e avança o próprio estado, e o teste dá um passo depois da troca. É um ticket só de cobertura: a prova é a mutação do critério 1 aplicada e revertida, com a saída vermelha registrada em `## Comments`. Sem commit de código.
 
 ## Comments
+
+- 2026-09-30 Stage 2: strengthened only the two PHY-36 cases. Their local fake now initializes from the supplied document, advances its own state on each step, and implements `replaceScene` with the optional carry. After switching and checking the document state at step 0, each case takes another step and checks the live position and velocity through the UI readout.
+- Mutation evidence (both `via duplicar` and `via lista de cenas`): temporarily replaced only `simRef.current?.replaceScene(docRef.current)` in the reset branch of `dispatch` with `void 0`, then ran `npx vitest run src/App.test.ts -t PHY-36`. Exit 1; `2 failed | 64 skipped (66)`. Both failed at `src/App.test.ts:1721`: `AssertionError: expected 'leitura — bolapassos: 1velocidade: 1.…' to contain 'posição: (9.00, 6.00) m'`. The actual readout was `(12.00, 8.50) m` at `10.00 m/s`, proving the old world continued after the UI reset. Restored `src/App.tsx` byte for byte; no production change is committed.
+- Previous PHY-36 mutation 1, applied independently: omitted only `dispatch({ type: 'reset' })` in `switchToScene`. Same command, exit 1; `2 failed | 64 skipped (66)`. Both cases failed at `src/App.test.ts:1710`: `AssertionError: expected 'leiturapassos: 1velocidade: 1.00×sele…' to contain 'passos: 0'`; actual `leiturapassos: 1velocidade: 1.00×selecione um corpo`.
+- Previous PHY-36 mutation 2, applied independently: omitted only `statesRef.current = null` in the reset branch of `dispatch`. Same command, exit 1; `2 failed | 64 skipped (66)`. Both cases failed at `src/App.test.ts:1714`: `AssertionError: expected 'leiturapassos: 0velocidade: 1.00×sele…' to contain 'posição: (6.00, 3.50) m'`; actual `leiturapassos: 0velocidade: 1.00×selecione um corpo`. Restored production byte for byte after each mutation and verified `git diff --exit-code -- src/App.tsx`.
+- Green proof after restoring production: `npx vitest run src/App.test.ts -t PHY-36` exited 0; `2 passed | 64 skipped (66)`. Test-only commit: `fd88bf7`; only the PHY-36 block and its required type import changed, with no other test or production change.
+- Full gate: `npm test && npm run lint && npm run typecheck && npm run build` exited 0; `30 passed (30)` test files, `715 passed (715)` tests. Lint and typecheck passed; Vite built 49 modules with the existing chunk-size warning. Stage 2 complete, ready for stage 3.
 
 - 2026-09-30 Aberto a partir do F5 do Sol no review de benchmark do PR 9. Mutação reproduzida (a linha do `replaceScene` no reset trocada por `void 0`) → 2 passed.
