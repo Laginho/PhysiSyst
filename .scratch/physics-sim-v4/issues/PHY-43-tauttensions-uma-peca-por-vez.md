@@ -1,5 +1,5 @@
 # PHY-43: O lado tenso de uma polia com massa não cai em queda livre quando o outro afrouxa
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -37,3 +37,5 @@ O Sonnet também mostrou que o laço de re-solve não tem teste: trocar `taut = 
 ## Comments
 
 - 2026-09-30 Aberto a partir do F1 do Sonnet no review de benchmark do PR 9. A queda livre foi reproduzida por probe descartável no motor real. O stage 2 registra aqui o transiente do início (o pico e até que passo ele dura) depois da correção. O transiente não é critério; se parecer grande demais, vira um ticket próprio.
+
+- 2026-09-30 Attempt 1 stopped to ask: PHY-43 ficou `blocked`: a folga fecha perto do passo 44, tornando impossível manter T₁ = 0 até o passo 90. /  / Teste vermelho e evidências salvos em `7356ba8` e `20ba572`. Código de produção restaurado. /  / A [skill `ticket-flow`](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. O stage 1 precisa revisar a janela do critério 1.
