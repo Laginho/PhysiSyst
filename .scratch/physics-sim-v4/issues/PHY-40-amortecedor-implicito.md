@@ -1,5 +1,5 @@
 # PHY-40: Amortecedor da mola ideal implícito, estável para todo `c ≥ 0`
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -58,3 +58,25 @@ A correção resolve o termo de amortecimento de forma implícita, contra a mass
 - `npx vitest run src/sim/acceptance.test.ts -t PHY-26` → **26 passed, 27 skipped**, sem alterar tolerâncias existentes.
 - Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed, 719 tests passed**; lint, typecheck e build com exit 0. Vite emite apenas o aviso de chunks acima de 500 kB.
 - Handoff: etapa 2 concluída; revisão e merge ficam para a etapa 3.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+##### Standards
+
+Nenhuma violação documentada ou smell relevante. A alteração respeita os Primary files e o vocabulário do domínio, reutiliza `ropeInvMass` e `applyPulls` e registra a mutação e a saída vermelha por teste conforme o `AGENTS.md`.
+
+##### Spec
+
+Nenhum achado. Critérios 1 e 2: os quatro casos verificam energia não crescente durante 600 passos e momento conservado nas pontas livres, com tolerância 1e-9. Critério 3: as asserções e tolerâncias existentes permanecem iguais. Critério 4: o ADR explica o amortecimento implícito e sua motivação. Critérios 5 e 6: mutação repetida e gate verde. A massa efetiva inclui rotação e exclui pontas fixas; o lead elástico, a leitura instantânea e a cadeia PHY-30 preservam seu comportamento contratado.
+
+Standards: 0 achados; Spec: 0 achados.
+
+##### Verificação e encerramento
+
+- Arquivos revisados: `src/sim/simulator.ts`, `src/sim/acceptance.test.ts`, ADR-0004 e este ticket. Histórico conferido: `b2f453b` contém testes vermelhos antes da produção; `9e674be` altera produção e documentação sem tocar testes.
+- Mutate-verify repetido na etapa 3: removido apenas o denominador de `pushSpring`, aplicando `s.k * dx + s.c * rate`; `npx vitest run src/sim/acceptance.test.ts -t PHY-40` → **4 failed, 49 skipped**, todos no passo 2, com as quatro saídas idênticas às registradas na tabela da etapa 2. Fonte restaurada byte a byte.
+- Verde após restaurar: PHY-40 → **4 passed, 49 skipped**; PHY-26 → **26 passed, 27 skipped**.
+- Rebase na sessão já atualizado; gate executado novamente: **30 test files passed, 719 tests passed**; lint, typecheck e build com exit 0. Permanece o aviso já documentado do chunk tardio do Rapier acima de 500 kB.
+- Merge sem squash: `166294a`, em `sweatshop/2026-09-24-1853`. `Stage: done` e ledger registrados juntos no commit de encerramento.
