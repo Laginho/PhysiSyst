@@ -1,5 +1,5 @@
 # CLEAN-19: `FINAL_REPORT.md` e `package-lock.json` em dia com o que o PR 9 entrega
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-39, PHY-40, PHY-41, PHY-42, PHY-43, PHY-44, CLEAN-16, CLEAN-17, CLEAN-18
 Review: agent
@@ -49,3 +49,21 @@ Este ticket roda por último na sessão, para os números valerem para o que rea
 - Nenhum arquivo de teste ou produção alterado; mutate-verify não se aplica porque o contrato dispensa testes novos. `git diff --check` limpo. Handoff para stage 3 na branch `phy/CLEAN-19-final-report-e-lockfile-em-dia`.
 
 - 2026-09-30 Stage 3: a revisão Spec encontrou uma informação de CI já desatualizada no critério 1. O PR #9 está aberto em `0f85552`, e o CI `36764148783` está `completed/success` nesse commit: as correções anteriores ao CLEAN-19 já foram publicadas e passaram pelo CI. Corrigida somente a frase correspondente da seção v4 de `FINAL_REPORT.md`; nenhum teste novo necessário. A nota do stage 2 acima permanece como registro histórico.
+
+#### Resolution (2026-09-30)
+Verdict: Approve
+
+##### Standards
+
+0 achados. Os commits `b96c993`, `67766f9` e `8495b43` respeitam os arquivos primários: somente a seção v4 de `FINAL_REPORT.md` e as duas versões raiz de `package-lock.json`, além dos metadados do ticket. `Stage:` e `Status:` permanecem separados. A verificação vermelha antecede a implementação; o contrato dispensa testes novos. Nenhuma mudança de produção, refatoração fora do escopo ou smell da baseline.
+
+##### Spec
+
+1 correção documental pequena, resolvida em `8495b43`; 0 achados pendentes ou que exigem reabrir. O critério 1 traz 721 testes/30 arquivos, portões, entregas, itens 2–5 do CLEAN-13 pendentes e PHY-30 corrigido pelo CLEAN-09. O parágrafo de CI foi atualizado para o [run 36764148783](https://github.com/Laginho/PhysiSyst/actions/runs/36764148783), `completed/success` em `0f85552`; o PR #9 está aberto nesse commit. O critério 2 altera exclusivamente as duas versões raiz para `0.4.0`. O critério 3 foi confirmado pelo gate independente abaixo. Nenhum aumento de escopo ou regressão identificado.
+
+##### Verification and integration
+
+- Base fixa `0f85552`; rebase na sessão sem mudanças. Comparados todos os commits e o diff completo.
+- Red reproduzido com `node:assert/strict` sobre `git show 0f85552:package-lock.json`: exit 1, `AssertionError [ERR_ASSERTION]`, `'0.3.0' !== '0.4.0'`. Green no checkout: exit 0, `PASS: root versions 0.4.0; exactly two lockfile version changes; report v1-v3 unchanged; all 9 prerequisites done.` Nenhum teste novo, conforme o contrato; mutate-verify não se aplica.
+- Gate independente `npm test && npm run lint && npm run typecheck && npm run build`, exit 0: `Test Files 30 passed (30)`, `Tests 721 passed (721)`, 30.09 s; ESLint e TypeScript limpos. Vite: 49 módulos, entry 286.70 kB (gzip 88.45 kB), Rapier lazy 2,132.06 kB (gzip 809.68 kB); somente o aviso conhecido de chunk >500 kB. A correção posterior de revisão mudou apenas texto do relatório.
+- `git diff --check` limpo. Merge sem squash em `sweatshop/2026-09-24-1853`, commit `08a8a30`. `Stage: done`, esta resolução e a linha do ledger registrados juntos. Publicação pelo driver da sessão.
