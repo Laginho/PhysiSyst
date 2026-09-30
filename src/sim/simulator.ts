@@ -525,15 +525,18 @@ function tautTensions(K: readonly (readonly number[])[], b: readonly number[], b
   const rhs = b.map((bk, k) => bk + K[k]!.reduce((s, kkl, l) => s + kkl * base[l]!, 0))
   let taut = b.map((_, k) => k)
   for (;;) {
+    const T = b.map(() => 0)
+    if (!taut.length) return T
     const x = solveLinear(
       taut.map((k) => taut.map((l) => K[k]![l]!)),
       taut.map((k) => rhs[k]!),
     )
-    const T = b.map(() => 0)
     if (!x) return T
     taut.forEach((k, i) => (T[k] = x[i]!))
-    const still = taut.filter((k) => T[k]! > 0)
-    if (still.length === taut.length) return T
+    // Coupled pieces must re-solve after each removal: one slack piece can mask a taut neighbor.
+    const worst = taut.reduce((k, l) => T[l]! < T[k]! ? l : k)
+    if (T[worst]! > 0) return T
+    const still = taut.filter((k) => k !== worst)
     taut = still
   }
 }
@@ -1112,14 +1115,15 @@ class RapierSimulator implements Simulator {
           pulls: pulls[k]!,
           along: along[k]!,
           toTarget: (endLengths[k]! - piece.length - target) / (phi * TIMESTEP * TIMESTEP),
-          rate: (lengtheningRate(end[k]!, now[k]!.map(({ rigid, p }) => freePointVelocity(rigid, p, g))) - ropeAllowance(target)) / TIMESTEP,
+          rate: (lengtheningRate(end[k]!, now[k]!.map(({ rigid, p }) => freePointVelocity(rigid, p, g))) - ropeAllowance(Math.min(target, nowLengths[k]! - piece.length))) / TIMESTEP,
         }
       })
     })
     const K = rows.map((a) => rows.map((p) => ropeInvMass(p.pulls, a.along)))
-    const predicted = solveLinear(
+    const predicted = tautTensions(
       K,
       rows.map((r) => r.rate),
+      rows.map(() => 0),
     )
     const tensions = tautTensions(
       K,
@@ -1127,7 +1131,7 @@ class RapierSimulator implements Simulator {
       rows.map((r) => r.piece.residual),
     )
     rows.forEach(({ piece, pulls }, k) => {
-      piece.predicted = predicted?.[k] ?? 0
+      piece.predicted = predicted[k]!
       piece.tension = tensions[k]!
       if (piece.tension > 0) applyPulls(pulls, piece.tension, false)
     })
