@@ -1,5 +1,5 @@
 # PHY-40: Amortecedor da mola ideal implícito, estável para todo `c ≥ 0`
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -38,3 +38,5 @@ A correção resolve o termo de amortecimento de forma implícita, contra a mass
 ## Comments
 
 - 2026-09-30 Aberto a partir do F1 do Sol no review de benchmark do PR 9. Números reproduzidos por probe descartável no motor real (`parse` → `createSimulator`).
+
+- 2026-09-30 Stage 2, red: `npx vitest run src/sim/acceptance.test.ts -t PHY-40` → 4 failed, 49 skipped. Os quatro casos exercitam `parse` → `createSimulator` → `step` → `readStates`, com energia calculada das posições e velocidades, por 600 passos. Todos falham no passo 2 por crescimento de energia (J): ponta fixa, c=200: 0.199453911844 → 0.203307456578; ponta fixa, c=2000: 0.199453911844 → 2.474434926636; duas pontas livres, c=200: 0.198927293195 → 0.315242885680; duas pontas livres, c=2000: 0.198927293195 → 19.302521775345. O código de produção ainda não foi alterado.
