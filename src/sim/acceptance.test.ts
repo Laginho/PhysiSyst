@@ -530,6 +530,32 @@ describe('acceptance: general rope (PHY-24)', () => {
     expect(wentSlack).toBe(false)
   })
 
+  it('two collinear ropes keep their supported particle within 1 mm for 300 steps (PHY-41 R1)', async () => {
+    const sim = await load({
+      version: 1,
+      constants: { g: G, particleMode: true },
+      bodies: [
+        { shape: 'circle', radius: 0.02, id: 'perto', fixed: true, mass: 0, position: { x: 0, y: 1 }, rotation: 0 },
+        { shape: 'circle', radius: 0.02, id: 'longe', fixed: true, mass: 0, position: { x: 0, y: 2 }, rotation: 0 },
+        { shape: 'circle', radius: 0.05, id: 'bola', fixed: false, mass: 1, position: CM, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: [
+        { id: 'fio-perto', kind: 'rope', a: { bodyId: 'perto', anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [] },
+        { id: 'fio-longe', kind: 'rope', a: { bodyId: 'longe', anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [] },
+      ],
+    })
+    let maxDisplacement = 0
+    for (let tick = 0; tick < 300; tick++) {
+      sim.step()
+      const p = sim.readStates().get('bola')!.position
+      maxDisplacement = Math.max(maxDisplacement, Math.hypot(p.x, p.y))
+    }
+    // Redundant ropes need not split mg uniquely, but must still support it.
+    expect(maxDisplacement).toBeLessThan(0.001)
+  })
+
   function pendulumScene(bob: { x: number; y: number }, vx = 0): Scene {
     return {
       version: 1,

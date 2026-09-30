@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -123,3 +123,8 @@ Mutate-verify repetido pelo reviewer, `npx vitest run src/sim/acceptance.test.ts
 Todas as mutações e a troca temporária de produção para comparar com a base foram restauradas byte a byte; probe removido. Após as mutações, aceitação completa: **49 passed (49)**. Após a comparação de R1, gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed (30), 717 tests passed (717)**; demais comandos exit 0. Aviso existente do chunk tardio acima de 500 kB mantido.
 
 `Stage: to-implement` neste commit de reabertura. Sem alteração de produção ou testes na revisão, sem merge e sem linha no ledger. Totais: Standards 0 violações / 1 juízo sem ação; Spec 1 regressão P1 (R1).
+
+#### Etapa 2 — regressão R1 (2026-09-30)
+
+- Novo teste no bloco PHY-24, na mesma costura pública `parse` → `createSimulator` → `step` → `readStates`: duas cordas colineares até âncoras em `(0, 1)` e `(0, 2)` sustentando a partícula de 1 kg em `(0, 0)`, por 300 passos. Mede deslocamento máximo abaixo de 1 mm, sem impor repartição de tensão entre fios redundantes.
+- Vermelho antes de alterar produção: `npx vitest run src/sim/acceptance.test.ts -t 'PHY-41 R1'` → **1 failed, 49 skipped (50)**; `expected 122.72676849365234 to be less than 0.001`. Este commit contém apenas teste e metadados; teste original e critérios preservados.
