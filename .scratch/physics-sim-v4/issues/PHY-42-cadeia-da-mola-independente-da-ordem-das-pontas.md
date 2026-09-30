@@ -1,5 +1,5 @@
 # PHY-42: A mola com massa não depende de qual ponta é `a`
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -33,5 +33,7 @@ A correção rebaseia os nós pelo deslocamento real da origem ao longo do eixo,
 - `src/sim/acceptance.test.ts`, bloco PHY-30: o cenário do critério 1. Vermelho porque hoje as trajetórias se separam 9 mm. Os testes existentes põem sempre a parede fixa como `a`, e é isso que esconde o erro.
 
 ## Comments
+
+- 2026-09-30 Stage 2: regressão escrita na interface pública `createSimulator` → `step` → `readStates`, comparando as duas ordens das pontas por 600 passos. Red antes da correção: `npx vitest run src/sim/acceptance.test.ts -t PHY-42` → 1 failed, 53 skipped (54); `AssertionError: expected 0.008981645107269287 to be less than 0.0001`.
 
 - 2026-09-30 Aberto a partir do F3 do Sol no review de benchmark do PR 9. A divergência de 8,98 mm foi reproduzida por probe descartável no motor real.
