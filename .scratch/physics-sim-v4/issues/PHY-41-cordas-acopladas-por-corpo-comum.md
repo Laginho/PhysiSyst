@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -77,3 +77,49 @@ Mutate-verify repetido no código recuperado, pelo mesmo teste PHY-41 na interfa
 - Mutações restauradas byte a byte antes do gate. Primeira execução: **716 passed, 1 failed**, em PHY-20 (`src/App.browser.test.ts`, viewport 600 px), por `SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.` Arquivo isolado → **10 passed**; nenhuma alteração no harness.
 - Gate completo repetido: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed, 717 tests passed**, exit 0; lint, typecheck e build verdes. Mantém-se o aviso existente de chunk acima de 500 kB.
 - `Stage: to-review` nesta entrega; revisão e merge ficam para a etapa 3.
+
+#### Review (2026-09-30)
+
+Verdict: Reopen (regressão R1)
+
+Comparação fixada em `git diff abca2bf6d4b79971e31f30f9d85899047c3ecf78...8ec15b1`, base `sweatshop/2026-09-24-1853`. Revisão completa nos eixos Standards e Spec em sub-agentes; reprodução e gate pelo agente principal. Commits examinados: `94a352e` (teste e metadados) e `8ec15b1` (produção, ADR e metadados, sem alterar testes).
+
+**Standards:** nenhuma violação obrigatória. Arquivos dentro dos Primary files, separação teste/código preservada, teste na interface pública e mutações com saídas registradas. Juízo sem ação: possível Duplicated Code na enumeração dos corpos/discos em `step` (`simulator.ts:862` e `:908`); concentrá-la só se voltar a mudar. A duplicação escalar/matricial é autorizada pelo ADR-0004.
+
+**Spec:** os cinco critérios numerados estão atendidos no cenário escrito; um achado P1 de regressão introduzida, R1, impede o merge. Sem outros achados ou ampliação de escopo. A decisão `Proxy decided` de preservar o teste e aceitar "correção sequencial, predição por grupo" como mutação equivalente foi conferida: essa sobrevivência não reprova o critério 4.
+
+| Critério | Resultado da revisão |
+| --- | --- |
+| 1 | ✅ O teste percorre todos os 300 passos, mede deslocamento máximo, ambas as tensões desde o passo 10 e ausência de slack. Verde no motor real. |
+| 2 | ✅ `src/sim/acceptance.test.ts`: 49 passed; tolerâncias de PHY-23, PHY-24 e PHY-25 inalteradas no diff. |
+| 3 | ✅ ADR-0004 descreve o solve conjunto na predição e correção e retira a consequência sequencial/plano B. |
+| 4 | ✅ As três mutações registradas foram repetidas; resultados abaixo, incluindo a equivalente aceita pelo proxy. |
+| 5 | ✅ Gate independente antes da revisão e novamente após restaurar todas as alterações temporárias: 30 arquivos, 717 testes; lint, typecheck e build exit 0. |
+
+**❌ R1 — cordas colineares deixam uma massa sustentada em queda livre.** O novo agrupamento (`src/sim/simulator.ts:1110–1119`, também `:1143–1153`) entrega um `K` singular a `tautTensions`; `solveLinear` devolve `null` e todas as tensões do grupo viram zero. O retorno já existia no solver, mas esta mudança passa a acioná-lo para cordas independentes que antes sustentavam o corpo. É regressão comprovada contra a base, não exigência de distribuir a tração de forma única entre fios redundantes. A spec já exige corda inextensível por padrão (User Stories, Corda, item 2).
+
+Reprodução descartável via Vite SSR, passando por `parse(scene)` → `createSimulator(scene)` → 300 chamadas de `step()` → `readStates()`/`readConstraints()`:
+
+- Scene version 1, `g = 9.81`, `particleMode = true`, sem forças, contatos ou polias.
+- Dois corpos fixos circulares (`radius = 0.02`, `mass = 0`, `rotation = 0`) em `(0, 1)` e `(0, 2)`; uma partícula circular (`radius = 0.05`, `mass = 1`, `fixed = false`, `rotation = 0`) parada em `(0, 0)`.
+- Duas cordas retas com IDs distintos, cada uma de um corpo fixo à partícula, todas as âncoras locais em `(0, 0)`, `via = []`.
+- Invariante observado: deslocamento máximo da partícula menor que 1 mm. Não exigir como cada corda reparte os 9,81 N de sustentação.
+
+| Produção usada pelo mesmo probe | Resultado |
+| --- | --- |
+| `8ec15b1` (agrupamento novo) | `K = [[1, 1], [1, 1]]`; ambas as cordas com `T = 0` e `slack` em todos os 300 passos. `y` no passo 1: `-0.0017031251918524504`; no passo 10: `-0.13965627551078796`; no passo 300: `-122.72676849365234`. Deslocamento máximo `122.72676849365234 m`; `AssertionError: collinear ropes must keep the supported particle within 1 mm`, exit 1. |
+| `abca2bf` (solve sequencial anterior) | Deslocamento máximo `0`; no passo 300, `T = [9.809999999856116, 0]`, uma corda sustenta a massa e nenhuma passagem tem ambas slack. A mesma asserção passa, exit 0. |
+
+Restante para a etapa 2: provar R1 com uma regressão na mesma costura pública e no bloco PHY-24 já autorizado de `src/sim/acceptance.test.ts`; corrigir o solve de grupos com restrições redundantes preservando a sustentação e o cenário original de PHY-41. A correção precisa desse teste novo, portanto não é um pequeno fix da etapa 3. Critérios existentes e o teste original permanecem inalterados.
+
+Mutate-verify repetido pelo reviewer, `npx vitest run src/sim/acceptance.test.ts -t PHY-41`:
+
+| Mutação registrada | Resultado reproduzido |
+| --- | --- |
+| Predição sequencial, correção por grupo | **1 failed, 48 skipped (49)**; `expected 0.05660960959768512 to be less than 0.001`. |
+| Correção sequencial, predição por grupo | **1 passed, 48 skipped (49)**; equivalente conforme a decisão do proxy. |
+| Tensões de `correctPieces` substituídas por zero | **1 failed, 48 skipped (49)**; `expected 0.009705823846161366 to be less than 0.001`. |
+
+Todas as mutações e a troca temporária de produção para comparar com a base foram restauradas byte a byte; probe removido. Após as mutações, aceitação completa: **49 passed (49)**. Após a comparação de R1, gate completo: `npm test && npm run lint && npm run typecheck && npm run build` → **30 test files passed (30), 717 tests passed (717)**; demais comandos exit 0. Aviso existente do chunk tardio acima de 500 kB mantido.
+
+`Stage: to-implement` neste commit de reabertura. Sem alteração de produção ou testes na revisão, sem merge e sem linha no ledger. Totais: Standards 0 violações / 1 juízo sem ação; Spec 1 regressão P1 (R1).
