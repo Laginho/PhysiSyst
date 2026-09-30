@@ -20,6 +20,7 @@ export const en = {
   'shortcuts.deselectOrClose': 'deselect, cancel the spring, rope or pulley in progress (or close this menu)',
   'shortcuts.toggleHelp': 'open/close this menu',
   'palette.rectangle': 'rectangle',
+  'editor.resetToEdit': 'reset (⟲) to edit',
   'palette.circle': 'ball',
   'palette.triangle': 'wedge',
   'palette.spring': 'spring',

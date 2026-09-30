@@ -313,16 +313,18 @@ function NumField({
  */
 function PropertiesPanel({
   body,
+  disabled,
   onPatch,
 }: {
   body: Body
+  disabled: boolean
   onPatch: (patch: BodyPatch) => void
 }) {
   const pos = (p: Vec2, axis: 'x' | 'y') => p[axis]
   const [velocityMode, setVelocityMode] = useState<'cartesian' | 'polar'>('cartesian')
   const polar = cartesianToPolar(body.vx ?? 0, body.vy ?? 0)
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{body.id}</legend>
       <NumField label={t('properties.mass')} value={body.mass} onChange={(v) => onPatch({ mass: v })} />
       <label style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
@@ -397,12 +399,14 @@ function PropertiesPanel({
 function ForcesPanel({
   bodyId,
   forces,
+  structuralLocked,
   onAdd,
   onPatch,
   onRemove,
 }: {
   bodyId: string
   forces: AppliedForce[]
+  structuralLocked: boolean
   onAdd: () => string | null
   onPatch: (id: string, patch: Partial<Omit<AppliedForce, 'id' | 'bodyId'>>) => void
   onRemove: (id: string) => void
@@ -416,7 +420,7 @@ function ForcesPanel({
         <div key={f.id} style={{ borderTop: '1px solid #ddd', paddingTop: 4, marginTop: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
             <span>{f.id}</span>
-            <button onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
+            <button disabled={structuralLocked} onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
           </div>
           <NumField label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
           <NumField label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
@@ -424,7 +428,7 @@ function ForcesPanel({
           <NumField label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
         </div>
       ))}
-      <button style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
+      <button disabled={structuralLocked} style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
       {error && <div style={{ fontSize: 12, color: '#b00' }}>{t(error)}</div>}
     </fieldset>
   )
@@ -433,11 +437,13 @@ function ForcesPanel({
 /** Scene-level auditable contact list; add via two body dropdowns. */
 function ContactsPanel({
   doc,
+  disabled,
   onAdd,
   onPatch,
   onRemove,
 }: {
   doc: Scene
+  disabled: boolean
   onAdd: (a: string, b: string) => string | null
   onPatch: (a: string, b: string, patch: { muS?: number; muK?: number }) => void
   onRemove: (a: string, b: string) => void
@@ -446,7 +452,7 @@ function ContactsPanel({
   const [newB, setNewB] = useState(doc.bodies[1]?.id ?? '')
   const [error, setError] = useState<string | null>(null)
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{t('contacts.title')}</legend>
       {doc.contacts.length === 0 && <div style={{ fontSize: 12, color: '#777' }}>{t('contacts.empty')}</div>}
       {doc.contacts.map((c) => (
@@ -487,18 +493,20 @@ function ContactsPanel({
 function SpringPanel({
   spring,
   dx,
+  disabled,
   onEdit,
   onDelete,
 }: {
   spring: Spring
   dx: number
+  disabled: boolean
   onEdit: (edit: (d: Scene) => Scene) => boolean
   onDelete: () => void
 }) {
   const [invalid, setInvalid] = useState(false)
   const edit = (e: (d: Scene) => Scene) => setInvalid(!onEdit(e))
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{spring.id}</legend>
       <NumField label={t('spring.k')} value={spring.k} onChange={(v) => edit((d) => updateSpring(d, spring.id, { k: v }))} />
       <NumField label={t('spring.x0')} value={spring.x0} step={0.01} onChange={(v) => edit((d) => updateSpring(d, spring.id, { x0: v }))} />
@@ -515,9 +523,9 @@ function SpringPanel({
  * Inspector for the selected pulley (PHY-28). Same clamps as the body panel
  * and the force magnitude, so a typed value never makes an unparseable doc.
  */
-function PulleyPanel({ pulley, onPatch, onDelete }: { pulley: Pulley; onPatch: (patch: { radius?: number; mass?: number }) => void; onDelete: () => void }) {
+function PulleyPanel({ pulley, disabled, onPatch, onDelete }: { pulley: Pulley; disabled: boolean; onPatch: (patch: { radius?: number; mass?: number }) => void; onDelete: () => void }) {
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{pulley.id}</legend>
       <NumField label={t('properties.radius')} value={pulley.radius} step={0.05} onChange={(v) => onPatch({ radius: minDimension(v) })} />
       <NumField label={t('properties.mass')} value={pulley.mass ?? 0} onChange={(v) => onPatch({ mass: Math.max(0, v) })} />
@@ -527,9 +535,9 @@ function PulleyPanel({ pulley, onPatch, onDelete }: { pulley: Pulley; onPatch: (
 }
 
 /** Inspector for the selected rope (PHY-28): its path and L, both read-only — L is derived, never stored. */
-function RopePanel({ rope, length, onDelete }: { rope: Rope; length: number | null; onDelete: () => void }) {
+function RopePanel({ rope, length, disabled, onDelete }: { rope: Rope; length: number | null; disabled: boolean; onDelete: () => void }) {
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{rope.id}</legend>
       <div style={{ fontSize: 12 }}>
         {t('rope.path')}: {[rope.a.bodyId, ...rope.via, rope.b.bodyId].join(' → ')}
@@ -686,28 +694,35 @@ export default function App() {
       else setSceneIndex(loadIndex(storage))
     })
   }
-  /**
-   * Every doc mutation that should be one undo step routes through here: it
-   * snapshots the doc as it stood BEFORE the edit onto the history stack, then
-   * applies the edit. A drag is the one exception — it calls `setDoc` directly
-   * on every pointermove and pushes a single history entry on pointer-up
-   * instead (see onPointerUp), so an in-progress drag isn't 50 undo steps.
-   */
-  const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => {
+  const structuralLocked = playback.stepsTaken > 0 || stepsTick > 0
+  const canEditDoc = useCallback((next: Scene) =>
+    playbackRef.current.stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live', [])
+
+  /** All edits share this guard; scene transitions reset playback separately. */
+  const editDoc = useCallback((next: Scene | ((d: Scene) => Scene), recordHistory = false): boolean => {
     const prev = docRef.current
-    const resolved = typeof next === 'function' ? (next as (d: Scene) => Scene)(prev) : next
-    if (resolved === prev) return
-    setHistory((h) => pushHistory(h, prev))
+    const resolved = typeof next === 'function' ? next(prev) : next
+    if (resolved === prev) return true
+    if (!canEditDoc(resolved)) {
+      setToolError('editor.resetToEdit')
+      return false
+    }
+    if (recordHistory) setHistory((h) => pushHistory(h, prev))
+    docRef.current = resolved
     setDoc(resolved)
-  }, [])
+    setToolError(null)
+    return true
+  }, [canEditDoc])
+
+  // Discrete edits push once here; drags push their initial doc on pointer-up.
+  const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
     const sel = selectionRef.current
     if (!sel) return
     const remove = sel.kind === 'constraint' ? removeConstraint : sel.kind === 'pulley' ? removePulleyAndDependents : removeBodyAndDependents
-    commitDoc((d) => remove(d, sel.id))
-    setSelection(null)
+    if (commitDoc((d) => remove(d, sel.id))) setSelection(null)
   }, [commitDoc])
 
   // Drag interaction: kind + per-kind payload captured at pointer-down.
@@ -934,6 +949,9 @@ export default function App() {
         return
       }
       repaint()
+      // The first simulated frame locks the editor immediately, without
+      // making React follow every later animation frame.
+      if (playbackRef.current.stepsTaken === n) setStepsTick(playbackRef.current.stepsTaken)
     },
     [fail, repaint, syncWorld],
   )
@@ -944,7 +962,9 @@ export default function App() {
       const t = advance(playbackRef.current, action)
       playbackRef.current = t.state
       setPlayback(t.state)
+      setStepsTick(t.state.stepsTaken)
       if (t.rebuild) {
+        setToolError(null)
         // Reset: fresh world straight from document, nothing carried — commit
         // refs only on success so a failed reset preserves the old baseline.
         try {
@@ -978,6 +998,8 @@ export default function App() {
       saveCurrentSceneId(storage, id)
       setDoc(scene)
       setSelection(null)
+      setTool(null)
+      setToolError(null)
       setImportError(null)
       // Switching/importing/creating/deleting a scene starts a fresh document
       // identity — undo history from the PREVIOUS scene makes no sense here.
@@ -1077,19 +1099,17 @@ export default function App() {
 
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
-    if (!step) return
+    if (!step || !editDoc(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-    setDoc(step.entry)
-  }, [dispatch])
+  }, [dispatch, editDoc])
 
   const redo = useCallback(() => {
     const step = redoHistory(historyRef.current, docRef.current)
-    if (!step) return
+    if (!step || !editDoc(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-    setDoc(step.entry)
-  }, [dispatch])
+  }, [dispatch, editDoc])
 
   // The single keyboard-shortcut listener for the whole editor (T-PHY-14):
   // reads latest state off refs so it never needs re-subscribing on every
@@ -1221,7 +1241,7 @@ export default function App() {
     }
     // Ids are scoped per list, so a pulley may share the new constraint's id: the list that grew says which it is.
     const kind = (res.doc.pulleys?.length ?? 0) > (docRef.current.pulleys?.length ?? 0) ? 'pulley' : 'constraint'
-    commitDoc(res.doc)
+    if (!commitDoc(res.doc)) return
     setTool(null)
     setToolError(null)
     setSelection(res.newId ? { kind, id: res.newId } : null)
@@ -1296,7 +1316,7 @@ export default function App() {
     const raw = eventToWorld(e)
 
     if (drag.kind === 'move') {
-      setDoc((d) => {
+      editDoc((d) => {
         const body = d.bodies.find((candidate) => candidate.id === drag.id)
         if (!body) return d
         const proposed = {
@@ -1315,19 +1335,19 @@ export default function App() {
 
     if (drag.kind === 'rotate') {
       const angle = Math.atan2(raw.y - body.position.y, raw.x - body.position.x)
-      setDoc((d) => updateBody(d, drag.id, { rotation: drag.startRotation + angle - drag.startAngle }))
+      editDoc((d) => updateBody(d, drag.id, { rotation: drag.startRotation + angle - drag.startAngle }))
       return
     }
 
     if (drag.kind === 'forceAnchor') {
-      setDoc((d) => updateForce(d, drag.forceId, { anchor: anchorSnap(body, raw, transform) }))
+      editDoc((d) => updateForce(d, drag.forceId, { anchor: anchorSnap(body, raw, transform) }))
       return
     }
 
     if (drag.kind === 'alpha') {
       // α is an angle input - snapping the pointer position would fight the atan2.
       const local = worldToLocal(body, raw)
-      setDoc((d) => updateBody(d, drag.id, { alpha: alphaFromLocal(local.x, local.y) }))
+      editDoc((d) => updateBody(d, drag.id, { alpha: alphaFromLocal(local.x, local.y) }))
       return
     }
 
@@ -1335,7 +1355,7 @@ export default function App() {
     const local = worldToLocal(body, raw)
     switch (body.shape) {
       case 'rectangle':
-        setDoc((d) =>
+        editDoc((d) =>
           updateBody(d, drag.id, {
             width: minDimension(2 * Math.abs(local.x)),
             height: minDimension(2 * Math.abs(local.y)),
@@ -1343,32 +1363,30 @@ export default function App() {
         )
         break
       case 'circle':
-        setDoc((d) => updateBody(d, drag.id, { radius: minDimension(Math.hypot(local.x, local.y)) }))
+        editDoc((d) => updateBody(d, drag.id, { radius: minDimension(Math.hypot(local.x, local.y)) }))
         break
       case 'triangle':
         // Dragging the base handle edits base only; height derives from α.
-        setDoc((d) => updateBody(d, drag.id, { base: minDimension(local.x) }))
+        editDoc((d) => updateBody(d, drag.id, { base: minDimension(local.x) }))
         break
     }
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragRef.current
-    // One complete drag (move/rotate/resize/alpha) is a single undo step:
-    // push the pre-drag snapshot ONCE, here, never on pointermove.
-    if (drag && drag.startDoc !== docRef.current) {
-      setHistory((h) => pushHistory(h, drag.startDoc))
-    }
     if (drag?.kind === 'move') {
       const { sx, sy } = eventToScreen(e)
       if (pointInTrash(trashRectValue, sx, sy)) {
-        setDoc((d) => removeBodyAndDependents(d, drag.id))
-        setSelection(null)
+        if (editDoc((d) => removeBodyAndDependents(d, drag.id))) setSelection(null)
       } else if (drag.neighborId) {
         // Contact is declared here, on drop, never mid-drag; duplicate pairs
         // are a silent no-op (addContact's own guard).
-        setDoc((d) => addContact(d, drag.id, drag.neighborId!).doc)
+        editDoc((d) => addContact(d, drag.id, drag.neighborId!).doc)
       }
+    }
+    // Include drop-only removal/contact in the same single undo entry.
+    if (drag && drag.startDoc !== docRef.current) {
+      setHistory((h) => pushHistory(h, drag.startDoc))
     }
     dragRef.current = null
     repaint() // hide the trash target
@@ -1387,8 +1405,7 @@ export default function App() {
         : shape === 'circle'
           ? { ...common, shape, radius: 0.75 }
           : { ...common, shape, base: 2, alpha: 30 }
-    commitDoc({ ...doc, bodies: [...doc.bodies, body] })
-    setSelection({ kind: 'body', id })
+    if (commitDoc({ ...doc, bodies: [...doc.bodies, body] })) setSelection({ kind: 'body', id })
   }
 
   /** Arms a palette tool; selection yields to it until it finishes or Esc cancels. */
@@ -1403,8 +1420,7 @@ export default function App() {
     const next = edit(docRef.current)
     const s = next.constraints?.find((c) => c.id === selectedConstraintId)
     if (s?.kind !== 'spring' || !(s.k > 0 && s.x0 > 0 && (s.c ?? 0) >= 0 && (s.mass ?? 0) >= 0)) return false
-    commitDoc(next)
-    return true
+    return commitDoc(next)
   }
 
   const selected = selectedId ? (doc.bodies.find((b) => b.id === selectedId) ?? null) : null
@@ -1549,10 +1565,10 @@ export default function App() {
             <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
               {t('playback.reset')}
             </button>
-            <button onClick={undo} disabled={!canUndo(history)} title={t('playback.undoTitle')}>
+            <button onClick={undo} disabled={!canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
               ↶
             </button>
-            <button onClick={redo} disabled={!canRedo(history)} title={t('playback.redoTitle')}>
+            <button onClick={redo} disabled={!canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
               ↷
             </button>
             <span style={{ position: 'relative' }}>
@@ -1612,17 +1628,17 @@ export default function App() {
             </label>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
-            <button onClick={() => addShape('circle')}>{t('palette.circle')}</button>
-            <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
-            <button onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
-            <button onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
-            <button onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
+            <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
+            <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>
+            <button disabled={structuralLocked} onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
+            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
+            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
+            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
           </div>
-          {tool && (
+          {(tool || toolError) && (
             <div style={{ fontSize: 12, color: '#555' }}>
-              {t(toolHint(tool))}
-              {toolError && <span style={{ color: '#b00' }}> — {t(toolError)}</span>}
+              {tool && t(toolHint(tool))}
+              {toolError && <span style={{ color: '#b00' }}>{tool && ' — '}{t(toolError)}</span>}
             </div>
           )}
         </div>
@@ -1897,15 +1913,17 @@ export default function App() {
             <input
               type="checkbox"
               checked={doc.constants.particleMode ?? false}
+              disabled={structuralLocked}
               onChange={(e) => commitDoc((d) => updateParticleMode(d, e.target.checked))}
             />{' '}
             {t('panel.particleMode')}
           </label>
           {selected && (
             <>
-              <PropertiesPanel body={selected} onPatch={(patch) => commitDoc((d) => updateBody(d, selected.id, patch))} />
+              <PropertiesPanel body={selected} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updateBody(d, selected.id, patch))} />
               <ForcesPanel
                 bodyId={selected.id}
+                structuralLocked={structuralLocked}
                 forces={doc.forces.filter((f) => f.bodyId === selected.id)}
                 onAdd={() => {
                   const res = addForce(doc, { bodyId: selected.id, anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 })
@@ -1921,17 +1939,19 @@ export default function App() {
             <SpringPanel
               key={selectedSpring.id}
               spring={selectedSpring}
+              disabled={structuralLocked}
               dx={springDx(doc, selectedSpring)}
               onEdit={commitSpringEdit}
               onDelete={deleteSelected}
             />
           )}
-          {selectedRope && <RopePanel rope={selectedRope} length={scenePath(doc, selectedRope)?.length ?? null} onDelete={deleteSelected} />}
+          {selectedRope && <RopePanel rope={selectedRope} disabled={structuralLocked} length={scenePath(doc, selectedRope)?.length ?? null} onDelete={deleteSelected} />}
           {selectedPulley && (
-            <PulleyPanel pulley={selectedPulley} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
+            <PulleyPanel pulley={selectedPulley} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
           )}
           <ContactsPanel
             doc={doc}
+            disabled={structuralLocked}
             onAdd={(a, b) => {
               const res = addContact(doc, a, b)
               commitDoc(res.doc)
@@ -1957,15 +1977,15 @@ export default function App() {
           {selected && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button
+                disabled={structuralLocked}
                 onClick={() => {
                   const { doc: next, newId } = duplicateBody(doc, selected.id)
-                  commitDoc(next)
-                  if (newId) setSelection({ kind: 'body', id: newId })
+                  if (commitDoc(next) && newId) setSelection({ kind: 'body', id: newId })
                 }}
               >
                 {t('panel.duplicate')}
               </button>
-              <button onClick={deleteSelected}>{t('panel.delete')}</button>
+              <button disabled={structuralLocked} onClick={deleteSelected}>{t('panel.delete')}</button>
             </div>
           )}
         </div>
