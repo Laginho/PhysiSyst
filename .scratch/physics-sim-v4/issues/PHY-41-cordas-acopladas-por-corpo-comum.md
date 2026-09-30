@@ -1,5 +1,5 @@
 # PHY-41: Cordas ligadas por um corpo dinâmico resolvidas juntas
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -37,3 +37,5 @@ As cordas que compartilham um corpo dinâmico formam um grupo, e cada grupo reso
 ## Comments
 
 - 2026-09-30 Aberto a partir do F2 do Sol no review de benchmark do PR 9. Números reproduzidos por probe descartável no motor real. A decisão de juntar as cordas num solve e emendar o ADR, em vez de documentar como limitação, é do grilling de 2026-09-30.
+
+- 2026-09-30 Attempt 1 stopped to ask: Implementação salva em `9b76293`; gate verde com 720 testes. PHY-41 ficou `blocked`: o teste não detecta a volta da correção sequencial. /  / A [skill ticket-flow](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. Evidências registradas no ticket; sem merge.
