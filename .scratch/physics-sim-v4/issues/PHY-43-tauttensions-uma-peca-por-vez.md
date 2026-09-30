@@ -1,5 +1,5 @@
 # PHY-43: O lado tenso de uma polia com massa não cai em queda livre quando o outro afrouxa
-Stage: blocked
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -53,3 +53,5 @@ O Sonnet também mostrou que o laço de re-solve não tem teste: trocar `taut = 
 - 2026-09-30 Proxy decided: janela do critério 1 passa a 30–40 mantendo o cenário — a folga fecha analiticamente no passo 44 (`12/(9,81 + 6,54) = 0,734 s`) e a geometria (borda da polia em y = 5,0) limita v₀ a ~7 m/s, o que só empurraria o fecho para o passo ~51; nenhum lançamento dá 60 passos frouxos depois de 30 de assentamento.
 
 - 2026-09-30 Proxy decided: a previsão `piece.predicted` em `pullPieces` entra no escopo (solver unilateral com base zero no lugar de `solveLinear` irrestrito) — sem ela T₂ = 6,75 N no passo 30 (3,2%) e o critério 1 falha; com ela 6,548 N. Retomar de `refs/foreman/phy-43-attempt1` (`7356ba8` + `20ba572`) com um segundo commit só de teste. O pico de 3157 N no passo 86 após a retomada da tensão fica fora deste ticket; abrir ticket próprio se persistir depois da correção.
+
+- 2026-09-30 Stage 2 retomado de `refs/foreman/phy-43-attempt1`, rebaseado sobre `sweatshop/2026-09-24-1853`; conflito documental resolvido preservando o contrato revisado e as evidências históricas. Segundo commit só de teste: janela 30–40 e Δv em 10·TIMESTEP. `npx vitest run src/sim/acceptance.test.ts -t PHY-25` → 1 failed, 5 passed, 45 skipped (51): `T₂ at step 30: expected 6.54 to be less than or equal to 0.19619999999999999`. Produção ainda intacta.
