@@ -1,5 +1,5 @@
 # CLEAN-17: Pinar o `placeDisks`
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -36,3 +36,20 @@ Falta um teste de aceitação em que o disco fique fora do eixo sem `placeDisks`
 - Full gate: `npm test && npm run lint && npm run typecheck && npm run build` exited 0; `30 passed (30)` test files, `715 passed (715)` tests. Lint and typecheck passed; Vite built 49 modules with its chunk-size warning. Stage 2 complete, ready for stage 3.
 
 - 2026-09-30 Aberto a partir do F3 do Sonnet no review de benchmark do PR 9. Mutação reproduzida: `placeDisks` com `return` na primeira linha, `npx vitest run src/sim` → 86 passed.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+##### Standards
+
+0 findings. The new test stays within the PHY-25 block and reuses the existing scene and simulator helpers. The integration mutation record meets `AGENTS.md`. Commit `2ec8c00` contains only the new test and ticket bookkeeping; `09f69e2` contains only the handoff record. The ticket explicitly permits a coverage test that starts green, with mutation proof and no production commit.
+
+##### Spec
+
+0 findings. Criteria 1–3 met: one new test detects the empty `placeDisks`, no existing test changes, and the full gate passes. A common horizontal boost preserves vertical motion and tensions under the scene's unchanged gravity and applied force. The test checks public simulator output through the codec and simulator seam.
+
+- Independent red proof: removed the sole statement from `RapierSimulator.placeDisks` and ran `npx vitest run src/sim/acceptance.test.ts -t PHY-25`. Exit 1; `1 failed | 5 passed | 43 skipped (49)`. The CLEAN-17 test failed at `src/sim/acceptance.test.ts:841`: `AssertionError: expected 0.0012905076146125793 to be less than or equal to 0.001`.
+- Restored `src/sim/simulator.ts` byte for byte, verified no production diff, and reran the same command. Exit 0; `6 passed | 43 skipped (49)`.
+- Independent full gate: `npm test && npm run lint && npm run typecheck && npm run build` exited 0; `30 passed (30)` test files, `715 passed (715)` tests. Lint and typecheck passed; Vite built 49 modules with the existing simulator chunk-size warning.
+- Rebase onto `sweatshop/2026-09-24-1853` required no changes. Merged without squashing as `a3922cb`; closed on the session branch with the ledger line in this commit.
