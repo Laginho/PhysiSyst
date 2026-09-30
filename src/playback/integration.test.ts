@@ -123,7 +123,7 @@ describe('playback acceptance', () => {
 
 /**
  * The App's doc-edit path, minus React: classify against the built doc, apply
- * live ops to the running world or rebuild+carry at the frame boundary.
+ * live ops to the running world or rebuild at the frame boundary.
  * Mirrors the M2 routing effect so the composed behaviour stays under test.
  */
 function makeRoutedTransport(sim: Simulator, initial: PlaybackState) {
@@ -143,7 +143,7 @@ function makeRoutedTransport(sim: Simulator, initial: PlaybackState) {
       if (built !== currentDoc) {
         const route = routeDocChange(built, currentDoc)
         if (route.kind === 'structural') {
-          sim.replaceScene(currentDoc) // carry omitted: fallingScene has one body at rest pose
+          sim.replaceScene(currentDoc)
           built = currentDoc
         } else {
           applyLiveOps(sim, route.ops)
@@ -177,7 +177,7 @@ describe('live-vs-structural acceptance', () => {
     for (let i = 0; i < 20; i++) control.step()
     expect(sim.readStates().get('ball')).toStrictEqual(control.readStates().get('ball'))
 
-    // Structural edit (body moved): exactly one carried rebuild.
+    // Structural edit (body moved): exactly one rebuild.
     const moved = fallingScene()
     moved.bodies[0]!.position.x = 3
     transport.edit(moved)

@@ -481,27 +481,6 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(tension(sim).segments).toStrictEqual([tension(sim).tension, tension(sim).tension])
   })
 
-  it('replaceScene with carry keeps the document length L, not the length at the carried poses', async () => {
-    const scene = atwoodScene(3, 2)
-    const L = atwoodLength(2, 1)
-    const sim = await createSimulator(scene)
-    for (let i = 0; i < 30; i++) sim.step()
-    // Carry mid-motion with the heavy block lifted 10 cm: at the carried poses
-    // the path is 10 cm shorter than the document's L. A rope rebuilt from the
-    // carried poses would be taut at once; the document's rope is slack until
-    // the blocks close that gap, then holds L again.
-    const carry = sim.readStates()
-    const a = carry.get('a')!
-    carry.set('a', { ...a, position: { x: a.position.x, y: a.position.y + 0.1 } })
-    sim.replaceScene(scene, carry)
-    sim.step()
-    expect(tension(sim).slack).toBe(true)
-    expect(tension(sim).tension).toBe(0)
-    for (let i = 0; i < 60; i++) sim.step()
-    const s = sim.readStates()
-    expect(tension(sim).slack).toBe(false)
-    expect(Math.abs(atwoodLength(s.get('a')!.position.y, s.get('b')!.position.y) - L)).toBeLessThan(0.001)
-  })
 })
 
 /**
@@ -891,37 +870,6 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     }
   })
 
-  it('replaceScene with carry keeps the disk spinning: the blocks carry on at the closed-form a, no jolt (3%)', async () => {
-    const m1 = 3
-    const m2 = 2
-    const M = 2
-    const aClosed = ((m1 - m2) * G) / (m1 + m2 + M / 2)
-    const scene = atwoodScene(m1, m2, M)
-    const sim = await load(scene)
-    for (let i = 0; i < 30; i++) sim.step()
-    // Mid-motion at ~0.8 m/s: a disk rebuilt at rest would have to be spun up
-    // by the rope in one step, taking ~1/6 of the blocks' speed with it.
-    const s1 = sim.readStates()
-    sim.replaceScene(parse(scene), s1)
-    const segments: number[][] = []
-    for (let i = 0; i < 60; i++) {
-      sim.step()
-      segments.push(rope(sim).segments)
-    }
-    const s2 = sim.readStates()
-    const dvA = s2.get('a')!.linvel.y - s1.get('a')!.linvel.y
-    const dvB = s2.get('b')!.linvel.y - s1.get('b')!.linvel.y
-    expect(Math.abs(-dvA - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
-    expect(Math.abs(dvB - aClosed * WINDOW)).toBeLessThanOrEqual(0.03 * aClosed * WINDOW)
-    // The disk has turned since the document: each piece keeps its length
-    // across the rebuild, so neither is yanked taut nor let slack.
-    const t1Closed = m1 * (G - aClosed)
-    const t2Closed = m2 * (G + aClosed)
-    for (const [t1, t2] of segments) {
-      expect(Math.abs(t1! - t1Closed)).toBeLessThanOrEqual(0.03 * t1Closed)
-      expect(Math.abs(t2! - t2Closed)).toBeLessThanOrEqual(0.03 * t2Closed)
-    }
-  })
 })
 
 /**
@@ -1323,92 +1271,6 @@ describe('acceptance: ideal spring (PHY-26)', () => {
       expect(new Set(sim.readStates().keys())).toStrictEqual(new Set(['chao', 'parede', 'bloco', 'barra']))
       expect(Math.abs(measured - massive)).toBeLessThanOrEqual(0.03 * massive)
       expect(Math.abs(measured - massive)).toBeLessThan(Math.abs(measured - 2 * Math.PI * Math.sqrt(m / k)))
-    })
-
-    it('replaceScene with carry keeps the chain: F_el per end reads the same across the rebuild, and the block follows an uninterrupted run within 3% of A', async () => {
-      const scene = horizontalScene(1, 40, X_EQ + A, undefined, 0.1)
-      const cut = await load(scene)
-      const whole = await load(scene)
-      for (let i = 0; i < 37; i++) {
-        cut.step()
-        whole.step()
-      }
-      const before = spring(cut).force
-      // Mid-swing: the chain is live, its ends read apart.
-      expect(Math.abs(before.a - before.b)).toBeGreaterThan(0.05)
-      cut.replaceScene(parse(scene), cut.readStates())
-      const after = spring(cut).force
-      expect(after.a).toBeCloseTo(before.a, 9)
-      expect(after.b).toBeCloseTo(before.b, 9)
-      let worst = 0
-      for (let i = 0; i < 120; i++) {
-        cut.step()
-        whole.step()
-        worst = Math.max(worst, Math.abs(cut.readStates().get('bloco')!.position.x - whole.readStates().get('bloco')!.position.x))
-      }
-      expect(worst).toBeLessThanOrEqual(0.03 * A)
-    })
-
-    // CLEAN-09: a carry that changes an end must not resume the old nodes.
-    it.each([
-      {
-        how: 'the block moved 0.5 m, so the carry drops it',
-        edit: (s: Scene) => void (s.bodies.find((b) => b.id === 'bloco')!.position.x += 0.5),
-        drop: 'bloco',
-      },
-      {
-        how: 'the wall end re-anchored 0.5 m along the axis, both bodies carried',
-        edit: (s: Scene) => void (s.constraints![0]!.a.anchor.x += 0.5),
-        drop: undefined,
-      },
-    ])('replaceScene with carry after $how: the chain re-seats, Δv within 10% of the ideal spring, then |F_el| ≤ 2·k·|Δx| per end for 8 steps', async ({ edit, drop }) => {
-      const k = 40
-      /** The block's Δv over the first step after the rebuild, and the spring over the 8 after it. */
-      async function rebuilt(ms?: number) {
-        const scene = horizontalScene(1, k, X_EQ + A, undefined, ms)
-        const sim = await load(scene)
-        for (let i = 0; i < 37; i++) sim.step()
-        const carry = new Map(sim.readStates())
-        if (drop) carry.delete(drop)
-        edit(scene)
-        sim.replaceScene(parse(scene), carry)
-        const v0 = sim.readStates().get('bloco')!.linvel.x
-        sim.step()
-        const dv = sim.readStates().get('bloco')!.linvel.x - v0
-        const after = Array.from({ length: 8 }, () => (sim.step(), spring(sim)))
-        return { dv, after }
-      }
-      const ideal = await rebuilt()
-      const { dv, after } = await rebuilt(0.1)
-      expect(Math.abs(ideal.dv)).toBeGreaterThan(0.3)
-      expect(Math.abs(dv - ideal.dv)).toBeLessThanOrEqual(0.1 * Math.abs(ideal.dv))
-      for (const { dx, force } of after) {
-        expect(Math.abs(force.a)).toBeLessThanOrEqual(2 * k * Math.abs(dx))
-        expect(Math.abs(force.b)).toBeLessThanOrEqual(2 * k * Math.abs(dx))
-      }
-    })
-
-    // CLEAN-12: the nodes seat with velocities between the ends', not at rest with the wall.
-    it('replaceScene without the wall in the carry, the block passing X_EQ: the chain re-seats moving with its ends, and the block follows an uninterrupted run within 1% of A', async () => {
-      const scene = horizontalScene(1, 40, X_EQ + A, undefined, 0.1)
-      const cut = await load(scene)
-      const whole = await load(scene)
-      // A quarter period in: the block at full speed, the ends parting fastest.
-      for (let i = 0; i < 15; i++) {
-        cut.step()
-        whole.step()
-      }
-      expect(Math.abs(cut.readStates().get('bloco')!.linvel.x)).toBeGreaterThan(0.5)
-      const carry = new Map(cut.readStates())
-      carry.delete('parede')
-      cut.replaceScene(parse(scene), carry)
-      let worst = 0
-      for (let i = 0; i < 120; i++) {
-        cut.step()
-        whole.step()
-        worst = Math.max(worst, Math.abs(cut.readStates().get('bloco')!.position.x - whole.readStates().get('bloco')!.position.x))
-      }
-      expect(worst).toBeLessThanOrEqual(0.01 * A)
     })
 
     it('damped, c = 0.5 and mₛ = 0.1: the peak-to-peak decrement follows the ideal spring with the same c within 2% over 10 peaks', async () => {

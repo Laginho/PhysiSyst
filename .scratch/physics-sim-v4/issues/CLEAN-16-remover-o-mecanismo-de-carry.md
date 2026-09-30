@@ -1,5 +1,5 @@
 # CLEAN-16: Remover o mecanismo de carry
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-39
 Review: agent
@@ -48,3 +48,35 @@ Isto também fecha, por construção, o vazamento de uma troca de cena que falha
 ## Comments
 
 - 2026-09-30 Aberto como consequência do PHY-39, por decisão do grilling com o dono. Absorve o achado da troca de cena que falha (Opus F4, Sonnet F4b), que no plano era um PHY próprio. Ele deixou de ser preciso porque, sem carry, o vazamento não existe.
+
+#### Etapa 2 - commit vermelho (2026-09-30)
+
+`npx vitest run src/App.test.ts -t CLEAN-16 --no-color`: **2 failed | 79 skipped (81)**. Edição ao vivo: `expected ... to contain passos: 0`, recebido `passos: 1`, pose `(9.00, 6.00)`, velocidade `5.00 m/s`. Troca de cena: esperado `(6.00, 3.50)`, recebido `(9.00, 6.00)` com velocidade `5.00 m/s` da cena antiga. Simulador falso na seam já autorizada; eventos e leituras via DOM.
+
+Testes exclusivos de carry removidos (19 casos):
+
+- `src/playback/view.test.ts` - `keeps kinematic state for bodies the edit did not move`.
+- `src/playback/view.test.ts` - `drops a body the user repositioned in the document (an explicit placement wins)`.
+- `src/playback/view.test.ts` - `drops a body the user re-rotated in the document`.
+- `src/playback/view.test.ts` - `drops removed ids and never invents state for new ids`.
+- `src/playback/view.test.ts` - `drops ids the world was not built with (nothing to carry from)`.
+- `src/playback/view.test.ts` - `returns an empty map when there is no state yet`.
+- `src/sim/simulator.test.ts` - `carries surviving ids, spawns new ids at doc-initial state, drops removed ids`.
+- `src/sim/simulator.test.ts` - `a carried rebuild is transparent: the trajectory continues as if nothing happened`.
+- `src/sim/simulator.test.ts` - `ignores carry entries for ids absent from the new document`.
+- `src/sim/simulator.test.ts` - `carries fixed bodies without choking on their absent velocity state`.
+- `src/sim/simulator.test.ts` - `toggling particle mode mid-flight is structural: carried position/linvel survive exactly, spin freezes`.
+- `src/sim/simulator.test.ts` - `a paused/rebuilt world preserves the carried Initial-velocity-driven state exactly`.
+- `src/sim/simulator.test.ts` - `a carried structural rebuild mid-flight does not restart the body: trajectory continues as if untouched`.
+- `src/sim/acceptance.test.ts` - `replaceScene with carry keeps the document length L, not the length at the carried poses`.
+- `src/sim/acceptance.test.ts` - `replaceScene with carry keeps the disk spinning: the blocks carry on at the closed-form a, no jolt (3%)`.
+- `src/sim/acceptance.test.ts` - `replaceScene with carry keeps the chain: F_el per end reads the same across the rebuild, and the block follows an uninterrupted run within 3% of A`.
+- `src/sim/acceptance.test.ts` - `CLEAN-09: replaceScene with carry after the block moved 0.5 m (chain re-seats)`.
+- `src/sim/acceptance.test.ts` - `CLEAN-09: replaceScene with carry after the wall end re-anchored 0.5 m (chain re-seats)`.
+- `src/sim/acceptance.test.ts` - `CLEAN-12: replaceScene without the wall in the carry, the block passing X_EQ (chain re-seats moving with its ends)`.
+
+Mantidos os testes de reset, velocidade inicial, modos de partícula, rebuild transacional e retry. A recuperação transacional e o retry passaram a comparar o estado inicial do documento, acompanhando a assinatura sem carry; sua prova de erro/mundo antigo intacto permanece. O adaptador PHY-36 agora recebe só o documento. `integration.test.ts` não passava carry: só os comentários foram corrigidos.
+
+Nota fora dos Primary files: o comentário de `src/playback/routing.ts` ainda menciona carry; não muda o comportamento e fica para limpeza documental própria.
+
+Recorte completo antes da produção: **2 failed | 170 passed (172), 1 test file failed | 5 passed (6)**; typecheck e lint verdes.
