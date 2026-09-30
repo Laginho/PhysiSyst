@@ -1,5 +1,5 @@
 # PHY-44: Dá para digitar `0.5` dígito a dígito num campo numérico
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -37,3 +37,5 @@ O `NumField` passa a guardar um rascunho de texto. Cada tecla que resulta num va
 ## Comments
 
 - 2026-09-30 Aberto a partir do CLEAN-13 item 6, confirmado no Chromium pelo Sol (F6) no review de benchmark do PR 9. O Opus e o Sonnet chegaram ao mesmo achado pelo código.
+
+- 2026-09-30 Attempt 1 stopped to ask: PHY-44 ficou `blocked` no commit `0013122`: os testes reproduzem o bug, mas o harness falha ao ler o documento. A alteração de produção foi revertida; working tree limpa. /  / A [skill ticket-flow](C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. É preciso corrigir o harness antes de retomar.
