@@ -1,5 +1,5 @@
 # PHY-39: Edição estrutural só com `passos = 0`
-Stage: blocked
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -46,7 +46,7 @@ Trocar de cena, importar, nova cena e ⟲ continuam liberados sempre, porque zer
 ## Tests stage 2 writes (own commit, red)
 
 - `src/App.test.ts`: dar passos, tentar arrastar um corpo, usar a ferramenta de mola e apertar Delete; o documento não muda e a dica aparece. Vermelho porque hoje as três edições passam.
-- `src/App.test.ts`: com `passos > 0`, mudar o módulo de uma força e `g` ainda chega ao mundo. Verde hoje, e tem que continuar verde; a mutação que prova o teste é uma guarda que também recuse edições ao vivo.
+- `src/App.test.ts`: com `passos > 0`, mudar o módulo de uma força e `g` ainda chega ao mundo. Verde hoje, e tem que continuar verde; a mutação que prova o teste é uma guarda que também recuse edições ao vivo. Usa o motor real, então espera o overlay de boot sumir antes do primeiro passo (o clique de passo é adiado por `ensureSim()` até o boot resolver; ver o padrão do teste PHY-36; com `vi.useFakeTimers()`, a espera avança o relógio falso).
 - `src/App.test.ts`: o cenário do critério 6 (Atwood, 30 passos, tentativa de arrasto, `T` no passo seguinte). Vermelho hoje: 265 N ou `T = 0`.
 - Os testes existentes do critério 7, reescritos.
 
@@ -55,3 +55,5 @@ Trocar de cena, importar, nova cena e ⟲ continuam liberados sempre, porque zer
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9 (Sol, Sonnet, Opus em sessões dedicadas). Junta o F1 do Opus (corda) e o CLEAN-13 item 1 (mola), que eram o mesmo defeito: a edição estrutural no meio da corrida mistura a pose do documento com a pose viva. A trava foi decidida no grilling com o dono. `Review: human` porque é uma mudança de comportamento do editor que ele quer ver. O mecanismo de carry que fica quase morto depois deste ticket sai no CLEAN-16.
 
 - 2026-09-30 Attempt 1 stopped to ask: Implementação salva em `43cab05`; gate verde com 728 testes. PHY-39 ficou `blocked`: o teste novo de força/`g` falha isoladamente, mesmo sem mutação. /  / A [skill ticket-flow](/C:/Users/bruno/.agents/skills/ticket-flow/SKILL.md) exige parar quando “a test proves wrong after being committed”. Diagnóstico e evidências registrados no ticket.
+
+- 2026-09-30 Proxy decided: retomar de `refs/foreman/phy-39-attempt1` (`1acc7fa` vermelho, `43cab05` produção, gate verde com 728 testes), sem recomeçar; um commit só de teste corrige o `step()` do bloco PHY-39 para esperar o boot do motor real, depois refazer a M3 (inverter `canEditDoc`) e trocar a linha "prova pendente" da tabela pela saída vermelha, gate em primeiro plano, `to-review` — a falha isolada é timing do harness: `settleSimImport()` não espera `ensureInit()`, o clique de passo cai depois das edições e dá dois passos pós-edição (0,2 em vez de 0,1); a asserção física e a guarda estão certas. Contrato inalterado, só a linha do teste de força/`g` ganhou a nota do boot.
