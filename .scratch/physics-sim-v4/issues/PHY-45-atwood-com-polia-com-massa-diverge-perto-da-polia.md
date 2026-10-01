@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -104,3 +104,4 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
 - 2026-10-01 Stage 1. Um diagnóstico descartável sobre `b29d75a` achou a causa (bloco atravessa o disco e o lado do enrolamento inverte) e prototipou o aro e a guarda. O Bruno aprovou método, escopo e critérios. Nada do protótipo foi commitado.
 - 2026-10-01 Achado lateral do diagnóstico, aberto como PHY-49: as tensões lidas na Atwood com polia com massa alternam a cada passo.
 - 2026-10-01 Stage 1 de revisão, antes do sweatshop. Com o protótipo reconstruído sobre `9d81e26`, os quatro cenários originais passavam, mas os vizinhos (2/2 com `vy` = 5, 7 e 10, 1/2 e 2/3 com polia com massa) explodiam. Além disso, o critério antigo "a âncora nunca cruza `x = 0`" reprovava o balanço legítimo por baixo da polia. Entraram a direção guardada, o critério 1b reescrito e a grade de 24 cenários. Os dois picos que sobram foram para o PHY-52. O Bruno aprovou. Nada do protótipo foi commitado.
+- 2026-10-01 Stage 2, commit de testes. Vermelhos sobre o código de hoje: 23 dos 24 cenários (energia e/ou lado) e o primeiro caso do `ropePath` com `keep` (direção −1 onde se esperava +1). Guardas verdes hoje: o 2/2 com `vy = 3` e polia ideal (o bloco não chega ao disco) e o segundo caso do `ropePath` (direção do sinal da curva, que o código de hoje já segue). O segundo caso só pega a mutação "tirar o limite de 3π/2".

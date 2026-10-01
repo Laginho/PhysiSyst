@@ -7,6 +7,54 @@ import { groundBody } from '../persistence'
 
 const G = 9.81
 
+/**
+ * PHY-45: the grid every Atwood scene runs. Bodies are 0.4 × 0.4 squares with
+ * the rope on the top face; the pulley axle is at y = 5.25. Energy is the
+ * blocks' ½mv² + ½Iω² + mgy, I = m(w² + h²)/12, written here and not read from
+ * the simulator. A block must never cross x = 0 while it is above the axle.
+ */
+const PHY45_PULLEY_Y = 5.25
+const PHY45_GRID = [
+  ...[3, 4, 5, 6, 7, 8, 10].map((vy) => ({ name: `2/2, a launched at vy = ${vy}`, m1: 2, m2: 2, vy })),
+  ...[
+    [1, 3],
+    [1, 4],
+    [2, 1],
+    [2, 3],
+  ].map(([m1, m2]) => ({ name: `${m1}/${m2} from rest`, m1: m1!, m2: m2!, vy: undefined as number | undefined })),
+]
+const PHY45_IDEAL_ONLY = [
+  { name: '1/2 from rest', m1: 1, m2: 2, vy: undefined as number | undefined },
+  { name: '3/1 from rest', m1: 3, m2: 1, vy: undefined as number | undefined },
+]
+
+async function phy45Run(scene: Scene, vy: number | undefined): Promise<{ energyGain: number; crossings: string[] }> {
+  if (vy !== undefined) scene.bodies.find((body) => body.id === 'a')!.vy = vy
+  const sim = await createSimulator(parse(scene))
+  const energy = (): number => {
+    let total = 0
+    for (const [id, state] of sim.readStates()) {
+      if (id === 'teto') continue
+      const m = scene.bodies.find((body) => body.id === id)!.mass
+      total += 0.5 * m * (state.linvel.x ** 2 + state.linvel.y ** 2) + 0.5 * ((m * (0.4 ** 2 + 0.4 ** 2)) / 12) * state.angvel ** 2 + m * G * state.position.y
+    }
+    return total
+  }
+  const e0 = energy()
+  let energyGain = 0
+  const crossings: string[] = []
+  for (let step = 1; step <= 600; step++) {
+    sim.step()
+    energyGain = Math.max(energyGain, energy() - e0)
+    for (const [id, side] of [['a', -1], ['b', 1]] as const) {
+      const s = sim.readStates().get(id)!
+      const top = { x: s.position.x - Math.sin(s.rotation) * 0.2, y: s.position.y + Math.cos(s.rotation) * 0.2 }
+      if (top.y > PHY45_PULLEY_Y && top.x * side < 0) crossings.push(`${id} at step ${step}`)
+    }
+  }
+  return { energyGain, crossings }
+}
+
 function slopeFrame(alphaDeg: number): { ux: number; uy: number; nx: number; ny: number } {
   const r = (alphaDeg * Math.PI) / 180
   return { ux: Math.cos(r), uy: Math.sin(r), nx: -Math.sin(r), ny: Math.cos(r) }
@@ -479,6 +527,12 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(tension(sim).tension).toBeGreaterThan(0)
     // PHY-25: over a massless pulley every segment reads the one T.
     expect(tension(sim).segments).toStrictEqual([tension(sim).tension, tension(sim).tension])
+  })
+
+  it.each([...PHY45_GRID, ...PHY45_IDEAL_ONLY])('PHY-45: $name over an ideal pulley gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
+    const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2), vy)
+    expect(energyGain).toBeLessThanOrEqual(0.5)
+    expect(crossings).toStrictEqual([])
   })
 
 })
@@ -1014,6 +1068,12 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
       expect(zero.readStates()).toStrictEqual(ideal.readStates())
       expect(zero.readConstraints()).toStrictEqual(ideal.readConstraints())
     }
+  })
+
+  it.each(PHY45_GRID)('PHY-45: $name over a pulley of mass M = 2 gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
+    const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2, 2), vy)
+    expect(energyGain).toBeLessThanOrEqual(0.5)
+    expect(crossings).toStrictEqual([])
   })
 
 })

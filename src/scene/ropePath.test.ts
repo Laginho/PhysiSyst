@@ -202,3 +202,34 @@ describe('scenePath follows a movable pulley (PHY-24)', () => {
     expect(at3.length - at4.length).toBeCloseTo(2, 9)
   })
 })
+
+describe('ropePath, kept wrap direction (PHY-45)', () => {
+  const pulley = [{ center: { x: 0, y: 0 }, radius: 1 }]
+
+  it('two ends under the disk, nearly collinear with its center, swap sides: the kept direction holds and the length is continuous', () => {
+    // a = (e, −3), b = (−e, −4): the turn at the center changes sign with e, so
+    // the curve alone flips the wrap between e = +0.005 and e = −0.005.
+    const lengths: number[] = []
+    for (let e = 0.02; e >= -0.0201; e -= 0.005) {
+      const path = ropePath({ x: e, y: -3 }, { x: -e, y: -4 }, pulley, [1])
+      expect(path.arcs[0]!.direction, `direction at e = ${e.toFixed(3)}`).toBe(1)
+      lengths.push(path.length)
+    }
+    for (let i = 1; i < lengths.length; i++) expect(Math.abs(lengths[i]! - lengths[i - 1]!)).toBeLessThan(0.05)
+    // Without `keep` the direction is the curve's sign, as before.
+    expect(ropePath({ x: 0.005, y: -3 }, { x: -0.005, y: -4 }, pulley).arcs[0]!.direction).toBe(1)
+    expect(ropePath({ x: -0.005, y: -3 }, { x: 0.005, y: -4 }, pulley).arcs[0]!.direction).toBe(-1)
+  })
+
+  it('a rope that has gone straight through the disk follows the curve again, with no jump in length', () => {
+    // a = (−0.1, −1.2), b = (0.1, −1.2): counter-clockwise would wrap about
+    // 302° (> 3π/2), so a kept +1 yields to the curve's −1 (about 283°).
+    const a = { x: -0.1, y: -1.2 }
+    const b = { x: 0.1, y: -1.2 }
+    const kept = ropePath(a, b, pulley, [1])
+    const natural = ropePath(a, b, pulley)
+    expect(natural.arcs[0]!.direction).toBe(-1)
+    expect(kept.arcs[0]!.direction).toBe(-1)
+    expect(kept.length).toBeCloseTo(natural.length, 9)
+  })
+})
