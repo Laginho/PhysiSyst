@@ -1,5 +1,5 @@
 # CLEAN-23: o teste do corpo lançado além da viewport estoura o timeout com a suíte em paralelo
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -30,6 +30,7 @@ O gate padrão (`npm test` com a concorrência default do Vitest) volta a passar
 
 ## Comments
 
+- 2026-10-01 Stage 2 green: focused test `tests 71ms` (1 passed, 28 skipped), with production restored. Gate passed at default Vitest concurrency: `npm test` 30 files / 796 tests passed; `npm run lint`, `npm run typecheck`, and `npm run build` passed.
 - 2026-10-01 Stage 2 mutation proof for the rewritten viewport test (both mutations made temporarily in `Simulator.step()` and reverted):
   - Wrap: after `world.step()`, set each body with `position.x > 20` back to `x = 0`. Focused test red: `AssertionError: expected 0 to be greater than 19.8958797454834` at `simulator.test.ts:546` (`position.x` monotonicity).
   - Damping: after `world.step()`, multiply each body's `linvel` by `0.999`. Focused test red: `AssertionError: expected 16.633352279663086 to be 16.650001525878906` at `simulator.test.ts:543` (exact `linvel.x`).
