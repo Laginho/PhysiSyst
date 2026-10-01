@@ -1,7 +1,7 @@
 # PHY-49: O disco da polia com massa gira o quanto a previsão assume, e as tensões param de alternar
 Stage: to-implement
 Status: ready-for-agent
-Blocked by: none
+Blocked by: PHY-45
 Review: agent
 
 - Primary files:
@@ -56,3 +56,4 @@ Um protótipo descartável de 7 linhas deu T₁ = 13,734 e T₂ = 17,658 em todo
 
 - 2026-10-01 Aberto no stage 1 do PHY-45, a partir de um achado lateral do diagnóstico descartável sobre `b29d75a`.
 - 2026-10-01 Stage 1. Probes descartáveis sobre `ace3e09` acharam a causa (o Rapier gira o disco por `atan(ω·h)` a cada substep) e prototiparam a integração própria do giro. O Bruno aprovou método, critérios e o PHY-50 para o limite de ω. Os números da primeira versão deste ticket estavam errados: o par "T₁ / T₂" eram leituras de T₁ em passos seguidos. Nada do protótipo foi commitado.
+- 2026-10-01 Bloqueado pelo PHY-45 no stage 1 de revisão dele: o sweatshop roda os dois em sequência, e o critério 3 daqui precisa manter verdes os 24 cenários novos do PHY-45. Medido com os protótipos empilhados sobre `9d81e26`: continuam verdes, e os 741 testes também.
