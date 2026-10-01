@@ -1,32 +1,72 @@
-# PHY-45: Atwood com polia com massa diverge quando um corpo chega à polia
-Stage: blocked
-Status: needs-triage
+# PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não o enrola por cima do disco
+Stage: to-implement
+Status: ready-for-agent
 Blocked by: none
 Review: agent
 
 - Primary files:
-  - (a definir pelo stage 1)
+  - `src/sim/simulator.ts` (`buildWorld`, o laço das polias; a montagem das linhas em `pullPieces`)
+  - `src/sim/acceptance.test.ts` (bloco `pulley with mass (PHY-25)` e o bloco da Atwood com polia ideal, com os helpers `atwoodScene` que eles já usam)
 
 #### What to build
 
-O proxy do PHY-43 tirou do escopo o pico de 3157 N no passo 86 depois da retomada da tensão e pediu um ticket próprio se ele persistisse depois da correção. O probe da entrega do PHY-43 só cobriu os passos 1–40. O foreman mediu em 2026-09-30, com um probe descartável no motor público (`parse` → `createSimulator` → `step` → `readConstraints`/`readStates`), no cenário do teste PHY-43 de `src/sim/acceptance.test.ts`: `atwoodScene(2, 2, 2)` com `a.vy = 6`, 240 passos.
+Um corpo puxado até uma polia bate no aro e para ali, em vez de atravessar o disco. A simulação continua estável, sem ganho de energia, com polia ideal ou com massa.
 
-O pico persiste, e é o começo de uma divergência:
+Hoje nada segura o corpo. A polia ideal não constrói nada no mundo do Rapier. O disco da polia com massa tem collider com `setCollisionGroups(0)`, que não toca em nada. A corda também não tem collider. O bloco atravessa o disco, e a corda o enrola por cima. Quando a ponta cruza o topo do disco, o `ropePath` refaz a cada passo a escolha do lado do enrolamento, pelo sinal da curva, e esse lado inverte. A geometria salta, e a correção injeta energia. A hipótese original deste ticket (a peça entre `a` e a polia encolhe até zero) estava errada: a peça fica no comprimento de repouso até o salto.
 
-| Passo | T₁ / T₂ (N) | v_a / v_b (m/s) | y_a (m) |
-| --- | --- | --- | --- |
-| 85 | 17,52 / 18,18 | 1,743 / −2,213 | 5,386 |
-| 86 | 4842,74 / 3160,72 | −9,661 / 23,976 | 5,244 |
-| 109 | 72756,55 / 100021,38 | −12,287 / −9,921 | 4,234 |
-| 120 | 214135,59 / 0 | 295,294 / 3,710 | 5,523 |
-| 239 | 2828784,94 / 0 | −49,436 / −11,683 | −0,824 |
+Medido com probes descartáveis no motor público, sobre `b29d75a`, no cenário PHY-43 (`atwoodScene(2, 2, 2)`, `a.vy = 6`):
 
-Do passo 86 em diante, `a` oscila entre y ≈ 5,5 e y ≈ −1 com velocidades de centenas de m/s, e a corda alterna entre tensa e frouxa. A energia cresce sem limite.
+| Passo | Início do arco | Varredura | Lado | Peças (repouso 3,443 / 4,443) |
+| --- | --- | --- | --- | --- |
+| 85 | 1,137 | 1,137 | −1 | 3,443 / 4,443 |
+| 86 | 0,858 | 2,354 | +1 | 3,565 / 4,403 |
 
-**Não é regressão do PHY-43.** O mesmo probe em `8e97790^1` (antes do merge do PHY-43) e em `ba1fc7c^1` (antes do PHY-41) também diverge: corda frouxa em todos os passos medidos até o 90 (o `b` em queda livre que o PHY-43 corrigiu), depois 140 kN no passo 200 e 632 kN no 239. O PHY-43 só antecipou o começo, para quando `a` chega perto da polia (y_a ≈ 5,4; a borda da polia fica em y = 5,0, segundo o proxy do PHY-43).
+A peça 1 salta 12 cm em um passo. A tensão vai a 4843 / 3161 N, e a energia sobe 1550 J. O lado continua invertendo, o bloco bate no teto e a energia cresce sem limite.
 
-Hipótese, não verificada: o trecho de corda entre `a` e a polia encolhe até perto de zero e o solve fica mal condicionado. Falta decidir o que a física deve fazer quando um corpo chega à polia (colisão, batente, recusa da cena), o que pede uma decisão do stage 1, não só cuidado.
+Não é exclusivo da polia com massa:
+
+| Cenário (240 passos) | Polia | `max T` | `max ΔE` | Resultado |
+| --- | --- | --- | --- | --- |
+| 2/2, `a` lançado a `vy = 6` | com massa (`M = 2`) | 2,8 MN | +378 kJ | diverge no passo 86 |
+| 2/2, `a` lançado a `vy = 6` | ideal | 288 N | ≤ 0 | estável por sorte: o bloco trava girado contra o teto, ao lado do disco |
+| 1/3, do repouso | com massa (`M = 2`) | 306 kN | +223 kJ | diverge no passo 86 |
+| 1/3, do repouso | ideal | 2017 N | +1226 J | diverge no passo 73 |
+
+**A decisão.** Duas mudanças pequenas:
+
+1. **Collider no aro.** Toda polia, ideal ou com massa, ganha um collider de bola de raio `R`, no seu suporte, na posição da âncora da polia. Ele não tem massa (`setMassProperties(0, …)`), tem atrito 0 (regra de combinação Min) e restituição 0. Ficar no suporte evita contato com o próprio corpo, inclusive na polia móvel. Os colliders de massa da polia com massa continuam no grupo 0.
+2. **Guarda na previsão de `pullPieces`.** Com o aro, o bloco do 1/3 com polia com massa sobe encostado no disco. A previsão sem contato empurra a perna do fim do passo contra a perna do meio do passo, e a diagonal da matriz troca de sinal: a linha 0 foi de [2,261, −0,954] para [−0,350, 0,495], e a cena explodiu no passo 156 (9,4 kN, +13,7 kJ). A guarda é: se `ropeInvMass(row.pulls, row.along) ≤ 0`, usar `row.along = row.pulls`. É a versão com várias peças da guarda `k <= 0` que `pullRope` já tem, e é por isso que a corda de uma peça só nunca mostrou isto.
+
+Com as duas, nos quatro cenários e ao longo de 600 passos, o `ΔE` máximo fica ≤ 0. O pico de tensão é o impacto do bloco no aro a cerca de 5 m/s: 308 N, 265 N, 339 N e 309 N. Os 741 testes da suíte ficaram verdes, sem mudar tolerância.
+
+**Fora do escopo:**
+- Atrito do aro: fica 0. Um aro que esfrega pediria um gancho em `assignPairFrictions`.
+- `readContacts` não lista o contato com o aro, porque a polia não é um corpo do documento.
+- Uma cena que já começa com um corpo sobreposto a uma polia: o Rapier separa os dois no primeiro passo, como faz hoje com dois corpos sobrepostos.
+- Fixar o lado do enrolamento nas poses do documento tiraria o salto, mas o bloco continuaria atravessando o disco. Não entra.
+- Uma polia móvel agora pode bater em outros corpos e no teto pelo aro. É a física certa, e os testes existentes da polia móvel continuam verdes.
+
+#### Acceptance criteria
+
+1. Nos quatro cenários da tabela, com `atwoodScene` (2/2 com `a.vy = 6`; 1/3 do repouso; cada um com polia ideal e com polia com massa `M = 2`), ao longo de 600 passos:
+   - a energia dos blocos, `Σ (½m·v² + ½I·ω² + m·g·y)` com `I = m·(w² + h²)/12`, nunca passa de `E₀ + 0,5 J`. A energia do disco fica fora, porque o motor público não a lê e ela parte de zero.
+   - a âncora da corda em `a` (o topo do bloco, no mundo) nunca cruza `x = 0`, o centro da polia: o bloco não passa por cima do disco.
+2. Os testes existentes de `acceptance.test.ts` e `simulator.test.ts` continuam verdes sem mudar tolerância, incluindo os da polia com massa (PHY-25), o PHY-43 e os da polia móvel
+3. Os testes de regressão são mutate-verified conforme o `AGENTS.md`, com duas mutações: tirar o collider do aro (o 1/3 com polia ideal fica vermelho por volta do passo 73) e tirar a guarda de `pullPieces` (o 1/3 com polia com massa fica vermelho por volta do passo 156)
+4. Gate verde
+
+#### Verification
+
+    npx vitest run src/sim/acceptance.test.ts -t PHY-45
+    npx vitest run src/sim/acceptance.test.ts -t PHY-25
+    npm test && npm run lint && npm run typecheck && npm run build
+
+## Tests stage 2 writes (own commit, red)
+
+- `src/sim/acceptance.test.ts`, pelo motor público (`createSimulator(parse(scene))`, `step()`, `readStates()`), sem mocks: os quatro cenários do critério 1, nos blocos onde cada `atwoodScene` já vive (o da polia ideal e o PHY-25). Três ficam vermelhos hoje porque a energia cresce sem limite (+378 kJ, +223 kJ, +1226 J). O 2/2 com polia ideal fica vermelho pela âncora: o bloco atravessa o disco e trava girado ao lado dele.
 
 ## Comments
 
 - 2026-09-30 Aberto pelo foreman a partir da recomendação 7 do relatório `docs/relatorios/2026-09-30-sweatshop-gpt-6.1-sol.pdf`, aceita pelo Bruno. Medições acima; o probe foi descartado.
+- 2026-10-01 Stage 1. Um diagnóstico descartável sobre `b29d75a` achou a causa (bloco atravessa o disco e o lado do enrolamento inverte) e prototipou o aro e a guarda. O Bruno aprovou método, escopo e critérios. Nada do protótipo foi commitado. O stage 2 confirma, no teste, que o 2/2 com polia ideal fica vermelho pela âncora. Se não ficar, registra aqui e segue com os outros três como guarda.
+- 2026-10-01 Achado lateral do diagnóstico, aberto como PHY-49: as tensões lidas na Atwood com polia com massa alternam a cada passo.
