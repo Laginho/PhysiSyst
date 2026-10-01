@@ -522,7 +522,7 @@ describe('no invisible walls (T7/M2)', () => {
       version: 1,
       constants: { g: 0 },
       bodies: [{ id: 'shot', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 }],
-      forces: [{ id: 'launch', bodyId: 'shot', anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 }],
+      forces: [{ id: 'launch', bodyId: 'shot', anchor: { x: 0, y: 0 }, magnitude: 1000, direction: 0 }],
       contacts: [],
     })
     const sim = await createSimulator(scene())
@@ -533,8 +533,8 @@ describe('no invisible walls (T7/M2)', () => {
     expect(v0).toBeGreaterThan(0)
 
     // The camera shows x in [-1.5, 13.5] (centerX 6, 900px @ 60 px/m); run far
-    // past any plausible wall/wrap/kill boundary. Coasting speed is one
-    // TIMESTEP of thrust (~0.17 m/s), so 50 m takes thousands of steps.
+    // past any plausible wall/wrap/kill boundary. A strong launch reaches
+    // 50 m in a few hundred steps while still checking every coasting step.
     let prev = sim.readStates().get('shot')!
     let steps = 0
     while (prev.position.x < 50 && steps < 20000) {
