@@ -1,5 +1,5 @@
 # PHY-49: O disco da polia com massa gira o quanto a previsão assume, e as tensões param de alternar
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-45
 Review: agent
@@ -61,3 +61,28 @@ Um protótipo descartável de 7 linhas deu T₁ = 13,734 e T₂ = 17,658 em todo
   - Vermelho antes da mudança (`ddb72bb`): 1/3 kg `T₁ at step 41: expected 0.1536 to be <= 0.1373`; 3/2 kg `T₂ at step 92: expected 0.2326 to be <= 0.2289`.
   - Mutação (voltar a `wrapAngle(disk.rotation() − rot0)` em `correctPieces`, com `rot0` iniciado em `pullPieces`): os dois testes ficam vermelhos nos mesmos passos, 41 e 92. Código restaurado depois.
   - Gate: 793 testes, lint, typecheck e build verdes, sem mudar tolerância.
+
+#### Resolution (2026-10-01)
+
+Verdict: Approve
+
+Revisão em sub-agentes independentes nos eixos Standards e Spec, sobre `git diff 8b1a0dea6469a4d0e908238c96812c9796a7cd80...01d279a999b1c6541c792d2d1b42b6daa318b86c`, base `sweatshop/2026-10-01-1211`. Dependência PHY-45 concluída. Nenhuma correção persistente de produção ou testes feita pela etapa 3; nenhuma linha `Proxy decided` neste ticket.
+
+**Standards:** 0 violações de código/testes e 0 smells que justifiquem mudança; 1 pendência de documentação, registrada no CLEAN-21. O ADR-0004 ainda diz que o giro do disco passa por `wrapAngle` e precisa ficar abaixo de π por passo, contrariando a integração entregue aqui. O ADR está fora dos Primary files e a atualização não é critério deste ticket. Primary files e separação entre testes e produção respeitados: `ddb72bb` acrescenta os dois testes e muda o Stage para `implementing`; `01d279a` altera produção e evidência do ticket, sem tocar testes.
+
+**Spec:** 0 achados; critérios 1–5 atendidos. Os testes usam `createSimulator(parse(scene))`, `step`, `readStates` e `readConstraints`, com formas fechadas independentes, teto em `y = 40`, tensões verificadas em todos os 160/300 passos e velocidade final de `a` dentro de 1%. `w0` é capturado antes de aplicar as tensões; todos os shares integram `Δt·(w0 + φ·(ω₁ − w0))` antes de qualquer impulso de correção. Rapier continua dono de ω, sem leitura do ângulo do disco. Inicialização, grupos com disco compartilhado, grupos sem grips, suporte móvel e peças frouxas conferidos; warm start, testes existentes e tolerâncias preservados.
+
+**Mutate-verify repetido pelo reviewer:** acrescentar `rot0` a cada grip, inicializá-lo e capturar `disk.rotation()` em `pullPieces`; substituir somente o giro integrado de `correctPieces` por `wrapAngle(disk.rotation() − rot0)`. Comando: `npx vitest run src/sim/acceptance.test.ts -t PHY-49`.
+
+| Teste novo | Saída vermelha reproduzida |
+| --- | --- |
+| Atwood 1/3 kg, 160 passos | `T₁ at step 41: expected 0.15355083678567283 to be less than or equal to 0.13734000000000002` |
+| Atwood 3/2 kg, 300 passos | `T₂ at step 92: expected 0.23261273546197003 to be less than or equal to 0.22890000000000002` |
+
+Resultado da mutação: **1 file failed, 2 tests failed, 118 skipped (120)**, exit 1. Produção restaurada byte a byte, SHA-256 idêntico ao anterior e `git diff --exit-code -- src/sim/simulator.ts` limpo. Mesmo comando após restauração: **1 file passed, 2 tests passed, 118 skipped (120)**, exit 0.
+
+**Gate padrão após restauração e rebase:** `npm test && npm run lint && npm run typecheck && npm run build` → **30 files passed, 793 tests passed**, suíte em 33,02 s; lint, typecheck e build exit 0. O gate anterior à mutação também passou 793/793. Apenas o aviso existente do chunk tardio do simulador acima de 500 kB; sem flags de workers, mudança de timeout ou de tolerância.
+
+Rebase sobre a sessão já atualizado, sem conflitos. Branch `phy/PHY-49-tensoes-alternam-atwood-polia-massa` integrada com `--no-ff`, sem squash, em `af6badd`. Resolução, linha do ledger e `Stage: done` registrados juntos no commit de fechamento sobre a sessão. O limite de ω continua no PHY-50; atualização do ADR no CLEAN-21.
+
+Totais: Standards 0 achados bloqueantes e 1 pendência no CLEAN-21; Spec 0 achados.
