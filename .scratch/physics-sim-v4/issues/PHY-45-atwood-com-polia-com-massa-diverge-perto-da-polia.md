@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -112,6 +112,10 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
   - Ignorar o `keep` (`ropeFrame` chama `ropePath(…, undefined)`): 4 vermelhos, todos com `M = 2`: 2/2 com `vy` = 5, 7 e 10, e 2/3 do repouso (o 2/2 com `vy = 5` do critério está entre eles). No `ropePath`, o primeiro caso de `keep` já nasceu vermelho (`expected -1 to be 1`).
   - Tirar o limite de 3π/2 em `ropePath` (`if (false && keep && …)`): o segundo caso de `keep` fica vermelho (`expected 1 to be -1`).
   - Os testes de `ropePath` chamam a função direto, então o vermelho do commit de testes basta como registro deles; os 24 cenários passam pelo motor público, e o registro está acima.
+- 2026-10-01 Stage 2, reabertura (R1). Commit de testes `ae28633`: os dois testes novos de `keep` ficaram vermelhos sobre o código com a cedência (`direction at y = …` e `direction at e = -0.00: expected -1 to be 1`). Correção: `ropePath` segue sempre o `keep`, sem a regra de 3π/2 (`6993723`). Os 24 cenários ficaram verdes sem a cedência, então a corda não se solta da polia no motor.
+  - Mutate-verify repetido sobre o código final: ignorar o `keep` (`return turn >= 0 ? 1 : -1`) deixa 7 vermelhos, 3 de `ropePath` e 4 do motor com `M = 2` (2/2 com `vy` = 5, 7 e 10, 2/3 do repouso; o de `vy = 5` dá `expected 2489.41… to be less than or equal to 0.5`). Desfeito; as mutações do aro e da guarda de `pullPieces` não tocam código alterado e valem como registradas acima.
+  - Gate: 30 arquivos, 768 testes verdes; lint, typecheck e build com saída 0.
+  - A atribuição `rope.keep = …` em `ropeFrame` (`simulator.ts:224`) virou idempotente com a cedência fora; fica, por ser inofensiva e fora desta correção.
 
 #### Review (2026-10-01)
 
