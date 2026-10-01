@@ -1,5 +1,97 @@
-﻿| When | ID | Stage | Model | Attempt | Outcome | Session | Took | Tokens | Cost |
+﻿| When | ID | Stage | Model | Attempt | Outcome | PR | Took |
+|---|---|---|---|---|---|---|---|
+| 2026-09-14 09:33 | PHY-19 | implement | sonnet | 1 | to-review |  | 10m |
+| 2026-09-14 09:38 | PHY-19 | review | opus | 1 | reopened |  | 6m |
+| 2026-09-14 09:44 | PHY-19 | implement | sonnet | 1 | to-review |  | 6m |
+| 2026-09-14 09:56 | PHY-19 | review | opus | 1 | merged |  | 12m |
+| 2026-09-14 10:14 | PHY-20 | implement | sonnet | 1 | to-review |  | 17m |
+| 2026-09-14 10:22 | PHY-20 | review | opus | 1 | reopened |  | 8m |
+| 2026-09-14 10:55 | PHY-20 | implement | sonnet | 1 | to-review |  | 16m |
+| 2026-09-14 11:06 | PHY-20 | review | opus | 1 | reopened |  | 10m |
+| 2026-09-14 11:06 | PHY-20 | implement | sonnet | 1 | failed (exit 0), will retry |  | 1m |
+| 2026-09-14 11:08 | PHY-20 | implement | sonnet | 2 | failed (exit 0), blocked |  | 1m |
+| 2026-09-14 11:17 | PHY-21 | implement | sonnet | 1 | to-review |  | 9m |
+| 2026-09-14 11:18 | PHY-21 | review | opus | 1 | merged | #6 | 10m |
+| 2026-09-14 11:25 | PHY-21 | review | opus | 1 | merged |  | 8m |
+
+### Schema change
+
+| When | ID | Stage | Model | Attempt | Outcome | Session | Took |
+|---|---|---|---|---|---|---|---|
+| 2026-09-24 15:27 | PHY-23 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1506 | 20m |
+| 2026-09-24 15:40 | PHY-23 | review | claude-fable-5-1 | 1 | waiting for you | sweatshop/2026-09-24-1506 | 13m |
+| 2026-09-24 15:42 | PHY-32 | implement | claude-opus-5-5 | 1 | failed (exit 0), will retry | sweatshop/2026-09-24-1506 | 2m |
+| 2026-09-24 15:43 | PHY-32 | implement | claude-opus-5-5 | 2 | failed (exit 0), blocked | sweatshop/2026-09-24-1506 | 1m |
+| 2026-09-24 15:56 | PHY-23 | review | claude-fable-5-1 | 1 | review ended at to-review (exit 0) | sweatshop/2026-09-24-1506 | 2m |
+| 2026-09-24 16:02 | PHY-32 | implement | claude-opus-5-5 | 3 | to-review | sweatshop/2026-09-24-1506 | 6m |
+| 2026-09-24 16:09 | PHY-32 | review | claude-fable-5-1 | 3 | merged | sweatshop/2026-09-24-1506 | 7m |
+| 2026-09-24 16:15 | CLEAN-01 | implement | claude-opus-5-5 | 1 | failed (exit 0), will retry | sweatshop/2026-09-24-1506 | 6m |
+| 2026-09-24 16:20 | CLEAN-01 | implement | claude-opus-5-5 | 2 | to-review | sweatshop/2026-09-24-1506 | 5m |
+| 2026-09-24 16:28 | CLEAN-01 | review | claude-fable-5-1 | 2 | merged (row restored by foreman) | sweatshop/2026-09-24-1506 | 8m |
+| 2026-09-24 16:42 | PHY-23 | review | claude-fable-5-1 | 1 | merged (row restored by foreman) | sweatshop/2026-09-24-1506 | 12m |
+| 2026-09-24 18:57 | CLEAN-02 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 3m |
+| 2026-09-24 19:01 | CLEAN-02 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 19:22 | PHY-24 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 22m |
+| 2026-09-24 19:29 | PHY-24 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 7m |
+| 2026-09-24 19:34 | CLEAN-03 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 19:40 | CLEAN-03 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 6m |
+| 2026-09-24 20:02 | PHY-25 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 22m |
+| 2026-09-24 20:12 | PHY-25 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 10m |
+| 2026-09-24 20:17 | CLEAN-04 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 5m |
+| 2026-09-24 20:19 | CLEAN-04 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 2m |
+| 2026-09-24 20:31 | PHY-26 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 12m |
+| 2026-09-24 20:41 | PHY-26 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 10m |
+| 2026-09-24 20:44 | CLEAN-05 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 3m |
+| 2026-09-24 20:47 | CLEAN-05 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 21:05 | PHY-27 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 18m |
+| 2026-09-24 21:17 | PHY-27 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 12m |
+| 2026-09-24 21:35 | PHY-28 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 17m |
+| 2026-09-24 21:44 | PHY-28 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 9m |
+| 2026-09-24 21:54 | CLEAN-06 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 10m |
+| 2026-09-24 21:58 | CLEAN-06 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 5m |
+| 2026-09-24 22:09 | CLEAN-07 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 11m |
+| 2026-09-24 22:14 | CLEAN-07 | review | claude-fable-5-1 | 1 | reopened | sweatshop/2026-09-24-1853 | 5m |
+| 2026-09-24 22:17 | CLEAN-07 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 3m |
+| 2026-09-24 22:21 | CLEAN-07 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 22:25 | CLEAN-08 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 22:27 | CLEAN-08 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 2m |
+| 2026-09-24 22:40 | PHY-29 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 12m |
+| 2026-09-24 22:43 | PHY-29 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 3m |
+| 2026-09-24 23:06 | PHY-30 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 23m |
+| 2026-09-24 23:21 | PHY-30 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 15m |
+| 2026-09-24 23:29 | CLEAN-09 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 8m |
+| 2026-09-24 23:35 | CLEAN-09 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 6m |
+| 2026-09-24 23:39 | CLEAN-10 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 23:45 | CLEAN-10 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 6m |
+| 2026-09-24 23:49 | CLEAN-11 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-24 23:55 | CLEAN-11 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 6m |
+| 2026-09-24 23:59 | CLEAN-12 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-25 00:12 | CLEAN-12 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 13m |
+| 2026-09-25 00:23 | PHY-31 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 11m |
+| 2026-09-25 00:28 | PHY-31 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 5m |
+| 2026-09-25 00:42 | PHY-33 | implement | claude-opus-5-5 | 1 | failed (exit 0), will retry | sweatshop/2026-09-24-1853 | 14m |
+| 2026-09-25 00:59 | PHY-33 | implement | claude-opus-5-5 | 2 | to-review | sweatshop/2026-09-24-1853 | 17m |
+| 2026-09-25 01:14 | PHY-33 | review | claude-fable-5-1 | 2 | merged | sweatshop/2026-09-24-1853 | 15m |
+| 2026-09-25 01:20 | PHY-34 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 6m |
+| 2026-09-25 01:23 | PHY-34 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 2m |
+| 2026-09-25 01:31 | PHY-35 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 8m |
+| 2026-09-25 01:36 | PHY-35 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 5m |
+| 2026-09-25 01:40 | PHY-36 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 4m |
+| 2026-09-25 01:43 | PHY-36 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 3m |
+| 2026-09-25 01:50 | PHY-37 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 6m |
+| 2026-09-25 01:54 | PHY-37 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 5m |
+| 2026-09-25 01:56 | CLEAN-14 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 2m |
+| 2026-09-25 01:58 | CLEAN-14 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 2m |
+| 2026-09-25 02:01 | PHY-38 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 2m |
+| 2026-09-25 02:01 | PHY-38 | review | claude-fable-5-1 | 1 | api error, not counted | sweatshop/2026-09-24-1853 | 0m |
+
+### Schema change
+
+| When | ID | Stage | Model | Attempt | Outcome | Session | Took | Tokens | Cost |
 |---|---|---|---|---|---|---|---|---|---|
+| 2026-09-25 02:27 | PHY-38 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 5m | 1.4M in (92% cached), 17k out | $2.938 |
+| 2026-09-25 02:29 | CLEAN-15 | implement | claude-opus-5-5 | 1 | to-review | sweatshop/2026-09-24-1853 | 2m | 1.2M in (96% cached), 8k out | $0.717 |
+| 2026-09-25 02:32 | CLEAN-15 | review | claude-fable-5-1 | 1 | merged | sweatshop/2026-09-24-1853 | 3m | 1.2M in (89% cached), 15k out | $2.942 |
 | 2026-09-30 10:37 | CLEAN-17 | implement | gpt-6.1-sol high | 1 | to-review | sweatshop/2026-09-24-1853 | 6m | 947k in (94% cached), 5k out | $0.346 |
 | 2026-09-30 10:49 | CLEAN-17 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-09-24-1853 | 9m | 1.2M in (95% cached), 8k out | $0.423 |
 | 2026-09-30 10:55 | CLEAN-18 | implement | gpt-6.1-sol high | 1 | to-review | sweatshop/2026-09-24-1853 | 6m | 880k in (92% cached), 5k out | $0.354 |
@@ -38,3 +130,24 @@
 | 2026-10-01 00:23 | PHY-47 | review | gpt-6.1-sol max | 1 | reopened | sweatshop/2026-09-24-1853 | 12m | 1.6M in (93% cached), 17k out | $0.686 |
 | 2026-10-01 00:29 | PHY-47 | implement | gpt-6.1-sol high | 1 | to-review | sweatshop/2026-09-24-1853 | 6m | 933k in (92% cached), 9k out | $0.414 |
 | 2026-10-01 00:38 | PHY-47 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-09-24-1853 | 9m | 1.9M in (94% cached), 12k out | $0.697 |
+| 2026-10-01 12:18 | PHY-45 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 6m | 4.0M in (97% cached), 28k out | $2.412 |
+| 2026-10-01 12:18 | PHY-45 | review | gpt-6.1-sol max | 1 | api error, not counted | sweatshop/2026-10-01-1211 | 0m | ? | ? |
+| 2026-10-01 12:19 | PHY-45 | review | gpt-6.1-sol max | 1 | api error, not counted | sweatshop/2026-10-01-1211 | 0m | ? | ? |
+| 2026-10-01 12:42 | PHY-45 | review | gpt-6.1-sol max | 1 | api error, not counted | sweatshop/2026-10-01-1211 | 14m | ? | ? |
+| 2026-10-01 13:28 | PHY-45 | review | gpt-6.1-sol max | 1 | reopened | sweatshop/2026-10-01-1211 | 15m | 1.7M in (95% cached), 16k out | $0.670 |
+| 2026-10-01 13:41 | PHY-45 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 13m | 2.8M in (94% cached), 58k out | $4.396 |
+| 2026-10-01 13:53 | PHY-45 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 12m | 1.7M in (92% cached), 12k out | $0.694 |
+| 2026-10-01 13:55 | CLEAN-20 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 2m | 1.4M in (96% cached), 8k out | $0.851 |
+| 2026-10-01 14:08 | CLEAN-20 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 13m | 1.5M in (95% cached), 10k out | $0.552 |
+| 2026-10-01 14:15 | PHY-48 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 7m | 5.5M in (98% cached), 41k out | $2.803 |
+| 2026-10-01 14:35 | PHY-48 | review | gpt-6.1-sol max | 1 | review ended at reviewing (timeout) | sweatshop/2026-10-01-1211 | 20m | ? | ? |
+| 2026-10-01 14:38 | PHY-49 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 3m | 2.1M in (97% cached), 11k out | $1.053 |
+| 2026-10-01 14:50 | PHY-49 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 12m | 1.9M in (95% cached), 13k out | $0.703 |
+| 2026-10-01 14:52 | CLEAN-21 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 2m | 947k in (95% cached), 5k out | $0.642 |
+| 2026-10-01 15:00 | CLEAN-21 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 8m | 855k in (90% cached), 10k out | $0.425 |
+| 2026-10-01 15:27 | PHY-48 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 13m | 2.1M in (96% cached), 13k out | $0.708 |
+| 2026-10-01 15:36 | PHY-50 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 8m | 2.2M in (98% cached), 10k out | $1.053 |
+| 2026-10-01 15:44 | PHY-50 | review | gpt-6.1-sol max | 1 | api error, not counted | sweatshop/2026-10-01-1211 | 8m | ? | ? |
+| 2026-10-01 16:05 | PHY-50 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 15m | 2.4M in (95% cached), 18k out | $0.864 |
+| 2026-10-01 16:11 | CLEAN-22 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-01-1211 | 6m | 1.4M in (97% cached), 7k out | $0.741 |
+| 2026-10-01 16:22 | CLEAN-22 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-1211 | 11m | 1.5M in (95% cached), 13k out | $0.562 |
