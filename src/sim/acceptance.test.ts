@@ -1204,6 +1204,34 @@ describe('acceptance: ideal spring (PHY-26)', () => {
   })
 
   it.each([
+    { reverse: false, rightC: 200 },
+    { reverse: true, rightC: 200 },
+    { reverse: false, rightC: 2000 },
+    { reverse: true, rightC: 2000 },
+  ])('PHY-47: opposite springs stay balanced for 300 steps, reverse=$reverse, right c=$rightC', async ({ reverse, rightC }) => {
+    const constraints: Scene['constraints'] = [
+      { id: 'left-spring', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+      { id: 'right-spring', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: rightC },
+    ]
+    if (reverse) constraints.reverse()
+    const sim = await load({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'left', fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'right', fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'body', fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints,
+    })
+    const positions = run(sim, 300, () => sim.readStates().get('body')!.position.x)
+    const worst = Math.max(...positions.map(Math.abs))
+    expect(worst, `max drift ${worst}, final x ${positions.at(-1)}`).toBeLessThan(1e-4)
+  })
+
+  it.each([
     { c: 200, fixed: true },
     { c: 2000, fixed: true },
     { c: 200, fixed: false },
