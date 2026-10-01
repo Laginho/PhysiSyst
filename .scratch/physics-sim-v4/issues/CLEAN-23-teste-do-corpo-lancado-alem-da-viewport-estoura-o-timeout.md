@@ -1,0 +1,33 @@
+# CLEAN-23: o teste do corpo lançado além da viewport estoura o timeout com a suíte em paralelo
+Stage: to-implement
+Status: ready-for-agent
+Blocked by: none
+Review: agent
+
+- Primary files:
+  - `src/sim/simulator.test.ts` (só o teste `a body launched beyond the viewport integrates indefinitely`, no bloco `no invisible walls (T7/M2)`)
+
+#### What to build
+
+O gate padrão (`npm test` com a concorrência default do Vitest) volta a passar sem `VITEST_MAX_WORKERS=1`. Hoje o teste lança o corpo com um passo de 10 N e deixa ele planar a cerca de 0,17 m/s até x = 50 m, o que leva perto de 17 mil passos. Na sessão `sweatshop/2026-10-01-1211`, com o `step()` do PHY-48 e do PHY-50, ele leva 3,2–3,6 s isolado e 6,3 s na suíte cheia, acima dos 5000 ms do Vitest. Na `main` (sem essas mudanças) leva 1,4 s isolado. O teste precisa provar o mesmo em uma fração dos passos.
+
+#### Acceptance criteria
+
+1. O teste continua provando o que prova hoje: x monotônico, velocidade linear preservada exatamente (`toBe`), `linvel.y` e `angvel` zero, e nenhum wrap ou remoção do corpo, até bem além da borda da câmera (x em [-1,5; 13,5]).
+2. O teste leva menos de 1 s isolado (`npx vitest run src/sim/simulator.test.ts -t "launched beyond the viewport"`, campo `tests`) sobre a base em que roda.
+3. Sem `testTimeout` próprio nem mudança de timeout global: o teste fica rápido, não ganha mais prazo.
+4. Nenhuma mudança em código de produção, em outros testes ou em tolerâncias.
+5. `npm test` passa com a concorrência padrão, sem `VITEST_MAX_WORKERS`.
+
+#### Verification
+
+    npx vitest run src/sim/simulator.test.ts -t "launched beyond the viewport"
+    npm test && npm run lint && npm run typecheck && npm run build
+
+## Tests stage 2 writes (own commit, red)
+
+- Nenhum teste novo: a mudança é no próprio teste. Prova de que ele continua forte, registrada em `## Comments`: duas mutações de produção em `src/sim/simulator.ts`, cada uma desfeita depois, com a saída vermelha do teste reescrito. (a) Um "wrap" que leva o corpo de volta para x = 0 ao passar de x = 20. (b) Um amortecimento que multiplica `linvel` por 0,999 a cada passo.
+
+## Comments
+
+- 2026-10-01 Aberto pelo foreman a partir do relatório `docs/relatorios/2026-10-01-sweatshop-sonnet-5.5-gpt-6.1-sol.pdf` (recomendação 4). As revisões do PHY-45, PHY-48, PHY-50 e CLEAN-22 só passaram no gate com `VITEST_MAX_WORKERS=1`, e o stage 2 do PHY-50 e do CLEAN-22 registrou o timeout como pré-existente na base. Medido na `main` (`533b655`) às 17:2x: 1,39 s isolado.
