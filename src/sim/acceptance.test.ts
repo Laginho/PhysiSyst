@@ -1703,6 +1703,29 @@ describe('acceptance: ideal spring (PHY-26)', () => {
       })
     })
 
+    it.each([0, 200, 2000])('PHY-48: both ends on light free blocks (m = 0.1, k = 40, mₛ = 0.1, c = %s): energy ½m·(v₁² + v₂²) + ½k·Δx² never passes 1.02·E₀ in 600 steps', async (c) => {
+      const sim = await load({
+        version: 1,
+        constants: { g: 0 },
+        forces: [],
+        contacts: [],
+        bodies: [
+          { id: 'esq', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 0.1, position: { x: -0.6, y: 0 }, rotation: 0 },
+          { id: 'dir', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 0.1, position: { x: 0.6, y: 0 }, rotation: 0 },
+        ],
+        constraints: [
+          { id: 'mola', kind: 'spring', a: { bodyId: 'esq', anchor: { x: 0, y: 0 } }, b: { bodyId: 'dir', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c, mass: 0.1 },
+        ],
+      })
+      const energy = run(sim, 600, () => {
+        const states = sim.readStates()
+        const kinetic = ['esq', 'dir'].reduce((sum, id) => sum + 0.5 * 0.1 * states.get(id)!.linvel.x ** 2, 0)
+        return kinetic + 0.5 * 40 * spring(sim).dx ** 2
+      })
+      expect(energy[0]).toBeCloseTo(0.8, 5)
+      expect(Math.max(...energy), `max E ${Math.max(...energy)}`).toBeLessThanOrEqual(1.02 * energy[0]!)
+    })
+
     it('PHY-48: free bar held at its end by a spring with mass (c = 200) perpendicular to it: energy ½m·v² + ½I·ω² + ½k·Δx² never passes 1.02·E₀ in 600 steps', async () => {
       const m = 1
       const k = 40
