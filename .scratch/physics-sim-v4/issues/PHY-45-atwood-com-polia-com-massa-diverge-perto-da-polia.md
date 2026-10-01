@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -40,8 +40,7 @@ Não é exclusivo da polia com massa:
 2. **Guarda na previsão de `pullPieces`.** Com o aro, o bloco do 1/3 com polia com massa sobe encostado no disco. A previsão sem contato empurra a perna do fim do passo contra a perna do meio do passo, e a diagonal da matriz troca de sinal: a linha 0 foi de [2,261, −0,954] para [−0,350, 0,495], e a cena explodiu no passo 156 (9,4 kN, +13,7 kJ). A guarda é: se `ropeInvMass(row.pulls, row.along) ≤ 0`, usar `row.along = row.pulls`. É a versão com várias peças da guarda `k <= 0` que `pullRope` já tem, e é por isso que a corda de uma peça só nunca mostrou isto.
 3. **A corda guarda o lado do enrolamento.** Com o aro, o bloco ricocheteia e pode balançar por baixo da polia. Quando as duas pernas ficam colineares, as duas pontas embaixo do disco, o sinal da curva vira com qualquer desvio lateral, e a direção do enrolamento inverte. Na polia ideal o comprimento quase não muda; na polia com massa o share do grip salta e a energia explode. A correção:
    - `ropePath` ganha um parâmetro opcional `keep`, com uma direção por polia.
-   - Com `keep`, cada polia segue a direção dada, a menos que o arco com ela passe de 3π/2. Nesse caso ela segue o sinal da curva, como hoje.
-   - Arco acima de 3π/2 com a direção guardada quer dizer que a corda passou reta pela polia. Esse é o único caso em que inverter é contínuo, e pela regra atual o arco nunca passa de cerca de π.
+   - Com `keep`, cada polia segue sempre a direção dada. Inverter o lado só é contínuo quando as duas pontas e o centro estão colineares, então qualquer cedência por arco (a regra de 3π/2 do protótipo) salta o comprimento. Uma corda em contato com a polia não troca de lado.
    - `RopeBinding` guarda as direções. `ropeFrame` as passa ao `ropePath` e as atualiza só quando lê as poses reais, não as previstas (meio e fim do passo).
    - Vale para toda polia, ideal ou com massa. Sem `keep`, `ropePath` faz o que faz hoje, e é assim que o `scenePath` continua chamando.
 
@@ -61,6 +60,7 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
 
 **Fora do escopo:**
 - Os picos de energia no impacto contra o aro da polia com massa, no 3/1 e no 1/2: ficam para o PHY-52.
+- A corda que se solta da polia (a corda reta passa livre do disco, as duas pontas além da tangente, do lado do enrolamento): o modelo sempre enrola, então com `keep` a varredura cruza a costura 0/2π e o comprimento salta 2πR. Pede histórico de enrolamento, outro ticket; nenhum dos 24 cenários chega lá.
 - Atrito do aro: fica 0. Um aro que esfrega pediria um gancho em `assignPairFrictions`.
 - `readContacts` não lista o contato com o aro, porque a polia não é um corpo do documento.
 - Uma cena que já começa com um corpo sobreposto a uma polia: o Rapier separa os dois no primeiro passo, como faz hoje com dois corpos sobrepostos.
@@ -78,7 +78,7 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
    - a âncora da corda em cada bloco (o topo do bloco, no mundo) nunca passa para o outro lado de `x = 0` enquanto está acima do centro da polia: o bloco não passa por cima do disco. Por baixo ele pode balançar.
 2. `ropePath` com `keep`:
    - duas pontas embaixo de uma polia, quase colineares com o centro, trocando de lado uma da outra: com `keep` a direção fica a guardada, e o comprimento varia continuamente. Sem `keep`, a direção segue o sinal da curva, como hoje.
-   - uma corda que passa reta pela polia e segue até o outro lado: com `keep`, a direção passa a seguir o sinal da curva, sem salto de comprimento.
+   - uma corda cujo enrolamento guardado passa de 3π/2 (o bloco balança por baixo e sobe do outro lado): com `keep`, a direção continua a guardada e o comprimento varia continuamente ao longo da transição, amostrado antes, durante e depois do ponto onde a regra antiga cedia. Sem `keep`, a direção segue o sinal da curva.
 3. Os testes existentes de `acceptance.test.ts`, `simulator.test.ts` e `ropePath.test.ts` continuam verdes sem mudar tolerância, incluindo os da polia com massa (PHY-25), o PHY-43 e os da polia móvel.
 4. Os testes de regressão são mutate-verified conforme o `AGENTS.md`, com três mutações:
    - tirar o collider do aro: os 26 cenários da grade ficam vermelhos, e o 1/3 com polia ideal no passo 71;
@@ -100,7 +100,60 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
 
 ## Comments
 
+- 2026-10-01 Stage 2, reaberto pelo R1 da revisão. Proxy decided: `keep` segue sempre a direção guardada, sem a cedência de 3π/2; critério 2 (2º item), item 3 e fora do escopo reescritos acima — o item "segue a curva sem salto" era insatisfazível, porque os dois enrolamentos só têm o mesmo comprimento com `a`, centro e `b` colineares, e a cedência por arco salta (~2,2 m com `b = (1, −5)`, `a = (3, y)`, `keep = [−1]`). Os testes passam a amostrar o comprimento ao longo da transição. Se algum dos 24 cenários ficar vermelho sem a cedência, a corda se solta da polia no motor: parar e perguntar de novo.
 - 2026-09-30 Aberto pelo foreman a partir da recomendação 7 do relatório `docs/relatorios/2026-09-30-sweatshop-gpt-6.1-sol.pdf`, aceita pelo Bruno. Medições acima; o probe foi descartado.
 - 2026-10-01 Stage 1. Um diagnóstico descartável sobre `b29d75a` achou a causa (bloco atravessa o disco e o lado do enrolamento inverte) e prototipou o aro e a guarda. O Bruno aprovou método, escopo e critérios. Nada do protótipo foi commitado.
 - 2026-10-01 Achado lateral do diagnóstico, aberto como PHY-49: as tensões lidas na Atwood com polia com massa alternam a cada passo.
 - 2026-10-01 Stage 1 de revisão, antes do sweatshop. Com o protótipo reconstruído sobre `9d81e26`, os quatro cenários originais passavam, mas os vizinhos (2/2 com `vy` = 5, 7 e 10, 1/2 e 2/3 com polia com massa) explodiam. Além disso, o critério antigo "a âncora nunca cruza `x = 0`" reprovava o balanço legítimo por baixo da polia. Entraram a direção guardada, o critério 1b reescrito e a grade de 24 cenários. Os dois picos que sobram foram para o PHY-52. O Bruno aprovou. Nada do protótipo foi commitado.
+- 2026-10-01 Stage 2, commit de testes. Vermelhos sobre o código de hoje: 23 dos 24 cenários (energia e/ou lado) e o primeiro caso do `ropePath` com `keep` (direção −1 onde se esperava +1). Guardas verdes hoje: o 2/2 com `vy = 3` e polia ideal (o bloco não chega ao disco) e o segundo caso do `ropePath` (direção do sinal da curva, que o código de hoje já segue). O segundo caso só pega a mutação "tirar o limite de 3π/2".
+- 2026-10-01 Stage 2, mutate-verify (critério 4). Cada mutação sobre o código verde, com a saída vermelha, depois desfeita; gate verde de novo (767 testes) sem a mutação.
+  - Tirar o collider do aro (`world.createCollider(rim, …)` trocado por `void rim`): `-t PHY-45` fica com 24 de 24 vermelhos (13 com polia ideal, 11 com `M = 2`), incluindo o 2/2 com `vy = 3` ideal, que era guarda verde antes do aro. Medido por 600 passos (energia ou lado), não pelo passo 71 do 1/3 ideal citado no critério.
+  - Tirar a guarda de `pullPieces` (`row.along = row.pulls`): 6 vermelhos, todos com `M = 2`: 2/2 com `vy` = 5 e 7, 1/3, 1/4, 2/1 e 2/3 do repouso. O 1/3 com massa é o do passo 156 do critério. Os 13 com polia ideal ficam verdes.
+  - Ignorar o `keep` (`ropeFrame` chama `ropePath(…, undefined)`): 4 vermelhos, todos com `M = 2`: 2/2 com `vy` = 5, 7 e 10, e 2/3 do repouso (o 2/2 com `vy = 5` do critério está entre eles). No `ropePath`, o primeiro caso de `keep` já nasceu vermelho (`expected -1 to be 1`).
+  - Tirar o limite de 3π/2 em `ropePath` (`if (false && keep && …)`): o segundo caso de `keep` fica vermelho (`expected 1 to be -1`).
+  - Os testes de `ropePath` chamam a função direto, então o vermelho do commit de testes basta como registro deles; os 24 cenários passam pelo motor público, e o registro está acima.
+- 2026-10-01 Stage 2, reabertura (R1). Commit de testes `ae28633`: os dois testes novos de `keep` ficaram vermelhos sobre o código com a cedência (`direction at y = …` e `direction at e = -0.00: expected -1 to be 1`). Correção: `ropePath` segue sempre o `keep`, sem a regra de 3π/2 (`6993723`). Os 24 cenários ficaram verdes sem a cedência, então a corda não se solta da polia no motor.
+  - Mutate-verify repetido sobre o código final: ignorar o `keep` (`return turn >= 0 ? 1 : -1`) deixa 7 vermelhos, 3 de `ropePath` e 4 do motor com `M = 2` (2/2 com `vy` = 5, 7 e 10, 2/3 do repouso; o de `vy = 5` dá `expected 2489.41… to be less than or equal to 0.5`). Desfeito; as mutações do aro e da guarda de `pullPieces` não tocam código alterado e valem como registradas acima.
+  - Gate: 30 arquivos, 768 testes verdes; lint, typecheck e build com saída 0.
+  - A atribuição `rope.keep = …` em `ropeFrame` (`simulator.ts:224`) virou idempotente com a cedência fora; fica, por ser inofensiva e fora desta correção.
+
+#### Review (2026-10-01)
+
+Verdict: Reopen (critério 2, R1)
+
+Comparação fixada em `git diff ecfac46f813d2332f00bbe056f3a9d0a044c1732...b6b61d8`, base `sweatshop/2026-10-01-1211`. Revisão completa dos eixos Standards e Spec em sub-agentes; reprodução, mutações e validação pelo agente principal. Commits examinados: `59fe8bb` (testes e metadados) e `b6b61d8` (produção e metadados, sem alterar testes). Rebase sobre a sessão: já atualizado. Nenhuma linha `Proxy decided` no ticket.
+
+**Standards:** Primary files e separação teste/código respeitados; nenhum smell com benefício concreto de correção. Três observações de documentação, sem bloquear este ticket: ADR-0004 ainda afirma que polias só têm colliders no grupo 0 e atravessam corpos; `simulator.ts:813` ainda diz "Mass 0 builds nothing"; `simulator.ts:1171` compara a nova guarda com o ramo escalar `k <= 0`, embora o escalar zere a tensão e retorne, enquanto a guarda troca `along`. Registradas no CLEAN-20, bloqueado pelo PHY-45 para documentar o mecanismo final.
+
+**Spec:** um critério não atendido, R1 abaixo. Grade autorizada completa: 13 cenários ideais e 11 com massa, total 24, por 600 passos; energia calculada independentemente e cruzamento medido na âncora do topo transformada para o mundo. Nenhuma ampliação de escopo ou outra regressão identificada na leitura de todo o diff e dos callers.
+
+**❌ R1 — critério 2: a troca de direção após a corda passar reta pela polia salta o comprimento.** Em `src/scene/ropePath.ts:57–59`, o rebuild com a direção natural não preserva o comprimento na passagem pela tangente. O segundo teste novo (`src/scene/ropePath.test.ts:224–233`) compara apenas uma pose depois da troca com o caminho natural; essa igualdade não verifica continuidade antes/depois.
+
+Reprodução descartável, importando a função de produção `src/scene/ropePath.ts` diretamente no Node 24: uma polia em `(0, 0)`, raio `1`, `keep = [-1]`, `a = (-3, h)` e `b = (3, h)`. Subir as duas pontas por `h = 1` leva a corda ao segmento reto tangente no topo do disco e depois ao outro lado; ambas as pontas permanecem fora do disco.
+
+| `h` | Direção | Varredura | Comprimento (m) |
+| --- | --- | --- | --- |
+| 0,999999 | −1 | 0,0000006666667036192564 | 6,000000000000334 |
+| 1 | −1 | 0 | 6 |
+| 1,000001 | +1 | 1,2870027509198187 | 7,287003417586782 |
+
+Mover cada ponta 2 micrômetros produz um salto de **1,2870034175864484 m**. A asserção descartável `Math.abs(after.length - before.length) < 0.00001` falhou com exit 1: `AssertionError [ERR_ASSERTION]: criterion 2: continuous wrap switch; observed length jump=1.2870034175864484`. No limite pela esquerda o comprimento é 6; pela direita é `6 + 4·atan(1/3)`. O método descrito na prosa foi implementado, mas não cumpre o critério numerado "sem salto de comprimento".
+
+Restante para a etapa 2: provar R1 em um commit de teste vermelho na mesma costura `ropePath` já autorizada, amostrando a transição antes/durante/depois; corrigir a continuidade preservando a direção guardada no balanço por baixo e os 24 cenários. O critério 2 e os demais critérios não foram reescritos. A correção exige teste novo, portanto não cabe como pequeno fix da etapa 3.
+
+**Mutate-verify repetido pelo reviewer**, cada mutação isolada sobre `b6b61d8` e desfeita antes da seguinte:
+
+| Mutação de produção | Saída vermelha reproduzida |
+| --- | --- |
+| Remover `world.createCollider(rim, …)`, substituindo por `void rim` | `-t PHY-45`: **24 failed, 71 skipped (95)**, exit 1. O 1/3 ideal falha com `expected 20210.342689398185 to be less than or equal to 0.5`. |
+| Remover a atribuição da guarda de `pullPieces` | **6 failed, 18 passed, 71 skipped (95)**, exit 1. O 1/3 com massa falha com `expected 12890.141529255683 to be less than or equal to 0.5`. |
+| Ignorar `keep` em `ropePath`, usando `natural.map((d) => d)` | **4 failed, 20 passed, 71 skipped (95)**, exit 1. O 2/2 com massa e `vy = 5` falha com `expected 2489.413977600549 to be less than or equal to 0.5`. |
+| Desativar o limite de 3π/2 em `ropePath` | Nos dois testes PHY-45 de geometria: **1 failed, 1 passed, 12 skipped (14)**, exit 1; segundo caso: `expected 1 to be -1`. |
+
+Discrepância de verificação no critério 4: o texto menciona 26 cenários, mas o critério 1 e o plano de testes autorizam 24; os dois casos com massa restantes pertencem ao PHY-52. Foram reproduzidos os 24 vermelhos autorizados, sem ampliar a grade. As asserções agregam os 600 passos; esta revisão não confirmou os passos exatos 71/156 citados na prosa.
+
+Todas as mutações foram restauradas byte a byte; diff de produção e testes limpo. Após restaurar: `npx vitest run src/sim/acceptance.test.ts src/sim/simulator.test.ts src/scene/ropePath.test.ts` → **3 files passed, 138 tests passed**.
+
+**Validação do gate:** duas tentativas do comando obrigatório pararam em `npm test`, ambas com **29 files passed, 1 failed; 766 tests passed, 1 failed (767)**. Única falha: timeout de 5000 ms no teste existente `src/sim/simulator.test.ts:520` ("a body launched beyond the viewport integrates indefinitely"); execuções de 6533/6457 ms. Esse arquivo isolado passa **29/29** em 2,86 s. Diagnóstico sem alterar testes, configuração ou tolerâncias: `npx vitest run --maxWorkers=2` → **30 files passed, 767 tests passed**, 35,29 s. Executados separadamente `npm run lint && npm run typecheck && npm run build`: todos exit 0; aviso existente de chunk acima de 500 kB. O diagnóstico com dois workers não substitui a confirmação do gate padrão no próximo handoff.
+
+`Stage: to-implement` neste commit de reabertura, sem merge e sem linha no ledger. Sem alteração persistente de produção ou testes na revisão. Totais: Standards 3 observações de documentação no CLEAN-20; Spec 1 falha do critério 2 (R1), além da limitação de validação do gate registrada acima.
