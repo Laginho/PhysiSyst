@@ -1157,6 +1157,30 @@ describe('acceptance: ideal spring (PHY-26)', () => {
   })
 
   it.each([
+    { c: 200, steps: 60, expected: 0.081939 },
+    { c: 200, steps: 600, expected: 0.013520 },
+    { c: 2000, steps: 60, expected: 0.098021 },
+    { c: 2000, steps: 600, expected: 0.081874 },
+  ])('PHY-47: overdamped c=$c at step $steps: displacement follows the analytic solution within 1%', async ({ c, steps, expected }) => {
+    // Closed-form values for m = 1, k = 40, x(0) = 0.1, v(0) = 0
+    // from the ticket, independent of the simulator's integration scheme.
+    const sim = await load(horizontalScene(1, 40, X_EQ + 0.1, c))
+    const dx = run(sim, steps, () => sim.readStates().get('bloco')!.position.x - X_EQ)
+    expect(Math.abs(dx[steps]! - expected), `displacement ${dx[steps]} at step ${steps}`).toBeLessThan(0.01 * expected)
+  })
+
+  it.each([0.01, 0.05, 0.1])('PHY-47: stiff undamped spring, m=%s kg: energy stays below 1.2·E₀ for 600 steps', async (m) => {
+    const k = 400
+    const sim = await load(horizontalScene(m, k, X_EQ + 0.1, 0))
+    const energy = run(sim, 600, () => {
+      const state = sim.readStates().get('bloco')!
+      return 0.5 * m * state.linvel.x ** 2 + 0.5 * k * (state.position.x - X_EQ) ** 2
+    })
+    expect(energy[0]).toBeCloseTo(2, 5) // Rapier stores the initial position in f32.
+    expect(Math.max(...energy)).toBeLessThanOrEqual(1.2 * energy[0]!)
+  })
+
+  it.each([
     { c: 200, fixed: true },
     { c: 2000, fixed: true },
     { c: 200, fixed: false },

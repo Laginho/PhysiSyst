@@ -1,5 +1,5 @@
 # PHY-47: Mola ideal com `k` e `c` implícitos, certa no superamortecido e estável quando rígida
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -62,5 +62,8 @@ A mola com massa (PHY-30) não passa por `pushSpring` e fica fora; o defeito del
 - `src/sim/acceptance.test.ts`, bloco `ideal spring (PHY-26)`, com `horizontalScene`: os casos dos critérios 1 e 2, pelo motor público. Vermelhos hoje: com `c = 200`, o passo 60 dá `Δx = 0,0420` contra 0,0819 analítico; com `m = 0,01`, a energia chega a 13932 J.
 
 ## Comments
+
+- Stage 2 (2026-09-30): branch `phy/PHY-47-mola-ideal-k-e-c-implicitos`, base `sweatshop/2026-09-24-1853`. Seam aprovado: `createSimulator(parse(horizontalScene(...)))`, `step()` e `readStates()`, sem mocks. `pushSpring` tem um único chamador, `step()`, no caminho sem massa; `pushChain` e `readSpring` ficam fora da alteração. O denominador continua ≥ 1 para `k > 0`, `c ≥ 0`, inclusive `c = 0` e `K = 0` (pontas fixas, pulls cancelados no mesmo corpo ou eixo de comprimento zero); os casos sem amortecimento são cobertos pelos três testes rígidos e os chamadores existentes pelos testes PHY-26/30/40.
+- Red antes do código: `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → `7 failed | 54 skipped (61)`. Os quatro testes superamortecidos falham com Δx = 0,042026531696 (c=200, passo 60), 0,000016880035 (c=200, passo 600), 0,050349366665 (c=2000, passo 60), 0,000100624561 (c=2000, passo 600), contra 0,081939 / 0,013520 / 0,098021 / 0,081874 (erro < 1%). Os três testes rígidos falham com `expected 13932.228793286093 / 4.769236390550895 / 2.9217253962209053 to be less than or equal to 2.3999988555909546`, para m=0,01 / 0,05 / 0,1. A precisão da checagem auxiliar de E₀ foi ajustada antes do commit de testes para acomodar a posição f32 do Rapier (E₀=1,9999990463 J); o limite de energia continua 1,2·E₀.
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9. O gpt-6.1-sol (max) e o gpt-6-astra (high) acharam o superamortecido errado de forma independente; a mola rígida veio só do sol. As tabelas e o protótipo são probes descartáveis no motor real, sobre `0ff2047`; nada foi commitado. A forma da fórmula é decisão deste ticket. Se o stage 2 achar uma variante equivalente (por exemplo, outro `lead` no denominador) que passe nos mesmos critérios, deve registrá-la aqui antes de usar.
