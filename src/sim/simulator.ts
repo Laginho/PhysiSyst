@@ -1035,18 +1035,26 @@ class RapierSimulator implements Simulator {
    * (1 − φ)Δt lead, with both k and c using the end-of-step relative velocity.
    */
   private pushSpring(s: SpringBinding): void {
+    // The existing hook calls once per ideal spring; solve them only once.
+    if (s !== this.springs.find((spring) => !spring.chain)) return
     const lead = (1 - this.substepFactor()) * TIMESTEP
-    const { now, u, dx, rate } = springAt(s, lead)
-    const pulls = [
-      { rigid: s.a.rigid, p: now[0], u },
-      { rigid: s.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
-    ]
-    // PHY-47: both terms see free acceleration before the spring's own pull.
-    const free = pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, this.world.gravity))
-    const deltaRate = lengtheningRate(pulls, free) - rate
-    const implicit = s.k * lead + s.c
-    const force = (s.k * dx + s.c * rate + implicit * deltaRate) / (1 + implicit * TIMESTEP * ropeInvMass(pulls))
-    applyPulls(pulls, force, false)
+    const rows = this.springs.filter((spring) => !spring.chain).map((spring) => {
+      const { now, u, dx, rate } = springAt(spring, lead)
+      const pulls = [
+        { rigid: spring.a.rigid, p: now[0], u },
+        { rigid: spring.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
+      ]
+      // Read all free velocities before applying any ideal spring force.
+      const free = pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, this.world.gravity))
+      const implicit = spring.k * lead + spring.c
+      const rhs = spring.k * dx + spring.c * rate + implicit * (lengtheningRate(pulls, free) - rate)
+      return { pulls, implicit, rhs }
+    })
+    // ponytail: one dense O(n³) solve; split connected groups if scene sizes demand it.
+    const matrix = rows.map((a, i) => rows.map((b, j) => (i === j ? 1 : 0) + a.implicit * TIMESTEP * ropeInvMass(b.pulls, a.pulls)))
+    const forces = solveLinear(matrix, rows.map((row) => row.rhs))
+    if (!forces) throw new Error('Unable to solve ideal spring forces')
+    rows.forEach((row, i) => applyPulls(row.pulls, forces[i]!, false))
   }
 
   /**
