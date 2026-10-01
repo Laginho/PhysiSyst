@@ -1,5 +1,5 @@
 # PHY-48: Mola com massa acoplada implicitamente aos corpos, no solve em grupo das molas
-Stage: reviewing
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -142,3 +142,5 @@ Cada um dos 23 novos casos tem a mutação e a primeira linha da saída vermelha
 | both ends on light free blocks (m = 0.1, k = 40, mₛ = 0.1, c = 200): energy ½m·(v₁² + v₂²) + ½k·Δx² never passes 1.02·E₀ in 600 steps | M-cross | `AssertionError: max E 16497.515054249747: expected 16497.515054249747 to be less than or equal to 0.8160003890991675` |
 | both ends on light free blocks (m = 0.1, k = 40, mₛ = 0.1, c = 2000): energy ½m·(v₁² + v₂²) + ½k·Δx² never passes 1.02·E₀ in 600 steps | M-cross | `AssertionError: max E 16367.934150065706: expected 16367.934150065706 to be less than or equal to 0.8160003890991675` |
 | free bar held at its end by a spring with mass (c = 200) perpendicular to it: energy ½m·v² + ½I·ω² + ½k·Δx² never passes 1.02·E₀ in 600 steps | M-base | `AssertionError: max E 88856.15548541174: expected 88856.15548541174 to be less than or equal to 0.20400009727479188` |
+
+- 2026-10-01 Review ended at reviewing (timeout); branch phy/PHY-48-mola-massa-solve-em-grupo holds the review; left for a human
