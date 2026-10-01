@@ -1,11 +1,10 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, Scene, Vec2 } from './scene'
-import { collectWarnings, serialize } from './scene'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
+import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
   applyStates,
-  carryOver,
   initialPlayback,
   routeDocChange,
   SPEED_MAX,
@@ -15,26 +14,37 @@ import {
   type PlaybackState,
 } from './playback'
 import { DEMO_SCENE } from './scene/demo'
-import { createPresetScene, PRESETS } from './presets'
+import { createPresetScene, galleryGroups, nodeLabelKeys, PRESETS } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
-import type { BodyState, ContactPoint, Simulator } from './sim'
+import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
 import {
   addContact,
   addForce,
+  addPulley,
+  addRope,
+  addSpring,
   duplicateBody,
   freshId,
   removeBodyAndDependents,
+  removeConstraint,
   removeContact,
   removeForce,
+  removePulleyAndDependents,
+  setSpringDx,
+  springDx,
   updateBody,
   updateContact,
   updateForce,
   updateG,
   updateParticleMode,
+  updatePulley,
+  updateSpring,
   type BodyPatch,
+  type MutationResult,
 } from './editor/doc'
-import { bodyAtPoint, worldToLocal } from './editor/hitTest'
+import { AXLE_HIT_RADIUS_PX, bodyAtPoint, pulleyAtPoint, ropeAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
+import { anchorSnap } from './editor/anchorSnap'
 import { resolveContactSnap } from './editor/contactSnap'
 import { pointInTrash, trashRect, type Rect } from './editor/trash'
 import {
@@ -52,15 +62,26 @@ import {
   alphaFromLocal,
   clampAlphaDeg,
   getHandles,
+  HANDLE_HIT_RADIUS_PX,
   HANDLE_SIZE_PX,
   minDimension,
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
-import { drawArrow, drawGrid, drawScene } from './render/draw'
-import { makeTransform, pixelsPerMeterForWidth, screenToWorld, type Camera, type ScreenTransform } from './render/transform'
+import { drawArrow, drawGrid, drawScene, selectedOf, type ArrowStyle, type Selection } from './render/draw'
+import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
-import { appliedArrows, initialVelocityArrows, normalArrows, weightArrows } from './render/overlay'
+import {
+  appliedArrows,
+  elasticArrows,
+  initialVelocityArrows,
+  normalArrows,
+  numberedSymbol,
+  tensionArrows,
+  vectorLabels,
+  weightArrows,
+  type OverlayArrow,
+} from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
 import { getLang, setLang as persistLang, t, type Lang } from './i18n'
@@ -89,6 +110,32 @@ import {
 
 const LOADING_MESSAGE_COUNT = 10
 const LOADING_MESSAGE_INTERVAL_MS = 1500
+/** Grab distance around a spring's or rope's line, about the spring zigzag's half-width. */
+const LINE_HIT_TOLERANCE_PX = 8
+
+/**
+ * A palette tool between its palette click and the edit it makes: `a` is the
+ * first anchor once clicked (a pulley never has one), `via` the rope's pulleys
+ * so far, in click order.
+ */
+type Tool =
+  | { kind: 'spring'; a: ConstraintEnd | null }
+  | { kind: 'pulley'; a?: never }
+  | { kind: 'rope'; a: ConstraintEnd | null; via: string[] }
+  | null
+
+/** The hint-line key for an armed tool: what its next click does. */
+function toolHint(tool: NonNullable<Tool>): string {
+  if (tool.kind === 'pulley') return 'tool.pulley'
+  if (tool.kind === 'spring') return tool.a ? 'tool.springSecond' : 'tool.springFirst'
+  return tool.a ? 'tool.ropeNext' : 'tool.ropeFirst'
+}
+
+const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉'
+/** `T₁`, `T₂`, … for the rope's legs in path order. */
+function subscript(n: number): string {
+  return String(n).replace(/\d/g, (d) => SUBSCRIPT_DIGITS[Number(d)]!)
+}
 
 /** Camera/transform/trash-zone for the canvas's current logical size. */
 function geometryFor(width: number, height: number): { camera: Camera; transform: ScreenTransform; trash: Rect } {
@@ -107,19 +154,50 @@ function messageOf(e: unknown): string {
  * projected over the document, so selection handles and force arrows ride the
  * moving body without any playback-specific drawing code.
  */
+/** A screen-px circle at a screen point: filled in `color`, or stroked at `strokeWidth` when given. */
+function screenCircle(ctx: CanvasRenderingContext2D, at: { x: number; y: number }, radius: number, color: string, strokeWidth?: number): void {
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(at.x, at.y, radius, 0, Math.PI * 2)
+  if (strokeWidth === undefined) {
+    ctx.fillStyle = color
+    ctx.fill()
+  } else {
+    ctx.strokeStyle = color
+    ctx.lineWidth = strokeWidth
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function paint(
   ctx: CanvasRenderingContext2D,
   doc: Scene,
-  selectedId: string | null,
+  selection: Selection,
   states: ReadonlyMap<string, BodyState> | null,
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
-  opts?: { showGlobal: boolean; contacts?: readonly ContactPoint[]; draggingBody?: boolean },
+  opts?: {
+    showGlobal: boolean
+    contacts?: readonly ContactPoint[]
+    constraints?: readonly ConstraintState[]
+    lang?: Lang
+    draggingBody?: boolean
+    /** The spring or rope tool's first anchor, until the tool finishes. */
+    pendingAnchor?: ConstraintEnd | null
+  },
 ): void {
   const { camera, transform, trash } = geometry
   const view = applyStates(doc, states)
+  const selectedId = selectedOf(selection, 'body')
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selectedId)
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selection)
+
+  const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
+  if (pendingBody) {
+    const p = bodyPointToWorld(pendingBody, opts.pendingAnchor!.anchor)
+    screenCircle(ctx, worldToScreen(transform, p.x, p.y), 5, '#ff8c00')
+  }
 
   // Trash target: invisible except while a Body is actively being dragged.
   if (opts?.draggingBody) {
@@ -144,17 +222,31 @@ function paint(
   }
 
   // Vector overlay: global mode draws scene-wide, otherwise selection-only.
+  // Vector labels number over the whole scene's arrows, so a selected vector
+  // reads the same letter it has in global mode.
+  const ppm = camera.pixelsPerMeter
+  const constraints = opts?.constraints ?? []
+  const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
+    { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
+    { arrows: initialVelocityArrows(view, ppm), style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
+    { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
+    { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
+    { arrows: tensionArrows(view, constraints, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
+    { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
+  ]
+  const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
-    for (const a of weightArrows(doc, states, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#2e7d32', widthPx: 2, headLenPx: 8 })
-    for (const a of initialVelocityArrows(view, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-    for (const a of appliedArrows(view, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#d97742', widthPx: 2, headLenPx: 10 })
-    for (const a of normalArrows(opts.contacts ?? [])) drawArrow(ctx, a.from, a.vec, transform, { color: '#1565c0', widthPx: 2, headLenPx: 8 })
+    for (const { arrows, style } of layers) for (const a of arrows) drawArrow(ctx, a.from, a.vec, transform, style, labels.get(a.key))
   } else {
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      for (const a of initialVelocityArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform, { color: '#43a047', widthPx: 2, headLenPx: 8 })
-      for (const a of appliedArrows(selView, camera.pixelsPerMeter)) drawArrow(ctx, a.from, a.vec, transform)
+      for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels.get(a.key))
+      for (const a of appliedArrows(selView, ppm)) {
+        drawArrow(ctx, a.from, a.vec, transform, undefined, labels.get(a.key))
+        // The application point is draggable (PHY-27): a ring marks the grip.
+        screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
+      }
     }
   }
 
@@ -181,7 +273,7 @@ function paint(
   }
 }
 
-/** Number field that only forwards real numbers (empty input is ignored). */
+/** Rejected or incomplete numbers stay local until blur; accepted edits still apply immediately. */
 function NumField({
   label,
   value,
@@ -191,20 +283,24 @@ function NumField({
   label: string
   value: number
   step?: number
-  onChange: (v: number) => void
+  onChange: (v: number) => boolean | void
 }) {
+  const [draft, setDraft] = useState<{ value: number; text: string } | null>(null)
+  if (draft && draft.value !== value) setDraft(null)
   return (
     <label style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
       {label}
       <input
         type="number"
         step={step ?? 'any'}
-        value={value}
+        value={draft?.text ?? value}
         style={{ width: 80 }}
         onChange={(e) => {
           const v = e.target.valueAsNumber
-          if (!Number.isNaN(v)) onChange(v)
+          if (Number.isFinite(v) && onChange(v) !== false) setDraft(null)
+          else setDraft({ value, text: e.target.value })
         }}
+        onBlur={() => setDraft(null)}
       />
     </label>
   )
@@ -220,16 +316,18 @@ function NumField({
  */
 function PropertiesPanel({
   body,
+  disabled,
   onPatch,
 }: {
   body: Body
+  disabled: boolean
   onPatch: (patch: BodyPatch) => void
 }) {
   const pos = (p: Vec2, axis: 'x' | 'y') => p[axis]
   const [velocityMode, setVelocityMode] = useState<'cartesian' | 'polar'>('cartesian')
   const polar = cartesianToPolar(body.vx ?? 0, body.vy ?? 0)
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{body.id}</legend>
       <NumField label={t('properties.mass')} value={body.mass} onChange={(v) => onPatch({ mass: v })} />
       <label style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
@@ -304,12 +402,14 @@ function PropertiesPanel({
 function ForcesPanel({
   bodyId,
   forces,
+  structuralLocked,
   onAdd,
   onPatch,
   onRemove,
 }: {
   bodyId: string
   forces: AppliedForce[]
+  structuralLocked: boolean
   onAdd: () => string | null
   onPatch: (id: string, patch: Partial<Omit<AppliedForce, 'id' | 'bodyId'>>) => void
   onRemove: (id: string) => void
@@ -323,7 +423,7 @@ function ForcesPanel({
         <div key={f.id} style={{ borderTop: '1px solid #ddd', paddingTop: 4, marginTop: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
             <span>{f.id}</span>
-            <button onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
+            <button disabled={structuralLocked} onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
           </div>
           <NumField label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
           <NumField label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
@@ -331,7 +431,7 @@ function ForcesPanel({
           <NumField label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
         </div>
       ))}
-      <button style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
+      <button disabled={structuralLocked} style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
       {error && <div style={{ fontSize: 12, color: '#b00' }}>{t(error)}</div>}
     </fieldset>
   )
@@ -340,11 +440,13 @@ function ForcesPanel({
 /** Scene-level auditable contact list; add via two body dropdowns. */
 function ContactsPanel({
   doc,
+  disabled,
   onAdd,
   onPatch,
   onRemove,
 }: {
   doc: Scene
+  disabled: boolean
   onAdd: (a: string, b: string) => string | null
   onPatch: (a: string, b: string, patch: { muS?: number; muK?: number }) => void
   onRemove: (a: string, b: string) => void
@@ -353,7 +455,7 @@ function ContactsPanel({
   const [newB, setNewB] = useState(doc.bodies[1]?.id ?? '')
   const [error, setError] = useState<string | null>(null)
   return (
-    <fieldset style={{ width: 220 }}>
+    <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{t('contacts.title')}</legend>
       {doc.contacts.length === 0 && <div style={{ fontSize: 12, color: '#777' }}>{t('contacts.empty')}</div>}
       {doc.contacts.map((c) => (
@@ -381,6 +483,74 @@ function ContactsPanel({
         {t('contacts.add')}
       </button>
       {error && <div style={{ fontSize: 12, color: '#b00' }}>{t(error)}</div>}
+    </fieldset>
+  )
+}
+
+/**
+ * Inspector for the selected spring (PHY-27). `onEdit` refuses an edit the
+ * codec would reject (k ≤ 0, x₀ ≤ 0, c < 0, mₛ < 0) and returns false; the panel then
+ * shows one warning line until the next accepted edit. Keyed by spring id,
+ * so the warning never carries over to another spring.
+ */
+function SpringPanel({
+  spring,
+  dx,
+  disabled,
+  onEdit,
+  onDelete,
+}: {
+  spring: Spring
+  dx: number
+  disabled: boolean
+  onEdit: (edit: (d: Scene) => Scene) => boolean
+  onDelete: () => void
+}) {
+  const [invalid, setInvalid] = useState(false)
+  const edit = (e: (d: Scene) => Scene) => {
+    const accepted = onEdit(e)
+    setInvalid(!accepted)
+    return accepted
+  }
+  return (
+    <fieldset disabled={disabled} style={{ width: 220 }}>
+      <legend>{spring.id}</legend>
+      <NumField label={t('spring.k')} value={spring.k} onChange={(v) => edit((d) => updateSpring(d, spring.id, { k: v }))} />
+      <NumField label={t('spring.x0')} value={spring.x0} step={0.01} onChange={(v) => edit((d) => updateSpring(d, spring.id, { x0: v }))} />
+      <NumField label={t('spring.dx')} value={dx} step={0.01} onChange={(v) => edit((d) => setSpringDx(d, spring.id, v))} />
+      <NumField label={t('spring.c')} value={spring.c ?? 0} step={0.1} onChange={(v) => edit((d) => updateSpring(d, spring.id, { c: v }))} />
+      <NumField label={t('spring.mass')} value={spring.mass ?? 0} step={0.01} onChange={(v) => edit((d) => updateSpring(d, spring.id, { mass: v }))} />
+      {invalid && <div style={{ fontSize: 12, color: '#b00' }}>{t('spring.invalid')}</div>}
+      <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
+    </fieldset>
+  )
+}
+
+/**
+ * Inspector for the selected pulley (PHY-28). Same clamps as the body panel
+ * and the force magnitude, so a typed value never makes an unparseable doc.
+ */
+function PulleyPanel({ pulley, disabled, onPatch, onDelete }: { pulley: Pulley; disabled: boolean; onPatch: (patch: { radius?: number; mass?: number }) => void; onDelete: () => void }) {
+  return (
+    <fieldset disabled={disabled} style={{ width: 220 }}>
+      <legend>{pulley.id}</legend>
+      <NumField label={t('properties.radius')} value={pulley.radius} step={0.05} onChange={(v) => onPatch({ radius: minDimension(v) })} />
+      <NumField label={t('properties.mass')} value={pulley.mass ?? 0} onChange={(v) => onPatch({ mass: Math.max(0, v) })} />
+      <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
+    </fieldset>
+  )
+}
+
+/** Inspector for the selected rope (PHY-28): its path and L, both read-only — L is derived, never stored. */
+function RopePanel({ rope, length, disabled, onDelete }: { rope: Rope; length: number | null; disabled: boolean; onDelete: () => void }) {
+  return (
+    <fieldset disabled={disabled} style={{ width: 220 }}>
+      <legend>{rope.id}</legend>
+      <div style={{ fontSize: 12 }}>
+        {t('rope.path')}: {[rope.a.bodyId, ...rope.via, rope.b.bodyId].join(' → ')}
+      </div>
+      {length !== null && <div style={{ fontSize: 12 }}>L: {length.toFixed(3)} m</div>}
+      <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
     </fieldset>
   )
 }
@@ -461,7 +631,13 @@ export default function App() {
     const { scene } = loadSceneOrBlank(storage, currentId)
     return scene
   })
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selection, setSelection] = useState<Selection>(null)
+  const selectedId = selectedOf(selection, 'body')
+  const selectedConstraintId = selectedOf(selection, 'constraint')
+  const selectedPulleyId = selectedOf(selection, 'pulley')
+  const [tool, setTool] = useState<Tool>(null)
+  const [toolError, setToolError] = useState<string | null>(null)
+  const toolRef = useRef<Tool>(tool)
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
@@ -470,7 +646,7 @@ export default function App() {
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [showGallery, setShowGallery] = useState(() => shouldShowGallery(storage))
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(PRESETS[0]?.id ?? null)
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(galleryGroups()[0]?.presets[0]?.id ?? null)
   const [lang, setLangState] = useState<Lang>(() => getLang(storage))
   const lastSavedRef = useRef<Map<string, string>>(new Map([[currentId, JSON.stringify(serialize(doc))]]))
   /**
@@ -483,6 +659,7 @@ export default function App() {
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
+  const [constraintReadout, setConstraintReadout] = useState<ConstraintState | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting')
   const [messageTick, setMessageTick] = useState(0)
@@ -495,14 +672,17 @@ export default function App() {
   const statesRef = useRef<Map<string, BodyState> | null>(null)
   const accelRef = useRef(initialTracker())
   const contactsRef = useRef<ContactPoint[]>([])
-  /** Document the running world was built from — the carry-over baseline. */
+  /** Rope and spring readings, refreshed with the contacts, for the T and F_el arrows. */
+  const constraintsRef = useRef<ConstraintState[]>([])
+  /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
   // Mirrors so the imperative rAF loop reads the latest document without
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
-  const selectedIdRef = useRef<string | null>(selectedId)
+  const selectionRef = useRef<Selection>(selection)
   const showGlobalRef = useRef(showGlobal)
+  const langRef = useRef(lang)
   const historyRef = useRef<History<Scene>>(history)
   const showShortcutsRef = useRef(showShortcuts)
   const saverRef = useRef<DebouncedSaver | null>(null)
@@ -521,46 +701,35 @@ export default function App() {
       else setSceneIndex(loadIndex(storage))
     })
   }
-  const switchToScene = useCallback(
-    (id: string) => {
-      saverRef.current?.flush()
-      const { scene, warning } = loadSceneOrBlank(storage, id)
-      if (warning) setStorageWarning(warning)
-      lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
-      setSceneIndex(loadIndex(storage))
-      setCurrentId(id)
-      saveCurrentSceneId(storage, id)
-      setDoc(scene)
-      setSelectedId(null)
-      setImportError(null)
-      // Switching/importing/creating/deleting a scene starts a fresh document
-      // identity — undo history from the PREVIOUS scene makes no sense here.
-      setHistory(clearHistory())
-    },
-    [storage],
-  )
+  const structuralLocked = playback.stepsTaken > 0 || stepsTick > 0
+  const canEditDoc = useCallback((next: Scene) =>
+    playbackRef.current.stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live', [])
 
-  /**
-   * Every doc mutation that should be one undo step routes through here: it
-   * snapshots the doc as it stood BEFORE the edit onto the history stack, then
-   * applies the edit. A drag is the one exception — it calls `setDoc` directly
-   * on every pointermove and pushes a single history entry on pointer-up
-   * instead (see onPointerUp), so an in-progress drag isn't 50 undo steps.
-   */
-  const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => {
+  /** All edits share this guard; scene transitions reset playback separately. */
+  const editDoc = useCallback((next: Scene | ((d: Scene) => Scene), recordHistory = false): boolean => {
     const prev = docRef.current
-    const resolved = typeof next === 'function' ? (next as (d: Scene) => Scene)(prev) : next
-    if (resolved === prev) return
-    setHistory((h) => pushHistory(h, prev))
+    const resolved = typeof next === 'function' ? next(prev) : next
+    if (resolved === prev) return true
+    if (!canEditDoc(resolved)) {
+      setToolError('editor.resetToEdit')
+      return false
+    }
+    if (recordHistory) setHistory((h) => pushHistory(h, prev))
+    docRef.current = resolved
     setDoc(resolved)
-  }, [])
+    setToolError(null)
+    return true
+  }, [canEditDoc])
+
+  // Discrete edits push once here; drags push their initial doc on pointer-up.
+  const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
-    const id = selectedIdRef.current
-    if (!id) return
-    commitDoc((d) => removeBodyAndDependents(d, id))
-    setSelectedId(null)
+    const sel = selectionRef.current
+    if (!sel) return
+    const remove = sel.kind === 'constraint' ? removeConstraint : sel.kind === 'pulley' ? removePulleyAndDependents : removeBodyAndDependents
+    if (commitDoc((d) => remove(d, sel.id))) setSelection(null)
   }, [commitDoc])
 
   // Drag interaction: kind + per-kind payload captured at pointer-down.
@@ -569,16 +738,20 @@ export default function App() {
     | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null; startDoc: Scene }
     | { kind: 'rotate'; id: string; startAngle: number; startRotation: number; startDoc: Scene }
     | { kind: 'resize' | 'alpha'; id: string; startDoc: Scene }
+    | { kind: 'forceAnchor'; id: string; forceId: string; startDoc: Scene }
     | null
   >(null)
 
   const repaint = useCallback(() => {
     const ctx = ctxRef.current
     if (ctx)
-      paint(ctx, docRef.current, selectedIdRef.current, statesRef.current, geometryFor(size.width, size.height), {
+      paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
         contacts: contactsRef.current,
+        constraints: constraintsRef.current,
+        lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
+        pendingAnchor: toolRef.current?.a ?? null,
       })
   }, [size.width, size.height])
 
@@ -638,34 +811,16 @@ export default function App() {
   }, [showShortcuts])
 
   useEffect(() => {
-    docRef.current = doc
-    selectedIdRef.current = selectedId
-    showGlobalRef.current = showGlobal
-    if (simRef.current && builtDocRef.current !== doc) {
-      // Live-vs-structural routing (T7/M2): value edits on existing records
-      // and g mutate the RUNNING world right now; everything else rebuilds at
-      // the frame boundary with carried kinematic state.
-      const route = routeDocChange(builtDocRef.current, doc)
-      if (route.kind === 'structural') {
-        // Bodies whose pose the user changed lose their carried state right
-        // now, so an explicit placement is visible immediately instead of
-        // being overpainted by the simulated position it replaces.
-        statesRef.current = carryOver(statesRef.current, builtDocRef.current, doc)
-        pendingRebuildRef.current = true
-      } else {
-        try {
-          applyLiveOps(simRef.current, route.ops)
-          builtDocRef.current = doc
-        } catch (e) {
-          fail(e)
-          // Keep builtDoc as-is: the next frame-boundary rebuild reconciles
-          // world and document from the correct baseline.
-          pendingRebuildRef.current = true
-        }
-      }
-    }
+    selectionRef.current = selection
+    toolRef.current = tool
     repaint()
-  }, [doc, selectedId, showGlobal, repaint, fail])
+  }, [selection, tool, repaint])
+
+  // Vector labels follow the language (P→W, F_el→F_s) without waiting for a frame.
+  useEffect(() => {
+    langRef.current = lang
+    repaint()
+  }, [lang, repaint])
 
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
@@ -673,6 +828,13 @@ export default function App() {
     saverRef.current?.schedule(currentId, doc)
     return () => saverRef.current?.cancel()
   }, [doc, currentId])
+
+  // Leaving the page (F5, tab close, CLEAN-01's chunk reload) must not drop the edit still inside the debounce.
+  useEffect(() => {
+    const flush = () => saverRef.current?.flush()
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [])
 
   // Hydration recovery: structured key stored, translated at render time so language switches re-render correctly
   useEffect(() => {
@@ -686,7 +848,15 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => {
       setStepsTick(playbackRef.current.stepsTaken)
-      const sel = selectedIdRef.current
+      const constraintSel = selectedOf(selectionRef.current, 'constraint')
+      if (constraintSel) {
+        // A world awaiting its rebuild still holds the old constraints: no reading.
+        const sim = pendingRebuildRef.current ? null : simRef.current
+        setConstraintReadout(sim?.readConstraints().find((c) => c.id === constraintSel) ?? null)
+      } else {
+        setConstraintReadout(null)
+      }
+      const sel = selectedOf(selectionRef.current, 'body')
       if (!sel) {
         setReadout(null)
         return
@@ -712,8 +882,7 @@ export default function App() {
   }, [])
 
   /**
-   * Applies pending document edits by rebuilding the world at a frame boundary,
-   * carrying surviving bodies' kinematic state across (T7 rebuild policy).
+   * Applies pending document edits by rebuilding from the document at a frame boundary.
    * Returns false when the new document cannot be simulated at all.
    */
   const syncWorld = useCallback((): boolean => {
@@ -721,12 +890,13 @@ export default function App() {
     if (!sim || !pendingRebuildRef.current) return true
     try {
       const prev = statesRef.current
-      sim.replaceScene(docRef.current, prev ?? undefined)
+      sim.replaceScene(docRef.current)
       builtDocRef.current = docRef.current
       const next = sim.readStates()
       accelRef.current = onRebuild(accelRef.current, prev, next)
       statesRef.current = next
       contactsRef.current = sim.readContacts()
+      constraintsRef.current = sim.readConstraints()
       pendingRebuildRef.current = false
       setSimError(null)
       return true
@@ -750,11 +920,15 @@ export default function App() {
         accelRef.current = onSteps(accelRef.current, n, prev, next)
         statesRef.current = next
         contactsRef.current = sim.readContacts()
+        constraintsRef.current = sim.readConstraints()
       } catch (e) {
         fail(e)
         return
       }
       repaint()
+      // The first simulated frame locks the editor immediately, without
+      // making React follow every later animation frame.
+      if (playbackRef.current.stepsTaken === n) setStepsTick(playbackRef.current.stepsTaken)
     },
     [fail, repaint, syncWorld],
   )
@@ -765,15 +939,21 @@ export default function App() {
       const t = advance(playbackRef.current, action)
       playbackRef.current = t.state
       setPlayback(t.state)
+      setStepsTick(t.state.stepsTaken)
       if (t.rebuild) {
-        // Reset: fresh world straight from document, nothing carried — commit
-        // refs only on success so a failed reset preserves the old baseline.
+        setToolError(null)
+        // Clear readings before rebuilding: a failed reset must still show the document.
+        accelRef.current = onReset()
+        statesRef.current = null
+        contactsRef.current = []
+        constraintsRef.current = []
+        setReadout(null)
+        setConstraintReadout(null)
         try {
           simRef.current?.replaceScene(docRef.current)
           pendingRebuildRef.current = false
-          accelRef.current = onReset()
-          statesRef.current = null
           contactsRef.current = simRef.current ? simRef.current.readContacts() : []
+          constraintsRef.current = simRef.current ? simRef.current.readConstraints() : []
           builtDocRef.current = docRef.current
           setSimError(null)
         } catch (e) {
@@ -785,6 +965,52 @@ export default function App() {
       if (t.steps > 0) runSteps(t.steps)
     },
     [repaint, runSteps],
+  )
+
+  useEffect(() => {
+    docRef.current = doc
+    showGlobalRef.current = showGlobal
+    if (simRef.current && builtDocRef.current !== doc) {
+      // Live edits mutate the running world; structural edits rebuild at t = 0 (PHY-39).
+      const route = routeDocChange(builtDocRef.current, doc)
+      if (route.kind === 'structural') {
+        statesRef.current = null
+        pendingRebuildRef.current = true
+      } else {
+        try {
+          applyLiveOps(simRef.current, route.ops)
+          builtDocRef.current = doc
+        } catch (e) {
+          dispatch({ type: 'reset' })
+          setSimError(messageOf(e))
+        }
+      }
+    }
+    repaint()
+  }, [doc, showGlobal, repaint, dispatch])
+
+  const switchToScene = useCallback(
+    (id: string) => {
+      saverRef.current?.flush()
+      const { scene, warning } = loadSceneOrBlank(storage, id)
+      if (warning) setStorageWarning(warning)
+      lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
+      setSceneIndex(loadIndex(storage))
+      setCurrentId(id)
+      saveCurrentSceneId(storage, id)
+      setDoc(scene)
+      setSelection(null)
+      setTool(null)
+      setToolError(null)
+      setImportError(null)
+      // Switching/importing/creating/deleting a scene starts a fresh document
+      // identity — undo history from the PREVIOUS scene makes no sense here.
+      setHistory(clearHistory())
+      // Reset playback against the new document (PHY-36).
+      docRef.current = scene
+      dispatch({ type: 'reset' })
+    },
+    [storage, dispatch],
   )
 
   /**
@@ -808,6 +1034,7 @@ export default function App() {
           simRef.current = sim
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
+          constraintsRef.current = sim.readConstraints()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc
           setSimError(null)
@@ -872,19 +1099,17 @@ export default function App() {
 
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
-    if (!step) return
+    if (!step || !editDoc(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-    setDoc(step.entry)
-  }, [dispatch])
+  }, [dispatch, editDoc])
 
   const redo = useCallback(() => {
     const step = redoHistory(historyRef.current, docRef.current)
-    if (!step) return
+    if (!step || !editDoc(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-    setDoc(step.entry)
-  }, [dispatch])
+  }, [dispatch, editDoc])
 
   // The single keyboard-shortcut listener for the whole editor (T-PHY-14):
   // reads latest state off refs so it never needs re-subscribing on every
@@ -924,7 +1149,12 @@ export default function App() {
           break
         case 'deselectOrClose':
           if (showShortcutsRef.current) setShowShortcuts(false)
-          else setSelectedId(null)
+          else if (toolRef.current) {
+            setTool(null)
+            setToolError(null)
+          } else {
+            setSelection(null)
+          }
           break
         case 'toggleHelp':
           setShowShortcuts((v) => !v)
@@ -969,11 +1199,63 @@ export default function App() {
     return { sx: e.clientX - r.left, sy: e.clientY - r.top }
   }
 
+  /**
+   * Palette tool click, every body anchor through Anchor snap. Pulley: one
+   * click on a body. Spring: anchor A, then anchor B. Rope: anchor A, then the
+   * pulleys in order, then anchor B. A click off every body is ignored, and so
+   * is one that would join A's body to itself with nothing in between.
+   */
+  function onToolClick(w: Vec2) {
+    const tool = toolRef.current
+    if (!tool) return
+    const view = applyStates(docRef.current, statesRef.current)
+    if (tool.kind === 'rope') {
+      const pulley = pulleyAtPoint(view, w, AXLE_HIT_RADIUS_PX / camera.pixelsPerMeter)
+      if (pulley) {
+        // A pulley never ends a rope, and clicked twice in a row it counts once.
+        if (tool.a && tool.via[tool.via.length - 1] !== pulley.id) setTool({ ...tool, via: [...tool.via, pulley.id] })
+        return
+      }
+    }
+    const hit = bodyAtPoint(view.bodies, w)
+    if (!hit) return
+    const anchor = anchorSnap(hit, w, transform)
+    if (tool.kind === 'pulley') {
+      finishTool(addPulley(docRef.current, hit.id, anchor))
+      return
+    }
+    const end: ConstraintEnd = { bodyId: hit.id, anchor }
+    if (!tool.a) {
+      setTool({ ...tool, a: end })
+      return
+    }
+    if (tool.a.bodyId === hit.id && (tool.kind === 'spring' || tool.via.length === 0)) return
+    finishTool(tool.kind === 'spring' ? addSpring(docRef.current, tool.a, end) : addRope(docRef.current, tool.a, tool.via, end))
+  }
+
+  /** Commits what a tool built and selects it; a refusal stays on the tool's hint line. */
+  function finishTool(res: MutationResult) {
+    if (res.error) {
+      setToolError(res.error)
+      return
+    }
+    // Ids are scoped per list, so a pulley may share the new constraint's id: the list that grew says which it is.
+    const kind = (res.doc.pulleys?.length ?? 0) > (docRef.current.pulleys?.length ?? 0) ? 'pulley' : 'constraint'
+    if (!commitDoc(res.doc)) return
+    setTool(null)
+    setToolError(null)
+    setSelection(res.newId ? { kind, id: res.newId } : null)
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     const w = eventToWorld(e)
+    if (toolRef.current) {
+      onToolClick(w)
+      return
+    }
     const { sx, sy } = eventToScreen(e)
-    const bodies = liveBodies()
-    const selected = bodies.find((b) => b.id === selectedId)
+    const view = applyStates(docRef.current, statesRef.current)
+    const selected = view.bodies.find((b) => b.id === selectedId)
 
     // Handles win over body hit-testing while a body is selected.
     if (selected) {
@@ -993,17 +1275,39 @@ export default function App() {
         }
         return
       }
+      // Then the application points of its forces, which drag with Anchor snap.
+      const grabbed = docRef.current.forces.find((f) => {
+        if (f.bodyId !== selected.id) return false
+        const p = bodyPointToWorld(selected, f.anchor)
+        const s = worldToScreen(transform, p.x, p.y)
+        return Math.hypot(s.x - sx, s.y - sy) <= HANDLE_HIT_RADIUS_PX
+      })
+      if (grabbed) {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        dragRef.current = { kind: 'forceAnchor', id: selected.id, forceId: grabbed.id, startDoc: docRef.current }
+        return
+      }
     }
 
-    const hit = bodyAtPoint(bodies, w)
+    // A pulley is drawn over the bodies and wins over them, except over its
+    // own mount body away from the axle. A body under the pointer wins over a
+    // spring or rope end anchored on it; lines are picked where they cross open space.
+    const pulley = pulleyAtPoint(view, w, AXLE_HIT_RADIUS_PX / camera.pixelsPerMeter)
+    if (pulley) {
+      setSelection({ kind: 'pulley', id: pulley.id })
+      return
+    }
+    const hit = bodyAtPoint(view.bodies, w)
     if (hit) {
-      setSelectedId(hit.id)
+      setSelection({ kind: 'body', id: hit.id })
       dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, startDoc: docRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
-    } else {
-      setSelectedId(null)
+      return
     }
+    const tolerance = LINE_HIT_TOLERANCE_PX / camera.pixelsPerMeter
+    const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance)
+    setSelection(line ? { kind: 'constraint', id: line.id } : null)
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1012,7 +1316,7 @@ export default function App() {
     const raw = eventToWorld(e)
 
     if (drag.kind === 'move') {
-      setDoc((d) => {
+      editDoc((d) => {
         const body = d.bodies.find((candidate) => candidate.id === drag.id)
         if (!body) return d
         const proposed = {
@@ -1031,14 +1335,19 @@ export default function App() {
 
     if (drag.kind === 'rotate') {
       const angle = Math.atan2(raw.y - body.position.y, raw.x - body.position.x)
-      setDoc((d) => updateBody(d, drag.id, { rotation: drag.startRotation + angle - drag.startAngle }))
+      editDoc((d) => updateBody(d, drag.id, { rotation: drag.startRotation + angle - drag.startAngle }))
+      return
+    }
+
+    if (drag.kind === 'forceAnchor') {
+      editDoc((d) => updateForce(d, drag.forceId, { anchor: anchorSnap(body, raw, transform) }))
       return
     }
 
     if (drag.kind === 'alpha') {
       // α is an angle input - snapping the pointer position would fight the atan2.
       const local = worldToLocal(body, raw)
-      setDoc((d) => updateBody(d, drag.id, { alpha: alphaFromLocal(local.x, local.y) }))
+      editDoc((d) => updateBody(d, drag.id, { alpha: alphaFromLocal(local.x, local.y) }))
       return
     }
 
@@ -1046,7 +1355,7 @@ export default function App() {
     const local = worldToLocal(body, raw)
     switch (body.shape) {
       case 'rectangle':
-        setDoc((d) =>
+        editDoc((d) =>
           updateBody(d, drag.id, {
             width: minDimension(2 * Math.abs(local.x)),
             height: minDimension(2 * Math.abs(local.y)),
@@ -1054,32 +1363,30 @@ export default function App() {
         )
         break
       case 'circle':
-        setDoc((d) => updateBody(d, drag.id, { radius: minDimension(Math.hypot(local.x, local.y)) }))
+        editDoc((d) => updateBody(d, drag.id, { radius: minDimension(Math.hypot(local.x, local.y)) }))
         break
       case 'triangle':
         // Dragging the base handle edits base only; height derives from α.
-        setDoc((d) => updateBody(d, drag.id, { base: minDimension(local.x) }))
+        editDoc((d) => updateBody(d, drag.id, { base: minDimension(local.x) }))
         break
     }
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragRef.current
-    // One complete drag (move/rotate/resize/alpha) is a single undo step:
-    // push the pre-drag snapshot ONCE, here, never on pointermove.
-    if (drag && drag.startDoc !== docRef.current) {
-      setHistory((h) => pushHistory(h, drag.startDoc))
-    }
     if (drag?.kind === 'move') {
       const { sx, sy } = eventToScreen(e)
       if (pointInTrash(trashRectValue, sx, sy)) {
-        setDoc((d) => removeBodyAndDependents(d, drag.id))
-        setSelectedId(null)
+        if (editDoc((d) => removeBodyAndDependents(d, drag.id))) setSelection(null)
       } else if (drag.neighborId) {
         // Contact is declared here, on drop, never mid-drag; duplicate pairs
         // are a silent no-op (addContact's own guard).
-        setDoc((d) => addContact(d, drag.id, drag.neighborId!).doc)
+        editDoc((d) => addContact(d, drag.id, drag.neighborId!).doc)
       }
+    }
+    // Include drop-only removal/contact in the same single undo entry.
+    if (drag && drag.startDoc !== docRef.current) {
+      setHistory((h) => pushHistory(h, drag.startDoc))
     }
     dragRef.current = null
     repaint() // hide the trash target
@@ -1098,11 +1405,32 @@ export default function App() {
         : shape === 'circle'
           ? { ...common, shape, radius: 0.75 }
           : { ...common, shape, base: 2, alpha: 30 }
-    commitDoc({ ...doc, bodies: [...doc.bodies, body] })
-    setSelectedId(id)
+    if (commitDoc({ ...doc, bodies: [...doc.bodies, body] })) setSelection({ kind: 'body', id })
+  }
+
+  /** Arms a palette tool; selection yields to it until it finishes or Esc cancels. */
+  function armTool(next: Tool) {
+    setTool(next)
+    setToolError(null)
+    setSelection(null)
+  }
+
+  /** Refuses a spring edit that would not survive the codec (PHY-27, proxy decision on criterion 3). */
+  function commitSpringEdit(edit: (d: Scene) => Scene): boolean {
+    const next = edit(docRef.current)
+    const s = next.constraints?.find((c) => c.id === selectedConstraintId)
+    if (s?.kind !== 'spring' || !(s.k > 0 && s.x0 > 0 && (s.c ?? 0) >= 0 && (s.mass ?? 0) >= 0)) return false
+    return commitDoc(next)
   }
 
   const selected = selectedId ? (doc.bodies.find((b) => b.id === selectedId) ?? null) : null
+  const selectedSpring = doc.constraints?.find((c): c is Spring => c.id === selectedConstraintId && c.kind === 'spring') ?? null
+  const selectedRope = doc.constraints?.find((c): c is Rope => c.id === selectedConstraintId && c.kind === 'rope') ?? null
+  const selectedPulley = doc.pulleys?.find((p) => p.id === selectedPulleyId) ?? null
+  // T differs per leg only across a pulley with mass (PHY-25).
+  const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
+  const selectedConstraint = selectedSpring ?? selectedRope
+  const selectedItem = selected ?? selectedConstraint ?? selectedPulley
   const warnings = collectWarnings(doc)
 
   return (
@@ -1176,7 +1504,7 @@ export default function App() {
                 border: '1px solid #999',
                 background: '#fafbfc',
                 touchAction: 'none',
-                cursor: selected ? 'grab' : 'default',
+                cursor: tool ? 'crosshair' : selected ? 'grab' : 'default',
               }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
@@ -1237,10 +1565,10 @@ export default function App() {
             <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
               {t('playback.reset')}
             </button>
-            <button onClick={undo} disabled={!canUndo(history)} title={t('playback.undoTitle')}>
+            <button onClick={undo} disabled={!canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
               ↶
             </button>
-            <button onClick={redo} disabled={!canRedo(history)} title={t('playback.redoTitle')}>
+            <button onClick={redo} disabled={!canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
               ↷
             </button>
             <span style={{ position: 'relative' }}>
@@ -1300,10 +1628,19 @@ export default function App() {
             </label>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
-            <button onClick={() => addShape('circle')}>{t('palette.circle')}</button>
-            <button onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
+            <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
+            <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>
+            <button disabled={structuralLocked} onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
+            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
+            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
+            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
           </div>
+          {(tool || toolError) && (
+            <div style={{ fontSize: 12, color: '#555' }}>
+              {tool && t(toolHint(tool))}
+              {toolError && <span style={{ color: '#b00' }}>{tool && ' — '}{t(toolError)}</span>}
+            </div>
+          )}
         </div>
         {/* The row sets the panel height; excess content scrolls independently.
             The width is fixed because the panel's content width changes with the
@@ -1322,12 +1659,7 @@ export default function App() {
             <input
               type="checkbox"
               checked={showGlobal}
-              onChange={(e) => {
-                const v = e.target.checked
-                setShowGlobal(v)
-                showGlobalRef.current = v
-                repaint()
-              }}
+              onChange={(e) => setShowGlobal(e.target.checked)}
             />{' '}
             {t('panel.showVectors')}
           </label>
@@ -1459,16 +1791,25 @@ export default function App() {
             <fieldset style={{ width: 220 }}>
               <legend>{t('gallery.title')}</legend>
               <div style={{ display: 'grid', gap: 6 }}>
-                {PRESETS.map((p) => (
-                  <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
-                    <input type="radio" name="preset" checked={selectedPreset === p.id} onChange={() => setSelectedPreset(p.id)} />
-                    <span style={{ fontSize: 12 }}>
-                      <strong>{t(`preset.${p.id}.name`)}</strong>
-                      <br />
-                      <span style={{ color: '#555' }}>{t(`preset.${p.id}.description`)}</span>
-                    </span>
-                  </label>
-                ))}
+                {galleryGroups().map(({ node, presets }) => {
+                  const keys = nodeLabelKeys(node)
+                  const path = keys.map((k) => t(k)).join(' / ')
+                  return (
+                    <div key={keys[keys.length - 1]} role="group" aria-label={path} style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{path}</div>
+                      {presets.map((p) => (
+                        <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
+                          <input type="radio" name="preset" checked={selectedPreset === p.id} onChange={() => setSelectedPreset(p.id)} />
+                          <span style={{ fontSize: 12 }}>
+                            <strong>{t(`preset.${p.id}.name`)}</strong>
+                            <br />
+                            <span style={{ color: '#555' }}>{t(`preset.${p.id}.description`)}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )
+                })}
                 <button
                   onClick={() => {
                     const preset = PRESETS.find((x) => x.id === selectedPreset)
@@ -1503,7 +1844,9 @@ export default function App() {
             </fieldset>
           )}
           <fieldset style={{ width: 220 }}>
-            <legend>{selected ? t('readout.title', { id: selected.id }) : t('readout.titleEmpty')}</legend>
+            <legend>
+              {selectedItem ? t('readout.title', { id: selectedItem.id }) : t('readout.titleEmpty')}
+            </legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               <div>{t('readout.steps')}: {stepsTick}</div>
               <div>{t('readout.speed')}: {playback.speed.toFixed(2)}×</div>
@@ -1530,7 +1873,39 @@ export default function App() {
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {!selected && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
+              {selectedSpring && constraintReadout?.kind === 'spring' && (
+                <>
+                  {/* F_el differs per end only on a spring with mass (PHY-30), labelled as its arrows. */}
+                  {(selectedSpring.mass ?? 0) > 0 ? (
+                    [constraintReadout.force.a, constraintReadout.force.b].map((F, i) => (
+                      <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
+                        {numberedSymbol(t('readout.springForce'), i + 1)}: {F.toFixed(2)} N
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.springForce')}: {constraintReadout.force.a.toFixed(2)} N
+                    </div>
+                  )}
+                  <div>
+                    {t('readout.springDx')}: {constraintReadout.dx.toFixed(3)} m
+                  </div>
+                </>
+              )}
+              {selectedRope && constraintReadout?.kind === 'rope' && (
+                <>
+                  {(ropePerLeg ? constraintReadout.segments : [constraintReadout.tension]).map((T, i) => (
+                    <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.ropeTension')}{ropePerLeg ? subscript(i + 1) : ''}: {T.toFixed(2)} N
+                    </div>
+                  ))}
+                  {constraintReadout.slack && <div>{t('readout.ropeSlack')}</div>}
+                </>
+              )}
+              {((selectedConstraint && constraintReadout?.kind !== selectedConstraint.kind) || selectedPulley) && (
+                <div style={{ color: '#777' }}>{t('readout.noData')}</div>
+              )}
+              {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
           <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
@@ -1538,15 +1913,17 @@ export default function App() {
             <input
               type="checkbox"
               checked={doc.constants.particleMode ?? false}
+              disabled={structuralLocked}
               onChange={(e) => commitDoc((d) => updateParticleMode(d, e.target.checked))}
             />{' '}
             {t('panel.particleMode')}
           </label>
           {selected && (
             <>
-              <PropertiesPanel body={selected} onPatch={(patch) => commitDoc((d) => updateBody(d, selected.id, patch))} />
+              <PropertiesPanel body={selected} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updateBody(d, selected.id, patch))} />
               <ForcesPanel
                 bodyId={selected.id}
+                structuralLocked={structuralLocked}
                 forces={doc.forces.filter((f) => f.bodyId === selected.id)}
                 onAdd={() => {
                   const res = addForce(doc, { bodyId: selected.id, anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 })
@@ -1558,8 +1935,23 @@ export default function App() {
               />
             </>
           )}
+          {selectedSpring && (
+            <SpringPanel
+              key={selectedSpring.id}
+              spring={selectedSpring}
+              disabled={structuralLocked}
+              dx={springDx(doc, selectedSpring)}
+              onEdit={commitSpringEdit}
+              onDelete={deleteSelected}
+            />
+          )}
+          {selectedRope && <RopePanel rope={selectedRope} disabled={structuralLocked} length={scenePath(doc, selectedRope)?.length ?? null} onDelete={deleteSelected} />}
+          {selectedPulley && (
+            <PulleyPanel pulley={selectedPulley} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
+          )}
           <ContactsPanel
             doc={doc}
+            disabled={structuralLocked}
             onAdd={(a, b) => {
               const res = addContact(doc, a, b)
               commitDoc(res.doc)
@@ -1585,15 +1977,15 @@ export default function App() {
           {selected && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button
+                disabled={structuralLocked}
                 onClick={() => {
                   const { doc: next, newId } = duplicateBody(doc, selected.id)
-                  commitDoc(next)
-                  if (newId) setSelectedId(newId)
+                  if (commitDoc(next) && newId) setSelection({ kind: 'body', id: newId })
                 }}
               >
                 {t('panel.duplicate')}
               </button>
-              <button onClick={deleteSelected}>{t('panel.delete')}</button>
+              <button disabled={structuralLocked} onClick={deleteSelected}>{t('panel.delete')}</button>
             </div>
           )}
         </div>

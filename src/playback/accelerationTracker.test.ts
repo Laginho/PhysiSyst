@@ -162,6 +162,50 @@ describe('accelerationTracker elapsed-carry and readout truth', () => {
     expect(getAcceleration(initialTracker(), scene, 'b', true).approximate).toBe(true)
   })
 
+  it('marks a never-stepped body on a stretched spring as approximate, not exact g', () => {
+    const scene = sceneOf([fixedBody('wall'), dynamicBody('bloco', { mass: 1 })], {
+      constraints: [{
+        id: 'mola',
+        kind: 'spring',
+        a: { bodyId: 'wall', anchor: { x: 0, y: 0 } },
+        b: { bodyId: 'bloco', anchor: { x: 0, y: 0 } },
+        k: 40,
+        x0: 1.05,
+      }],
+    })
+
+    expect(getAcceleration(initialTracker(), scene, 'bloco', true).approximate).toBe(true)
+  })
+
+  it('marks both rope ends and a rope-carrying pulley body as approximate before the first step', () => {
+    const scene = sceneOf([fixedBody('ceiling'), dynamicBody('left'), dynamicBody('right'), dynamicBody('free')], {
+      pulleys: [{ id: 'p', bodyId: 'ceiling', anchor: { x: 0, y: 0 }, radius: 0.1 }],
+      constraints: [{
+        id: 'corda',
+        kind: 'rope',
+        a: { bodyId: 'left', anchor: { x: 0, y: 0 } },
+        b: { bodyId: 'right', anchor: { x: 0, y: 0 } },
+        via: ['p'],
+      }],
+    })
+    const movable = sceneOf([dynamicBody('carrier'), dynamicBody('a'), dynamicBody('b')], {
+      pulleys: [{ id: 'm', bodyId: 'carrier', anchor: { x: 0, y: 0 }, radius: 0.1 }],
+      constraints: [{
+        id: 'corda',
+        kind: 'rope',
+        a: { bodyId: 'a', anchor: { x: 0, y: 0 } },
+        b: { bodyId: 'b', anchor: { x: 0, y: 0 } },
+        via: ['m'],
+      }],
+    })
+
+    expect(getAcceleration(initialTracker(), scene, 'left', true).approximate).toBe(true)
+    expect(getAcceleration(initialTracker(), scene, 'right', true).approximate).toBe(true)
+    expect(getAcceleration(initialTracker(), movable, 'carrier', true).approximate).toBe(true)
+    expect(getAcceleration(initialTracker(), scene, 'free', true)).toEqual({ x: 0, y: -9.81, approximate: false })
+    expect(getAcceleration(initialTracker(), scene, 'ceiling', true)).toEqual({ x: 0, y: 0, approximate: false })
+  })
+
   it('returns zero safely for fixed bodies and unknown ids', () => {
     const scene = sceneOf([fixedBody(), dynamicBody()])
 

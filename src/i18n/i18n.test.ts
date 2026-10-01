@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { en } from './en'
 import { ptBR } from './pt-BR'
 import { t, setLang, initLang, allKeys, LANG_KEY } from './index'
+import { PRESETS, TREE } from '../presets'
 
 function memStorage() {
   const m = new Map<string, string>()
@@ -222,6 +223,49 @@ describe('projectile Preset descriptions', () => {
       expect(description).not.toMatch(/force/)
     } finally {
       setLang('pt-BR')
+    }
+  })
+})
+
+describe('preset and tree-node keys (PHY-31)', () => {
+  // Node labels: `tree.<area>`, `tree.<area>.<part>`, `tree.<area>[.<part>].<topic>`.
+  const keys = [
+    ...PRESETS.flatMap((p) => [`preset.${p.id}.name`, `preset.${p.id}.description`]),
+    ...TREE.flatMap((n) => [
+      `tree.${n.area}`,
+      ...(n.part ? [`tree.${n.area}.${n.part}`] : []),
+      `tree.${[n.area, n.part, n.topic].filter(Boolean).join('.')}`,
+    ]),
+  ]
+
+  it('every preset name and description and every node label is in both catalogs, non-empty', () => {
+    expect(PRESETS.length).toBeGreaterThanOrEqual(12)
+    for (const key of keys) {
+      expect((ptBR as Record<string, string>)[key], key).toBeTruthy()
+      expect((en as Record<string, string>)[key], key).toBeTruthy()
+    }
+  })
+
+  it('the two catalogs read differently for the tree roots (translated, not copied)', () => {
+    expect((ptBR as Record<string, string>)['tree.mecanica']).toBe('Mecânica')
+    expect((en as Record<string, string>)['tree.mecanica']).toBe('Mechanics')
+  })
+})
+
+describe('Vector label symbols (PHY-29)', () => {
+  const table: Array<[string, string, string]> = [
+    ['vector.weight', 'P', 'W'],
+    ['vector.normal', 'N', 'N'],
+    ['vector.applied', 'F', 'F'],
+    ['vector.tension', 'T', 'T'],
+    ['vector.elastic', 'F_el', 'F_s'],
+    ['vector.initialVelocity', 'v₀', 'v₀'],
+  ]
+
+  it('both catalogs carry the symbol table', () => {
+    for (const [key, pt, english] of table) {
+      expect((ptBR as Record<string, string>)[key], key).toBe(pt)
+      expect((en as Record<string, string>)[key], key).toBe(english)
     }
   })
 })

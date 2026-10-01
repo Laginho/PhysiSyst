@@ -1,4 +1,4 @@
-import type { Scene } from '../scene'
+import { constraintTouchesBody, type Scene } from '../scene'
 import type { BodyState } from '../sim'
 import { TIMESTEP } from '../sim/timestep'
 import { computeAcceleration } from '../render/overlay'
@@ -72,6 +72,12 @@ export function getAcceleration(tracker: AccelTracker, scene: Scene, id: string,
   if (measured) return { ...measured, approximate: false }
   const body = scene.bodies.find((candidate) => candidate.id === id)
   const analytic = estimateAnalyticAcceleration(scene, id)
-  const approximate = Boolean(body && !body.fixed && body.mass > 0 && scene.contacts.some((contact) => contact.a === id || contact.b === id))
+  const approximate = Boolean(body && !body.fixed && body.mass > 0 && isHeld(scene, id))
   return { ...analytic, approximate }
+}
+
+// The analytic estimate knows no contact, rope or spring force; any of them makes it a guess.
+function isHeld(scene: Scene, id: string): boolean {
+  if (scene.contacts.some((contact) => contact.a === id || contact.b === id)) return true
+  return (scene.constraints ?? []).some((constraint) => constraintTouchesBody(scene, constraint, id))
 }

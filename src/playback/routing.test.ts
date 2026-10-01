@@ -4,7 +4,7 @@
  * records + g) or needs a carried structural rebuild. Table-driven per PLAN.
  */
 import { describe, expect, it } from 'vitest'
-import type { Scene } from '../scene'
+import type { Rope, Scene } from '../scene'
 import type { Simulator } from '../sim'
 import { applyLiveOps, routeDocChange } from './routing'
 
@@ -256,7 +256,7 @@ describe('PHY-23: pulleys and constraints route structural', () => {
     ['pulley anchor moved', roped(), editRoped((s) => void (s.pulleys![0]!.anchor = { x: 1.5, y: 3 }))],
     ['rope removed', roped(), editRoped((s) => void s.constraints!.pop())],
     ['rope end anchor moved', roped(), editRoped((s) => void (s.constraints![0]!.a.anchor = { x: 0.1, y: 0 }))],
-    ['rope via changed', roped(), editRoped((s) => void (s.constraints![0]!.via = []))],
+    ['rope via changed', roped(), editRoped((s) => void ((s.constraints![0] as Rope).via = []))],
   ])('%s -> structural', (_name, prev, next) => {
     expect(routeDocChange(prev, next).kind).toBe('structural')
   })
@@ -264,5 +264,33 @@ describe('PHY-23: pulleys and constraints route structural', () => {
   it('an unchanged roped scene stays live, and an absent collection equals an empty one', () => {
     expect(routeDocChange(roped(), roped()).kind).toBe('live')
     expect(routeDocChange(base(), { ...base(), pulleys: [], constraints: [] }).kind).toBe('live')
+  })
+})
+
+describe('PHY-26: springs route structural', () => {
+  function sprung(): Scene {
+    const s = base()
+    s.constraints = [{ id: 'mola', kind: 'spring', a: { bodyId: 'floor', anchor: { x: 0, y: 1 } }, b: { bodyId: 'a', anchor: { x: 0, y: 0 } }, k: 40, x0: 1 }]
+    return s
+  }
+  const editSprung = (fn: (s: Extract<NonNullable<Scene['constraints']>[number], { kind: 'spring' }>) => void): Scene => {
+    const s = sprung()
+    fn(s.constraints![0] as Extract<NonNullable<Scene['constraints']>[number], { kind: 'spring' }>)
+    return s
+  }
+
+  it.each<[string, Scene, Scene]>([
+    ['spring added', base(), sprung()],
+    ['spring removed', sprung(), { ...sprung(), constraints: [] }],
+    ['k changed', sprung(), editSprung((m) => void (m.k = 80))],
+    ['x0 changed', sprung(), editSprung((m) => void (m.x0 = 1.2))],
+    ['c added', sprung(), editSprung((m) => void (m.c = 0.5))],
+    ['end anchor moved', sprung(), editSprung((m) => void (m.b.anchor = { x: 0.1, y: 0 }))],
+  ])('%s -> structural', (_name, prev, next) => {
+    expect(routeDocChange(prev, next).kind).toBe('structural')
+  })
+
+  it('an unchanged sprung scene stays live', () => {
+    expect(routeDocChange(sprung(), sprung()).kind).toBe('live')
   })
 })

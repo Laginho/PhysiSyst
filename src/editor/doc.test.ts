@@ -3,16 +3,26 @@ import type { Scene } from '../scene'
 import {
   addContact,
   addForce,
+  addPulley,
+  addRope,
+  addSpring,
+  PULLEY_DEFAULT_RADIUS,
+  removePulleyAndDependents,
+  updatePulley,
   duplicateBody,
   freshId,
   removeBodyAndDependents,
+  removeConstraint,
   removeContact,
   removeForce,
+  setSpringDx,
+  springDx,
   updateBody,
   updateContact,
   updateForce,
   updateG,
   updateParticleMode,
+  updateSpring,
 } from './doc'
 
 const DOC: Scene = {
@@ -183,6 +193,25 @@ describe('PHY-23: removeBodyAndDependents with pulleys and ropes', () => {
     expect(next).not.toHaveProperty('pulleys')
     expect(next).not.toHaveProperty('constraints')
   })
+
+  // PHY-26: springs s1 (c1–a) and s2 (b–c) beside the two ropes.
+  const SPRUNG: Scene = {
+    ...ROPED,
+    constraints: [
+      ...ROPED.constraints!,
+      { id: 's1', kind: 'spring', a: end('c1'), b: end('a'), k: 40, x0: 1 },
+      { id: 's2', kind: 'spring', a: end('b'), b: end('c'), k: 40, x0: 1, c: 0.5 },
+    ],
+  }
+
+  it.each([
+    ['a', ['r2', 's2']],
+    ['c1', ['r2', 's2']],
+    ['c', ['r1', 's1']],
+    ['b', ['s1']],
+  ])('removing %s removes the springs tied to it and keeps the rest', (id, left) => {
+    expect(removeBodyAndDependents(SPRUNG, id).constraints!.map((c) => c.id)).toEqual(left)
+  })
 })
 // ---------- T6: forces, contacts, constants ----------
 
@@ -283,6 +312,154 @@ describe('updateG', () => {
   it('preserves sibling constants fields (particleMode) — T7/M2', () => {
     const withParticles: typeof DOC = { ...DOC, constants: { g: 9.81, particleMode: true } }
     expect(updateG(withParticles, 3.72).constants.particleMode).toBe(true)
+  })
+})
+
+// ---------- PHY-27: springs ----------
+
+describe('addSpring', () => {
+  // a sits at (0,0); b's anchor (-2,-5) lands at world (3,0): 3 m apart.
+  const A = { bodyId: 'a', anchor: { x: 0, y: 0 } }
+  const B = { bodyId: 'b', anchor: { x: -2, y: -5 } }
+  const spring = (doc: Scene, id: string) => {
+    const found = doc.constraints?.find((c) => c.id === id)
+    if (found?.kind !== 'spring') throw new Error(`no spring ${id}`)
+    return found
+  }
+
+  it('adds exactly one relaxed spring: x0 is the current anchor distance, no damping', () => {
+    const { doc, newId, error } = addSpring(DOC, A, B)
+    expect(error).toBeNull()
+    expect(newId).toBe('mola')
+    expect(doc.constraints).toHaveLength(1)
+    const s = spring(doc, 'mola')
+    expect(s).toMatchObject({ kind: 'spring', a: A, b: B })
+    expect(s.x0).toBeCloseTo(3, 12)
+    expect(s.k).toBeGreaterThan(0)
+    expect(s).not.toHaveProperty('c')
+    expect(DOC).not.toHaveProperty('constraints')
+  })
+
+  it('measures x0 between the anchors in the world, through each body rotation', () => {
+    // Rotated +90°, b's anchor (-5, 3) lands at (5,5) + (-3,-5) = (2, 0).
+    const turned = updateBody(DOC, 'b', { rotation: Math.PI / 2 })
+    const s = spring(addSpring(turned, A, { bodyId: 'b', anchor: { x: -5, y: 3 } }).doc, 'mola')
+    expect(s.x0).toBeCloseTo(2, 12)
+  })
+
+  it('gives a second spring a fresh id in the constraint namespace', () => {
+    const once = addSpring(DOC, A, B).doc
+    expect(addSpring(once, B, A).newId).toBe('mola-2')
+  })
+
+  it('rejects a spring from a body to itself, a missing body, or with coincident anchors (same doc ref + reason key)', () => {
+    expect(addSpring(DOC, A, { bodyId: 'a', anchor: { x: 1, y: 0 } })).toEqual({ doc: DOC, newId: null, error: 'error.parConsigoMesmo' })
+    expect(addSpring(DOC, A, { bodyId: 'ghost', anchor: { x: 0, y: 0 } })).toEqual({ doc: DOC, newId: null, error: 'error.corpoInexistente' })
+    // b's anchor (-5,-5) lands exactly on a's center: x0 = 0 is not a spring.
+    expect(addSpring(DOC, A, { bodyId: 'b', anchor: { x: -5, y: -5 } })).toEqual({ doc: DOC, newId: null, error: 'error.molaSemComprimento' })
+  })
+})
+
+describe('spring editing: k, c, x0 and the x0/Δx link', () => {
+  const SPRUNG = addSpring(DOC, { bodyId: 'a', anchor: { x: 0, y: 0 } }, { bodyId: 'b', anchor: { x: -2, y: -5 } }).doc
+  const theSpring = (doc: Scene) => {
+    const s = doc.constraints![0]
+    if (s.kind !== 'spring') throw new Error('not a spring')
+    return s
+  }
+
+  it('updateSpring patches k, c and x0 immutably; unknown id is a no-op', () => {
+    const next = updateSpring(SPRUNG, 'mola', { k: 80, c: 0.4, x0: 2.5 })
+    expect(theSpring(next)).toMatchObject({ k: 80, c: 0.4, x0: 2.5 })
+    expect(theSpring(SPRUNG).x0).toBeCloseTo(3, 12)
+    expect(updateSpring(SPRUNG, 'zz', { k: 1 })).toBe(SPRUNG)
+  })
+
+  it('a relaxed spring has Δx = 0', () => {
+    expect(springDx(SPRUNG, theSpring(SPRUNG))).toBeCloseTo(0, 12)
+  })
+
+  it('setSpringDx writes x0 = x − Δx', () => {
+    const next = setSpringDx(SPRUNG, 'mola', -0.1)
+    expect(theSpring(next).x0).toBeCloseTo(3.1, 12)
+    expect(springDx(next, theSpring(next))).toBeCloseTo(-0.1, 12)
+  })
+
+  it('moving a linked body keeps x0 and changes Δx', () => {
+    const moved = updateBody(SPRUNG, 'b', { position: { x: 6, y: 5 } })
+    expect(theSpring(moved).x0).toBeCloseTo(3, 12)
+    expect(springDx(moved, theSpring(moved))).toBeCloseTo(1, 12)
+  })
+
+  it('removeConstraint removes only that constraint', () => {
+    const two = addSpring(SPRUNG, { bodyId: 'b', anchor: { x: 0, y: 0 } }, { bodyId: 'a', anchor: { x: 0, y: 0 } }).doc
+    const next = removeConstraint(two, 'mola')
+    expect(next.constraints!.map((c) => c.id)).toEqual(['mola-2'])
+    expect(next.bodies).toBe(two.bodies)
+    expect(removeConstraint(two, 'zz')).toBe(two)
+  })
+})
+
+// ---------- PHY-28: pulleys and ropes ----------
+
+describe('pulley and rope doc operations (PHY-28)', () => {
+  const up = { x: 0, y: 1 }
+  const ONE_PULLEY = addPulley(DOC, 'a', up).doc
+
+  it('addPulley mounts a massless pulley of the default radius at the anchor, with a fresh id', () => {
+    const { doc, newId, error } = addPulley(DOC, 'a', up)
+    expect(error).toBeNull()
+    expect(newId).toBe('polia')
+    expect(doc.pulleys).toEqual([{ id: 'polia', bodyId: 'a', anchor: up, radius: PULLEY_DEFAULT_RADIUS }])
+    expect(PULLEY_DEFAULT_RADIUS).toBeGreaterThan(0)
+    expect(DOC).not.toHaveProperty('pulleys')
+    expect(addPulley(doc, 'b', up).newId).toBe('polia-2')
+  })
+
+  it('addPulley rejects a missing body (same doc ref + reason key)', () => {
+    expect(addPulley(DOC, 'ghost', up)).toEqual({ doc: DOC, newId: null, error: 'error.corpoInexistente' })
+  })
+
+  it('updatePulley patches radius and mass immutably; unknown id is a no-op', () => {
+    const next = updatePulley(ONE_PULLEY, 'polia', { radius: 0.5, mass: 2 })
+    expect(next.pulleys![0]).toMatchObject({ radius: 0.5, mass: 2 })
+    expect(ONE_PULLEY.pulleys![0].radius).toBe(PULLEY_DEFAULT_RADIUS)
+    expect(updatePulley(ONE_PULLEY, 'zz', { radius: 1 })).toBe(ONE_PULLEY)
+  })
+
+  const A = { bodyId: 'a', anchor: { x: 0, y: 0 } }
+  const B = { bodyId: 'b', anchor: { x: 0, y: 0 } }
+  const TWO_PULLEYS = addPulley(ONE_PULLEY, 'b', up).doc
+
+  it('addRope keeps via in the order given, with a fresh id in the constraint namespace', () => {
+    const { doc, newId, error } = addRope(TWO_PULLEYS, A, ['polia-2', 'polia'], B)
+    expect(error).toBeNull()
+    expect(newId).toBe('corda')
+    expect(doc.constraints).toEqual([{ id: 'corda', kind: 'rope', a: A, b: B, via: ['polia-2', 'polia'] }])
+    expect(addRope(doc, A, [], B).newId).toBe('corda-2')
+  })
+
+  it('addRope accepts both ends on one body when the rope passes over a pulley', () => {
+    expect(addRope(ONE_PULLEY, A, ['polia'], { bodyId: 'a', anchor: { x: 1, y: 0 } }).error).toBeNull()
+  })
+
+  it('addRope rejects what the codec would (same doc ref + reason key)', () => {
+    expect(addRope(ONE_PULLEY, A, [], { bodyId: 'a', anchor: { x: 1, y: 0 } })).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.parConsigoMesmo' })
+    expect(addRope(ONE_PULLEY, A, ['polia'], { bodyId: 'ghost', anchor: { x: 0, y: 0 } })).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.corpoInexistente' })
+    expect(addRope(ONE_PULLEY, A, ['ghost'], B)).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.poliaInexistente' })
+    expect(addRope(ONE_PULLEY, A, ['polia', 'polia'], B)).toEqual({ doc: ONE_PULLEY, newId: null, error: 'error.poliaRepetida' })
+  })
+
+  it('removing a pulley removes every rope passing over it, and nothing else', () => {
+    let doc = addRope(TWO_PULLEYS, A, ['polia'], B).doc
+    doc = addRope(doc, A, ['polia-2'], B).doc
+    doc = addRope(doc, A, [], B).doc
+    doc = addSpring(doc, A, { bodyId: 'b', anchor: { x: -2, y: -5 } }).doc
+    const next = removePulleyAndDependents(doc, 'polia')
+    expect(next.pulleys!.map((p) => p.id)).toEqual(['polia-2'])
+    expect(next.constraints!.map((c) => c.id)).toEqual(['corda-2', 'corda-3', 'mola'])
+    expect(next.bodies).toBe(doc.bodies)
+    expect(removePulleyAndDependents(doc, 'zz')).toBe(doc)
   })
 })
 
