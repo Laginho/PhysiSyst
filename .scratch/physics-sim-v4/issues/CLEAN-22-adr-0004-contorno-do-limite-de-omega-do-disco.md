@@ -1,5 +1,5 @@
 # CLEAN-22: ADR-0004 descreve o contorno do limite de ω no disco da polia
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-50
 Review: agent
@@ -31,3 +31,4 @@ O ADR passa a descrever a preservação de ω entregue pelo PHY-50. Hoje a conse
 ## Comments
 
 - 2026-10-01 Aberto pela revisão Standards do PHY-50, sobre `54b0350`. A última consequência do ADR-0004 ainda diz “The ceiling is Rapier's own cap on ω, tracked in PHY-50; this mechanism does not lift it”, descrição superada para os discos. O Quality gate §5 exige manter decisões não óbvias documentadas. O ADR fica fora dos Primary files e dos critérios numerados do PHY-50; a correção segue separadamente conforme o ticket-flow.
+- 2026-10-01 Stage 2. Sem teste novo (documentação apenas, como o ticket prevê). O ADR agora descreve o guarda-e-devolve de ω conferido contra `step()` (L964-969), `pullPieces` (`w0`, L1176) e `correctPieces` (L1234); o aro mora no mount, não no disco, então "discos sem contatos" vale. Gate: lint, typecheck e build verdes; `npm test` 795/796. A falha é `simulator.test.ts > no invisible walls (T7/M2) > a body launched beyond the viewport…`, timeout de 5000 ms (6,3 s na suíte cheia, 3,2 s isolado e verde). Reproduz idêntica na base sem a minha mudança (stash), então não é desta edição; tocar o teste ou o timeout está fora dos Primary files e do critério 3. O gate verde (critério 4) não foi alcançado por causa disso.
