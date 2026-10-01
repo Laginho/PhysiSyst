@@ -1,5 +1,5 @@
 # PHY-47: Mola ideal com `k` e `c` implícitos, certa no superamortecido e estável quando rígida
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -341,3 +341,47 @@ Gate independente na produção intacta: `npm test && npm run lint && npm run ty
 - Mutação PHY-40 exigida pelo critério 5: somente `pushSpring` de `bee7949`, com `F = k·dx + c·rate / (1 + c·Δt·K)` → `npx vitest run src/sim/acceptance.test.ts -t PHY-47`, exit 1, `7 failed | 10 passed | 54 skipped (71)`. As sete saídas individuais coincidem com a tabela original: deslocamentos 0.042026531696319536 / 0.000016880035400346216 / 0.05034936666488643 / 0.00010062456130977004 e energias 13932.228793286093 / 4.769236390550895 / 2.9217253962209053, contra o limite 2.3999988555909546. Todos os mutantes foram restaurados byte a byte em `finally`.
 - Produção restaurada: `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → exit 0, `17 passed | 54 skipped (71)`; filtro PHY-26 → exit 0, `40 passed | 31 skipped (71)`; `acceptance.test.ts` + `simulator.test.ts` → exit 0, `2 test files passed (2)`, `100 tests passed (100)`, incluindo PHY-26/30/40 e R1/R2 sem alterar tolerâncias.
 - Gate final `npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente no PowerShell com parada em erro → exit 0; `30 test files passed (30)`, `741 tests passed (741)`; lint e typecheck sem erros, build concluído. Apenas o aviso existente de chunk > 500 kB. R3/R4 corrigidos, R1/R2 e critérios 1–6 preservados. `Stage: to-review` no commit de produção/ADR/metadados; sem merge, a próxima sessão executa o stage 3.
+
+#### Resolution (2026-10-01)
+
+Verdict: Approve
+
+Revisão de R3/R4 e do delta `git diff c31bba5a885a7f0a6000412228f920c92eca18cc...d88116c49be371a11e647945d5aaa6c86b0555e4`, commits `9a754a4` e `d88116c`, com contexto do diff completo desde `338bdb699cd6b399c4130eca58d586d19223bcde`. Base do loop: `sweatshop/2026-09-24-1853`. Standards e Spec por sub-agentes independentes; gate e repetição das seis mutações registradas pelo agente principal. Nenhuma correção de produção ou teste nesta revisão.
+
+##### Standards
+
+**0 violações documentadas; 0 smells.** `9a754a4` contém testes e metadados, sem produção; `d88116c` contém produção, ADR e metadados, sem alterar testes. Conferida também a separação test-first de todos os commits anteriores do ticket. A variante por componentes foi registrada no commit red antes da implementação. A mudança permanece nos Primary files: somente `pushSpring`, o bloco PHY-26 e o item autorizado do ADR. Gancho, integrador da cadeia e demais chamadores dos helpers permanecem intactos.
+
+O ticket registra mutação e saída red individual para os quatro casos novos, inclusive o controle R3 que já passava antes da correção, conforme `AGENTS.md`. O histórico foi acrescentado ao fim, conforme `docs/agents/issue-tracker.md`; o achado documental anterior permanece corrigido. Nenhuma abstração ou dependência nova; o custo de reagrupamento e solução densa está explicitado no comentário `ponytail:`. Nenhuma linha `Proxy decided`; nenhuma omissão identificada da revisão anterior neste eixo.
+
+##### Spec
+
+**0 achados; R3 e R4 resolvidos.** O delta atende à preservação do sistema cadeia → ideal ao acrescentar uma mola independente no início e à independência da dinâmica de uma mola normal ao acrescentar outra desconectada. R3: cada componente aplica suas forças na posição do primeiro membro no gancho; a mola independente não antecipa o grupo posterior à cadeia. R4: componentes desconectados usam matrizes separadas, inclusive quando compartilham somente apoio fixo, eliminando a interferência da escala global.
+
+Conferido o percurso construção → `step()` → `pushSpring()`, os helpers e todo o delta. A expansão transitiva do `Set` alcança os membros conectados; a filtragem preserva a ordem original e evita aplicação duplicada. Grupos unitários e somente fixos continuam válidos. R1/R2 permanecem na mesma equação; `pushChain`, `readSpring` e `solveLinear` não mudam. Os quatro testes novos observam comportamento pela API pública, com controles e evidência individual de mutação no ticket. Critérios 1–6 preservados; nenhum requisito parcial, ampliação indevida ou regressão nova identificado.
+
+Prova independente com os testes intactos, executada por `node node_modules/vitest/vitest.mjs run src/sim/acceptance.test.ts -t <filtro> --reporter=json --outputFile <relatório>` (o runner usado por `npx vitest`). Todas as mutações foram restauradas byte a byte em `finally`; `git diff --exit-code` confirmou produção intacta antes do gate final.
+
+| Mutação registrada repetida | Filtro | Resultado red (exit 1) |
+| --- | --- | --- |
+| `pushSpring` global de `1604254` | `PHY-47: (chain and ideal\|disconnected high-damping)` | `3 failed \| 1 passed \| 67 skipped (71)` |
+| Omitir aplicação das forças ideais (`void forces`) | `PHY-47: chain and ideal` | `2 failed \| 69 skipped (71)` |
+| `pushSpring` sequencial de `c62cf2f` | `PHY-47: opposite springs` | `4 failed \| 67 skipped (71)` |
+| Matriz somente diagonal | `PHY-47: opposite springs` | `2 failed \| 2 passed \| 67 skipped (71)` |
+| Retirar aceleração livre do numerador | `PHY-47: overdamped vertical` | `2 failed \| 69 skipped (71)` |
+| `pushSpring` PHY-40 de `bee7949`, elástico fora da fração | `PHY-47` | `7 failed \| 10 passed \| 54 skipped (71)` |
+
+Saídas red individuais dos quatro casos novos, conferidas contra a evidência do stage 2:
+
+| Teste | Saída red reproduzida |
+| --- | --- |
+| R3, `extra=false`, sem forças ideais | `extra=false, max drift 6.225759506225586, final x 5.720832824707031: expected 6.225759506225586 to be less than 0.0001` |
+| R3, `extra=true`, versão global | `extra=true, max drift 0.7950001955032349, final x 0.794999897480011: expected 0.7950001955032349 to be less than 0.0001` |
+| R4, `sharedFixed=false`, versão global | `solo vx -0.0663900300860405, combined vx -3.999975319857185e-7: expected 0.06638963008850851 to be less than 0.000001` |
+| R4, `sharedFixed=true`, versão global | `solo vx -0.0663900300860405, combined vx -3.999975319857185e-7: expected 0.06638963008850851 to be less than 0.000001` |
+
+As saídas individuais de R1/R2 e dos sete casos originais também coincidiram com as tabelas anteriores: R1 `stretch 1.0634875297546387`; R2 sequencial desvios 0.03953563794493675 / 0.03953563794493675 / 0.007079267408698797 / 0.05182609334588051, diagonal 0.030418209731578827 nas duas ordens com c=2000; PHY-40 deslocamentos 0.042026531696319536 / 0.000016880035400346216 / 0.05034936666488643 / 0.00010062456130977004 e energias 13932.228793286093 / 4.769236390550895 / 2.9217253962209053.
+
+Produção restaurada: filtro `PHY-47` → exit 0, `17 passed | 54 skipped (71)`. Gate independente após rebase, `npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente com parada em erro no PowerShell → exit 0, `30 test files passed (30)`, `741 tests passed (741)`; lint e typecheck sem erros, build concluído. Testes PHY-26/30/40 intactos, sem alterar tolerâncias. Apenas o aviso existente do chunk tardio do simulador > 500 kB.
+
+Rebase sobre a sessão já atualizado, sem conflitos e mantendo `d88116c`, o commit validado. Merge `--no-ff` na sessão: `1312e9a`. Arquivos entregues: `src/sim/simulator.ts`, `src/sim/acceptance.test.ts` e `docs/adr/0004-rope-as-own-constraint-around-world-step.md`; fechamento neste ticket e em `.scratch/physics-sim-v4/ledger.md`. `Stage: done` e ledger no mesmo commit de fechamento. Totais: Standards **0 achados**; Spec **0 achados**.
