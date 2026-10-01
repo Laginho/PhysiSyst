@@ -1041,8 +1041,11 @@ class RapierSimulator implements Simulator {
       { rigid: s.a.rigid, p: now[0], u },
       { rigid: s.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
     ]
-    // PHY-47: implicit k and c, including the anchors' rotational inertia.
-    const force = (s.k * dx + s.c * rate) / (1 + (s.k * lead + s.c) * TIMESTEP * ropeInvMass(pulls))
+    // PHY-47: both terms see free acceleration before the spring's own pull.
+    const free = pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, this.world.gravity))
+    const deltaRate = lengtheningRate(pulls, free) - rate
+    const implicit = s.k * lead + s.c
+    const force = (s.k * dx + s.c * rate + implicit * deltaRate) / (1 + implicit * TIMESTEP * ropeInvMass(pulls))
     applyPulls(pulls, force, false)
   }
 

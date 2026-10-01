@@ -1,5 +1,5 @@
 # PHY-47: Mola ideal com `k` e `c` implícitos, certa no superamortecido e estável quando rígida
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -139,3 +139,14 @@ Os seis critérios escritos continuam atendidos; R1 é uma regressão comprovada
 - Stage 2 retomado (2026-09-30), somente R1: `pushSpring` continua tendo um único chamador em `step()`, depois das forças aplicadas e antes das cordas. `springAt` também serve `readSpring`, `chainAxis` e `placeChain`; esses caminhos não serão alterados. `freePointVelocity` já prevê gravidade, forças aplicadas, torque e inércia efetiva para as cordas; será reutilizado sem alterar seus chamadores. Pontas fixas, eixo nulo e pulls no mesmo corpo continuam com denominador ≥ 1; `c = 0` permanece coberto pelos testes rígidos existentes.
 - Variante registrada antes da implementação: manter `springAt(s, lead)` e seu eixo; calcular `δẋ = ẋ_free − ẋ` com `freePointVelocity` nas duas âncoras e `lengtheningRate` nos pulls. Usar `F = [k·Δx_lead + c·ẋ + (k·lead + c)·δẋ] / [1 + (k·lead + c)·Δt·K]`. Assim `ẋ′ = ẋ_free − K·F·Δt` inclui a aceleração livre nos dois termos e preserva o equilíbrio `carga/k`. Sem aceleração projetada, a fórmula é a já aprovada. A seam permanece `createSimulator(parse(scene))`, `step()` e `readStates()`, no bloco autorizado PHY-26, sem mocks.
 - Red permanente de R1, antes do código: `npx vitest run src/sim/acceptance.test.ts -t 'PHY-47: overdamped vertical'` → exit 1, `2 failed | 61 skipped (63)`. Para gravidade e para força aplicada constante de 9,81 N com `g = 0`, ambos com `m = 1`, `k = 40`, `c = 200`, 6000 passos: `stretch 1.0634875297546387: expected 0.8182375297546387 to be less than 0.0049050000000000005`. O esperado independente é `carga/k = 0.24525 m`, tolerância 2%, igual ao probe da revisão.
+- R1 implementado com a variante registrada, reutilizando os helpers existentes apenas em `pushSpring`; ADR atualizado no item autorizado. O commit red permanente é `1764c36`, sem alteração de produção. Nenhuma tolerância existente mudou.
+- Mutate-verify R1 após o green: removi temporariamente apenas `+ implicit * deltaRate` do numerador de produção (a fórmula do primeiro PHY-47), mantendo os testes intactos. `npx vitest run src/sim/acceptance.test.ts -t 'PHY-47: overdamped vertical'` → exit 1, `2 failed | 61 skipped (63)`. Evidência por teste:
+
+  | Teste novo | Mutação | Saída red |
+  | --- | --- | --- |
+  | Equilíbrio sob gravidade | Numerador sem aceleração livre | `stretch 1.0634875297546387: expected 0.8182375297546387 to be less than 0.0049050000000000005` |
+  | Equilíbrio sob força aplicada constante | Numerador sem aceleração livre | `stretch 1.0634875297546387: expected 0.8182375297546387 to be less than 0.0049050000000000005` |
+
+- Mutação PHY-40 repetida após R1: `F = k·dx + c·rate / (1 + c·Δt·K)` → `npx vitest run src/sim/acceptance.test.ts -t PHY-47`, exit 1, `7 failed | 2 passed | 54 skipped (63)`. Os sete testes originais produzem exatamente as sete saídas individuais da tabela anterior (deslocamentos 0.042026531696319536 / 0.000016880035400346216 / 0.05034936666488643 / 0.00010062456130977004; energias 13932.228793286093 / 4.769236390550895 / 2.9217253962209053). Os dois testes de equilíbrio passam com PHY-40, como na prova A/B da revisão. Cada mutação foi restaurada byte a byte em `finally` antes da seguinte.
+- Produção restaurada: `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → exit 0, `9 passed | 54 skipped (63)`; `npx vitest run src/sim/acceptance.test.ts src/sim/simulator.test.ts` → `2 passed`, `92 passed (92)`, incluindo os testes PHY-26/30/40 intactos.
+- Gate final de R1 (`npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente com parada em erro no PowerShell) → exit 0; `30 test files passed (30)`, `733 tests passed (733)`; lint e typecheck sem erros, build concluído. Apenas o aviso existente de chunk > 500 kB. R1 corrigido e os critérios 1–6 preservados; `Stage: to-review` no commit de produção/ADR/metadados, sem tocar testes. Sem merge: a próxima sessão executa o stage 3.
