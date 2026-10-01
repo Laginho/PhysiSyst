@@ -518,15 +518,18 @@ function solveLinear(K: readonly (readonly number[])[], b: readonly number[], re
 
 /**
  * Piece tensions T ≥ 0 with K(T − base) = b on the pieces left taut: a piece
- * whose tension would go negative goes slack and the rest are solved again.
+ * whose tension would go negative goes slack; a slack piece that would stretch
+ * rejoins the active set, and the tensions are solved again.
  * One piece reduces to the scalar rope's max(0, base + b/K).
  */
 function tautTensions(K: readonly (readonly number[])[], b: readonly number[], base: readonly number[]): number[] {
   const rhs = b.map((bk, k) => bk + K[k]!.reduce((s, kkl, l) => s + kkl * base[l]!, 0))
+  const tolerance = 1e-9 * Math.max(1, ...rhs.map(Math.abs))
   let taut = b.map((_, k) => k)
-  for (;;) {
-    const T = b.map(() => 0)
-    if (!taut.length) return T
+  let T = b.map(() => 0)
+  // ponytail: bounded pivots for asymmetric K; a complementarity solver if cycling becomes observable.
+  for (let iteration = 0; iteration < 10 * b.length * b.length; iteration++) {
+    T = b.map(() => 0)
     const x = solveLinear(
       taut.map((k) => taut.map((l) => K[k]![l]!)),
       taut.map((k) => rhs[k]!),
@@ -534,11 +537,20 @@ function tautTensions(K: readonly (readonly number[])[], b: readonly number[], b
     if (!x) return T
     taut.forEach((k, i) => (T[k] = x[i]!))
     // Coupled pieces must re-solve after each removal: one slack piece can mask a taut neighbor.
-    const worst = taut.reduce((k, l) => T[l]! < T[k]! ? l : k)
-    if (T[worst]! > 0) return T
-    const still = taut.filter((k) => k !== worst)
-    taut = still
+    const worst = taut.reduce((k, l) => T[l]! < T[k]! ? l : k, taut[0] ?? -1)
+    if (worst !== -1 && T[worst]! <= 0) {
+      taut = taut.filter((k) => k !== worst)
+      continue
+    }
+    const residuals = rhs.map((value, k) => value - K[k]!.reduce((s, kkl, l) => s + kkl * T[l]!, 0))
+    let violated = -1
+    for (let k = 0; k < b.length; k++) {
+      if (!taut.includes(k) && residuals[k]! > (violated === -1 ? tolerance : residuals[violated]!)) violated = k
+    }
+    if (violated === -1) return T
+    taut.push(violated)
   }
+  return T.map((t) => Math.max(0, t))
 }
 
 /**

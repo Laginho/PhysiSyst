@@ -1,5 +1,5 @@
 # PHY-46: Uma corda acoplada que saiu do active set volta quando as outras a esticam
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -51,5 +51,24 @@ A correção é a condição de complementaridade que o active set deixa de lado
 
 - 2026-09-30 Stage 2: seam aprovada `parse → createSimulator → step → readStates/readConstraints`, com as três cenas dos critérios 1–3. Callers de `tautTensions`: a previsão de leitura sem contato e a previsão de forças em `pullPieces`, mais a correção em `correctPieces`; todos usam a mesma função, tanto para cordas agrupadas quanto para peças de polias com massa. Casos degenerados: conjunto ativo vazio (ainda precisa conferir resíduos), tensões zero e sistemas singulares/cordas colineares; já cobertos pelos testes de folga, PHY-43 e PHY-41 R1, cujas tolerâncias serão preservadas.
 - Red antes de produção: `npx vitest run src/sim/acceptance.test.ts -t PHY-46` deu **3 failed, 51 skipped (54)**. As duas cenas de equilíbrio falham em `maxDisplacement < 0.001`: **0.5956457853317261 m** (90°, 240°, 300°; máximo ao longo da trajetória, não só o deslocamento final) e **8.541037003819246 m** (200°, 110°, 300°, 250°). A cena de balanço falha em `maxDistance <= 5.001`: **5.587874430011237 m**. Nenhum arquivo de produção alterado no commit red.
+- Implementação: preservado `solveLinear` e a remoção de uma peça por vez; depois de resolver tensões positivas, reinserida a peça fora do conjunto com maior resíduo positivo, inclusive se nenhuma peça ficou ativa. Tolerância relativa `1e-9 * max(1, max |rhs|)` evita reentradas por ruído; limite de `10n²` iterações evita laço infinito com a matriz assimétrica, devolvendo tensões não negativas. ADR-0004 atualizado só no parágrafo "Tensions solve together".
+
+#### Mutate-verify (2026-09-30)
+
+Mutações aplicadas à produção corrigida e removidas depois da execução. Para cada teste novo, inserido `return T` depois da remoção de tensões não positivas e antes do cálculo dos resíduos: o solver termina assim que nenhuma tensão ativa é negativa, sem conferir as peças que saíram (comportamento anterior). Comando: `npx vitest run src/sim/acceptance.test.ts -t PHY-46`.
+
+| Teste novo (motor público) | Saída red com a mutação |
+| --- | --- |
+| Equilíbrio, L = 1, 90°/240°/300° | `AssertionError: expected 0.5956457853317261 to be less than 0.001` |
+| Equilíbrio, L = 10, 200°/110°/300°/250° | `AssertionError: expected 8.541037003819246 to be less than 0.001` |
+| Balanço, L = 5, 10°/20°/30° | `AssertionError: expected 5.587874430011237 to be less than or equal to 5.001` |
+
+Resultado mutante: **3 failed, 51 skipped (54)**. Produção corrigida: **3 passed, 51 skipped (54)**; depois da retirada da mutação, bloco `general rope`: **11 passed, 43 skipped (54)**, incluindo as três regressões. Testes e tolerâncias anteriores intactos.
+
+#### Handoff stage 2 (2026-09-30)
+
+- Branch: `phy/PHY-46-tauttensions-reentry`, criada sobre `sweatshop/2026-09-24-1853` (`bf3030b`). Commit red: `d8dca86`; o commit de implementação não altera testes.
+- Critérios 1–3: três regressões verdes pelo motor público em 300 passos, com deslocamento/comprimento, tensões e folga verificados conforme o contrato. Critério 4: testes anteriores preservados e verdes no gate. Critérios 5–6: ADR e evidências de mutação acima.
+- Critério 7: `npm test && npm run lint && npm run typecheck && npm run build` terminou com **exit 0**; **30 test files passed, 724 tests passed**, ESLint e TypeScript sem erros, Vite compilado (aviso de tamanho de chunk do simulador). Handoff em `to-review`; stage 3 fica para a próxima sessão.
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9. O gpt-6.1-sol (max) e o gpt-6-astra (high) acharam o defeito de forma independente, o Opus 5.5 (xhigh) não. As medições da tabela e o protótipo são probes descartáveis no motor real, sobre `0ff2047`; nada foi commitado. O protótipo foi a forma "devolve a peça mais violada e resolve de novo"; resolver por força bruta todos os subconjuntos também funcionaria com poucas peças. A escolha fica com o stage 2, desde que os critérios valham.
