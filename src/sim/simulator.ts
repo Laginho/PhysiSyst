@@ -1031,17 +1031,18 @@ class RapierSimulator implements Simulator {
    * prediction sees it: F_el along the axis at both ends. Rapier's spring
    * joint loses ~30% of the amplitude in 5 periods, so the force is ours.
    * A constant force over Rapier's substeps moves a body φ of the Euler
-   * distance, which alone would pump energy in; taking the force (1 − φ)Δt
-   * ahead makes the step area-preserving for a linear spring.
+   * distance, which alone would pump energy in; the elastic term keeps its
+   * (1 − φ)Δt lead, with both k and c using the end-of-step relative velocity.
    */
   private pushSpring(s: SpringBinding): void {
-    const { now, u, dx, rate } = springAt(s, (1 - this.substepFactor()) * TIMESTEP)
+    const lead = (1 - this.substepFactor()) * TIMESTEP
+    const { now, u, dx, rate } = springAt(s, lead)
     const pulls = [
       { rigid: s.a.rigid, p: now[0], u },
       { rigid: s.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
     ]
-    // PHY-40: backward Euler for damping, including the anchors' rotational inertia.
-    const force = s.k * dx + (s.c * rate) / (1 + s.c * TIMESTEP * ropeInvMass(pulls))
+    // PHY-47: implicit k and c, including the anchors' rotational inertia.
+    const force = (s.k * dx + s.c * rate) / (1 + (s.k * lead + s.c) * TIMESTEP * ropeInvMass(pulls))
     applyPulls(pulls, force, false)
   }
 

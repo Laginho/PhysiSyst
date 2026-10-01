@@ -1,5 +1,5 @@
 # PHY-47: Mola ideal com `k` e `c` implícitos, certa no superamortecido e estável quando rígida
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -62,6 +62,22 @@ A mola com massa (PHY-30) não passa por `pushSpring` e fica fora; o defeito del
 - `src/sim/acceptance.test.ts`, bloco `ideal spring (PHY-26)`, com `horizontalScene`: os casos dos critérios 1 e 2, pelo motor público. Vermelhos hoje: com `c = 200`, o passo 60 dá `Δx = 0,0420` contra 0,0819 analítico; com `m = 0,01`, a energia chega a 13932 J.
 
 ## Comments
+
+- Stage 2 concluído: fórmula aprovada aplicada em `pushSpring`, reutilizando `springAt`, `ropeInvMass` e `applyPulls`; ADR-0004 atualizado no item autorizado. Nenhuma mudança de tolerância nos testes existentes e nenhuma dependência nova.
+- Mutate-verify após o primeiro green: substituí temporariamente a força de produção por `s.k * dx + (s.c * rate) / (1 + s.c * TIMESTEP * ropeInvMass(pulls))` (PHY-40, elástico fora da fração), mantendo os testes intactos. `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → `7 failed | 54 skipped (61)`, exit 1. Evidência por teste:
+
+  | Teste | Red produzido pela mutação PHY-40 |
+  | --- | --- |
+  | c=200, passo 60 | `displacement 0.042026531696319536 at step 60: expected 0.03991246830368046 to be less than 0.00081939` |
+  | c=200, passo 600 | `displacement 0.000016880035400346216 at step 600: expected 0.013503119964599655 to be less than 0.0001352` |
+  | c=2000, passo 60 | `displacement 0.05034936666488643 at step 60: expected 0.04767163333511357 to be less than 0.00098021` |
+  | c=2000, passo 600 | `displacement 0.00010062456130977004 at step 600: expected 0.08177337543869023 to be less than 0.0008187400000000001` |
+  | m=0,01, k=400, c=0 | `expected 13932.228793286093 to be less than or equal to 2.3999988555909546` |
+  | m=0,05, k=400, c=0 | `expected 4.769236390550895 to be less than or equal to 2.3999988555909546` |
+  | m=0,1, k=400, c=0 | `expected 2.9217253962209053 to be less than or equal to 2.3999988555909546` |
+
+- Mutação removida: o mesmo comando → `7 passed | 54 skipped (61)`, exit 0. `npx vitest run src/sim/acceptance.test.ts src/sim/simulator.test.ts` → `2 passed`, `90 passed (90)`, incluindo PHY-26/30/40 sem alterar tolerâncias.
+- Gate final `npm test && npm run lint && npm run typecheck && npm run build` → exit 0; `30 passed`, `731 passed (731)`, lint e typecheck sem erros, build concluído. Vite emitiu somente o aviso de chunks > 500 kB. Commit red separado: `bee7949`; o commit de implementação não altera testes.
 
 - Stage 2 (2026-09-30): branch `phy/PHY-47-mola-ideal-k-e-c-implicitos`, base `sweatshop/2026-09-24-1853`. Seam aprovado: `createSimulator(parse(horizontalScene(...)))`, `step()` e `readStates()`, sem mocks. `pushSpring` tem um único chamador, `step()`, no caminho sem massa; `pushChain` e `readSpring` ficam fora da alteração. O denominador continua ≥ 1 para `k > 0`, `c ≥ 0`, inclusive `c = 0` e `K = 0` (pontas fixas, pulls cancelados no mesmo corpo ou eixo de comprimento zero); os casos sem amortecimento são cobertos pelos três testes rígidos e os chamadores existentes pelos testes PHY-26/30/40.
 - Red antes do código: `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → `7 failed | 54 skipped (61)`. Os quatro testes superamortecidos falham com Δx = 0,042026531696 (c=200, passo 60), 0,000016880035 (c=200, passo 600), 0,050349366665 (c=2000, passo 60), 0,000100624561 (c=2000, passo 600), contra 0,081939 / 0,013520 / 0,098021 / 0,081874 (erro < 1%). Os três testes rígidos falham com `expected 13932.228793286093 / 4.769236390550895 / 2.9217253962209053 to be less than or equal to 2.3999988555909546`, para m=0,01 / 0,05 / 0,1. A precisão da checagem auxiliar de E₀ foi ajustada antes do commit de testes para acomodar a posição f32 do Rapier (E₀=1,9999990463 J); o limite de energia continua 1,2·E₀.
