@@ -1,5 +1,5 @@
 # PHY-47: Mola ideal com `k` e `c` implícitos, certa no superamortecido e estável quando rígida
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -150,3 +150,66 @@ Os seis critérios escritos continuam atendidos; R1 é uma regressão comprovada
 - Mutação PHY-40 repetida após R1: `F = k·dx + c·rate / (1 + c·Δt·K)` → `npx vitest run src/sim/acceptance.test.ts -t PHY-47`, exit 1, `7 failed | 2 passed | 54 skipped (63)`. Os sete testes originais produzem exatamente as sete saídas individuais da tabela anterior (deslocamentos 0.042026531696319536 / 0.000016880035400346216 / 0.05034936666488643 / 0.00010062456130977004; energias 13932.228793286093 / 4.769236390550895 / 2.9217253962209053). Os dois testes de equilíbrio passam com PHY-40, como na prova A/B da revisão. Cada mutação foi restaurada byte a byte em `finally` antes da seguinte.
 - Produção restaurada: `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → exit 0, `9 passed | 54 skipped (63)`; `npx vitest run src/sim/acceptance.test.ts src/sim/simulator.test.ts` → `2 passed`, `92 passed (92)`, incluindo os testes PHY-26/30/40 intactos.
 - Gate final de R1 (`npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente com parada em erro no PowerShell) → exit 0; `30 test files passed (30)`, `733 tests passed (733)`; lint e typecheck sem erros, build concluído. Apenas o aviso existente de chunk > 500 kB. R1 corrigido e os critérios 1–6 preservados; `Stage: to-review` no commit de produção/ADR/metadados, sem tocar testes. Sem merge: a próxima sessão executa o stage 3.
+
+#### Re-review (2026-10-01)
+
+Verdict: Reopen (regressão R2)
+
+Revisão de R1 e do delta `git diff b3721856aceca7f8d33b3e4ddf22f22f93def946...c62cf2f673af0ce423ab740eb947d43b29308c47`, commits `1764c36` e `c62cf2f`. Base do loop: `sweatshop/2026-09-24-1853`, ainda em `338bdb6`; rebase sem conflitos e sem mudar o HEAD. Standards e Spec por sub-agentes independentes; gate, repetição das mutações registradas e prova A/B de R2 pelo agente principal.
+
+##### Standards
+
+**0 violações documentadas; 0 smells.** Primary files respeitados; `1764c36` contém testes e metadados, sem produção; `c62cf2f` contém produção, ADR e metadados, sem alterar testes. A variante foi registrada antes da implementação. Cada um dos nove testes tem mutação e saída red individual no histórico acima. Os novos comentários estão ao fim; o achado documental anterior permanece corrigido. Reutilização dos helpers existentes, sem abstração ou dependência nova. Nenhuma decisão de proxy nesta retomada.
+
+##### Spec
+
+**R1 corrigido para a mola isolada.** A previsão de velocidade livre inclui gravidade, força aplicada e torque, com sinais e inércia consistentes com os pulls. Os dois testes permanentes de equilíbrio `load/k` passam; os critérios numerados 1–6 continuam atendidos, sem mudança de tolerância.
+
+**1 achado P1: ❌ R2 — duas molas no mesmo corpo perdem o equilíbrio e passam a depender da ordem da Scene (S2-implícito).** Em `step()`, cada `pushSpring` aplica sua força antes de processar a próxima mola. A nova leitura de `freePointVelocity` inclui `rigid.userForce()`, portanto a segunda mola considera a força da primeira em `deltaRate`, enquanto a primeira não considera a segunda. A correção de R1 cria uma interação unilateral entre molas. O ADR-0004 define a força física como `F_el = k·Δx + c·ẋ`: duas molas idênticas, igualmente esticadas em sentidos opostos, devem cancelar suas forças num corpo parado. Agora o corpo acelera nessa cena sem carga externa. **Este achado foi introduzido por `c62cf2f`; não é um achado perdido pela revisão anterior.**
+
+Prova pelo motor público, sem mocks: corpo de 1 kg em `(0, 0)`, âncoras fixas em `(−1.1, 0)` e `(1.1, 0)`, âncoras nos centros, duas molas com `k = 40`, `x0 = 1`, `c = 200`, `g = 0`, sem forças aplicadas ou contatos. Cada mola começa esticada 0,1 m. Em 300 passos, o esperado independente é manter `max |x| < 0.0001 m` (0,1 mm):
+
+| Produção usada | Ordem das molas | Resultado do mesmo probe |
+| --- | --- | --- |
+| Fórmula anterior a R1, numerador sem aceleração livre | Esquerda → direita e direita → esquerda | `2 passed | 63 skipped (65)`, exit 0 |
+| Produção atual `c62cf2f` | Esquerda → direita | `max drift 0.03953563794493675, final x 0.03953563794493675, reverse=false: expected 0.03953563794493675 to be less than 0.0001` |
+| Produção atual `c62cf2f` | Direita → esquerda | `max drift 0.03953563794493675, final x -0.03953563794493675, reverse=true: expected 0.03953563794493675 to be less than 0.0001` |
+
+Produção atual: `2 failed | 63 skipped (65)`, exit 1. A troca A/B removeu somente `+ implicit * deltaRate` do numerador, recuperando a força anterior a R1; os dois casos usaram exatamente o mesmo teste. Probe descartável no bloco autorizado `ideal spring (PHY-26)`, executado com `npx vitest run src/sim/acceptance.test.ts -t 'PHY-47-review-probe R2'` (reporter JSON para capturar as saídas):
+
+```ts
+it.each([false, true])('PHY-47-review-probe R2: opposite identical springs stay balanced, reverse=%s', async (reverse) => {
+  const constraints: Scene['constraints'] = [
+    { id: 'left-spring', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+    { id: 'right-spring', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+  ]
+  if (reverse) constraints.reverse()
+  const sim = await load({
+    version: 1,
+    constants: { g: 0 },
+    bodies: [
+      { shape: 'rectangle', width: 0.2, height: 0.2, id: 'left', fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+      { shape: 'rectangle', width: 0.2, height: 0.2, id: 'right', fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+      { shape: 'rectangle', width: 0.4, height: 0.4, id: 'body', fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+    ],
+    forces: [],
+    contacts: [],
+    constraints,
+  })
+  let worst = 0
+  for (let i = 0; i < 300; i++) {
+    sim.step()
+    worst = Math.max(worst, Math.abs(sim.readStates().get('body')!.position.x))
+  }
+  const x = sim.readStates().get('body')!.position.x
+  expect(worst, `max drift ${worst}, final x ${x}, reverse=${reverse}`).toBeLessThan(1e-4)
+})
+```
+
+Produção e testes restaurados byte a byte em `finally`; `git diff --exit-code` confirmou diff vazio antes desta anotação. O probe precisa virar teste permanente em commit test-only red do stage 2. R2 é regressão comprovada contra o comportamento anterior; nenhum critério numerado foi reescrito.
+
+Mutações registradas repetidas independentemente: retirar a aceleração livre → `2 failed | 61 skipped (63)`, exit 1, com as duas saídas de R1 idênticas às registradas; fórmula PHY-40 → `7 failed | 2 passed | 54 skipped (63)`, exit 1, com as sete saídas individuais originais idênticas às registradas. Cada mutação foi restaurada byte a byte. Produção restaurada: `acceptance.test.ts` + `simulator.test.ts` → `2 test files passed (2)`, `92 tests passed (92)`. Após remover o probe R2, bloco PHY-26 (incluindo PHY-30/40/47) → `32 passed | 31 skipped (63)`, exit 0.
+
+Gate independente na produção intacta: `30 test files passed (30)`, `733 tests passed (733)`; lint, typecheck e build exit 0. Apenas o aviso existente do chunk tardio do simulador > 500 kB. O gate verde não cobre a cena de R2.
+
+**Restante para o stage 2: somente ❌ R2.** Na mesma branch e seam pública, pinar o equilíbrio das duas molas opostas e ambas as ordens em commit próprio red; corrigir a interação entre molas preservando R1 e os critérios 1–6; registrar a variante antes de usá-la e atualizar o item autorizado do ADR. Respeitar os Primary files; se a solução precisar ampliar o escopo além de `pushSpring`, encaminhar a decisão pelo fluxo de proxy da skill antes de alterar esse escopo. Repetir mutate-verify e gate. A regra mecânica de `ticket-flow` exige reabertura quando a correção precisa de teste novo. `Stage: to-implement` neste commit de revisão. Totais: Standards **0 achados**; Spec **1 regressão nova pendente, R1 resolvido**.
