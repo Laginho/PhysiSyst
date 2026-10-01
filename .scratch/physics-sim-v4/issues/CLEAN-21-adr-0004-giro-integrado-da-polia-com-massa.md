@@ -1,5 +1,5 @@
 # CLEAN-21: ADR-0004 descreve o giro integrado da polia com massa
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-49
 Review: agent
@@ -30,3 +30,4 @@ O ADR descreve a integração própria do giro entregue pelo PHY-49. Hoje o par�
 ## Comments
 
 - 2026-10-01 Aberto pela revisão Standards do PHY-49. O mecanismo entregue contradiz as descrições antigas do ADR-0004, linhas 34 e 99 na revisão de `01d279a`; atualização exigida pelo Quality gate §5 e por `docs/agents/domain.md` (Flag ADR conflicts). O ADR fica fora dos Primary files e dos critérios numerados do PHY-49, portanto a correção segue separadamente, sem bloquear sua aprovação.
+- 2026-10-01 Stage 2: documentação apenas, sem commit de teste (o ticket não nomeia nenhum). Linhas 34 e 99 do ADR reescritas contra `Grip.w0`, `gripShares`, `pullPieces`, `correctPieces` e `substepFactor` em `src/sim/simulator.ts`. Gate verde: 793 testes, lint, typecheck, build.
