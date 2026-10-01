@@ -1,5 +1,5 @@
 # PHY-48: Mola com massa acoplada implicitamente aos corpos, no solve em grupo das molas
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -82,3 +82,9 @@ As duas pontas no mesmo corpo ficam cobertas pela estrutura do solve (o termo cr
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9. O defeito veio do gpt-6-astra (high), o limiar foi medido por mim com probes descartáveis no motor real, sobre `0ff2047`. Nada foi commitado e nenhum protótipo foi feito para este caminho.
 - 2026-10-01 Stage 1, com grilling. Um protótipo descartável sobre `7eb1a94` mediu três métodos (A, B, G), e o Bruno escolheu G. Decisões: só molas entram no grupo (cordas ficam fora); θ continua 0,55, e o limite do critério 3 passou de 1,2 para 1,3·E₀ em vez de recalibrar θ, porque com θ = 0,6 o pico cai para 1,11·E₀, mas a energia no passo 600 com `c = 0` cai de 0,1962 para 0,1922 J; um ticket só, porque o A sozinho deixa um teste existente vermelho. Nada do protótipo foi commitado.
+- 2026-10-01 Stage 2 concluído. Commits: teste red `025c038` (13 de 20 vermelhos hoje, os 7 verdes são `c` ≤ 80 e o par em repouso, como previsto), código `80d33b9` (só `simulator.ts` e ADR-0004, nenhum teste), teste extra `dd3f566` (abaixo). Gate: 791 testes, lint, typecheck e build verdes; `acceptance.test.ts` e `simulator.test.ts` sem mudar tolerância (146 verdes), incluindo PHY-30, PHY-42 e PHY-47. `pushChain` saiu: `pushSpring` agrupa toda mola que divide corpo dinâmico, ideal ou com massa, e devolve os rebases das cadeias. `CHAIN_THETA` e o atraso ficaram como estavam.
+- Mutate-verify (mutação aplicada no `simulator.ts` commitado, testes rodados, mutação revertida com `git checkout`):
+  - **Acoplamento explícito (critério 9):** pontas da cadeia na velocidade de agora (`free = [v[0], v[último]]`) e derivadas `d = 0`, forças `f₀` aplicadas direto. 13 vermelhos: `PHY-48: … c = 150 / 200 / 2000` (critério 1), os 4 `overdamped` (2), o rígido e leve (3), o pendurado (4), o par solto `reverse=false/true` (5), a barra (6), e o PHY-30 `with mass the readout is the force each end got`. Os `c = 100` e os em repouso não distinguem essa mutação.
+  - **Cada mola sozinha (`springs = [s]`, sem grupo):** 8 vermelhos, entre eles os dois `PHY-48: at rest … reverse=false/true` e os 6 `PHY-47: opposite springs…` / `chain and ideal spring…`. É a dependência de ordem do método A.
+  - **Sem o termo da outra ponta (cada linha só vê a velocidade da própria ponta):** sobrevivia a todos os 146 testes. Não é equivalente: com as duas pontas em corpos leves a mola explode. Teste novo `PHY-48: both ends on light free blocks`, em commit só de teste (`dd3f566`), verde no código e, com a mutação, vermelho em `c = 200` (1,65·10⁴ J) e `c = 2000` (1,64·10⁴ J); `c = 0` passa nos dois.
+- O teste `dd3f566` veio depois do commit de código porque a mutação sobrevivente só apareceu na verificação. Não é um critério novo: cobre o caso de duas pontas dinâmicas do critério 5 e do 6 por outro lado.
