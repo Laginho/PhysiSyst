@@ -221,15 +221,24 @@ describe('ropePath, kept wrap direction (PHY-45)', () => {
     expect(ropePath({ x: -0.005, y: -3 }, { x: 0.005, y: -4 }, pulley).arcs[0]!.direction).toBe(-1)
   })
 
-  it('a rope that has gone straight through the disk follows the curve again, with no jump in length', () => {
-    // a = (−0.1, −1.2), b = (0.1, −1.2): counter-clockwise would wrap about
-    // 302° (> 3π/2), so a kept +1 yields to the curve's −1 (about 283°).
-    const a = { x: -0.1, y: -1.2 }
-    const b = { x: 0.1, y: -1.2 }
-    const kept = ropePath(a, b, pulley, [1])
-    const natural = ropePath(a, b, pulley)
-    expect(natural.arcs[0]!.direction).toBe(-1)
-    expect(kept.arcs[0]!.direction).toBe(-1)
-    expect(kept.length).toBeCloseTo(natural.length, 9)
+  it('a kept wrap that goes past 3π/2 as a block swings under and up the far side holds its direction, with the length continuous', () => {
+    // b = (1, −5), a = (3, y), y from −2 up to 0: the clockwise wrap passes 3π/2
+    // near y = −1. Yielding to the curve there would jump the length by ~2 m.
+    const b = { x: 1, y: -5 }
+    let previous: number | undefined
+    for (let step = 0; step <= 20; step++) {
+      const y = -2 + step * 0.1
+      const path = ropePath({ x: 3, y }, b, pulley, [-1])
+      expect(path.arcs[0]!.direction, `direction at y = ${y.toFixed(1)}`).toBe(-1)
+      if (previous !== undefined) expect(Math.abs(path.length - previous), `length step at y = ${y.toFixed(1)}`).toBeLessThan(0.2)
+      previous = path.length
+    }
+  })
+
+  it('two ends close under the disk, wrapping past 3π/2, swap sides and the kept direction still holds', () => {
+    for (let e = 0.1; e >= -0.1001; e -= 0.02) {
+      const path = ropePath({ x: e, y: -1.2 }, { x: -e, y: -1.2 }, pulley, [1])
+      expect(path.arcs[0]!.direction, `direction at e = ${e.toFixed(2)}`).toBe(1)
+    }
   })
 })

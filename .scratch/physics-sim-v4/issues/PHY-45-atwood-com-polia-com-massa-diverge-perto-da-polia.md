@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -40,8 +40,7 @@ Não é exclusivo da polia com massa:
 2. **Guarda na previsão de `pullPieces`.** Com o aro, o bloco do 1/3 com polia com massa sobe encostado no disco. A previsão sem contato empurra a perna do fim do passo contra a perna do meio do passo, e a diagonal da matriz troca de sinal: a linha 0 foi de [2,261, −0,954] para [−0,350, 0,495], e a cena explodiu no passo 156 (9,4 kN, +13,7 kJ). A guarda é: se `ropeInvMass(row.pulls, row.along) ≤ 0`, usar `row.along = row.pulls`. É a versão com várias peças da guarda `k <= 0` que `pullRope` já tem, e é por isso que a corda de uma peça só nunca mostrou isto.
 3. **A corda guarda o lado do enrolamento.** Com o aro, o bloco ricocheteia e pode balançar por baixo da polia. Quando as duas pernas ficam colineares, as duas pontas embaixo do disco, o sinal da curva vira com qualquer desvio lateral, e a direção do enrolamento inverte. Na polia ideal o comprimento quase não muda; na polia com massa o share do grip salta e a energia explode. A correção:
    - `ropePath` ganha um parâmetro opcional `keep`, com uma direção por polia.
-   - Com `keep`, cada polia segue a direção dada, a menos que o arco com ela passe de 3π/2. Nesse caso ela segue o sinal da curva, como hoje.
-   - Arco acima de 3π/2 com a direção guardada quer dizer que a corda passou reta pela polia. Esse é o único caso em que inverter é contínuo, e pela regra atual o arco nunca passa de cerca de π.
+   - Com `keep`, cada polia segue sempre a direção dada. Inverter o lado só é contínuo quando as duas pontas e o centro estão colineares, então qualquer cedência por arco (a regra de 3π/2 do protótipo) salta o comprimento. Uma corda em contato com a polia não troca de lado.
    - `RopeBinding` guarda as direções. `ropeFrame` as passa ao `ropePath` e as atualiza só quando lê as poses reais, não as previstas (meio e fim do passo).
    - Vale para toda polia, ideal ou com massa. Sem `keep`, `ropePath` faz o que faz hoje, e é assim que o `scenePath` continua chamando.
 
@@ -61,6 +60,7 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
 
 **Fora do escopo:**
 - Os picos de energia no impacto contra o aro da polia com massa, no 3/1 e no 1/2: ficam para o PHY-52.
+- A corda que se solta da polia (a corda reta passa livre do disco, as duas pontas além da tangente, do lado do enrolamento): o modelo sempre enrola, então com `keep` a varredura cruza a costura 0/2π e o comprimento salta 2πR. Pede histórico de enrolamento, outro ticket; nenhum dos 24 cenários chega lá.
 - Atrito do aro: fica 0. Um aro que esfrega pediria um gancho em `assignPairFrictions`.
 - `readContacts` não lista o contato com o aro, porque a polia não é um corpo do documento.
 - Uma cena que já começa com um corpo sobreposto a uma polia: o Rapier separa os dois no primeiro passo, como faz hoje com dois corpos sobrepostos.
@@ -78,7 +78,7 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
    - a âncora da corda em cada bloco (o topo do bloco, no mundo) nunca passa para o outro lado de `x = 0` enquanto está acima do centro da polia: o bloco não passa por cima do disco. Por baixo ele pode balançar.
 2. `ropePath` com `keep`:
    - duas pontas embaixo de uma polia, quase colineares com o centro, trocando de lado uma da outra: com `keep` a direção fica a guardada, e o comprimento varia continuamente. Sem `keep`, a direção segue o sinal da curva, como hoje.
-   - uma corda que passa reta pela polia e segue até o outro lado: com `keep`, a direção passa a seguir o sinal da curva, sem salto de comprimento.
+   - uma corda cujo enrolamento guardado passa de 3π/2 (o bloco balança por baixo e sobe do outro lado): com `keep`, a direção continua a guardada e o comprimento varia continuamente ao longo da transição, amostrado antes, durante e depois do ponto onde a regra antiga cedia. Sem `keep`, a direção segue o sinal da curva.
 3. Os testes existentes de `acceptance.test.ts`, `simulator.test.ts` e `ropePath.test.ts` continuam verdes sem mudar tolerância, incluindo os da polia com massa (PHY-25), o PHY-43 e os da polia móvel.
 4. Os testes de regressão são mutate-verified conforme o `AGENTS.md`, com três mutações:
    - tirar o collider do aro: os 26 cenários da grade ficam vermelhos, e o 1/3 com polia ideal no passo 71;
@@ -100,6 +100,7 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
 
 ## Comments
 
+- 2026-10-01 Stage 2, reaberto pelo R1 da revisão. Proxy decided: `keep` segue sempre a direção guardada, sem a cedência de 3π/2; critério 2 (2º item), item 3 e fora do escopo reescritos acima — o item "segue a curva sem salto" era insatisfazível, porque os dois enrolamentos só têm o mesmo comprimento com `a`, centro e `b` colineares, e a cedência por arco salta (~2,2 m com `b = (1, −5)`, `a = (3, y)`, `keep = [−1]`). Os testes passam a amostrar o comprimento ao longo da transição. Se algum dos 24 cenários ficar vermelho sem a cedência, a corda se solta da polia no motor: parar e perguntar de novo.
 - 2026-09-30 Aberto pelo foreman a partir da recomendação 7 do relatório `docs/relatorios/2026-09-30-sweatshop-gpt-6.1-sol.pdf`, aceita pelo Bruno. Medições acima; o probe foi descartado.
 - 2026-10-01 Stage 1. Um diagnóstico descartável sobre `b29d75a` achou a causa (bloco atravessa o disco e o lado do enrolamento inverte) e prototipou o aro e a guarda. O Bruno aprovou método, escopo e critérios. Nada do protótipo foi commitado.
 - 2026-10-01 Achado lateral do diagnóstico, aberto como PHY-49: as tensões lidas na Atwood com polia com massa alternam a cada passo.
