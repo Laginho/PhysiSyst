@@ -1,5 +1,5 @@
 # PHY-49: O disco da polia com massa gira o quanto a previsão assume, e as tensões param de alternar
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-45
 Review: agent
@@ -57,3 +57,7 @@ Um protótipo descartável de 7 linhas deu T₁ = 13,734 e T₂ = 17,658 em todo
 - 2026-10-01 Aberto no stage 1 do PHY-45, a partir de um achado lateral do diagnóstico descartável sobre `b29d75a`.
 - 2026-10-01 Stage 1. Probes descartáveis sobre `ace3e09` acharam a causa (o Rapier gira o disco por `atan(ω·h)` a cada substep) e prototiparam a integração própria do giro. O Bruno aprovou método, critérios e o PHY-50 para o limite de ω. Os números da primeira versão deste ticket estavam errados: o par "T₁ / T₂" eram leituras de T₁ em passos seguidos. Nada do protótipo foi commitado.
 - 2026-10-01 Bloqueado pelo PHY-45 no stage 1 de revisão dele: o sweatshop roda os dois em sequência, e o critério 3 daqui precisa manter verdes os 24 cenários novos do PHY-45. Medido com os protótipos empilhados sobre `9d81e26`: continuam verdes, e os 741 testes também.
+- 2026-10-01 Stage 2. `Grip.rotation` virou `Grip.w0` (ω antes do passo, gravado em `pullPieces`); `gripShares` recebe o giro do passo em vez de ler `disk.rotation()`; `correctPieces` integra `Δt·(w0 + φ·(ω₁ − w0))`, a mesma conta do `spin` da previsão. Nenhum arquivo de teste tocado fora do commit vermelho.
+  - Vermelho antes da mudança (`ddb72bb`): 1/3 kg `T₁ at step 41: expected 0.1536 to be <= 0.1373`; 3/2 kg `T₂ at step 92: expected 0.2326 to be <= 0.2289`.
+  - Mutação (voltar a `wrapAngle(disk.rotation() − rot0)` em `correctPieces`, com `rot0` iniciado em `pullPieces`): os dois testes ficam vermelhos nos mesmos passos, 41 e 92. Código restaurado depois.
+  - Gate: 793 testes, lint, typecheck e build verdes, sem mudar tolerância.
