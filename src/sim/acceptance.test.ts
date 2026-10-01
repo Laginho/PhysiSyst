@@ -1181,6 +1181,29 @@ describe('acceptance: ideal spring (PHY-26)', () => {
   })
 
   it.each([
+    { loadKind: 'gravity', g: G },
+    { loadKind: 'applied force', g: 0 },
+  ])('PHY-47: overdamped vertical spring under $loadKind keeps static equilibrium load/k', async ({ g }) => {
+    const m = 1
+    const k = 40
+    const sim = await load({
+      version: 1,
+      constants: { g },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 10 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'bloco', fixed: false, mass: m, position: { x: 0, y: 8.5 }, rotation: 0 },
+      ],
+      forces: g === 0 ? [{ id: 'carga', bodyId: 'bloco', anchor: { x: 0, y: 0 }, magnitude: m * G, direction: 270 }] : [],
+      contacts: [],
+      constraints: [{ id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: 0 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0 } }, k, x0: 1, c: 200 }],
+    })
+    for (let i = 0; i < 6000; i++) sim.step()
+    const dx = 10 - sim.readStates().get('bloco')!.position.y - 1
+    const equilibrium = m * G / k
+    expect(Math.abs(dx - equilibrium), `stretch ${dx}`).toBeLessThan(0.02 * equilibrium)
+  })
+
+  it.each([
     { c: 200, fixed: true },
     { c: 2000, fixed: true },
     { c: 200, fixed: false },
