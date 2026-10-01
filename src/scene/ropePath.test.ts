@@ -202,3 +202,43 @@ describe('scenePath follows a movable pulley (PHY-24)', () => {
     expect(at3.length - at4.length).toBeCloseTo(2, 9)
   })
 })
+
+describe('ropePath, kept wrap direction (PHY-45)', () => {
+  const pulley = [{ center: { x: 0, y: 0 }, radius: 1 }]
+
+  it('two ends under the disk, nearly collinear with its center, swap sides: the kept direction holds and the length is continuous', () => {
+    // a = (e, −3), b = (−e, −4): the turn at the center changes sign with e, so
+    // the curve alone flips the wrap between e = +0.005 and e = −0.005.
+    const lengths: number[] = []
+    for (let e = 0.02; e >= -0.0201; e -= 0.005) {
+      const path = ropePath({ x: e, y: -3 }, { x: -e, y: -4 }, pulley, [1])
+      expect(path.arcs[0]!.direction, `direction at e = ${e.toFixed(3)}`).toBe(1)
+      lengths.push(path.length)
+    }
+    for (let i = 1; i < lengths.length; i++) expect(Math.abs(lengths[i]! - lengths[i - 1]!)).toBeLessThan(0.05)
+    // Without `keep` the direction is the curve's sign, as before.
+    expect(ropePath({ x: 0.005, y: -3 }, { x: -0.005, y: -4 }, pulley).arcs[0]!.direction).toBe(1)
+    expect(ropePath({ x: -0.005, y: -3 }, { x: 0.005, y: -4 }, pulley).arcs[0]!.direction).toBe(-1)
+  })
+
+  it('a kept wrap that goes past 3π/2 as a block swings under and up the far side holds its direction, with the length continuous', () => {
+    // b = (1, −5), a = (3, y), y from −2 up to 0: the clockwise wrap passes 3π/2
+    // near y = −1. Yielding to the curve there would jump the length by ~2 m.
+    const b = { x: 1, y: -5 }
+    let previous: number | undefined
+    for (let step = 0; step <= 20; step++) {
+      const y = -2 + step * 0.1
+      const path = ropePath({ x: 3, y }, b, pulley, [-1])
+      expect(path.arcs[0]!.direction, `direction at y = ${y.toFixed(1)}`).toBe(-1)
+      if (previous !== undefined) expect(Math.abs(path.length - previous), `length step at y = ${y.toFixed(1)}`).toBeLessThan(0.2)
+      previous = path.length
+    }
+  })
+
+  it('two ends close under the disk, wrapping past 3π/2, swap sides and the kept direction still holds', () => {
+    for (let e = 0.1; e >= -0.1001; e -= 0.02) {
+      const path = ropePath({ x: e, y: -1.2 }, { x: -e, y: -1.2 }, pulley, [1])
+      expect(path.arcs[0]!.direction, `direction at e = ${e.toFixed(2)}`).toBe(1)
+    }
+  })
+})

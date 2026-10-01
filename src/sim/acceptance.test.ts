@@ -7,6 +7,54 @@ import { groundBody } from '../persistence'
 
 const G = 9.81
 
+/**
+ * PHY-45: the grid every Atwood scene runs. Bodies are 0.4 × 0.4 squares with
+ * the rope on the top face; the pulley axle is at y = 5.25. Energy is the
+ * blocks' ½mv² + ½Iω² + mgy, I = m(w² + h²)/12, written here and not read from
+ * the simulator. A block must never cross x = 0 while it is above the axle.
+ */
+const PHY45_PULLEY_Y = 5.25
+const PHY45_GRID = [
+  ...[3, 4, 5, 6, 7, 8, 10].map((vy) => ({ name: `2/2, a launched at vy = ${vy}`, m1: 2, m2: 2, vy })),
+  ...[
+    [1, 3],
+    [1, 4],
+    [2, 1],
+    [2, 3],
+  ].map(([m1, m2]) => ({ name: `${m1}/${m2} from rest`, m1: m1!, m2: m2!, vy: undefined as number | undefined })),
+]
+const PHY45_IDEAL_ONLY = [
+  { name: '1/2 from rest', m1: 1, m2: 2, vy: undefined as number | undefined },
+  { name: '3/1 from rest', m1: 3, m2: 1, vy: undefined as number | undefined },
+]
+
+async function phy45Run(scene: Scene, vy: number | undefined): Promise<{ energyGain: number; crossings: string[] }> {
+  if (vy !== undefined) scene.bodies.find((body) => body.id === 'a')!.vy = vy
+  const sim = await createSimulator(parse(scene))
+  const energy = (): number => {
+    let total = 0
+    for (const [id, state] of sim.readStates()) {
+      if (id === 'teto') continue
+      const m = scene.bodies.find((body) => body.id === id)!.mass
+      total += 0.5 * m * (state.linvel.x ** 2 + state.linvel.y ** 2) + 0.5 * ((m * (0.4 ** 2 + 0.4 ** 2)) / 12) * state.angvel ** 2 + m * G * state.position.y
+    }
+    return total
+  }
+  const e0 = energy()
+  let energyGain = 0
+  const crossings: string[] = []
+  for (let step = 1; step <= 600; step++) {
+    sim.step()
+    energyGain = Math.max(energyGain, energy() - e0)
+    for (const [id, side] of [['a', -1], ['b', 1]] as const) {
+      const s = sim.readStates().get(id)!
+      const top = { x: s.position.x - Math.sin(s.rotation) * 0.2, y: s.position.y + Math.cos(s.rotation) * 0.2 }
+      if (top.y > PHY45_PULLEY_Y && top.x * side < 0) crossings.push(`${id} at step ${step}`)
+    }
+  }
+  return { energyGain, crossings }
+}
+
 function slopeFrame(alphaDeg: number): { ux: number; uy: number; nx: number; ny: number } {
   const r = (alphaDeg * Math.PI) / 180
   return { ux: Math.cos(r), uy: Math.sin(r), nx: -Math.sin(r), ny: Math.cos(r) }
@@ -479,6 +527,12 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(tension(sim).tension).toBeGreaterThan(0)
     // PHY-25: over a massless pulley every segment reads the one T.
     expect(tension(sim).segments).toStrictEqual([tension(sim).tension, tension(sim).tension])
+  })
+
+  it.each([...PHY45_GRID, ...PHY45_IDEAL_ONLY])('PHY-45: $name over an ideal pulley gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
+    const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2), vy)
+    expect(energyGain).toBeLessThanOrEqual(0.5)
+    expect(crossings).toStrictEqual([])
   })
 
 })
@@ -1016,6 +1070,51 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     }
   })
 
+  it.each([
+    { name: 'Atwood 1 / 3 kg', m1: 1, m2: 3, steps: 160 },
+    { name: 'Atwood 3 / 2 kg', m1: 3, m2: 2, steps: 300 },
+  ])('PHY-49: $name released from rest keeps T₁ and T₂ constant within 1% while the disk spins up', async ({ m1, m2, steps }) => {
+    const M = 2
+    const a = ((m2 - m1) * G) / (m1 + m2 + M / 2)
+    const scene = atwoodScene(m1, m2, M)
+    scene.bodies.find((body) => body.id === 'teto')!.position.y = 40
+    const sim = await load(scene)
+    for (let step = 1; step <= steps; step++) {
+      sim.step()
+      const [t1, t2] = rope(sim).segments
+      expect(Math.abs(t1! - m1 * (G + a)), `T₁ at step ${step}`).toBeLessThanOrEqual(0.01 * m1 * Math.abs(G + a))
+      expect(Math.abs(t2! - m2 * (G - a)), `T₂ at step ${step}`).toBeLessThanOrEqual(0.01 * m2 * Math.abs(G - a))
+    }
+    const t = steps * TIMESTEP
+    expect(Math.abs(sim.readStates().get('a')!.linvel.y - a * t)).toBeLessThanOrEqual(0.01 * Math.abs(a * t))
+  })
+
+  it.each(PHY45_GRID)('PHY-45: $name over a pulley of mass M = 2 gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
+    const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2, 2), vy)
+    expect(energyGain).toBeLessThanOrEqual(0.5)
+    expect(crossings).toStrictEqual([])
+  })
+
+  // Rapier caps |ω|·Δt at π/4 on every body: 15π ≈ 47.1 rad/s at 60 Hz. Each run ends well past it.
+  it.each([
+    { name: 'Atwood 1 / 3 kg, M = 2', m1: 1, m2: 3, M: 2, steps: 250 },
+    { name: 'Atwood 3 / 1 kg, M = 2', m1: 3, m2: 1, M: 2, steps: 250 },
+    { name: 'Atwood 1 / 3 kg, M = 0.2', m1: 1, m2: 3, M: 0.2, steps: 230 },
+  ])('PHY-50: $name keeps T₁ and T₂ constant within 1% and v = a·t after the disk passes 15π rad/s', async ({ m1, m2, M, steps }) => {
+    const a = ((m2 - m1) * G) / (m1 + m2 + M / 2)
+    const scene = atwoodScene(m1, m2, M)
+    scene.bodies.find((body) => body.id === 'teto')!.position.y = 40
+    const sim = await load(scene)
+    for (let step = 1; step <= steps; step++) {
+      sim.step()
+      const [t1, t2] = rope(sim).segments
+      expect(Math.abs(t1! - m1 * (G + a)), `T₁ at step ${step}`).toBeLessThanOrEqual(0.01 * m1 * Math.abs(G + a))
+      expect(Math.abs(t2! - m2 * (G - a)), `T₂ at step ${step}`).toBeLessThanOrEqual(0.01 * m2 * Math.abs(G - a))
+    }
+    const t = steps * TIMESTEP
+    expect(Math.abs(sim.readStates().get('a')!.linvel.y - a * t)).toBeLessThanOrEqual(0.01 * Math.abs(a * t))
+  })
+
 })
 
 /**
@@ -1546,6 +1645,149 @@ describe('acceptance: ideal spring (PHY-26)', () => {
         const expected = ideal[i]! / ideal[i - 1]!
         expect(Math.abs(chain[i]! / chain[i - 1]! - expected)).toBeLessThanOrEqual(0.02 * expected)
       }
+    })
+
+    // PHY-48: the chain's ends join the group solve. Block energy ½m·v² + ½k·Δx², released at rest at Δx = 0.1.
+    const blockEnergy = (sim: Sim, m: number, k: number) => {
+      const state = sim.readStates().get('bloco')!
+      return 0.5 * m * state.linvel.x ** 2 + 0.5 * k * (state.position.x - X_EQ) ** 2
+    }
+
+    it.each([0, 20, 30, 50, 80, 100, 150, 200, 2000])('PHY-48: m = 1, k = 40, mₛ = 0.1, c = %s: energy never passes 1.02·E₀ in 600 steps, and falls below E₀ when c > 0', async (c) => {
+      const sim = await load(horizontalScene(1, 40, X_EQ + 0.1, c, 0.1))
+      const energy = run(sim, 600, () => blockEnergy(sim, 1, 40))
+      expect(energy[0]).toBeCloseTo(0.2, 5)
+      expect(Math.max(...energy), `max E ${Math.max(...energy)}`).toBeLessThanOrEqual(1.02 * energy[0]!)
+      if (c > 0) expect(energy[600]!).toBeLessThan(energy[0]!)
+    })
+
+    it.each([
+      { c: 200, steps: 60, expected: 0.081939 },
+      { c: 200, steps: 600, expected: 0.013520 },
+      { c: 2000, steps: 60, expected: 0.098021 },
+      { c: 2000, steps: 600, expected: 0.081874 },
+    ])('PHY-48: overdamped c=$c, mₛ = 0.001, step $steps: displacement follows the ideal damped oscillator within 1%', async ({ c, steps, expected }) => {
+      const sim = await load(horizontalScene(1, 40, X_EQ + 0.1, c, 0.001))
+      const dx = run(sim, steps, () => sim.readStates().get('bloco')!.position.x - X_EQ)
+      expect(Math.abs(dx[steps]! - expected), `displacement ${dx[steps]} at step ${steps}`).toBeLessThan(0.01 * expected)
+    })
+
+    it('PHY-48: stiff spring against a light block (m = 0.01, k = 400, mₛ = 0.001, c = 0): energy stays below 1.3·E₀ for 600 steps', async () => {
+      const sim = await load(horizontalScene(0.01, 400, X_EQ + 0.1, 0, 0.001))
+      const energy = run(sim, 600, () => blockEnergy(sim, 0.01, 400))
+      expect(energy[0]).toBeCloseTo(2, 5)
+      expect(Math.max(...energy), `max E ${Math.max(...energy)}`).toBeLessThanOrEqual(1.3 * energy[0]!)
+    })
+
+    it('PHY-48: heavily damped spring with mass (c = 200, mₛ = 0.2) hangs at (m + mₛ/2)g/k below its natural length within 2% after 6000 steps', async () => {
+      const m = 1
+      const ms = 0.2
+      const k = 40
+      const x0 = 1
+      const sim = await load({
+        version: 1,
+        constants: { g: G },
+        bodies: [
+          { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 6 }, rotation: 0 },
+          { shape: 'rectangle', width: 0.4, height: 0.4, id: 'bloco', fixed: false, mass: m, position: { x: 0, y: 5.75 - x0 - 0.2 }, rotation: 0 },
+        ],
+        forces: [],
+        contacts: [],
+        constraints: [
+          { id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: -0.25 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0.2 } }, k, x0, c: 200, mass: ms },
+        ],
+      })
+      for (let i = 0; i < 6000; i++) sim.step()
+      const stretch = 5.75 - (sim.readStates().get('bloco')!.position.y + 0.2) - x0
+      const drop = ((m + ms / 2) * G) / k
+      expect(Math.abs(stretch - drop), `stretch ${stretch}, expected ${drop}`).toBeLessThanOrEqual(0.02 * drop)
+    })
+
+    describe('two springs with mass on one block', () => {
+      const pair = (reverse: boolean, x: number): Scene => {
+        const constraints: Scene['constraints'] = [
+          { id: 'left-spring', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200, mass: 0.1 },
+          { id: 'right-spring', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200, mass: 0.1 },
+        ]
+        if (reverse) constraints.reverse()
+        return {
+          version: 1,
+          constants: { g: 0 },
+          forces: [],
+          contacts: [],
+          constraints,
+          bodies: [
+            { id: 'left', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+            { id: 'right', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+            { id: 'body', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 1, position: { x, y: 0 }, rotation: 0 },
+          ],
+        }
+      }
+
+      it.each([false, true])('PHY-48: at rest the block stays within 0.1 mm of the center for 300 steps, reverse=%s', async (reverse) => {
+        const sim = await load(pair(reverse, 0))
+        const positions = run(sim, 300, () => sim.readStates().get('body')!.position.x)
+        const worst = Math.max(...positions.map(Math.abs))
+        expect(worst, `max drift ${worst}`).toBeLessThan(1e-4)
+      })
+
+      it.each([false, true])('PHY-48: released at x = 0.1 the energy ½m·v² + ½(2k)·x² never passes 1.02·E₀, reverse=%s', async (reverse) => {
+        const sim = await load(pair(reverse, 0.1))
+        const energy = run(sim, 600, () => {
+          const state = sim.readStates().get('body')!
+          return 0.5 * state.linvel.x ** 2 + 0.5 * 80 * state.position.x ** 2
+        })
+        expect(energy[0]).toBeCloseTo(0.4, 5)
+        expect(Math.max(...energy), `max E ${Math.max(...energy)}`).toBeLessThanOrEqual(1.02 * energy[0]!)
+      })
+    })
+
+    it.each([0, 200, 2000])('PHY-48: both ends on light free blocks (m = 0.1, k = 40, mₛ = 0.1, c = %s): energy ½m·(v₁² + v₂²) + ½k·Δx² never passes 1.02·E₀ in 600 steps', async (c) => {
+      const sim = await load({
+        version: 1,
+        constants: { g: 0 },
+        forces: [],
+        contacts: [],
+        bodies: [
+          { id: 'esq', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 0.1, position: { x: -0.6, y: 0 }, rotation: 0 },
+          { id: 'dir', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 0.1, position: { x: 0.6, y: 0 }, rotation: 0 },
+        ],
+        constraints: [
+          { id: 'mola', kind: 'spring', a: { bodyId: 'esq', anchor: { x: 0, y: 0 } }, b: { bodyId: 'dir', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c, mass: 0.1 },
+        ],
+      })
+      const energy = run(sim, 600, () => {
+        const states = sim.readStates()
+        const kinetic = ['esq', 'dir'].reduce((sum, id) => sum + 0.5 * 0.1 * states.get(id)!.linvel.x ** 2, 0)
+        return kinetic + 0.5 * 40 * spring(sim).dx ** 2
+      })
+      expect(energy[0]).toBeCloseTo(0.8, 5)
+      expect(Math.max(...energy), `max E ${Math.max(...energy)}`).toBeLessThanOrEqual(1.02 * energy[0]!)
+    })
+
+    it('PHY-48: free bar held at its end by a spring with mass (c = 200) perpendicular to it: energy ½m·v² + ½I·ω² + ½k·Δx² never passes 1.02·E₀ in 600 steps', async () => {
+      const m = 1
+      const k = 40
+      const inertia = (m * (1 ** 2 + 0.1 ** 2)) / 12
+      const sim = await load({
+        version: 1,
+        constants: { g: 0 },
+        forces: [],
+        contacts: [],
+        bodies: [
+          { id: 'ancora', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 0.5, y: 1.1 }, rotation: 0 },
+          { id: 'barra', shape: 'rectangle', width: 1, height: 0.1, fixed: false, mass: m, position: { x: 0, y: 0 }, rotation: 0 },
+        ],
+        constraints: [
+          { id: 'mola', kind: 'spring', a: { bodyId: 'ancora', anchor: { x: 0, y: 0 } }, b: { bodyId: 'barra', anchor: { x: 0.5, y: 0 } }, k, x0: 1, c: 200, mass: 0.1 },
+        ],
+      })
+      const energy = run(sim, 600, () => {
+        const state = sim.readStates().get('barra')!
+        return 0.5 * m * (state.linvel.x ** 2 + state.linvel.y ** 2) + 0.5 * inertia * state.angvel ** 2 + 0.5 * k * spring(sim).dx ** 2
+      })
+      expect(energy[0]).toBeCloseTo(0.2, 5)
+      expect(Math.max(...energy), `max E ${Math.max(...energy)}`).toBeLessThanOrEqual(1.02 * energy[0]!)
     })
   })
 })

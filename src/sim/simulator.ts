@@ -130,6 +130,8 @@ interface RopeBinding {
   via: Array<PointBinding & { radius: number }>
   /** L: the path length at the DOCUMENT poses, fixed for the world's life. */
   length: number
+  /** The wrap direction each pulley in `via` holds (PHY-45), refreshed at every read of the real poses. */
+  keep: Array<1 | -1>
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
@@ -153,9 +155,10 @@ interface Grip {
   disk: RAPIER.RigidBody
   /** Angle from where the rope meets the disk to the mark, in the wrap direction: the arriving piece's share. */
   share: number
-  /** The rope's meeting angle (`RopeArc.start`) and the disk's rotation when `share` was last brought up to date. */
+  /** The rope's meeting angle (`RopeArc.start`) when `share` was last brought up to date. */
   start: number
-  rotation: number
+  /** The disk's angular velocity before the step, for the turn the step integrates (Rapier's own angle runs short of ω·Δt). */
+  w0: number
 }
 
 interface Piece {
@@ -216,7 +219,10 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
     at[0]!,
     at.at(-1)!,
     rope.via.map((p, i) => ({ center: at[i + 1]!, radius: p.radius })),
+    rope.keep,
   )
+  // Only the bodies' real poses move the kept wrap; the predicted ones (mid and end of step) read it.
+  if (!moved) rope.keep = path.arcs.map((arc) => arc.direction)
   const s = path.segments
   const pulls = points.map((point, i): RopePull => {
     // An end is pulled along its one leg; a pulley back along the leg that
@@ -336,7 +342,7 @@ function dot(p: Vec2, q: Vec2): number {
 /**
  * The chain on the spring's axis: end a, the nodes, end b, as distances from
  * end a now (`at`) and velocities along the axis (`v`). The nodes run `lag`
- * seconds behind the bodies (see pushChain), so the ends are taken back
+ * seconds behind the bodies (see chainLag), so the ends are taken back
  * there too, each at its velocity now.
  */
 function chainAxis(s: SpringBinding, chain: Chain, lag: number) {
@@ -353,13 +359,15 @@ function chainTensions(s: SpringBinding, at: readonly number[], v: readonly numb
 }
 
 /**
- * The nodes after one θ-method step, the ends moving on at their velocity:
- * q with −κ q_{i−1} + (μ/θ²Δt² + 2κ) q_i − κ q_{i+1} = rhs_i, κ = k′ + c′/θΔt,
- * solved by the Thomas algorithm. θ > ½ keeps it stable for any mass and
- * damps the modes a 60 Hz step cannot follow. Returns the tensions before
- * the step (`T`) with the nodes.
+ * The nodes after one θ-method step, the ends prescribed to finish it at
+ * velocities `W` (a, b) along the axis: q with −κ q_{i−1} + (μ/θ²Δt² + 2κ) q_i
+ * − κ q_{i+1} = rhs_i, κ = k′ + c′/θΔt, solved by the Thomas algorithm. θ > ½
+ * keeps it stable for any mass and damps the modes a 60 Hz step cannot follow.
+ * Returns the nodes `q` and their velocities `w`, and the F_el each end gets
+ * (θ of the tension after the step, 1 − θ of the one before). All of it is
+ * affine in `W`, which is what lets pushSpring put the ends in the group solve.
  */
-function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: readonly number[], g: number) {
+function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: readonly number[], g: number, W: readonly [number, number]) {
   const n = CHAIN_NODES
   const dt = TIMESTEP
   const th = CHAIN_THETA
@@ -371,6 +379,8 @@ function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: rea
   const T = chainTensions(s, at, v)
   const second = (x: readonly number[], i: number) => x[i + 1]! - 2 * x[i]! + x[i - 1]!
   const q = at.map((p, j) => p + dt * v[j]!)
+  q[0] = at[0]! + dt * ((1 - th) * v[0]! + th * W[0])
+  q[n + 1] = at[n + 1]! + dt * ((1 - th) * v[n + 1]! + th * W[1])
   const rhs = at.map((p, i) =>
     i === 0 || i === n + 1
       ? 0
@@ -391,7 +401,9 @@ function chainStep(s: SpringBinding, chain: Chain, at: readonly number[], v: rea
     d.push((rhs[i]! + kappa * (d[i - 2] ?? 0)) / m)
   }
   for (let i = n; i >= 1; i--) q[i] = d[i - 1]! - sweep[i - 1]! * (i < n ? q[i + 1]! : 0)
-  return { q, T }
+  const w = q.map((p, j) => (j === 0 ? W[0] : j === n + 1 ? W[1] : (p - at[j]!) / (th * dt) - ((1 - th) / th) * v[j]!))
+  const after = chainTensions(s, q, w)
+  return { q, w, force: { a: th * after[0]! + (1 - th) * T[0]!, b: th * after[n]! + (1 - th) * T[n]! } }
 }
 
 /** A chain for `mass`; null for the ideal spring. */
@@ -422,12 +434,11 @@ function pieceBounds(rope: RopeBinding): number[] {
   return [0, ...rope.grips.map((g) => g.at + 1), rope.via.length + 1]
 }
 
-/** Each grip's share of its arc on `path`, with the disks turned `spin` beyond their rotation now. */
-function gripShares(rope: RopeBinding, path: RopePath, spin?: readonly number[]): number[] {
+/** Each grip's share of its arc on `path`, with the disks turned `turns` since `share` was last brought up to date. */
+function gripShares(rope: RopeBinding, path: RopePath, turns?: readonly number[]): number[] {
   return rope.grips.map((g, k) => {
     const arc = path.arcs[g.at]!
-    const turned = wrapAngle(g.disk.rotation() - g.rotation) + (spin?.[k] ?? 0)
-    return g.share + arc.direction * (turned - wrapAngle(arc.start - g.start))
+    return g.share + arc.direction * ((turns?.[k] ?? 0) - wrapAngle(arc.start - g.start))
   })
 }
 
@@ -802,11 +813,22 @@ class RapierSimulator implements Simulator {
         if (!rigid) throw new Error(`constraint references missing body '${bodyId}'`)
         return { rigid, anchorLocal }
       }
-      // A pulley with mass (PHY-25) is a disk body of its own that only
-      // spins, I = ½MR², kept on its axle by the rope code; its mass rides the
-      // mount as a collider that touches nothing, so its weight and inertia
-      // enter the mount's translation. Mass 0 builds nothing: the ideal pulley.
+      // Every pulley gets the rim below; only a pulley with mass (PHY-25) goes
+      // on to a disk body of its own that only spins, I = ½MR², kept on its
+      // axle by the rope code. Its mass rides the mount as a collider that
+      // touches nothing, so its weight and inertia enter the mount's
+      // translation. Mass absent or 0 stops after the rim: the ideal pulley.
       for (const pulley of scene.pulleys ?? []) {
+        // The rim (PHY-45): every pulley stops a body that reaches it instead of letting it through the disk.
+        // On the mount, so it never touches the mount itself; no mass, no friction, no bounce.
+        const rim = RAPIER.ColliderDesc.ball(pulley.radius)
+          .setTranslation(pulley.anchor.x, pulley.anchor.y)
+          .setMassProperties(0, { x: 0, y: 0 }, 0)
+          .setFriction(0)
+          .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setRestitution(0)
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+        world.createCollider(rim, point(pulley.bodyId, pulley.anchor).rigid)
         if (!pulley.mass) continue
         const mount = point(pulley.bodyId, pulley.anchor)
         const axle = worldPoint(mount)
@@ -852,6 +874,7 @@ class RapierSimulator implements Simulator {
             return { ...point(pulley.bodyId, pulley.anchor), radius: pulley.radius }
           }),
           length: path.length,
+          keep: path.arcs.map((arc) => arc.direction),
           tension: 0,
           residual: 0,
           predicted: 0,
@@ -860,7 +883,7 @@ class RapierSimulator implements Simulator {
           grips: rope.via.flatMap((id, at) => {
             const disk = disks.get(id)
             const arc = path.arcs[at]!
-            return disk ? [{ at, disk, share: arc.sweep / 2, start: arc.start, rotation: disk.rotation() }] : []
+            return disk ? [{ at, disk, share: arc.sweep / 2, start: arc.start, w0: disk.angvel() }] : []
           }),
           pieces: [],
         }
@@ -918,10 +941,7 @@ class RapierSimulator implements Simulator {
       )
     }
     const rebaseChains: Array<() => void> = []
-    for (const s of this.springs) {
-      if (s.chain) rebaseChains.push(this.pushChain(s, s.chain))
-      else this.pushSpring(s)
-    }
+    for (const s of this.springs) rebaseChains.push(...this.pushSpring(s))
     // Connected ropes share a solve; fixed anchors do not couple their motion.
     const remaining = new Set(this.ropes)
     const groups: RopeBinding[][] = []
@@ -941,7 +961,12 @@ class RapierSimulator implements Simulator {
       if (group.length > 1 || group[0]!.grips.length) this.pullPieces(group)
       else this.pullRope(group[0]!)
     }
+    // Rapier caps |ω|·Δt at π/4 on every body. A disk keeps its ω outside the world: it enters the step at 0, so the
+    // solver only adds the rope torque's Δt·τ/I, and gets ω back after (PHY-50). Its Rapier angle means nothing.
+    const spins = [...this.disks.values()].map((disk) => ({ disk, w: disk.angvel() }))
+    for (const { disk } of spins) disk.setAngvel(0, true)
     this.world.step()
+    for (const { disk, w } of spins) disk.setAngvel(w + disk.angvel(), true)
     for (const rebase of rebaseChains) rebase()
     for (const group of groups) {
       if (group.length > 1 || group[0]!.grips.length) this.correctPieces(group)
@@ -1033,68 +1058,93 @@ class RapierSimulator implements Simulator {
    * A constant force over Rapier's substeps moves a body φ of the Euler
    * distance, which alone would pump energy in; the elastic term keeps its
    * (1 − φ)Δt lead, with both k and c using the end-of-step relative velocity.
+   *
+   * With mass (PHY-30) the spring is a θ-method chain (chainStep), and each
+   * end gets its tension weighted the same way. Springs, ideal or with mass,
+   * that share a dynamic body solve together: the chain's ends are prescribed
+   * at the velocities the group's forces leave them (PHY-48), so a stiff or
+   * damped end no longer injects energy through an explicit force. Returns
+   * the chains' rebases for after the world step.
    */
-  private pushSpring(s: SpringBinding): void {
+  private pushSpring(s: SpringBinding): Array<() => void> {
     // Only shared dynamic bodies couple springs; fixed anchors do not.
     const group = new Set([s])
     for (const member of group) {
       for (const spring of this.springs) {
-        if (!spring.chain && [member.a, member.b].some(({ rigid }) => rigid.isDynamic() && (rigid === spring.a.rigid || rigid === spring.b.rigid))) group.add(spring)
+        if ([member.a, member.b].some(({ rigid }) => rigid.isDynamic() && (rigid === spring.a.rigid || rigid === spring.b.rigid))) group.add(spring)
       }
     }
     const springs = this.springs.filter((spring) => group.has(spring))
-    // Keep each group's place relative to chains in the existing hook.
-    if (s !== springs[0]) return
+    if (s !== springs[0]) return []
+    const g = this.world.gravity
     const lead = (1 - this.substepFactor()) * TIMESTEP
-    const rows = springs.map((spring) => {
-      const { now, u, dx, rate } = springAt(spring, lead)
-      const pulls = [
+    // Row i: F_i − Σ_c c.d·ΔV_c = rhs_i, ΔV_c = Δt·Σ_j K(pulls_j, c.along)·F_j the
+    // velocity the forces add to c.along. An ideal spring is one row on its
+    // rate; a chain's dynamic end is one row on the velocities of both ends,
+    // d being the end force's slope against each end's velocity (PHY-48).
+    const rows: Array<{ pulls: RopePull[]; rhs: number; couple: Array<{ along: RopePull[]; d: number }> }> = []
+    const settle: Array<(forces: readonly number[]) => () => void> = []
+    // Read the group's free velocities before applying its spring forces.
+    for (const spring of springs) {
+      const chain = spring.chain
+      if (!chain) {
+        const { now, u, dx, rate } = springAt(spring, lead)
+        const pulls = [
+          { rigid: spring.a.rigid, p: now[0], u },
+          { rigid: spring.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
+        ]
+        const free = pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, g))
+        const implicit = spring.k * lead + spring.c
+        rows.push({ pulls, rhs: spring.k * dx + spring.c * rate + implicit * (lengtheningRate(pulls, free) - rate), couple: [{ along: pulls, d: -implicit }] })
+        continue
+      }
+      const { now, u, at, v } = chainAxis(spring, chain, this.chainLag())
+      const ends: [RopePull, RopePull] = [
         { rigid: spring.a.rigid, p: now[0], u },
         { rigid: spring.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
       ]
-      // Read the group's free velocities before applying its spring forces.
-      const free = pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, this.world.gravity))
-      const implicit = spring.k * lead + spring.c
-      const rhs = spring.k * dx + spring.c * rate + implicit * (lengtheningRate(pulls, free) - rate)
-      return { pulls, implicit, rhs }
-    })
+      const free: [number, number] = [dot(freePointVelocity(ends[0].rigid, now[0], g), u), dot(freePointVelocity(ends[1].rigid, now[1], g), u)]
+      const run = (W: readonly [number, number]) => chainStep(spring, chain, at, v, dot(g, u), W).force
+      const f0 = run(free)
+      const fa = run([free[0] + 1, free[1]])
+      const fb = run([free[0], free[1] + 1])
+      // The ends' velocities in their pull directions are W_a and −W_b.
+      const slope = (end: 'a' | 'b') => [
+        { along: [ends[0]], d: fa[end] - f0[end] },
+        { along: [ends[1]], d: f0[end] - fb[end] },
+      ]
+      if (spring.a.rigid.isDynamic()) rows.push({ pulls: [ends[0]], rhs: f0.a, couple: slope('a') })
+      if (spring.b.rigid.isDynamic()) rows.push({ pulls: [ends[1]], rhs: f0.b, couple: slope('b') })
+      // With the forces solved, the chain runs once more at the end velocities
+      // they give (it keeps the nodes and the readout), and rebases after Rapier
+      // moves end a, including acceleration and anchor rotation (PHY-42).
+      settle.push((forces) => {
+        const dv = ends.map((end) => TIMESTEP * rows.reduce((sum, row, i) => sum + forces[i]! * ropeInvMass(row.pulls, [end]), 0))
+        const { q, w, force } = chainStep(spring, chain, at, v, dot(g, u), [free[0] + dv[0]!, free[1] - dv[1]!])
+        chain.force = force
+        chain.p = q.slice(1, -1)
+        chain.w = w.slice(1, -1)
+        return () => {
+          const a = worldPoint(spring.a)
+          const moved = (a.x - now[0].x) * u.x + (a.y - now[0].y) * u.y
+          chain.p = chain.p.map((p) => p - moved)
+        }
+      })
+    }
     // ponytail: regroup at each call and solve dense O(n³) per group; cache groups/use sparse solves if scene sizes demand it.
-    const matrix = rows.map((a, i) => rows.map((b, j) => (i === j ? 1 : 0) + a.implicit * TIMESTEP * ropeInvMass(b.pulls, a.pulls)))
+    const matrix = rows.map((a, i) => rows.map((b, j) => (i === j ? 1 : 0) - TIMESTEP * a.couple.reduce((sum, c) => sum + c.d * ropeInvMass(b.pulls, c.along), 0)))
     const forces = solveLinear(matrix, rows.map((row) => row.rhs))
-    if (!forces) throw new Error('Unable to solve ideal spring forces')
+    if (!forces) throw new Error('Unable to solve spring forces')
     rows.forEach((row, i) => applyPulls(row.pulls, forces[i]!, false))
+    return settle.map((finish) => finish(forces))
   }
 
   /**
-   * Spring with mass (PHY-30), in pushSpring's place: one θ-method chain
-   * step, and each end gets its spring's tension weighted the same way, which
-   * sees the ends θΔt ahead of the chain. It must see them pushSpring's
-   * (1 − φ)Δt ahead of the bodies (with θ = 1 and no lag the block loses two
-   * thirds of its amplitude in 10 periods), so the chain runs (θ − 1 + φ)Δt
+   * The chain sees the ends θΔt ahead of itself, but they must be seen
+   * pushSpring's (1 − φ)Δt ahead of the bodies (with θ = 1 and no lag the block
+   * loses two thirds of its amplitude in 10 periods), so it runs (θ − 1 + φ)Δt
    * behind the bodies.
    */
-  private pushChain(s: SpringBinding, chain: Chain): () => void {
-    const { now, u, at, v } = chainAxis(s, chain, this.chainLag())
-    const n = CHAIN_NODES
-    const { q, T: before } = chainStep(s, chain, at, v, dot(this.world.gravity, u))
-    const th = CHAIN_THETA
-    const w = q.map((p, j) => (j === 0 || j === n + 1 ? v[j]! : (p - at[j]!) / (th * TIMESTEP) - ((1 - th) / th) * v[j]!))
-    const after = chainTensions(s, q, w)
-    const fa = th * after[0]! + (1 - th) * before[0]!
-    const fb = th * after[n]! + (1 - th) * before[n]!
-    chain.force = { a: fa, b: fb }
-    chain.p = q.slice(1, -1)
-    chain.w = w.slice(1, -1)
-    if (s.a.rigid.isDynamic()) s.a.rigid.addForceAtPoint({ x: fa * u.x, y: fa * u.y }, now[0], true)
-    if (s.b.rigid.isDynamic()) s.b.rigid.addForceAtPoint({ x: -fb * u.x, y: -fb * u.y }, now[1], true)
-    // Rebase after Rapier moves end a, including acceleration and anchor rotation.
-    return () => {
-      const a = worldPoint(s.a)
-      const moved = (a.x - now[0].x) * u.x + (a.y - now[0].y) * u.y
-      chain.p = chain.p.map((p) => p - moved)
-    }
-  }
-
   private chainLag(): number {
     return (CHAIN_THETA - 1 + this.substepFactor()) * TIMESTEP
   }
@@ -1121,8 +1171,9 @@ class RapierSimulator implements Simulator {
       const frame = ropeFrame(rope)
       const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
       // Each disk's free turn over the step, the same way.
-      const spin = rope.grips.map(({ disk }) => {
-        const w0 = disk.angvel()
+      const spin = rope.grips.map((grip) => {
+        const { disk } = grip
+        const w0 = (grip.w0 = disk.angvel())
         const w1 = w0 + TIMESTEP * disk.userTorque() * disk.effectiveWorldInvInertia()
         return TIMESTEP * (w0 + phi * (w1 - w0))
       })
@@ -1151,6 +1202,10 @@ class RapierSimulator implements Simulator {
         }
       })
     })
+    // A prediction that pushes the end-of-step leg against the mid-step one (contact holds a body) would flip the
+    // diagonal's sign. That row falls back to the legs its own pull acts along, so it stays in the matrix with a
+    // positive diagonal. pullRope's scalar `k <= 0` branch does not do this: it zeroes the tension and returns (PHY-45).
+    for (const row of rows) if (ropeInvMass(row.pulls, row.along) <= 0) row.along = row.pulls
     const K = rows.map((a) => rows.map((p) => ropeInvMass(p.pulls, a.along)))
     const predicted = tautTensions(
       K,
@@ -1171,14 +1226,16 @@ class RapierSimulator implements Simulator {
 
   /** correctRope, once per piece and solved together; first the shares catch up with the disks' turn. */
   private correctPieces(ropes: readonly RopeBinding[]): void {
+    const phi = this.substepFactor()
     const rows = ropes.flatMap((rope) => {
       this.placeDisks(rope)
       const frame = ropeFrame(rope)
-      const shares = gripShares(rope, frame.path)
+      // The same turn pullPieces predicted, now with the ω the step ended on.
+      const turns = rope.grips.map(({ disk, w0 }) => TIMESTEP * (w0 + phi * (disk.angvel() - w0)))
+      const shares = gripShares(rope, frame.path, turns)
       rope.grips.forEach((grip, k) => {
         grip.share = shares[k]!
         grip.start = frame.path.arcs[grip.at]!.start
-        grip.rotation = grip.disk.rotation()
       })
       const now = piecePulls(rope, frame)
       const lengths = pieceLengths(rope, frame.path, shares)
