@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -157,3 +157,32 @@ Todas as mutações foram restauradas byte a byte; diff de produção e testes l
 **Validação do gate:** duas tentativas do comando obrigatório pararam em `npm test`, ambas com **29 files passed, 1 failed; 766 tests passed, 1 failed (767)**. Única falha: timeout de 5000 ms no teste existente `src/sim/simulator.test.ts:520` ("a body launched beyond the viewport integrates indefinitely"); execuções de 6533/6457 ms. Esse arquivo isolado passa **29/29** em 2,86 s. Diagnóstico sem alterar testes, configuração ou tolerâncias: `npx vitest run --maxWorkers=2` → **30 files passed, 767 tests passed**, 35,29 s. Executados separadamente `npm run lint && npm run typecheck && npm run build`: todos exit 0; aviso existente de chunk acima de 500 kB. O diagnóstico com dois workers não substitui a confirmação do gate padrão no próximo handoff.
 
 `Stage: to-implement` neste commit de reabertura, sem merge e sem linha no ledger. Sem alteração persistente de produção ou testes na revisão. Totais: Standards 3 observações de documentação no CLEAN-20; Spec 1 falha do critério 2 (R1), além da limitação de validação do gate registrada acima.
+
+#### Resolution (2026-10-01)
+
+Verdict: Approve
+
+R1 resolvido conforme o contrato atualizado pela decisão registrada do proxy: `keep` mantém sempre a direção guardada, inclusive ao passar de 3π/2. Revisão dos eixos Standards e Spec em sub-agentes independentes, sobre `git diff ecfac46f813d2332f00bbe056f3a9d0a044c1732...3a8809c`; nesta segunda passagem, conferidos R1 e o diff desde `9a23fd2`. Nenhum novo achado em código já revisado. Nenhuma correção persistente de produção ou testes feita pela etapa 3.
+
+**Standards:** nenhum achado novo ou smell que justifique mudança. Primary files e separação entre testes e produção preservados: `59fe8bb` e `ae28633` são os commits de testes, anteriores aos respectivos fixes; `b6b61d8` e `6993723` não alteram testes. As três pendências de documentação da primeira revisão continuam no CLEAN-20: descrição dos colliders no ADR-0004, comentário "Mass 0 builds nothing" e comparação imprecisa da guarda com o retorno de `pullRope`.
+
+**Spec:** nenhum achado novo; R1 atendido. A grade autorizada cobre 13 cenários ideais e 11 com massa, todos por 600 passos no motor público, com energia dos blocos calculada independentemente e cruzamento pela âncora transformada para o mundo. O teste corrigido amostra `y = -2` a `0`, incluindo o antigo limiar em `y = -1`, e verifica direção e variação de comprimento antes, durante e depois. Sem `keep`, o cálculo pelo sinal da curva e o caller `scenePath` são preservados. As asserções e tolerâncias existentes não foram alteradas.
+
+**Proxy decided (uma linha já registrada no ticket):** manter `keep` incondicionalmente, remover a cedência de 3π/2 e atualizar o critério 2 e o fora do escopo; parar para outra decisão se algum dos 24 cenários falhasse sem a cedência. Implementação e testes seguem essa decisão; nenhum desses cenários falhou. A corda que se solta da polia e cruza a costura 0/2π permanece fora deste contrato.
+
+**Prova vermelha repetida pelo reviewer sobre a produção final `3a8809c`:** cada mutação isolada e restaurada byte a byte antes da seguinte. Nos testes de integração, a mutação do aro reprova cada um dos 24 casos autorizados; as demais identificam abaixo seus casos vermelhos.
+
+| Mutação / comando | Saída vermelha reproduzida |
+| --- | --- |
+| Retirar `world.createCollider(rim, …)`, substituindo por `void rim`; `npx vitest run src/sim/acceptance.test.ts -t PHY-45` | **24 failed, 71 skipped (95)**, exit 1. Todos os 13 ideais e 11 com massa falham na energia. O 1/3 ideal dá `expected 5111.9602889561365 to be less than or equal to 0.5`. |
+| Retirar a guarda `row.along = row.pulls`; mesmo comando | **5 failed, 19 passed, 71 skipped (95)**, exit 1. Com massa: 2/2 com `vy = 5`, 1/3, 1/4, 2/1 e 2/3. O 1/3 dá `expected 12890.141529255683 to be less than or equal to 0.5`. Esta contagem na produção final substitui os seis vermelhos medidos antes da remoção da cedência. |
+| Ignorar `keep` em `ropePath`, retornando apenas o sinal da curva; `npx vitest run src/sim/acceptance.test.ts src/scene/ropePath.test.ts -t PHY-45` | **7 failed, 20 passed, 83 skipped (110)**, exit 1: os três testes diretos de geometria e quatro cenários com massa (2/2 com `vy = 5`, 7 e 10; 2/3). O caso `vy = 5` dá `expected 2489.413977600549 to be less than or equal to 0.5`; geometria reprova com `expected -1 to be 1` e `expected 1 to be -1`. |
+| Restaurar temporariamente `ropePath.ts` de `b6b61d8`, com a antiga cedência de 3π/2; `npx vitest run src/scene/ropePath.test.ts -t PHY-45` | **2 failed, 1 passed, 12 skipped (15)**, exit 1. O teste corrigido falha em `direction at y = -0.9: expected 1 to be -1`; o teste novo das pontas próximas falha em `direction at e = -0.00: expected -1 to be 1`. Reproduz o vermelho dos testes de `ae28633` antes do fix `6993723`. |
+
+Permanece a inconsistência já registrada do critério 4: ele diz 26 cenários, enquanto o critério 1 e o plano de testes autorizam 24 e reservam os dois casos com massa restantes ao PHY-52. As mutações confirmam as regressões nos 600 passos; as asserções não pinam os passos exatos 71/156. Nenhum critério foi reescrito nesta revisão.
+
+**Gate padrão, após restauração e rebase:** `npm test && npm run lint && npm run typecheck && npm run build` → **30 files passed, 768 tests passed**, duração da suíte 32,30 s; lint, typecheck e build exit 0. O mesmo gate passou também antes das mutações (768/768). Sem flags de workers, mudança de timeout ou de tolerância. Apenas o aviso existente de chunk acima de 500 kB no build.
+
+Rebase sobre `sweatshop/2026-10-01-1211`: já atualizado, sem conflitos. Branch `phy/PHY-45-aro-da-polia` integrada à sessão com `--no-ff`, sem squash, em `17b9798`. Arquivos de comportamento: `src/sim/simulator.ts` e `src/scene/ropePath.ts`; testes: `src/sim/acceptance.test.ts` e `src/scene/ropePath.test.ts`. Resolução, linha do ledger e `Stage: done` escritos juntos no commit de fechamento sobre a sessão. Sem push ou PR nesta etapa, conforme o fluxo de sessão.
+
+Totais: Standards 0 achados novos e 3 pendências conhecidas no CLEAN-20; Spec 0 achados novos, R1 resolvido.
