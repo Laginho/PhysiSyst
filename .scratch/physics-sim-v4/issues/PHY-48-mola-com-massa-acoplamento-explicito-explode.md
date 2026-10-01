@@ -1,5 +1,5 @@
 # PHY-48: Mola com massa acoplada implicitamente aos corpos, no solve em grupo das molas
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -145,3 +145,31 @@ Cada um dos 23 novos casos tem a mutação e a primeira linha da saída vermelha
 
 - 2026-10-01 Review ended at reviewing (timeout); branch phy/PHY-48-mola-massa-solve-em-grupo holds the review; left for a human
 - 2026-10-01 Foreman: the review timed out at 20m right before its final gate and merge, no defect found; its commit 8c11a34 stays on the ticket branch. Back to `to-review` for a fresh stage 3 (driver relaunched with -ReviewMinutes 40).
+
+#### Resolution (2026-10-01)
+
+Verdict: Approve
+
+Retomada da etapa 3 após o timeout, com sub-agentes independentes nos eixos Standards e Spec. Diff original fixado em `git diff 0aac00c1193ee6142fa4044d3d78c66899631ea2...edb34e0`; re-review de `8c11a34..edb34e0`. Esse último diff apenas devolve o Stage a `to-review`. As duas correções da revisão anterior foram confirmadas, sem omissão adicional encontrada naquela revisão. Nenhuma alteração de produção, testes ou tolerâncias nesta retomada; nenhuma decisão de proxy.
+
+##### Standards
+
+0 achados. ADR-0004 distingue a equação dos grupos só de molas ideais daquela dos grupos mistos, e a evidência de mutação identifica os 23 casos novos individualmente. Primary files e separação entre commits respeitados: `025c038` contém testes e `Stage: implementing`; `80d33b9` contém apenas `simulator.ts` e ADR; `dd3f566` é o complemento só de testes após a mutação sobrevivente, conforme a exceção de correção de cobertura/harness do fluxo. Nenhum smell que justifique mudança.
+
+##### Spec
+
+0 achados; critérios 1–10 atendidos. Os testes pelo motor público cobrem os parâmetros, durações e limites dos critérios 1–6. Método G conferido: snapshot das velocidades livres por grupo, derivadas e sinais das duas pontas, linhas somente para pontas dinâmicas, execução final da cadeia e rebase depois de `world.step()`. A equação ideal, `CHAIN_THETA`, atraso e tolerâncias existentes foram preservados. O solver também recebe corretamente um grupo sem linhas dinâmicas. O ADR registra o solve em grupo, as alternativas A/B e o termo cruzado de `K` para as duas pontas no mesmo corpo.
+
+##### Red-green e validação
+
+Evidência red-green preservada da revisão `8c11a34`, detalhada por teste acima: M-base repõe exatamente o acoplamento explícito e produz 15 vermelhos/8 verdes no filtro PHY-48; M-group detecta ambos os casos em repouso; M-cross detecta as pontas livres amortecidas; M-vel detecta as pontas livres sem amortecimento; M-sign detecta os cinco casos horizontais de preservação. Nenhuma mutação ou teste novo foi necessário nesta retomada. O green independente no head integrado inclui todos esses testes e os existentes de PHY-30, PHY-42 e PHY-47.
+
+Gate independente sobre `56d6104`: `npm test && npm run lint && npm run typecheck && npm run build`, com `VITEST_MAX_WORKERS=1` somente no ambiente dessa chamada, restaurado ao terminar. **30 arquivos e 793 testes verdes**, suíte em 109,82 s; lint, typecheck e build exit 0. Os dois arquivos do simulador somam agora 149 testes, após os dois casos do PHY-49 integrados à sessão. Apenas o aviso de build existente do chunk do simulador acima de 500 kB.
+
+Limitação operacional registrada: duas execuções com a concorrência padrão terminaram com 792 testes verdes e o timeout de 5000 ms em `simulator.test.ts`, no teste existente `a body launched beyond the viewport…` (6601/6761 ms). Essa cena não contém molas; o teste passou isoladamente (1 verde, 28 ignorados, 3,68 s) e na suíte completa com um worker. Não houve aumento de timeout, mudança de tolerância nem configuração persistente de workers.
+
+##### Integração e fechamento
+
+A implementação já havia sido integrada com `--no-ff`, sem squash, em `80b4518` na sessão `sweatshop/2026-10-01-1211`; o timeout deixou pendente o fechamento. O rebase desta retomada eliminou `edb34e0`, cuja mudança de Stage já estava em `56d6104`. Conferidas as integrações posteriores de PHY-49/CLEAN-21: afetam polias, sem alterar o solve das molas, seus testes ou a seção Springs do ADR. `git merge --no-ff phy/PHY-48-mola-massa-solve-em-grupo` confirmou `Already up to date`. Resolução, linha do ledger apontando para `80b4518` e `Stage: done` registrados juntos no commit de fechamento sobre a sessão, sem push ou PR nesta etapa.
+
+Totais: Standards 0 achados; Spec 0 achados.
