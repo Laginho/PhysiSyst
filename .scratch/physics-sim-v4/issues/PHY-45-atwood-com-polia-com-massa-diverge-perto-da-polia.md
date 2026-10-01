@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -111,3 +111,44 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
   - Ignorar o `keep` (`ropeFrame` chama `ropePath(…, undefined)`): 4 vermelhos, todos com `M = 2`: 2/2 com `vy` = 5, 7 e 10, e 2/3 do repouso (o 2/2 com `vy = 5` do critério está entre eles). No `ropePath`, o primeiro caso de `keep` já nasceu vermelho (`expected -1 to be 1`).
   - Tirar o limite de 3π/2 em `ropePath` (`if (false && keep && …)`): o segundo caso de `keep` fica vermelho (`expected 1 to be -1`).
   - Os testes de `ropePath` chamam a função direto, então o vermelho do commit de testes basta como registro deles; os 24 cenários passam pelo motor público, e o registro está acima.
+
+#### Review (2026-10-01)
+
+Verdict: Reopen (critério 2, R1)
+
+Comparação fixada em `git diff ecfac46f813d2332f00bbe056f3a9d0a044c1732...b6b61d8`, base `sweatshop/2026-10-01-1211`. Revisão completa dos eixos Standards e Spec em sub-agentes; reprodução, mutações e validação pelo agente principal. Commits examinados: `59fe8bb` (testes e metadados) e `b6b61d8` (produção e metadados, sem alterar testes). Rebase sobre a sessão: já atualizado. Nenhuma linha `Proxy decided` no ticket.
+
+**Standards:** Primary files e separação teste/código respeitados; nenhum smell com benefício concreto de correção. Três observações de documentação, sem bloquear este ticket: ADR-0004 ainda afirma que polias só têm colliders no grupo 0 e atravessam corpos; `simulator.ts:813` ainda diz "Mass 0 builds nothing"; `simulator.ts:1171` compara a nova guarda com o ramo escalar `k <= 0`, embora o escalar zere a tensão e retorne, enquanto a guarda troca `along`. Registradas no CLEAN-20, bloqueado pelo PHY-45 para documentar o mecanismo final.
+
+**Spec:** um critério não atendido, R1 abaixo. Grade autorizada completa: 13 cenários ideais e 11 com massa, total 24, por 600 passos; energia calculada independentemente e cruzamento medido na âncora do topo transformada para o mundo. Nenhuma ampliação de escopo ou outra regressão identificada na leitura de todo o diff e dos callers.
+
+**❌ R1 — critério 2: a troca de direção após a corda passar reta pela polia salta o comprimento.** Em `src/scene/ropePath.ts:57–59`, o rebuild com a direção natural não preserva o comprimento na passagem pela tangente. O segundo teste novo (`src/scene/ropePath.test.ts:224–233`) compara apenas uma pose depois da troca com o caminho natural; essa igualdade não verifica continuidade antes/depois.
+
+Reprodução descartável, importando a função de produção `src/scene/ropePath.ts` diretamente no Node 24: uma polia em `(0, 0)`, raio `1`, `keep = [-1]`, `a = (-3, h)` e `b = (3, h)`. Subir as duas pontas por `h = 1` leva a corda ao segmento reto tangente no topo do disco e depois ao outro lado; ambas as pontas permanecem fora do disco.
+
+| `h` | Direção | Varredura | Comprimento (m) |
+| --- | --- | --- | --- |
+| 0,999999 | −1 | 0,0000006666667036192564 | 6,000000000000334 |
+| 1 | −1 | 0 | 6 |
+| 1,000001 | +1 | 1,2870027509198187 | 7,287003417586782 |
+
+Mover cada ponta 2 micrômetros produz um salto de **1,2870034175864484 m**. A asserção descartável `Math.abs(after.length - before.length) < 0.00001` falhou com exit 1: `AssertionError [ERR_ASSERTION]: criterion 2: continuous wrap switch; observed length jump=1.2870034175864484`. No limite pela esquerda o comprimento é 6; pela direita é `6 + 4·atan(1/3)`. O método descrito na prosa foi implementado, mas não cumpre o critério numerado "sem salto de comprimento".
+
+Restante para a etapa 2: provar R1 em um commit de teste vermelho na mesma costura `ropePath` já autorizada, amostrando a transição antes/durante/depois; corrigir a continuidade preservando a direção guardada no balanço por baixo e os 24 cenários. O critério 2 e os demais critérios não foram reescritos. A correção exige teste novo, portanto não cabe como pequeno fix da etapa 3.
+
+**Mutate-verify repetido pelo reviewer**, cada mutação isolada sobre `b6b61d8` e desfeita antes da seguinte:
+
+| Mutação de produção | Saída vermelha reproduzida |
+| --- | --- |
+| Remover `world.createCollider(rim, …)`, substituindo por `void rim` | `-t PHY-45`: **24 failed, 71 skipped (95)**, exit 1. O 1/3 ideal falha com `expected 20210.342689398185 to be less than or equal to 0.5`. |
+| Remover a atribuição da guarda de `pullPieces` | **6 failed, 18 passed, 71 skipped (95)**, exit 1. O 1/3 com massa falha com `expected 12890.141529255683 to be less than or equal to 0.5`. |
+| Ignorar `keep` em `ropePath`, usando `natural.map((d) => d)` | **4 failed, 20 passed, 71 skipped (95)**, exit 1. O 2/2 com massa e `vy = 5` falha com `expected 2489.413977600549 to be less than or equal to 0.5`. |
+| Desativar o limite de 3π/2 em `ropePath` | Nos dois testes PHY-45 de geometria: **1 failed, 1 passed, 12 skipped (14)**, exit 1; segundo caso: `expected 1 to be -1`. |
+
+Discrepância de verificação no critério 4: o texto menciona 26 cenários, mas o critério 1 e o plano de testes autorizam 24; os dois casos com massa restantes pertencem ao PHY-52. Foram reproduzidos os 24 vermelhos autorizados, sem ampliar a grade. As asserções agregam os 600 passos; esta revisão não confirmou os passos exatos 71/156 citados na prosa.
+
+Todas as mutações foram restauradas byte a byte; diff de produção e testes limpo. Após restaurar: `npx vitest run src/sim/acceptance.test.ts src/sim/simulator.test.ts src/scene/ropePath.test.ts` → **3 files passed, 138 tests passed**.
+
+**Validação do gate:** duas tentativas do comando obrigatório pararam em `npm test`, ambas com **29 files passed, 1 failed; 766 tests passed, 1 failed (767)**. Única falha: timeout de 5000 ms no teste existente `src/sim/simulator.test.ts:520` ("a body launched beyond the viewport integrates indefinitely"); execuções de 6533/6457 ms. Esse arquivo isolado passa **29/29** em 2,86 s. Diagnóstico sem alterar testes, configuração ou tolerâncias: `npx vitest run --maxWorkers=2` → **30 files passed, 767 tests passed**, 35,29 s. Executados separadamente `npm run lint && npm run typecheck && npm run build`: todos exit 0; aviso existente de chunk acima de 500 kB. O diagnóstico com dois workers não substitui a confirmação do gate padrão no próximo handoff.
+
+`Stage: to-implement` neste commit de reabertura, sem merge e sem linha no ledger. Sem alteração persistente de produção ou testes na revisão. Totais: Standards 3 observações de documentação no CLEAN-20; Spec 1 falha do critério 2 (R1), além da limitação de validação do gate registrada acima.
