@@ -86,7 +86,7 @@ o mesmo run os fechou.
         driver estaciona o ticket como \texttt{blocked}.\\
 14:38 & PHY-49 (giro próprio do disco) em 3 min; mergeado às 14:50.\\
 14:52 & CLEAN-21 (ADR do giro integrado) em 2 min; mergeado às 15:00.\\
-15:00 & PHY-50 (ω do disco além do limite do Rapier) começa. Por volta de
+15:00 & PHY-50 ($\omega$ do disco além do limite do Rapier) começa. Por volta de
         15:13 as tarefas são paradas de novo; a tentativa morre com um commit
         vermelho e uma edição sem commit. O foreman guarda os dois e apaga a
         branch.\\
@@ -95,7 +95,7 @@ o mesmo run os fechou.
         às 15:27, em 12 min.\\
 15:36 & PHY-50 em 8 min. A revisão bate no limite de uso do Codex às 15:44;
         o driver espera até 15:51 e mergeia às 16:05.\\
-16:11 & CLEAN-22 (ADR do contorno de ω) em 6 min; mergeado às 16:22.
+16:11 & CLEAN-22 (ADR do contorno de $\omega$) em 6 min; mergeado às 16:22.
         ``Nothing runnable''; PR \#10 atualizado às 16:23.\\
 \bottomrule
 \end{tabularx}
@@ -407,11 +407,11 @@ se comparam uma a uma. O que dá para afirmar:
   \item \textbf{Aviso inofensivo:} todo \texttt{.err} do Claude traz
         \texttt{claude-code:unrecognized\_model} para
         \texttt{claude-sonnet-5-5}; os estágios rodaram normalmente.
-  \item \textbf{Sem PDF:} nenhum motor de LaTeX nesta máquina. O Tectonic que
-        o Codex trazia em \path{~/.codex/.tmp/.../latex/bin} sumiu (a pasta
-        \texttt{bin} não existe mais, provavelmente depois do
-        \texttt{codex update}). Este relatório foi gravado só como
-        \texttt{.tex}.
+  \item \textbf{Tectonic sumiu:} o binário que o Codex trazia em
+        \path{~/.codex/.tmp/.../latex/bin} não existia mais, provavelmente
+        apagado pelo \texttt{codex update}. O relatório foi gravado primeiro só
+        como \texttt{.tex}; com o aval do Bruno, o foreman baixou o Tectonic
+        0.17.0 do release oficial para o mesmo caminho e gerou o PDF.
 \end{itemize}
 
 \section{Recomendações}
@@ -442,8 +442,9 @@ se comparam uma a uma. O que dá para afirmar:
         passar de 10 revisões, antes de qualquer troca de lineup. Hoje a
         comparação com o Sol high (19\,\% com 16 contra 12\,\% com 8) é
         anedota pela regra.
-  \item \textbf{Instalar um motor de LaTeX nesta máquina} (Tectonic ou MiKTeX)
-        para os próximos relatórios.
+  \item \textbf{Foreman: não depender do \path{.tmp} do Codex para o LaTeX.}
+        Uma atualização do Codex pode apagá-lo de novo; um Tectonic fora dele
+        (no \texttt{PATH}) sobrevive.
   \item \textbf{A fila acabou:} restam CLEAN-13, PHY-51 e PHY-52, todos
         \texttt{blocked} à espera do stage 1.
 \end{enumerate}
