@@ -1157,6 +1157,118 @@ describe('acceptance: ideal spring (PHY-26)', () => {
   })
 
   it.each([
+    { c: 200, steps: 60, expected: 0.081939 },
+    { c: 200, steps: 600, expected: 0.013520 },
+    { c: 2000, steps: 60, expected: 0.098021 },
+    { c: 2000, steps: 600, expected: 0.081874 },
+  ])('PHY-47: overdamped c=$c at step $steps: displacement follows the analytic solution within 1%', async ({ c, steps, expected }) => {
+    // Closed-form values for m = 1, k = 40, x(0) = 0.1, v(0) = 0
+    // from the ticket, independent of the simulator's integration scheme.
+    const sim = await load(horizontalScene(1, 40, X_EQ + 0.1, c))
+    const dx = run(sim, steps, () => sim.readStates().get('bloco')!.position.x - X_EQ)
+    expect(Math.abs(dx[steps]! - expected), `displacement ${dx[steps]} at step ${steps}`).toBeLessThan(0.01 * expected)
+  })
+
+  it.each([0.01, 0.05, 0.1])('PHY-47: stiff undamped spring, m=%s kg: energy stays below 1.2·E₀ for 600 steps', async (m) => {
+    const k = 400
+    const sim = await load(horizontalScene(m, k, X_EQ + 0.1, 0))
+    const energy = run(sim, 600, () => {
+      const state = sim.readStates().get('bloco')!
+      return 0.5 * m * state.linvel.x ** 2 + 0.5 * k * (state.position.x - X_EQ) ** 2
+    })
+    expect(energy[0]).toBeCloseTo(2, 5) // Rapier stores the initial position in f32.
+    expect(Math.max(...energy)).toBeLessThanOrEqual(1.2 * energy[0]!)
+  })
+
+  it.each([
+    { loadKind: 'gravity', g: G },
+    { loadKind: 'applied force', g: 0 },
+  ])('PHY-47: overdamped vertical spring under $loadKind keeps static equilibrium load/k', async ({ g }) => {
+    const m = 1
+    const k = 40
+    const sim = await load({
+      version: 1,
+      constants: { g },
+      bodies: [
+        { shape: 'rectangle', width: 4, height: 0.5, id: 'teto', fixed: true, mass: 0, position: { x: 0, y: 10 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'bloco', fixed: false, mass: m, position: { x: 0, y: 8.5 }, rotation: 0 },
+      ],
+      forces: g === 0 ? [{ id: 'carga', bodyId: 'bloco', anchor: { x: 0, y: 0 }, magnitude: m * G, direction: 270 }] : [],
+      contacts: [],
+      constraints: [{ id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: 0 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0 } }, k, x0: 1, c: 200 }],
+    })
+    for (let i = 0; i < 6000; i++) sim.step()
+    const dx = 10 - sim.readStates().get('bloco')!.position.y - 1
+    const equilibrium = m * G / k
+    expect(Math.abs(dx - equilibrium), `stretch ${dx}`).toBeLessThan(0.02 * equilibrium)
+  })
+
+  it.each([
+    { reverse: false, rightC: 200 },
+    { reverse: true, rightC: 200 },
+    { reverse: false, rightC: 2000 },
+    { reverse: true, rightC: 2000 },
+  ])('PHY-47: opposite springs stay balanced for 300 steps, reverse=$reverse, right c=$rightC', async ({ reverse, rightC }) => {
+    const constraints: Scene['constraints'] = [
+      { id: 'left-spring', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+      { id: 'right-spring', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: rightC },
+    ]
+    if (reverse) constraints.reverse()
+    const sim = await load({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'left', fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.2, height: 0.2, id: 'right', fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'body', fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints,
+    })
+    const positions = run(sim, 300, () => sim.readStates().get('body')!.position.x)
+    const worst = Math.max(...positions.map(Math.abs))
+    expect(worst, `max drift ${worst}, final x ${positions.at(-1)}`).toBeLessThan(1e-4)
+  })
+
+  it.each([false, true])('PHY-47: chain and ideal spring stay balanced with disconnected ideal first=%s', async (extra) => {
+    const constraints: Scene['constraints'] = [
+      { id: 'chain', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200, mass: 0.1 },
+      { id: 'ideal', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+    ]
+    if (extra) constraints.unshift({ id: 'unrelated', kind: 'spring', a: { bodyId: 'dummy-a', anchor: { x: 0, y: 0 } }, b: { bodyId: 'dummy-b', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 0 })
+    const sim = await load({
+      version: 1, constants: { g: 0 }, forces: [], contacts: [], constraints,
+      bodies: [
+        { id: 'left', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+        { id: 'right', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+        { id: 'body', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+        { id: 'dummy-a', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 10, y: 10 }, rotation: 0 },
+        { id: 'dummy-b', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 11, y: 10 }, rotation: 0 },
+      ],
+    })
+    const positions = run(sim, 300, () => sim.readStates().get('body')!.position.x)
+    const worst = Math.max(...positions.map(Math.abs))
+    expect(worst, `extra=${extra}, max drift ${worst}, final x ${positions.at(-1)}`).toBeLessThan(1e-4)
+  })
+
+  it.each([false, true])('PHY-47: disconnected high-damping spring preserves soft spring motion, shared fixed anchor=%s', async (sharedFixed) => {
+    const scene = horizontalScene(1, 40, X_EQ + 0.1, 0)
+    scene.constants.g = 0
+    const solo = await load(scene)
+    const combined = structuredClone(scene)
+    if (!sharedFixed) combined.bodies.push({ id: 'unrelated-fixed', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 10, y: 10 }, rotation: 0 })
+    combined.bodies.push({ id: 'unrelated-free', shape: 'rectangle', width: 0.2, height: 0.2, fixed: false, mass: 1, position: sharedFixed ? { x: -2, y: 1.5 } : { x: 11, y: 10 }, rotation: 0 })
+    combined.constraints!.push({ id: 'unrelated', kind: 'spring', a: { bodyId: sharedFixed ? 'parede' : 'unrelated-fixed', anchor: { x: 0, y: 0 } }, b: { bodyId: 'unrelated-free', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 1e16 })
+    const together = await load(combined)
+    solo.step()
+    together.step()
+    const soloVx = solo.readStates().get('bloco')!.linvel.x
+    const combinedVx = together.readStates().get('bloco')!.linvel.x
+    expect(Math.abs(combinedVx - soloVx), `solo vx ${soloVx}, combined vx ${combinedVx}`).toBeLessThan(1e-6)
+  })
+
+  it.each([
     { c: 200, fixed: true },
     { c: 2000, fixed: true },
     { c: 200, fixed: false },
