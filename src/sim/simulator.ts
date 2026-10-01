@@ -807,10 +807,11 @@ class RapierSimulator implements Simulator {
         if (!rigid) throw new Error(`constraint references missing body '${bodyId}'`)
         return { rigid, anchorLocal }
       }
-      // A pulley with mass (PHY-25) is a disk body of its own that only
-      // spins, I = ½MR², kept on its axle by the rope code; its mass rides the
-      // mount as a collider that touches nothing, so its weight and inertia
-      // enter the mount's translation. Mass 0 builds nothing: the ideal pulley.
+      // Every pulley gets the rim below; only a pulley with mass (PHY-25) goes
+      // on to a disk body of its own that only spins, I = ½MR², kept on its
+      // axle by the rope code. Its mass rides the mount as a collider that
+      // touches nothing, so its weight and inertia enter the mount's
+      // translation. Mass absent or 0 stops after the rim: the ideal pulley.
       for (const pulley of scene.pulleys ?? []) {
         // The rim (PHY-45): every pulley stops a body that reaches it instead of letting it through the disk.
         // On the mount, so it never touches the mount itself; no mass, no friction, no bounce.
@@ -1168,7 +1169,8 @@ class RapierSimulator implements Simulator {
       })
     })
     // A prediction that pushes the end-of-step leg against the mid-step one (contact holds a body) would flip the
-    // diagonal's sign: fall back to the legs the pull itself acts along, as pullRope's `k <= 0` does (PHY-45).
+    // diagonal's sign. That row falls back to the legs its own pull acts along, so it stays in the matrix with a
+    // positive diagonal. pullRope's scalar `k <= 0` branch does not do this: it zeroes the tension and returns (PHY-45).
     for (const row of rows) if (ropeInvMass(row.pulls, row.along) <= 0) row.along = row.pulls
     const K = rows.map((a) => rows.map((p) => ropeInvMass(p.pulls, a.along)))
     const predicted = tautTensions(

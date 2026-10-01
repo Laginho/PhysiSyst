@@ -1,5 +1,5 @@
 # CLEAN-20: ADR-0004 e comentários descrevem o aro e a direção guardada da polia
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-45
 Review: agent
@@ -31,3 +31,4 @@ O ADR-0004 e os comentários do simulador descrevem o mecanismo entregue pelo PH
 ## Comments
 
 - 2026-10-01 Aberto pela revisão do PHY-45. Quality gate §5 do Engineering Workflow exige documentação correta; o ADR fica fora dos Primary files do PHY-45, portanto o acompanhamento fica neste ticket. Os dois comentários poderiam ser pequenos fixes de revisão, mas seguem aqui com a documentação enquanto o PHY-45 volta à implementação pelo critério 2. Bloqueado pelo PHY-45 para registrar o mecanismo final após a correção de continuidade.
+- 2026-10-01 Estágio 2: nenhum teste (documentação e comentários). ADR e comentários conferidos contra `buildWorld`, `ropeFrame`/`ropePath` (`keep`) e `pullPieces` na branch `clean-20`; diff de `simulator.ts` só em comentários. Gate verde: 30 arquivos, 768 testes, lint, typecheck e build.
