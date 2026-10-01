@@ -1,5 +1,5 @@
 # PHY-48: Mola com massa acoplada implicitamente aos corpos, no solve em grupo das molas
-Stage: blocked
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -144,3 +144,4 @@ Cada um dos 23 novos casos tem a mutação e a primeira linha da saída vermelha
 | free bar held at its end by a spring with mass (c = 200) perpendicular to it: energy ½m·v² + ½I·ω² + ½k·Δx² never passes 1.02·E₀ in 600 steps | M-base | `AssertionError: max E 88856.15548541174: expected 88856.15548541174 to be less than or equal to 0.20400009727479188` |
 
 - 2026-10-01 Review ended at reviewing (timeout); branch phy/PHY-48-mola-massa-solve-em-grupo holds the review; left for a human
+- 2026-10-01 Foreman: the review timed out at 20m right before its final gate and merge, no defect found; its commit 8c11a34 stays on the ticket branch. Back to `to-review` for a fresh stage 3 (driver relaunched with -ReviewMinutes 40).
