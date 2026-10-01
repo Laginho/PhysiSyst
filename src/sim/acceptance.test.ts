@@ -1070,6 +1070,25 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     }
   })
 
+  it.each([
+    { name: 'Atwood 1 / 3 kg', m1: 1, m2: 3, steps: 160 },
+    { name: 'Atwood 3 / 2 kg', m1: 3, m2: 2, steps: 300 },
+  ])('PHY-49: $name released from rest keeps T₁ and T₂ constant within 1% while the disk spins up', async ({ m1, m2, steps }) => {
+    const M = 2
+    const a = ((m2 - m1) * G) / (m1 + m2 + M / 2)
+    const scene = atwoodScene(m1, m2, M)
+    scene.bodies.find((body) => body.id === 'teto')!.position.y = 40
+    const sim = await load(scene)
+    for (let step = 1; step <= steps; step++) {
+      sim.step()
+      const [t1, t2] = rope(sim).segments
+      expect(Math.abs(t1! - m1 * (G + a)), `T₁ at step ${step}`).toBeLessThanOrEqual(0.01 * m1 * Math.abs(G + a))
+      expect(Math.abs(t2! - m2 * (G - a)), `T₂ at step ${step}`).toBeLessThanOrEqual(0.01 * m2 * Math.abs(G - a))
+    }
+    const t = steps * TIMESTEP
+    expect(Math.abs(sim.readStates().get('a')!.linvel.y - a * t)).toBeLessThanOrEqual(0.01 * Math.abs(a * t))
+  })
+
   it.each(PHY45_GRID)('PHY-45: $name over a pulley of mass M = 2 gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
     const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2, 2), vy)
     expect(energyGain).toBeLessThanOrEqual(0.5)

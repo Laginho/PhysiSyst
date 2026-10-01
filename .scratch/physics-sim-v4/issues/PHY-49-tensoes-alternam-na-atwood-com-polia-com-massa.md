@@ -1,5 +1,5 @@
 # PHY-49: O disco da polia com massa gira o quanto a previsão assume, e as tensões param de alternar
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-45
 Review: agent
