@@ -1,6 +1,6 @@
 # CLEAN-13: Achados não verificados do review do CLEAN-12
-Stage: blocked
-Status: needs-triage
+Stage: done
+Status: resolved
 Blocked by: none
 Review: agent
 
@@ -39,3 +39,9 @@ Descartados pelo review, já decididos em tickets fechados:
 
 - 2026-09-25 Aberto pelo review do CLEAN-12 (stage 3). `Stage: blocked` porque nada aqui está verificado nem tem critério: o stage 1 confere cada item no código, descarta ou abre um ticket por achado aceito, e fecha este.
 - 2026-09-30 Review de benchmark do PR 9. O item 1 foi confirmado no Chromium (Sol) e resolvido de outro jeito pelo PHY-39: edição estrutural só com `passos = 0`, e aí a pose viva é a pose do documento. O item 6 foi confirmado no Chromium (Sol) e virou o PHY-44. Os itens 2 a 5 continuam aqui para triagem.
+- 2026-10-01 Triagem (stage 1) dos itens 2 a 5, conferidos no código da main. Os quatro existem como descritos; o 5 só em parte, porque os pontos das peças nem sempre são os da corda.
+  - Item 2. Proxy decided: abrir o CLEAN-24 — o `doc.ts` já recusa o par consigo mesmo com `error.parConsigoMesmo` e o App só esconde a recusa; o clique na polia antes de A fica ignorado.
+  - Item 3. Proxy decided: descartar — montar as seis camadas é o que dá aos rótulos a mesma letra nos dois modos; custo nunca medido. Reabre só se um perfil mostrar o `paint` acima do orçamento do quadro.
+  - Item 4. Proxy decided: descartar — risco hipotético e visível se acontecer; um refactor puro não tem teste vermelho antes. Um ticket futuro que já tenha as camadas do `paint` nos Primary files pode trocar o índice pelo nome.
+  - Item 5. Proxy decided: descartar — duplicação parcial, não medida, num trecho numericamente sensível (PHY-41, PHY-45); o único teste possível seria um spy de contagem de chamadas. Reabre só com perfil mostrando o `pullPieces` quente.
+  Com isso todos os itens têm destino e o ticket fecha.
