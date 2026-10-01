@@ -1,5 +1,5 @@
 # PHY-46: Uma corda acoplada que saiu do active set volta quando as outras a esticam
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -72,3 +72,29 @@ Resultado mutante: **3 failed, 51 skipped (54)**. Produção corrigida: **3 pass
 - Critério 7: `npm test && npm run lint && npm run typecheck && npm run build` terminou com **exit 0**; **30 test files passed, 724 tests passed**, ESLint e TypeScript sem erros, Vite compilado (aviso de tamanho de chunk do simulador). Handoff em `to-review`; stage 3 fica para a próxima sessão.
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9. O gpt-6.1-sol (max) e o gpt-6-astra (high) acharam o defeito de forma independente, o Opus 5.5 (xhigh) não. As medições da tabela e o protótipo são probes descartáveis no motor real, sobre `0ff2047`; nada foi commitado. O protótipo foi a forma "devolve a peça mais violada e resolve de novo"; resolver por força bruta todos os subconjuntos também funcionaria com poucas peças. A escolha fica com o stage 2, desde que os critérios valham.
+
+#### Resolution (2026-09-30)
+
+Verdict: Approve
+
+Revisão completa de `git diff bf3030bd77729d17f00c49df464f9f3d40fad917...7e00ac7`, base `sweatshop/2026-09-24-1853`. Standards e Spec por sub-agentes independentes; gate e repetição da mutação pelo agente principal. Commit `d8dca86`: testes e metadados, sem produção. Commit `7e00ac7`: produção, ADR e metadados, sem alterar testes.
+
+##### Standards
+
+**0 violações documentadas; 0 smells.** Primary files respeitados: produção restrita a `tautTensions`, testes no bloco autorizado e ADR somente no parágrafo "Tensions solve together". Os commits preservam test-first e o ticket registra a mutação e a falha de cada regressão na seam pública. Conferidos os três callers de `tautTensions`: previsão de leitura, previsão de forças e correção. A remoção individual, a regularização de `solveLinear` e o caminho escalar isolado foram preservados; o limite de iterações tem comentário `ponytail:` com teto e alternativa.
+
+##### Spec
+
+**0 achados.** Critérios 1–3 observados pelos três testes no motor público por 300 passos: deslocamento, tensões desde o passo 10, folga e comprimento conforme o contrato. Critério 4: testes e tolerâncias anteriores intactos e verdes no gate. Critério 5: ADR descreve reentrada, tolerância e limite. Critérios 6–7: mutação e gate reproduzidos abaixo. Conjunto ativo vazio ainda confere resíduos; tensões zero são removidas; entrada vazia retorna `[]`; sistemas singulares mantêm a regularização existente. Nenhuma regressão ou aumento material de escopo identificado. Nenhuma linha **Proxy decided** no ticket.
+
+Prova independente: inserido `return T` antes do cálculo dos resíduos, depois da remoção de tensões não positivas, exatamente como registrado no stage 2. `npx vitest run src/sim/acceptance.test.ts -t PHY-46` produziu **3 failed, 51 skipped (54)**:
+
+| Teste novo | Saída red reproduzida |
+| --- | --- |
+| Equilíbrio, L = 1, 90°/240°/300° | `expected 0.5956457853317261 to be less than 0.001` |
+| Equilíbrio, L = 10, 200°/110°/300°/250° | `expected 8.541037003819246 to be less than 0.001` |
+| Balanço, L = 5, 10°/20°/30° | `expected 5.587874430011237 to be less than or equal to 5.001` |
+
+Produção restaurada byte a byte, diff vazio; o mesmo comando deu **3 passed, 51 skipped (54)**. Gate independente `npm test && npm run lint && npm run typecheck && npm run build`: **30 test files passed (30), 724 tests passed (724)**; lint, typecheck e build exit 0. Permanece o aviso existente do chunk tardio do simulador acima de 500 kB.
+
+Sem correção de produção nesta revisão. Rebase sobre a sessão já atualizado, sem conflitos e mantendo `7e00ac7`, o commit validado pelo gate. Merge `--no-ff` na sessão: `ac092ce`. Arquivos entregues: `src/sim/simulator.ts`, `src/sim/acceptance.test.ts` e `docs/adr/0004-rope-as-own-constraint-around-world-step.md`; fechamento neste ticket e em `.scratch/physics-sim-v4/ledger.md`. `Stage: done` e ledger no mesmo commit de fechamento. Totais: Standards **0 achados**; Spec **0 achados**.
