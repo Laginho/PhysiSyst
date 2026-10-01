@@ -556,6 +556,68 @@ describe('acceptance: general rope (PHY-24)', () => {
     expect(maxDisplacement).toBeLessThan(0.001)
   })
 
+  function anchoredParticleScene(length: number, angles: number[]): Scene {
+    return {
+      version: 1,
+      constants: { g: G, particleMode: true },
+      bodies: [
+        ...angles.map((angle): Scene['bodies'][number] => ({
+          shape: 'circle', radius: 0.02, id: `anchor-${angle}`, fixed: true, mass: 0,
+          position: { x: length * Math.cos(angle * Math.PI / 180), y: length * Math.sin(angle * Math.PI / 180) }, rotation: 0,
+        })),
+        { shape: 'circle', radius: 0.05, id: 'bola', fixed: false, mass: 1, position: CM, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [],
+      constraints: angles.map((angle) => ({
+        id: `rope-${angle}`, kind: 'rope', a: { bodyId: `anchor-${angle}`, anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [],
+      })),
+    }
+  }
+
+  it.each([
+    { length: 1, angles: [90, 240, 300], tensions: [9.81, 0, 0] },
+    { length: 10, angles: [200, 110, 300, 250], tensions: [0, 28.247, 19.322, 0] },
+  ])('PHY-46: ropes at $angles hold equilibrium within 1 mm and tensions within 1% for 300 steps', async ({ length, angles, tensions }) => {
+    const sim = await load(anchoredParticleScene(length, angles))
+    let maxDisplacement = 0
+    const errors = tensions.map(() => 0)
+    const wentSlack = tensions.map(() => false)
+    for (let tick = 1; tick <= 300; tick++) {
+      sim.step()
+      const p = sim.readStates().get('bola')!.position
+      maxDisplacement = Math.max(maxDisplacement, Math.hypot(p.x, p.y))
+      for (const [i, angle] of angles.entries()) {
+        const state = sim.readConstraints().find((c) => c.id === `rope-${angle}`) as RopeState
+        wentSlack[i] ||= state.slack
+        if (tick >= 10) errors[i] = Math.max(errors[i]!, Math.abs(state.tension - tensions[i]!))
+      }
+    }
+    expect(maxDisplacement).toBeLessThan(0.001)
+    for (const [i, expected] of tensions.entries()) {
+      if (expected === 0) expect(errors[i], `T at ${angles[i]} degrees`).toBe(0)
+      else {
+        expect(errors[i], `T at ${angles[i]} degrees`).toBeLessThan(0.01 * expected)
+        expect(wentSlack[i], `slack at ${angles[i]} degrees`).toBe(false)
+      }
+    }
+  })
+
+  it('PHY-46: swinging particle never stretches any of its ropes at 10, 20 and 30 degrees beyond 1 mm for 300 steps', async () => {
+    const length = 5
+    const scene = anchoredParticleScene(length, [10, 20, 30])
+    const sim = await load(scene)
+    let maxDistance = 0
+    for (let tick = 0; tick < 300; tick++) {
+      sim.step()
+      const p = sim.readStates().get('bola')!.position
+      for (const anchor of scene.bodies.filter((body) => body.fixed)) {
+        maxDistance = Math.max(maxDistance, Math.hypot(p.x - anchor.position.x, p.y - anchor.position.y))
+      }
+    }
+    expect(maxDistance).toBeLessThanOrEqual(length + 0.001)
+  })
+
   function pendulumScene(bob: { x: number; y: number }, vx = 0): Scene {
     return {
       version: 1,

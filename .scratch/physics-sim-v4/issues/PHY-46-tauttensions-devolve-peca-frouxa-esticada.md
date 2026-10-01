@@ -1,5 +1,5 @@
 # PHY-46: Uma corda acoplada que saiu do active set volta quando as outras a esticam
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -48,5 +48,8 @@ A correção é a condição de complementaridade que o active set deixa de lado
 - `src/sim/acceptance.test.ts`, bloco `general rope (PHY-24)`, ao lado dos testes PHY-41: as três cenas dos critérios 1–3, pelo motor público. Vermelhas hoje: no critério 1, `T₉₀ = 0` e a partícula cai 0,14 m; no critério 2, todas `T = 0` e a queda é de 1,24 m em 30 passos; no critério 3, a corda estica 0,588 m.
 
 ## Comments
+
+- 2026-09-30 Stage 2: seam aprovada `parse → createSimulator → step → readStates/readConstraints`, com as três cenas dos critérios 1–3. Callers de `tautTensions`: a previsão de leitura sem contato e a previsão de forças em `pullPieces`, mais a correção em `correctPieces`; todos usam a mesma função, tanto para cordas agrupadas quanto para peças de polias com massa. Casos degenerados: conjunto ativo vazio (ainda precisa conferir resíduos), tensões zero e sistemas singulares/cordas colineares; já cobertos pelos testes de folga, PHY-43 e PHY-41 R1, cujas tolerâncias serão preservadas.
+- Red antes de produção: `npx vitest run src/sim/acceptance.test.ts -t PHY-46` deu **3 failed, 51 skipped (54)**. As duas cenas de equilíbrio falham em `maxDisplacement < 0.001`: **0.5956457853317261 m** (90°, 240°, 300°; máximo ao longo da trajetória, não só o deslocamento final) e **8.541037003819246 m** (200°, 110°, 300°, 250°). A cena de balanço falha em `maxDistance <= 5.001`: **5.587874430011237 m**. Nenhum arquivo de produção alterado no commit red.
 
 - 2026-09-30 Aberto a partir do review de benchmark do PR 9. O gpt-6.1-sol (max) e o gpt-6-astra (high) acharam o defeito de forma independente, o Opus 5.5 (xhigh) não. As medições da tabela e o protótipo são probes descartáveis no motor real, sobre `0ff2047`; nada foi commitado. O protótipo foi a forma "devolve a peça mais violada e resolve de novo"; resolver por força bruta todos os subconjuntos também funcionaria com poucas peças. A escolha fica com o stage 2, desde que os critérios valham.
