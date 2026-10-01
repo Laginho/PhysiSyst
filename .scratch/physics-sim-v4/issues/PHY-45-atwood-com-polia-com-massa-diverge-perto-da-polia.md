@@ -1,5 +1,5 @@
 # PHY-45: O aro da polia segura o corpo que chega a ela, e a corda não troca de lado no disco
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -105,3 +105,9 @@ O pico de tensão é o impacto do bloco no aro, a cerca de 5 m/s: cerca de 300 N
 - 2026-10-01 Achado lateral do diagnóstico, aberto como PHY-49: as tensões lidas na Atwood com polia com massa alternam a cada passo.
 - 2026-10-01 Stage 1 de revisão, antes do sweatshop. Com o protótipo reconstruído sobre `9d81e26`, os quatro cenários originais passavam, mas os vizinhos (2/2 com `vy` = 5, 7 e 10, 1/2 e 2/3 com polia com massa) explodiam. Além disso, o critério antigo "a âncora nunca cruza `x = 0`" reprovava o balanço legítimo por baixo da polia. Entraram a direção guardada, o critério 1b reescrito e a grade de 24 cenários. Os dois picos que sobram foram para o PHY-52. O Bruno aprovou. Nada do protótipo foi commitado.
 - 2026-10-01 Stage 2, commit de testes. Vermelhos sobre o código de hoje: 23 dos 24 cenários (energia e/ou lado) e o primeiro caso do `ropePath` com `keep` (direção −1 onde se esperava +1). Guardas verdes hoje: o 2/2 com `vy = 3` e polia ideal (o bloco não chega ao disco) e o segundo caso do `ropePath` (direção do sinal da curva, que o código de hoje já segue). O segundo caso só pega a mutação "tirar o limite de 3π/2".
+- 2026-10-01 Stage 2, mutate-verify (critério 4). Cada mutação sobre o código verde, com a saída vermelha, depois desfeita; gate verde de novo (767 testes) sem a mutação.
+  - Tirar o collider do aro (`world.createCollider(rim, …)` trocado por `void rim`): `-t PHY-45` fica com 24 de 24 vermelhos (13 com polia ideal, 11 com `M = 2`), incluindo o 2/2 com `vy = 3` ideal, que era guarda verde antes do aro. Medido por 600 passos (energia ou lado), não pelo passo 71 do 1/3 ideal citado no critério.
+  - Tirar a guarda de `pullPieces` (`row.along = row.pulls`): 6 vermelhos, todos com `M = 2`: 2/2 com `vy` = 5 e 7, 1/3, 1/4, 2/1 e 2/3 do repouso. O 1/3 com massa é o do passo 156 do critério. Os 13 com polia ideal ficam verdes.
+  - Ignorar o `keep` (`ropeFrame` chama `ropePath(…, undefined)`): 4 vermelhos, todos com `M = 2`: 2/2 com `vy` = 5, 7 e 10, e 2/3 do repouso (o 2/2 com `vy = 5` do critério está entre eles). No `ropePath`, o primeiro caso de `keep` já nasceu vermelho (`expected -1 to be 1`).
+  - Tirar o limite de 3π/2 em `ropePath` (`if (false && keep && …)`): o segundo caso de `keep` fica vermelho (`expected 1 to be -1`).
+  - Os testes de `ropePath` chamam a função direto, então o vermelho do commit de testes basta como registro deles; os 24 cenários passam pelo motor público, e o registro está acima.

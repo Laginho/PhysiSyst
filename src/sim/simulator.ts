@@ -130,6 +130,8 @@ interface RopeBinding {
   via: Array<PointBinding & { radius: number }>
   /** L: the path length at the DOCUMENT poses, fixed for the world's life. */
   length: number
+  /** The wrap direction each pulley in `via` holds (PHY-45), refreshed at every read of the real poses. */
+  keep: Array<1 | -1>
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
@@ -216,7 +218,10 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
     at[0]!,
     at.at(-1)!,
     rope.via.map((p, i) => ({ center: at[i + 1]!, radius: p.radius })),
+    rope.keep,
   )
+  // Only the bodies' real poses move the kept wrap; the predicted ones (mid and end of step) read it.
+  if (!moved) rope.keep = path.arcs.map((arc) => arc.direction)
   const s = path.segments
   const pulls = points.map((point, i): RopePull => {
     // An end is pulled along its one leg; a pulley back along the leg that
@@ -807,6 +812,16 @@ class RapierSimulator implements Simulator {
       // mount as a collider that touches nothing, so its weight and inertia
       // enter the mount's translation. Mass 0 builds nothing: the ideal pulley.
       for (const pulley of scene.pulleys ?? []) {
+        // The rim (PHY-45): every pulley stops a body that reaches it instead of letting it through the disk.
+        // On the mount, so it never touches the mount itself; no mass, no friction, no bounce.
+        const rim = RAPIER.ColliderDesc.ball(pulley.radius)
+          .setTranslation(pulley.anchor.x, pulley.anchor.y)
+          .setMassProperties(0, { x: 0, y: 0 }, 0)
+          .setFriction(0)
+          .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setRestitution(0)
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+        world.createCollider(rim, point(pulley.bodyId, pulley.anchor).rigid)
         if (!pulley.mass) continue
         const mount = point(pulley.bodyId, pulley.anchor)
         const axle = worldPoint(mount)
@@ -852,6 +867,7 @@ class RapierSimulator implements Simulator {
             return { ...point(pulley.bodyId, pulley.anchor), radius: pulley.radius }
           }),
           length: path.length,
+          keep: path.arcs.map((arc) => arc.direction),
           tension: 0,
           residual: 0,
           predicted: 0,
@@ -1151,6 +1167,9 @@ class RapierSimulator implements Simulator {
         }
       })
     })
+    // A prediction that pushes the end-of-step leg against the mid-step one (contact holds a body) would flip the
+    // diagonal's sign: fall back to the legs the pull itself acts along, as pullRope's `k <= 0` does (PHY-45).
+    for (const row of rows) if (ropeInvMass(row.pulls, row.along) <= 0) row.along = row.pulls
     const K = rows.map((a) => rows.map((p) => ropeInvMass(p.pulls, a.along)))
     const predicted = tautTensions(
       K,

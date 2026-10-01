@@ -37,19 +37,34 @@ interface Node {
 
 /**
  * Pure rope geometry: straight segments tangent to each pulley plus the arc
- * wrapped on it. The wrap side is not stored anywhere — it follows the turn
- * the rope makes at each pulley (previous node → pulley → next node): a left
- * turn wraps counter-clockwise, a right turn clockwise.
+ * wrapped on it. The wrap side follows the turn the rope makes at each pulley
+ * (previous node → pulley → next node): a left turn wraps counter-clockwise, a
+ * right turn clockwise. With `keep` (one direction per pulley) a pulley holds
+ * the given direction instead, so a swing that flips the turn's sign does not
+ * flip the wrap; it yields to the turn only when the held wrap would go past
+ * 3π/2, which is the rope having passed straight through the pulley.
  */
-export function ropePath(a: Vec2, b: Vec2, pulleys: readonly PathPulley[]): RopePath {
+export function ropePath(a: Vec2, b: Vec2, pulleys: readonly PathPulley[], keep?: readonly (1 | -1)[]): RopePath {
   const centers = [a, ...pulleys.map((p) => p.center), b]
-  const nodes: Node[] = centers.map((center, i) => {
-    if (i === 0 || i === centers.length - 1) return { center, rho: 0 }
-    const prev = centers[i - 1]!
-    const next = centers[i + 1]!
-    const turn = (center.x - prev.x) * (next.y - center.y) - (center.y - prev.y) * (next.x - center.x)
-    return { center, rho: (turn >= 0 ? 1 : -1) * pulleys[i - 1]!.radius }
+  const natural = pulleys.map((p, i): 1 | -1 => {
+    const prev = centers[i]!
+    const next = centers[i + 2]!
+    const turn = (p.center.x - prev.x) * (next.y - p.center.y) - (p.center.y - prev.y) * (next.x - p.center.x)
+    return turn >= 0 ? 1 : -1
   })
+  let directions = natural.map((d, i) => keep?.[i] ?? d)
+  let path = build(centers, pulleys, directions)
+  if (keep &&path.arcs.some((arc) => arc.sweep > 1.5 * Math.PI)) {
+    directions = directions.map((d, i) => (path.arcs[i]!.sweep > 1.5 * Math.PI ? natural[i]! : d))
+    path = build(centers, pulleys, directions)
+  }
+  return path
+}
+
+function build(centers: readonly Vec2[], pulleys: readonly PathPulley[], directions: readonly (1 | -1)[]): RopePath {
+  const nodes: Node[] = centers.map((center, i) =>
+    i === 0 || i === centers.length - 1 ? { center, rho: 0 } : { center, rho: directions[i - 1]! * pulleys[i - 1]!.radius },
+  )
 
   const segments: RopeSegment[] = []
   for (let i = 0; i + 1 < nodes.length; i++) segments.push(tangent(nodes[i]!, nodes[i + 1]!))
