@@ -1,5 +1,5 @@
 # PHY-48: Mola com massa acoplada implicitamente aos corpos, no solve em grupo das molas
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
