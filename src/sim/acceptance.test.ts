@@ -1231,6 +1231,43 @@ describe('acceptance: ideal spring (PHY-26)', () => {
     expect(worst, `max drift ${worst}, final x ${positions.at(-1)}`).toBeLessThan(1e-4)
   })
 
+  it.each([false, true])('PHY-47: chain and ideal spring stay balanced with disconnected ideal first=%s', async (extra) => {
+    const constraints: Scene['constraints'] = [
+      { id: 'chain', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200, mass: 0.1 },
+      { id: 'ideal', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+    ]
+    if (extra) constraints.unshift({ id: 'unrelated', kind: 'spring', a: { bodyId: 'dummy-a', anchor: { x: 0, y: 0 } }, b: { bodyId: 'dummy-b', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 0 })
+    const sim = await load({
+      version: 1, constants: { g: 0 }, forces: [], contacts: [], constraints,
+      bodies: [
+        { id: 'left', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+        { id: 'right', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+        { id: 'body', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+        { id: 'dummy-a', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 10, y: 10 }, rotation: 0 },
+        { id: 'dummy-b', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 11, y: 10 }, rotation: 0 },
+      ],
+    })
+    const positions = run(sim, 300, () => sim.readStates().get('body')!.position.x)
+    const worst = Math.max(...positions.map(Math.abs))
+    expect(worst, `extra=${extra}, max drift ${worst}, final x ${positions.at(-1)}`).toBeLessThan(1e-4)
+  })
+
+  it.each([false, true])('PHY-47: disconnected high-damping spring preserves soft spring motion, shared fixed anchor=%s', async (sharedFixed) => {
+    const scene = horizontalScene(1, 40, X_EQ + 0.1, 0)
+    scene.constants.g = 0
+    const solo = await load(scene)
+    const combined = structuredClone(scene)
+    if (!sharedFixed) combined.bodies.push({ id: 'unrelated-fixed', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 10, y: 10 }, rotation: 0 })
+    combined.bodies.push({ id: 'unrelated-free', shape: 'rectangle', width: 0.2, height: 0.2, fixed: false, mass: 1, position: sharedFixed ? { x: -2, y: 1.5 } : { x: 11, y: 10 }, rotation: 0 })
+    combined.constraints!.push({ id: 'unrelated', kind: 'spring', a: { bodyId: sharedFixed ? 'parede' : 'unrelated-fixed', anchor: { x: 0, y: 0 } }, b: { bodyId: 'unrelated-free', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 1e16 })
+    const together = await load(combined)
+    solo.step()
+    together.step()
+    const soloVx = solo.readStates().get('bloco')!.linvel.x
+    const combinedVx = together.readStates().get('bloco')!.linvel.x
+    expect(Math.abs(combinedVx - soloVx), `solo vx ${soloVx}, combined vx ${combinedVx}`).toBeLessThan(1e-6)
+  })
+
   it.each([
     { c: 200, fixed: true },
     { c: 2000, fixed: true },
