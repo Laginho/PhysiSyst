@@ -1095,6 +1095,26 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     expect(crossings).toStrictEqual([])
   })
 
+  // Rapier caps |ω|·Δt at π/4 on every body: 15π ≈ 47.1 rad/s at 60 Hz. Each run ends well past it.
+  it.each([
+    { name: 'Atwood 1 / 3 kg, M = 2', m1: 1, m2: 3, M: 2, steps: 250 },
+    { name: 'Atwood 3 / 1 kg, M = 2', m1: 3, m2: 1, M: 2, steps: 250 },
+    { name: 'Atwood 1 / 3 kg, M = 0.2', m1: 1, m2: 3, M: 0.2, steps: 230 },
+  ])('PHY-50: $name keeps T₁ and T₂ constant within 1% and v = a·t after the disk passes 15π rad/s', async ({ m1, m2, M, steps }) => {
+    const a = ((m2 - m1) * G) / (m1 + m2 + M / 2)
+    const scene = atwoodScene(m1, m2, M)
+    scene.bodies.find((body) => body.id === 'teto')!.position.y = 40
+    const sim = await load(scene)
+    for (let step = 1; step <= steps; step++) {
+      sim.step()
+      const [t1, t2] = rope(sim).segments
+      expect(Math.abs(t1! - m1 * (G + a)), `T₁ at step ${step}`).toBeLessThanOrEqual(0.01 * m1 * Math.abs(G + a))
+      expect(Math.abs(t2! - m2 * (G - a)), `T₂ at step ${step}`).toBeLessThanOrEqual(0.01 * m2 * Math.abs(G - a))
+    }
+    const t = steps * TIMESTEP
+    expect(Math.abs(sim.readStates().get('a')!.linvel.y - a * t)).toBeLessThanOrEqual(0.01 * Math.abs(a * t))
+  })
+
 })
 
 /**

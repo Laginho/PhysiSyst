@@ -1,5 +1,5 @@
 # PHY-50: O disco da polia com massa passa de 15π rad/s, e a Atwood continua certa acima disso
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-49
 Review: agent
