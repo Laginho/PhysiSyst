@@ -454,4 +454,299 @@ Nenhuma linha \texttt{Débito humano:} nos dez tickets. No PR, a revisão
 humana fica para o PHY-39 (\texttt{Review: human}), além do PHY-30 (``Needs
 your call'') e do PHY-33, que já estavam lá desde runs anteriores.
 
+\appendix
+\section{Apêndice: lançamento 6 (30/09 23:17 -- 01/10 00:38)}
+
+Mesmo par, agora pela linha \texttt{Models (sol)} da binding
+(\texttt{-Lineup sol}, gravada em \texttt{fe71c56} a partir da recomendação 5),
+driver \texttt{01489e8}, na mesma sessão do PR 9. A fila eram PHY-46 e PHY-47,
+que o Bruno abriu às 22:55 a partir do review de benchmark do PR 9
+(\texttt{bf3030b}). PHY-45, PHY-48 e CLEAN-13 estavam \texttt{blocked} à espera
+do stage 1 e ficaram fora. Este apêndice conta só as linhas 31--40 do
+\texttt{run-log.md}; as seções anteriores não mudaram.
+
+\begin{itemize}
+  \item \textbf{Produzido:} 2 tickets mergeados, PHY-46 de primeira e PHY-47 na
+        quarta revisão, com \textbf{três reaberturas}. O PR
+        \href{https://github.com/Laginho/PhysiSyst/pull/9}{\#9} passa a 39
+        tickets; os dois são \texttt{Review: agent}.
+  \item \textbf{Custo:} \textbf{\$5,39} em 10 de 10 estágios (implementação
+        \$2,27, revisão \$3,12). 81 min de estágio, 13,0\,M tokens de entrada
+        (93,4\,\% em cache) e 113\,k de saída. Nenhuma pergunta, nenhum erro
+        de API, nenhum restart.
+  \item \textbf{O que deu errado:} o PHY-47 entrou em espiral. A fórmula que o
+        ticket fixou quebrava o equilíbrio vertical (R1), e cada correção
+        seguinte gerou a próxima regressão (R2, depois R3 e R4). O retrabalho
+        custou \$3,26 e 51 min, 60\,\% do lançamento.
+  \item \textbf{Veredito provisório:} o revisor foi certeiro nas três
+        reaberturas, todas com probe A/B no motor real. O implementador
+        consertou o achado nomeado sem ler o entorno do próprio conserto, como
+        no PHY-41.
+\end{itemize}
+
+\subsection{Linha do tempo}
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+23:16 & Antes do lançamento, o foreman confere a linha do PHY-30 no PR: está
+        velha. Arrastar um corpo no meio da corrida é estrutural e recusado
+        depois do passo 0 (PHY-39); o \texttt{carryOver} saiu com o CLEAN-16
+        (0 referências em \texttt{src}). Suíte do PHY-39 na sessão: 14
+        verdes.\\
+23:17 & Lançamento 6, \texttt{-Lineup sol}.\\
+23:22 & PHY-46 (corda acoplada volta ao conjunto ativo) em 5 min: 3
+        regressões pelo motor público, 724 testes.\\
+23:28 & PHY-46 mergeado em 7 min, sem achados (\texttt{ac092ce}).\\
+23:34 & PHY-47 (\texttt{k} e \texttt{c} implícitos) em 5 min: a fórmula do
+        ticket, uma linha em \texttt{pushSpring}, 7 casos, 731 testes.\\
+23:47 & \textbf{Reaberto (R1):} uma mola vertical com $c=200$ estica 1,063\,m,
+        quando $mg/k = 0{,}245$\,m.\\
+23:52 & Passada 2 em 5 min: a aceleração livre das pontas entra no
+        numerador.\\
+00:03 & \textbf{Reaberto (R2):} duas molas opostas no mesmo corpo o deslocam
+        39,5\,mm, e o sinal depende da ordem da Scene.\\
+00:11 & Passada 3 em 8 min: um solve denso de todas as molas ideais, rodado
+        na primeira delas.\\
+00:23 & \textbf{Reaberto (R3, R4):} uma mola ideal solta antes de uma cadeia
+        quebra o equilíbrio cadeia + ideal, e a escala do \texttt{solveLinear}
+        acopla molas sem ligação.\\
+00:29 & Passada 4 em 6 min: um solve por grupo de molas ligadas por corpo
+        dinâmico, 741 testes.\\
+00:38 & PHY-47 mergeado em 9 min, sem achados (\texttt{1312e9a}). ``Nothing
+        runnable''; PR atualizado.\\
+\bottomrule
+\end{tabularx}
+
+\subsection{Métricas por estágio}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l l r r r r r X@{}}
+\toprule
+Estágio & Modelo & Min & Entrada & Cache & Saída & Custo & Desfecho\\
+\midrule
+P46 impl.      & sol high & 5  & 0,99\,M & 92\,\% & 7\,k  & 0,421 & to-review\\
+P46 revisão    & sol max  & 7  & 1,10\,M & 93\,\% & 9\,k  & 0,472 & mergeado\\
+P47 impl.      & sol high & 5  & 1,50\,M & 95\,\% & 7\,k  & 0,522 & to-review\\
+P47 revisão    & sol max  & 13 & 1,60\,M & 94\,\% & 19\,k & 0,711 & reaberto\\
+P47 impl.\ 2   & sol high & 5  & 0,92\,M & 93\,\% & 7\,k  & 0,375 & to-review\\
+P47 revisão 2  & sol max  & 11 & 1,30\,M & 94\,\% & 14\,k & 0,555 & reaberto\\
+P47 impl.\ 3   & sol high & 8  & 1,20\,M & 92\,\% & 12\,k & 0,533 & to-review\\
+P47 revisão 3  & sol max  & 12 & 1,60\,M & 93\,\% & 17\,k & 0,686 & reaberto\\
+P47 impl.\ 4   & sol high & 6  & 0,93\,M & 92\,\% & 9\,k  & 0,414 & to-review\\
+P47 revisão 4  & sol max  & 9  & 1,90\,M & 94\,\% & 12\,k & 0,697 & mergeado\\
+\midrule
+\multicolumn{2}{@{}l}{Total} & 81 & 13,04\,M & 93,4\,\% & 113\,k & 5,386 & 10 de 10 com preço\\
+\multicolumn{2}{@{}l}{Retrabalho} & 51 & 7,85\,M & & 71\,k & 3,260 & 6 estágios (3 reaberturas)\\
+\bottomrule
+\end{tabularx}}
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked, bar width=22pt, width=0.6\linewidth, height=5.5cm,
+  ylabel={Tokens de entrada (M)}, ymin=0,
+  symbolic x coords={PHY-46,PHY-47},
+  xtick=data, x tick label style={font=\small}, enlarge x limits=0.5,
+  legend style={at={(0.02,0.97)},anchor=north west,draw=none,font=\small},
+  axis lines*=left, ymajorgrids, grid style={gray!25}]
+\addplot[fill=sol,draw=none] coordinates {(PHY-46,2.09) (PHY-47,3.10)};
+\addplot[fill=perda,draw=none] coordinates {(PHY-46,0) (PHY-47,7.85)};
+\legend{primeira passada e revisão, retrabalho das reaberturas}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Onde foi o custo.} PHY-46 custou \$0,89 (12 min), na média do
+run. PHY-47 custou \$4,49 (69 min); a primeira passada e a primeira revisão
+foram \$1,23, e o resto pagou três regressões. Cada implementação do PHY-47
+levou 5--8 min; cada revisão, 9--13 min. O que custou foi o número de
+rodadas, não uma rodada cara.
+
+\subsection{Atribuição das reaberturas}
+
+Três reaberturas, todas do PHY-47. O revisor foi \texttt{gpt-6.1-sol max},
+diferente do foreman (Opus 5.5), então o foreman classificou. Evidência: o
+ticket como o stage 1 o deixou (\texttt{bf3030b}), cada revisão que reabriu
+(\texttt{b372185}, \texttt{83e3f10}, \texttt{c31bba5}) e o diff que ela
+revisou (\texttt{75099d7}, \texttt{c62cf2f}, \texttt{1604254}). O branch não
+foi rebaseado no meio, então o ticket de cada rodada é o do commit anterior.
+Linhas em \path{.scratch/reopen-attribution.md}.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}l c l X@{}}
+\toprule
+Ticket & Rodada & Rótulo & Achado e porquê\\
+\midrule
+PHY-47 & 1 & S1 & Mola vertical com $c=200$ estica 1,063\,m contra
+  $mg/k = 0{,}245$\,m: o denominador implícito divide $k\Delta x$, mas a
+  gravidade entra inteira no \texttt{world.step()}. O stage 2 aplicou
+  literalmente a fórmula da seção ``A decisão'' do ticket; o protótipo do
+  stage 1 mediu só a cena horizontal, onde $g$ não age na mola. O conserto
+  pediu uma fórmula nova, ou seja, uma decisão.\\
+PHY-47 & 2 & S2-implícito ? & Duas molas iguais e opostas no mesmo corpo o
+  deslocam 39,5\,mm, com sinal dependente da ordem:
+  \texttt{freePointVelocity} lê o \texttt{userForce} das molas já aplicadas.
+  Regressão do próprio conserto, no laço que ele tocou. Fica em dúvida porque
+  nasceu de seguir o conselho do round 1.\\
+PHY-47 & 3 & S2-implícito & Uma mola ideal solta antes de uma cadeia quebra
+  o equilíbrio cadeia + ideal: o solve conjunto roda na primeira mola ideal,
+  antes do \texttt{pushChain}. A ordem do gancho em \texttt{step()} estava no
+  diff. O foreman viu o caso pela leitura às 00:11, antes da revisão.\\
+PHY-47 & 3 & S2-implícito & A escala do \texttt{solveLinear} acopla molas
+  sem ligação. Separar componentes desconectados é cuidado; o ticket já
+  excluía os outros chamadores do solver.\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Totais do lançamento: 3 S2-implícito (um em dúvida), 1 S1, 0 S2-explícito,
+0 S3. \textbf{Churn induzido pela revisão:} o R2 nasceu do conselho do round 1
+(``corrigir \texttt{pushSpring} para considerar a aceleração livre''); a
+revisão não pediu que a leitura fosse feita antes de qualquer mola aplicar
+força. \textbf{Drip-feeding:} nenhum. A revisão 3 declara que R3 e R4 nasceram
+de \texttt{1604254}, e o diff confirma. O round 1 é do stage 1; os rounds 2 e
+3 são do implementador.
+
+\subsection{Scoreboard}
+
+Mesma chamada da seção 6 sobre os quatro repositórios, depois de registrar
+as linhas acima. Só a tabela de implementadores e a linha do par mudaram;
+o resto está igual à seção 6.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
+\midrule
+gpt-6.1-sol high & 29 & 25 & 0 & 4 & 7m & \$16.58 (29/29)\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r@{}}
+\toprule
+Implementador & Revisor & Reviews & Reabertos & Taxa & Por S2 & Taxa S2 & Sem rótulo\\
+\midrule
+gpt-6.1-sol high & gpt-6.1-sol max & 24 & 6 & 25\,\% & 4 & $\geq$17\,\% & 1\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2 implícito & S1 & S3 ruído\\
+\midrule
+gpt-6.1-sol high $\to$ gpt-6.1-sol max & 5 & 0 & 0 & 6 & 1 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\paragraph{O que mudou desde a seção 6.}
+\begin{itemize}
+  \item \textbf{Implementador \texttt{gpt-6.1-sol high}:} de 20 para 29
+        estágios, \texttt{to-review} de 16 para 25, nenhuma pergunta nova,
+        mediana igual (7 min), custo de \$10,32 para \$16,58.
+  \item \textbf{Par \texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol
+        max}:} de 16 para 24 revisões, de 2 para 6 reabertas (12\,\% para
+        25\,\%), S2 de 2 para 4, \textbf{taxa S2 de 12\,\% para $\geq$17\,\%}.
+        Rodadas classificadas de 2 para 5, S2 implícito de 3 para 6, S1 de 0
+        para 1.
+  \item \textbf{Nem tudo é deste lançamento.} Ele soma 5 revisões e 3
+        reaberturas. As outras 3 revisões e 1 reabertura vêm de um run
+        paralelo do SynchroNice (SYN-022 a SYN-024, 30/09 22:17--23:48), que
+        este foreman não supervisionou. A reabertura do SYN-024 é a linha
+        ``Sem rótulo'', e é por causa dela que 17\,\% é piso.
+\end{itemize}
+
+\paragraph{Como ler.} Com 24 revisões, o par passou de 10 e deixa de ser
+anedota. A taxa S2 subiu, e os seis S2 classificados são todos implícitos:
+APP-025, PHY-41 e agora os três do PHY-47 têm a mesma forma, uma regressão
+num caminho vizinho ao que a mudança tocou. O S1 do PHY-47 é o primeiro do
+par e aponta para o stage 1, não para o implementador. Continua sem outro
+implementador sob o mesmo revisor, então a comparação com o
+\texttt{gpt-6-luna max} (51\,\%) não vale pela regra.
+
+\subsection{Observações}
+\begin{itemize}
+  \item \textbf{Sol high conserta o que foi nomeado, não a vizinhança.} Nas três
+        passadas de retrabalho, a correção fez passar o probe da revisão e
+        criou a regressão seguinte num caso que o diff mostrava. O foreman
+        leu o caso de R3 no diff de \texttt{1604254} antes da revisão. Todas as
+        passadas levaram 5--8 min: velocidade não faltou, faltou ler em volta
+        do conserto.
+  \item \textbf{Sol max revisou bem.} Cada reabertura veio com probe A/B
+        no motor público (fórmula anterior contra a nova, mesma cena), repetiu
+        todas as mutações registradas e rodou o gate. A revisão 2 vetou ampliar
+        o escopo sem o proxy, e a 3 vetou mexer no integrador da cadeia e nos
+        outros chamadores do \texttt{solveLinear}. Nenhum S3.
+  \item \textbf{Um caso que a revisão final não mediu.} Na ordem
+        ideal\,1, cadeia, ideal\,2, tudo no mesmo corpo, o grupo é resolvido
+        na ideal\,1, antes do \texttt{pushChain}, e a ideal\,2 deixa de ver a
+        força da cadeia, que via antes do PHY-47. O foreman leu isso no diff
+        de \texttt{d88116c} e não fez probe. É um possível R5, sem prova.
+  \item \textbf{O stage 1 fixou uma fórmula que não testou com gravidade.} A
+        seção ``A decisão'' do PHY-47 trazia a expressão pronta e um
+        protótipo medido só na cena horizontal. O stage 2 a aplicou ao pé da
+        letra, e foi aí que o R1 nasceu.
+\end{itemize}
+
+\subsection{Driver e runtime}
+\begin{itemize}
+  \item Primeiro lançamento com o driver \texttt{01489e8}, que já inclui as
+        recomendações 1 e 2. Nenhuma pergunta e nenhum limite de uso, então
+        nada disso foi exercitado.
+  \item \textbf{Nada limita as reaberturas.} Nem o \texttt{ticket-flow} nem o
+        driver param um ticket que volta pela terceira vez; o PHY-47 teria
+        seguido girando. O foreman deixou correr: era o único ticket
+        executável, cada rodada custava cerca de \$1,20, e parar o driver no
+        meio de uma implementação custaria o branch.
+  \item \textbf{Incidente do foreman:} na \texttt{main}, o \texttt{ea00196}
+        esvaziou o \path{.scratch/reopen-attribution.md}, porque o Git Bash
+        converteu o caminho de \texttt{git show <rev>:<path>}. O
+        \texttt{268a33b} restaurou o arquivo, que hoje está idêntico ao da
+        sessão (\texttt{27019de}). Lição: \texttt{MSYS\_NO\_PATHCONV=1} em
+        todo \texttt{git show <rev>:<path>}.
+\end{itemize}
+
+\subsection{Recomendações}
+\begin{enumerate}[start=9]
+  \item \textbf{Stage 1: uma fórmula que o ticket fixa é medida em todas as
+        cenas que a spec exige.} O \texttt{spec.md} pedia o equilíbrio
+        $mg/k$ da mola vertical, e o protótipo do PHY-47 não mediu. Apoia-se
+        no S1 da linha \texttt{gpt-6.1-sol high $\to$ gpt-6.1-sol max} (1 de
+        7 achados).
+  \item \textbf{\texttt{ticket-flow}: depois da segunda reabertura, o ticket
+        vai para \texttt{blocked} e para o proxy}, com a pergunta ``o
+        escopo do ticket comporta o conserto?''. No PHY-47, a resposta certa
+        provavelmente era resolver molas ideais e cadeias juntas no
+        \texttt{step()}, e isso é decisão de escopo, não cuidado.
+  \item \textbf{Stage 2 em retrabalho: antes do red, listar os casos vizinhos
+        do achado} (outra mola no mesmo corpo, outro tipo de vínculo, outra
+        ordem) e cobrir pelo menos um deles. Apoia-se nos 6 S2 implícitos da
+        linha do par (24 revisões): APP-025, PHY-41 e os três do PHY-47.
+  \item \textbf{Manter o par.} Mesmo com a taxa S2 em $\geq$17\,\%, o revisor
+        pegou as quatro regressões antes do merge, e o custo por ticket
+        mergeado neste lançamento (\$2,69) ainda cabe no plano. Reavaliar
+        quando o SYN-024 tiver rótulo.
+  \item \textbf{Medir o possível R5 do PHY-47} (ideal, cadeia, ideal no mesmo
+        corpo) e abrir um ticket se ele se confirmar.
+\end{enumerate}
+
+\subsection{Débito humano}
+
+Nenhuma linha \texttt{Débito humano:} em PHY-46 e PHY-47. Para o Bruno:
+\begin{itemize}
+  \item \textbf{PR \#9:} a linha ``Needs your call'' do PHY-30 está velha (veja
+        a linha do tempo); a decisão de considerá-la resolvida é sua. PHY-33 e
+        PHY-39 seguem como \texttt{Review: human}.
+  \item \textbf{Stage 1:} PHY-45 (polia com massa diverge perto da polia),
+        PHY-48 (mola com massa amortecida explode a partir de $c \approx
+        100$) e CLEAN-13 (itens 2 a 5 do review do CLEAN-12).
+\end{itemize}
+
 \end{document}
