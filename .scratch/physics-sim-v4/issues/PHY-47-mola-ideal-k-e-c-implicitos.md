@@ -1,5 +1,5 @@
 # PHY-47: Mola ideal com `k` e `c` implícitos, certa no superamortecido e estável quando rígida
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -234,3 +234,92 @@ Gate independente na produção intacta: `30 test files passed (30)`, `733 tests
 - Mutação PHY-40 repetida: substituir somente `pushSpring` pela versão do commit red original `bee7949` (`F = k·dx + c·rate / (1 + c·Δt·K)`) → `npx vitest run src/sim/acceptance.test.ts -t PHY-47`, exit 1, `7 failed | 6 passed | 54 skipped (67)`. Cada um dos sete testes originais produz exatamente a sua saída individual na tabela original acima: deslocamentos 0.042026531696319536 / 0.000016880035400346216 / 0.05034936666488643 / 0.00010062456130977004 e energias 13932.228793286093 / 4.769236390550895 / 2.9217253962209053. R1 e os quatro testes de equilíbrio R2 passam nessa fórmula, como esperado.
 - Cada mutação foi restaurada byte a byte em `finally`. Produção restaurada: `npx vitest run src/sim/acceptance.test.ts -t PHY-47` → exit 0, `13 passed | 54 skipped (67)`. `acceptance.test.ts` + `simulator.test.ts` → `2 test files passed (2)`, `96 tests passed (96)`, incluindo PHY-26/30/40 sem mudar tolerâncias.
 - Gate final de R2, `npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente no PowerShell com parada em erro → exit 0; `30 test files passed (30)`, `737 tests passed (737)`; lint e typecheck sem erros, build concluído. Apenas o aviso existente de chunk > 500 kB. R2 corrigido, R1 e os critérios 1–6 preservados. `Stage: to-review` no commit de produção/ADR/metadados; a próxima sessão executa o stage 3.
+
+#### Re-review de R2 (2026-10-01)
+
+Verdict: Reopen (regressões R3 e R4)
+
+Revisão do delta `git diff 83e3f10...1604254`, commits `e874fda` e `1604254`, com contexto do diff completo `git diff 338bdb699cd6b399c4130eca58d586d19223bcde...160425463e11ac99f40f26622c66c1e52b3dee7b`. Base do loop: `sweatshop/2026-09-24-1853`, ainda em `338bdb6`. Standards e Spec por sub-agentes independentes; gate, repetição das quatro mutações registradas e provas A/B pelo agente principal. Os dois achados abaixo foram introduzidos por `1604254`; não são achados perdidos pelas revisões anteriores.
+
+##### Standards
+
+**0 violações documentadas; 0 smells.** Produção somente em `pushSpring`, testes somente no bloco PHY-26 e ADR somente no item autorizado. `e874fda` contém testes e metadados, sem produção; `1604254` contém produção, ADR e metadados, sem alterar testes. A variante foi registrada no commit red antes da implementação. Os quatro casos R2 têm mutação e saída red individual registradas; comentários novos ao fim do histórico. Helpers existentes reutilizados, sem abstração, dependência ou refactor externo. O custo O(n³) está documentado com `ponytail:`. Nenhuma decisão de proxy nesta rodada.
+
+##### Spec
+
+**R1 e R2 resolvidos; critérios 1–6 preservados. Duas regressões novas pendentes.** A matriz física usa `K = J M⁻¹ Jᵀ`, incluindo a resposta angular compartilhada; a identidade mantém o sistema invertível com K singular ou zero. O codec rejeita molas entre âncoras no mesmo corpo. Os achados são mudanças observadas contra a produção anterior, não novos critérios de aceitação.
+
+**P1: ❌ R3 — uma mola desconectada quebra o equilíbrio de uma mola com massa e uma ideal.** Em `src/sim/simulator.ts:1039`, a primeira chamada passa a processar todas as molas ideais, inclusive as posteriores a um `pushChain` no gancho de `step()`. Com isso, inserir uma mola ideal independente antes de uma cadeia antecipa outra mola ideal que antes previa a força dessa cadeia. O ticket delimita a mola com massa como fora da alteração; o ADR-0004 define `F_el = k·Δx + c·ẋ`. Duas molas igualmente esticadas em sentidos opostos devem manter o corpo parado nesta cena com `g = 0`.
+
+Prova pública: corpo central de 1 kg em `(0, 0)`, apoios fixos em `(−1.1, 0)` e `(1.1, 0)`, âncoras nos centros, ambas as molas com `k = 40`, `x0 = 1`, `c = 200`; a esquerda tem `mass = 0.1`, a direita é ideal. Ordem original: cadeia → ideal. Acrescentar no início uma mola ideal relaxada entre dois corpos fixos em `(10, 10)` e `(11, 10)`, sem ligação com o sistema, deve preservar `max |x| < 0.0001 m` por 300 passos.
+
+| Produção | Sem mola independente | Com mola independente no início |
+| --- | --- | --- |
+| `c62cf2f`, anterior a R2 | Passa | Passa |
+| `1604254`, atual | Passa | `max abs(x) = 0.7950001955032349 m`, `final x = 0.794999897480011 m`; falha |
+
+Saída red individual: `extra=true, max drift 0.7950001955032349, final x 0.794999897480011: expected 0.7950001955032349 to be less than 0.0001`. A origem é a antecipação das forças ideais no gancho; o probe não exige corrigir o integrador da cadeia do PHY-48.
+
+**P2: ❌ R4 — o amortecimento de uma mola independente quase anula o movimento de outra.** Em `src/sim/simulator.ts:1054–1055`, todas as molas ideais, inclusive desconectadas, entram no mesmo `solveLinear`. O helper usa a maior entrada de toda a matriz como escala, considera um pivot abaixo de `1e-12·scale` singular e acrescenta `1e-9·scale` a todas as diagonais. A identidade torna o sistema físico invertível, mas não impede que esse fallback altere os blocos independentes. A spec aceita `k > 0`, `x₀ > 0`, `c ≥ 0`; o codec aceita o valor finito usado no probe.
+
+Prova pública: cena horizontal PHY-26, `m = 1`, `k = 40`, `c = 0`, `Δx = 0.1`, com `g = 0`. Comparar um passo da cena original com a mesma cena acrescida de uma mola independente relaxada, `k = 40`, `x0 = 1`, `c = 1e16`, entre um corpo fixo em `(10, 10)` e outro dinâmico de 1 kg em `(11, 10)`. A mola adicional permanece sem força. O esperado independente é `|vx_com_mola − vx_sem_mola| < 1e-6 m/s`.
+
+| Produção | Resultado |
+| --- | --- |
+| `c62cf2f`, anterior a R2 | Passa: diferença < `1e-6 m/s` |
+| `1604254`, atual | `vx_sem_mola = −0.0663900300860405 m/s`, `vx_com_mola = −3.999975319857185e−7 m/s`; falha |
+
+Saída red individual: `solo vx -0.0663900300860405, combined vx -3.999975319857185e-7: expected 0.06638963008850851 to be less than 0.000001`. Trata-se de acoplamento numérico novo entre subsistemas fisicamente independentes, causado pelo novo uso global do helper, não por alteração de `solveLinear`.
+
+Os três probes A/B abaixo foram inseridos temporariamente no bloco autorizado `ideal spring (PHY-26)`, antes dos casos PHY-40, usando os helpers existentes. Executados com `npx vitest run src/sim/acceptance.test.ts -t PHY-47-review-probe --reporter=json` (relatório em arquivo temporário). A troca de produção substituiu somente `pushSpring` pela versão de `c62cf2f`; o mesmo arquivo de testes foi usado nas duas execuções. Anterior: exit 0, `3 passed | 67 skipped (70)`. Atual: exit 1, `2 failed | 1 passed | 67 skipped (70)`, com as duas saídas individuais acima.
+
+```ts
+it.each([false, true])('PHY-47-review-probe R3: chain and ideal equilibrium, disconnected ideal first=%s', async (extra) => {
+  const constraints: Scene['constraints'] = [
+    { id: 'chain', kind: 'spring', a: { bodyId: 'left', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200, mass: 0.1 },
+    { id: 'ideal', kind: 'spring', a: { bodyId: 'right', anchor: { x: 0, y: 0 } }, b: { bodyId: 'body', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 200 },
+  ]
+  if (extra) constraints.unshift({ id: 'unrelated', kind: 'spring', a: { bodyId: 'dummy-a', anchor: { x: 0, y: 0 } }, b: { bodyId: 'dummy-b', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 0 })
+  const sim = await load({
+    version: 1, constants: { g: 0 }, forces: [], contacts: [], constraints,
+    bodies: [
+      { id: 'left', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: -1.1, y: 0 }, rotation: 0 },
+      { id: 'right', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 1.1, y: 0 }, rotation: 0 },
+      { id: 'body', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+      { id: 'dummy-a', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 10, y: 10 }, rotation: 0 },
+      { id: 'dummy-b', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 11, y: 10 }, rotation: 0 },
+    ],
+  })
+  const x = run(sim, 300, () => sim.readStates().get('body')!.position.x)
+  const worst = Math.max(...x.map(Math.abs))
+  console.log('PROBE METRIC ' + JSON.stringify({ probe: 'chain', extra, worst, final: x.at(-1) }))
+  expect(worst, 'extra=' + extra + ', max drift ' + worst + ', final x ' + x.at(-1)).toBeLessThan(1e-4)
+})
+
+it('PHY-47-review-probe R4: disconnected high-damping spring cannot alter soft spring motion', async () => {
+  const scene = horizontalScene(1, 40, X_EQ + 0.1, 0)
+  scene.constants.g = 0
+  const solo = await load(scene)
+  const combined = structuredClone(scene)
+  combined.bodies.push(
+    { id: 'unrelated-fixed', shape: 'rectangle', width: 0.2, height: 0.2, fixed: true, mass: 0, position: { x: 10, y: 10 }, rotation: 0 },
+    { id: 'unrelated-free', shape: 'rectangle', width: 0.2, height: 0.2, fixed: false, mass: 1, position: { x: 11, y: 10 }, rotation: 0 },
+  )
+  combined.constraints!.push({ id: 'unrelated', kind: 'spring', a: { bodyId: 'unrelated-fixed', anchor: { x: 0, y: 0 } }, b: { bodyId: 'unrelated-free', anchor: { x: 0, y: 0 } }, k: 40, x0: 1, c: 1e16 })
+  const together = await load(combined)
+  solo.step()
+  together.step()
+  const soloVx = solo.readStates().get('bloco')!.linvel.x
+  const combinedVx = together.readStates().get('bloco')!.linvel.x
+  console.log('PROBE METRIC ' + JSON.stringify({ probe: 'scale', soloVx, combinedVx }))
+  expect(Math.abs(combinedVx - soloVx), 'solo vx ' + soloVx + ', combined vx ' + combinedVx).toBeLessThan(1e-6)
+})
+```
+
+Produção e testes restaurados byte a byte em `finally`; `git diff --exit-code` confirmou diff vazio antes de registrar esta revisão. Nenhum probe virou teste permanente nesta etapa.
+
+Mutações registradas repetidas independentemente, com saída red por teste conferida contra as tabelas do stage 2: `pushSpring` sequencial de `c62cf2f` → `4 failed | 63 skipped (67)` nos casos R2; matriz somente diagonal → `2 failed | 2 passed | 63 skipped (67)`, ambas as ordens com `c_direita = 2000`; retirar aceleração livre → `2 failed | 65 skipped (67)` nos casos R1; `pushSpring` PHY-40 de `bee7949` → `7 failed | 6 passed | 54 skipped (67)`. Cada mutação restaurada byte a byte. Após remover os probes e restaurar a produção, `acceptance.test.ts` + `simulator.test.ts` → exit 0, `2 test files passed (2)`, `96 tests passed (96)`, incluindo PHY-26/30/40/47 sem mudar tolerâncias.
+
+Gate independente na produção intacta: `npm test && npm run lint && npm run typecheck && npm run build` → exit 0, `30 test files passed (30)`, `737 tests passed (737)`; lint e typecheck sem erros; build concluído. Apenas o aviso existente de chunk tardio > 500 kB. O gate verde não cobre R3/R4.
+
+**Restante para o stage 2: somente ❌ R3 e ❌ R4.** Na mesma branch e seam pública, pinar a preservação do sistema cadeia → ideal ao acrescentar uma mola ideal independente no início, e a independência da dinâmica de uma mola normal ao acrescentar outra desconectada com parâmetros de escala diferente, em commit próprio red. Corrigir o novo processamento conjunto em `pushSpring`, preservando R1/R2 e os critérios 1–6; registrar a variante antes de usá-la e atualizar o item autorizado do ADR. Não ampliar a alteração para o integrador da cadeia ou para os chamadores de `solveLinear` sem encaminhar a decisão pelo fluxo de proxy da skill. Repetir mutate-verify e gate. A regra mecânica de `ticket-flow` exige reabertura porque as correções precisam de novos testes. Nenhum merge ou entrada de ledger; `Stage: to-implement` neste commit de revisão. Totais: Standards **0 achados**; Spec **2 regressões novas pendentes, R1/R2 resolvidos**.
