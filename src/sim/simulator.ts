@@ -155,9 +155,10 @@ interface Grip {
   disk: RAPIER.RigidBody
   /** Angle from where the rope meets the disk to the mark, in the wrap direction: the arriving piece's share. */
   share: number
-  /** The rope's meeting angle (`RopeArc.start`) and the disk's rotation when `share` was last brought up to date. */
+  /** The rope's meeting angle (`RopeArc.start`) when `share` was last brought up to date. */
   start: number
-  rotation: number
+  /** The disk's angular velocity before the step, for the turn the step integrates (Rapier's own angle runs short of ω·Δt). */
+  w0: number
 }
 
 interface Piece {
@@ -433,12 +434,11 @@ function pieceBounds(rope: RopeBinding): number[] {
   return [0, ...rope.grips.map((g) => g.at + 1), rope.via.length + 1]
 }
 
-/** Each grip's share of its arc on `path`, with the disks turned `spin` beyond their rotation now. */
-function gripShares(rope: RopeBinding, path: RopePath, spin?: readonly number[]): number[] {
+/** Each grip's share of its arc on `path`, with the disks turned `turns` since `share` was last brought up to date. */
+function gripShares(rope: RopeBinding, path: RopePath, turns?: readonly number[]): number[] {
   return rope.grips.map((g, k) => {
     const arc = path.arcs[g.at]!
-    const turned = wrapAngle(g.disk.rotation() - g.rotation) + (spin?.[k] ?? 0)
-    return g.share + arc.direction * (turned - wrapAngle(arc.start - g.start))
+    return g.share + arc.direction * ((turns?.[k] ?? 0) - wrapAngle(arc.start - g.start))
   })
 }
 
@@ -883,7 +883,7 @@ class RapierSimulator implements Simulator {
           grips: rope.via.flatMap((id, at) => {
             const disk = disks.get(id)
             const arc = path.arcs[at]!
-            return disk ? [{ at, disk, share: arc.sweep / 2, start: arc.start, rotation: disk.rotation() }] : []
+            return disk ? [{ at, disk, share: arc.sweep / 2, start: arc.start, w0: disk.angvel() }] : []
           }),
           pieces: [],
         }
@@ -1166,8 +1166,9 @@ class RapierSimulator implements Simulator {
       const frame = ropeFrame(rope)
       const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
       // Each disk's free turn over the step, the same way.
-      const spin = rope.grips.map(({ disk }) => {
-        const w0 = disk.angvel()
+      const spin = rope.grips.map((grip) => {
+        const { disk } = grip
+        const w0 = (grip.w0 = disk.angvel())
         const w1 = w0 + TIMESTEP * disk.userTorque() * disk.effectiveWorldInvInertia()
         return TIMESTEP * (w0 + phi * (w1 - w0))
       })
@@ -1220,14 +1221,16 @@ class RapierSimulator implements Simulator {
 
   /** correctRope, once per piece and solved together; first the shares catch up with the disks' turn. */
   private correctPieces(ropes: readonly RopeBinding[]): void {
+    const phi = this.substepFactor()
     const rows = ropes.flatMap((rope) => {
       this.placeDisks(rope)
       const frame = ropeFrame(rope)
-      const shares = gripShares(rope, frame.path)
+      // The same turn pullPieces predicted, now with the ω the step ended on.
+      const turns = rope.grips.map(({ disk, w0 }) => TIMESTEP * (w0 + phi * (disk.angvel() - w0)))
+      const shares = gripShares(rope, frame.path, turns)
       rope.grips.forEach((grip, k) => {
         grip.share = shares[k]!
         grip.start = frame.path.arcs[grip.at]!.start
-        grip.rotation = grip.disk.rotation()
       })
       const now = piecePulls(rope, frame)
       const lengths = pieceLengths(rope, frame.path, shares)
