@@ -1035,22 +1035,30 @@ class RapierSimulator implements Simulator {
    * (1 − φ)Δt lead, with both k and c using the end-of-step relative velocity.
    */
   private pushSpring(s: SpringBinding): void {
-    // The existing hook calls once per ideal spring; solve them only once.
-    if (s !== this.springs.find((spring) => !spring.chain)) return
+    // Only shared dynamic bodies couple springs; fixed anchors do not.
+    const group = new Set([s])
+    for (const member of group) {
+      for (const spring of this.springs) {
+        if (!spring.chain && [member.a, member.b].some(({ rigid }) => rigid.isDynamic() && (rigid === spring.a.rigid || rigid === spring.b.rigid))) group.add(spring)
+      }
+    }
+    const springs = this.springs.filter((spring) => group.has(spring))
+    // Keep each group's place relative to chains in the existing hook.
+    if (s !== springs[0]) return
     const lead = (1 - this.substepFactor()) * TIMESTEP
-    const rows = this.springs.filter((spring) => !spring.chain).map((spring) => {
+    const rows = springs.map((spring) => {
       const { now, u, dx, rate } = springAt(spring, lead)
       const pulls = [
         { rigid: spring.a.rigid, p: now[0], u },
         { rigid: spring.b.rigid, p: now[1], u: { x: -u.x, y: -u.y } },
       ]
-      // Read all free velocities before applying any ideal spring force.
+      // Read the group's free velocities before applying its spring forces.
       const free = pulls.map(({ rigid, p }) => freePointVelocity(rigid, p, this.world.gravity))
       const implicit = spring.k * lead + spring.c
       const rhs = spring.k * dx + spring.c * rate + implicit * (lengtheningRate(pulls, free) - rate)
       return { pulls, implicit, rhs }
     })
-    // ponytail: one dense O(n³) solve; split connected groups if scene sizes demand it.
+    // ponytail: regroup at each call and solve dense O(n³) per group; cache groups/use sparse solves if scene sizes demand it.
     const matrix = rows.map((a, i) => rows.map((b, j) => (i === j ? 1 : 0) + a.implicit * TIMESTEP * ropeInvMass(b.pulls, a.pulls)))
     const forces = solveLinear(matrix, rows.map((row) => row.rhs))
     if (!forces) throw new Error('Unable to solve ideal spring forces')
