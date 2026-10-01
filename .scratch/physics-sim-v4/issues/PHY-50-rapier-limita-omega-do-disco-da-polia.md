@@ -1,5 +1,5 @@
 # PHY-50: O disco da polia com massa passa de 15π rad/s, e a Atwood continua certa acima disso
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-49
 Review: agent
@@ -59,3 +59,6 @@ O sono do disco não precisa de nada: ele é acordado a cada passo, e a mediçã
 
 - 2026-10-01 Aberto no stage 1 do PHY-49, a partir de probes descartáveis sobre `ace3e09`. Nada foi commitado.
 - 2026-10-01 Stage 1. Probes descartáveis sobre `0c75336` mediram o limite (|ω|·Δt ≤ π/4, em qualquer corpo, sem depender dos substeps) e prototiparam o guarda-e-devolve do ω em volta do `world.step()`, sobre o protótipo do PHY-49. Os 741 testes ficaram verdes. O Bruno aprovou método, dependência, critérios e o PHY-51 para os corpos comuns. Nada do protótipo foi commitado.
+- 2026-10-01 Stage 2. Teste vermelho em commit próprio: os três cenários saíam de 1% nos passos 181, 181 e 148, como o ticket previu. Correção em `step()`: cada disco guarda o ω e entra no `world.step()` com ω = 0, e sai com o guardado mais o `angvel()` do Rapier. Os três ficam verdes; PHY-25 e PHY-49 seguem verdes sem mudar tolerância.
+- 2026-10-01 Mutate-verify (critério 4). Mutação: tirar o guarda-e-devolve do ω (deixar só `this.world.step()`). Saída vermelha: `T₁ at step 181: expected 2.1142636745780994 to be less than or equal to 0.13734` (1/3, M = 2), `T₁ at step 181: expected 1.2716671046931367 to be less than or equal to 0.17658` (3/1, M = 2), `T₁ at step 148: expected 0.5534703854770608 to be less than or equal to 0.1459536585365854` (1/3, M = 0,2). Código restaurado, verde de novo.
+- 2026-10-01 Gate: `npm test` com o timeout padrão tem 1 vermelho, `simulator.test.ts` "a body launched beyond the viewport integrates indefinitely" (timeout de 5000 ms; 6,3 s com a suíte em paralelo, 3,6 s sozinho). Ele falha igual na árvore sem a minha mudança, não tem polia e está fora dos Primary files. Com `npx vitest run --testTimeout=30000`: 796/796 verdes. Lint, typecheck e build verdes. Candidato a `CLEAN-*` (o teste anda em milhares de passos, dependente da velocidade da máquina).

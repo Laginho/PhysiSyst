@@ -961,7 +961,12 @@ class RapierSimulator implements Simulator {
       if (group.length > 1 || group[0]!.grips.length) this.pullPieces(group)
       else this.pullRope(group[0]!)
     }
+    // Rapier caps |ω|·Δt at π/4 on every body. A disk keeps its ω outside the world: it enters the step at 0, so the
+    // solver only adds the rope torque's Δt·τ/I, and gets ω back after (PHY-50). Its Rapier angle means nothing.
+    const spins = [...this.disks.values()].map((disk) => ({ disk, w: disk.angvel() }))
+    for (const { disk } of spins) disk.setAngvel(0, true)
     this.world.step()
+    for (const { disk, w } of spins) disk.setAngvel(w + disk.angvel(), true)
     for (const rebase of rebaseChains) rebase()
     for (const group of groups) {
       if (group.length > 1 || group[0]!.grips.length) this.correctPieces(group)
