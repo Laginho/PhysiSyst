@@ -193,40 +193,47 @@ Nenhuma rodada \texttt{reopened} neste run, logo nenhuma linha nova em
 \path{.scratch/reopen-attribution.md}. Sem \emph{drip-feeding} e sem
 \emph{churn}.
 
-Três achados que a revisão consertou em vez de devolver teriam rótulo se
-tivessem reaberto. O foreman os anota aqui sem registrar linha, porque o
-arquivo só conta rodadas reabertas:
+Três achados foram consertados pela própria revisão em vez de devolvidos.
+Depois da recomendação 1, eles entram em \path{.scratch/reopen-attribution.md}
+com rodada 0. O revisor foi \texttt{opus-5.5 xhigh}, o mesmo modelo do foreman,
+então o GPT-6 Astra (medium, só leitura) rotulou os três. Os rótulos entraram
+como ele os devolveu:
 
 \medskip
 \noindent{\small
-\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\begin{tabularx}{\linewidth}{@{}l c l X@{}}
 \toprule
-Ticket & Rótulo provável & Achado consertado na revisão\\
+Ticket & Rodada & Rótulo (Astra) & Achado e porquê\\
 \midrule
-CLEAN-27 & S2-explícito/teste & O teste de App nunca clicava antes do
+CLEAN-27 & 0 & S2-explícito/teste & O teste de App nunca clicava antes do
   primeiro passo, então metade do critério 3.2 não tinha prova. A revisão
-  acrescentou o clique (\texttt{9f95310}) e registrou duas mutações.\\
-PHY-56 & S2-explícito/teste ? & O critério 4.3 não tinha vermelho próprio: no
-  teste compartilhado, a mutação 3 parava no 4.1. A revisão isolou e viu o
-  vermelho, sem commit de teste.\\
-PHY-57 & S2-explícito/código ? & O critério 4 pedia que o comentário de
-  \texttt{Grip.loose} dissesse como o impacto é absorvido; só o ADR dizia. A
-  revisão corrigiu (\texttt{42937d2}).\\
+  acrescentou o clique (\texttt{9f95310}) e duas mutações. O critério pede o
+  clique antes do passo.\\
+PHY-56 & 0 & S2-explícito/teste & O critério 4.3 não tinha vermelho próprio:
+  no teste compartilhado, a mutação 3 parava no 4.1. A revisão isolou e viu o
+  4.3 falhar (\texttt{180309f}). O critério 7 pede que a mutação 3 exponha os
+  dois.\\
+PHY-57 & 0 & S2-explícito/código & O comentário de \texttt{Grip.loose} não
+  dizia como o impacto do reengate é absorvido; só o ADR dizia. A revisão
+  corrigiu (\texttt{42937d2}). O critério 4 pede isso no código.\\
 \bottomrule
 \end{tabularx}}
 
 \medskip
-Os três são do Sonnet 5.5 high. Contados como reabertura, o par
-\texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh} teria 2 ou 3 de 3, não
-0 de 3.
+Totais: 2 S2-explícito/teste, 1 S2-explícito/código, nenhum S1 ou S3. Os três
+são do Sonnet 5.5 high. Sob um revisor que reabre, o par
+\texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh} teria 3 de 3 reabertos,
+não 0 de 3. O foreman concorda com os três rótulos.
 
 \section{Scoreboard}
 
 Saída de \path{sweatshop/scripts/scoreboard.ps1} sobre os quatro repositórios
 desta máquina com \path{.scratch/run-log.md} (PhysiSyst, SIGAA-ME, SynchroNice,
-slip). Para o PhysiSyst, rodou sobre \path{docs/run-log/run-log.md} com as 12
-linhas deste run acrescentadas (178 linhas): o log local continua sem as linhas
-de 30/09 da outra máquina.
+slip), já com as recomendações 1--3 aplicadas
+(\href{https://github.com/Laginho/Agent-Skills/pull/3}{Agent-Skills\#3}): o log
+local do PhysiSyst foi sincronizado com a cópia (178 linhas), as grafias
+\texttt{claude-*} leem como o nome curto, e as três linhas de rodada 0 acima
+contam na coluna nova.
 
 \medskip
 \noindent{\footnotesize
@@ -235,11 +242,11 @@ de 30/09 da outra máquina.
 Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
 \midrule
 sonnet & 121 & 75 & 31 & 15 & 7m & \$10.53 (4/121)\\
-claude-opus-5-5 & 35 & 31 & 4 & 0 & 6m & \$0.72 (1/35)\\
+opus-5.5 & 35 & 31 & 4 & 0 & 6m & \$0.72 (1/35)\\
 gpt-6.1-sol high & 35 & 31 & 0 & 4 & 9m & \$27.53 (35/35)\\
 sonnet-5.5 high & 11 & 11 & 0 & 0 & 6m & \$20.42 (11/11)\\
 sonnet-5.5 xhigh & 3 & 3 & 0 & 0 & 10m & \$12.44 (3/3)\\
-claude-opus-5-5 high & 2 & 2 & 0 & 0 & 9m & \$2.31 (2/2)\\
+opus-5.5 high & 2 & 2 & 0 & 0 & 9m & \$2.31 (2/2)\\
 fable & 5 & 5 & 0 & 0 & 3m & ?\\
 gpt-6-luna & 23 & 11 & 10 & 2 & 26m & ?\\
 gpt-6-sol & 6 & 5 & 1 & 0 & 17m & ?\\
@@ -253,31 +260,35 @@ gpt-6.1-sol max & 3 & 1 & 2 & 0 & 17m & \$1.44 (1/3)\\
 
 \medskip
 \noindent{\footnotesize
-\begin{tabularx}{\linewidth}{@{}l X r r r r r r@{}}
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r r@{}}
 \toprule
-Implementador & Revisor & Reviews & Reabertos & Taxa & Por S2 & Taxa S2 & Sem rótulo\\
+Implementador & Revisor & Reviews & Reab. & Taxa & Por S2 & Taxa S2 & Sem rót. & Cons.\ S2\\
 \midrule
-sonnet & opus & 68 & 20 & 29\,\% & 1 & $\geq$1\,\% & 19\\
-? & opus & 4 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-claude-opus-5-5 & claude-fable-5-1 & 30 & 1 & 3\,\% & 0 & $\geq$0\,\% & 1\\
-gpt-6.1-sol high & gpt-6.1-sol max & 30 & 8 & 27\,\% & 6 & $\geq$20\,\% & 1\\
-sonnet-5.5 high & gpt-6.1-sol max & 8 & 1 & 12\,\% & 1 & 12\,\% & 0\\
-sonnet-5.5 xhigh & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
-claude-opus-5-5 high & claude-fable-5-1 high & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-claude-opus-5-5 high & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-sonnet-5.5 high & opus-5.5 xhigh & 3 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-sonnet-5.5 xhigh & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-sonnet & fable & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-fable & fable & 4 & 1 & 25\,\% & 0 & $\geq$0\,\% & 1\\
-gpt-6-luna & gpt-6-sol & 11 & 7 & 64\,\% & 0 & $\geq$0\,\% & 7\\
-gpt-6-sol & gpt-5.6-sol & 5 & 4 & 80\,\% & 0 & $\geq$0\,\% & 4\\
-gpt-5.6-sol & gpt-6-astra & 4 & 3 & 75\,\% & 0 & $\geq$0\,\% & 3\\
-gpt-6-astra & gpt-5.6-sol & 11 & 5 & 45\,\% & 0 & $\geq$0\,\% & 5\\
-sonnet-5 xhigh & opus-5.5 xhigh & 5 & 0 & 0\,\% & 0 & 0\,\% & 0\\
-gpt-6-astra low & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
-gpt-6.1-sol max & gpt-6.1-sol max & 1 & 1 & 100\,\% & 0 & $\geq$0\,\% & 1\\
+sonnet & opus & 68 & 20 & 29\,\% & 1 & $\geq$1\,\% & 19 & 0\\
+? & opus & 4 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+opus-5.5 & fable-5.1 & 30 & 1 & 3\,\% & 0 & $\geq$0\,\% & 1 & 0\\
+gpt-6.1-sol high & gpt-6.1-sol max & 30 & 8 & 27\,\% & 6 & $\geq$20\,\% & 1 & 0\\
+sonnet-5.5 high & gpt-6.1-sol max & 8 & 1 & 12\,\% & 1 & 12\,\% & 0 & 0\\
+sonnet-5.5 xhigh & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0 & 0\\
+opus-5.5 high & fable-5.1 high & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+opus-5.5 high & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+sonnet-5.5 high & opus-5.5 xhigh & 3 & 0 & 0\,\% & 0 & 0\,\% & 0 & 3\\
+sonnet-5.5 xhigh & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+sonnet & fable & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+fable & fable & 4 & 1 & 25\,\% & 0 & $\geq$0\,\% & 1 & 0\\
+gpt-6-luna & gpt-6-sol & 11 & 7 & 64\,\% & 0 & $\geq$0\,\% & 7 & 0\\
+gpt-6-sol & gpt-5.6-sol & 5 & 4 & 80\,\% & 0 & $\geq$0\,\% & 4 & 0\\
+gpt-5.6-sol & gpt-6-astra & 4 & 3 & 75\,\% & 0 & $\geq$0\,\% & 3 & 0\\
+gpt-6-astra & gpt-5.6-sol & 11 & 5 & 45\,\% & 0 & $\geq$0\,\% & 5 & 0\\
+sonnet-5 xhigh & opus-5.5 xhigh & 5 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+gpt-6-astra low & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0 & 0\\
+gpt-6.1-sol max & gpt-6.1-sol max & 1 & 1 & 100\,\% & 0 & $\geq$0\,\% & 1 & 0\\
 \bottomrule
 \end{tabularx}}
+
+\smallskip
+{\footnotesize \emph{Cons.\ S2} é a coluna nova \texttt{Fixed in review for S2}:
+merges cuja revisão consertou ela mesma um achado S2 (rodada 0).}
 
 \medskip
 \noindent{\footnotesize
@@ -288,6 +299,7 @@ Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2
 gpt-6.1-sol high $\to$ gpt-6.1-sol max & 7 & 3 & 0 & 7 & 1 & 0\\
 sonnet-5.5 high $\to$ gpt-6.1-sol max & 1 & 0 & 0 & 2 & 3 & 0\\
 sonnet-5.5 xhigh $\to$ gpt-6.1-sol max & 1 & 1 & 0 & 1 & 2 & 0\\
+sonnet-5.5 high $\to$ opus-5.5 xhigh & 3 & 1 & 2 & 0 & 0 & 0\\
 sonnet $\to$ opus & 1 & 1 & 1 & 0 & 0 & 0\\
 gpt-6-astra low $\to$ gpt-6.1-sol max & 1 & 2 & 0 & 1 & 0 & 0\\
 \bottomrule
@@ -295,15 +307,21 @@ gpt-6-astra low $\to$ gpt-6.1-sol max & 1 & 2 & 0 & 1 & 0 & 0\\
 
 \paragraph{O que mudou desde o relatório anterior.}
 \begin{itemize}
-  \item \textbf{Quatro pares novos, todos deste run e todos com 0
-        reaberturas:} \texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh}
-        (3), \texttt{sonnet-5.5 xhigh} $\to$ \texttt{opus-5.5 xhigh} (1),
-        \texttt{claude-opus-5-5 high} $\to$ \texttt{claude-fable-5-1 high} (1)
-        e \texttt{claude-opus-5-5 high} $\to$ \texttt{opus-5.5 xhigh} (1).
+  \item \textbf{Grafia normalizada:} \texttt{claude-opus-5-5} virou
+        \texttt{opus-5.5} e \texttt{claude-fable-5-1} virou
+        \texttt{fable-5.1}, nas linhas antigas e nas novas. Os números dessas
+        linhas não mudaram, só o nome.
+  \item \textbf{Quatro pares novos, todos deste run, com 0 reaberturas:}
+        \texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh} (3),
+        \texttt{sonnet-5.5 xhigh} $\to$ \texttt{opus-5.5 xhigh} (1),
+        \texttt{opus-5.5 high} $\to$ \texttt{fable-5.1 high} (1) e
+        \texttt{opus-5.5 high} $\to$ \texttt{opus-5.5 xhigh} (1). O primeiro
+        tem 3 consertos S2 na revisão e 3 rodadas na tabela de achados (rodada
+        0).
   \item \textbf{\texttt{sonnet-5.5 high}} foi de 8 para 11 estágios e
         \textbf{\texttt{sonnet-5.5 xhigh}} de 2 para 3 (mediana de 19 para
-        10 min). \texttt{claude-opus-5-5 high} é linha nova, separada de
-        \texttt{claude-opus-5-5} sem esforço.
+        10 min). \texttt{opus-5.5 high} é linha nova, separada de
+        \texttt{opus-5.5} sem esforço.
   \item \textbf{\texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol max}} foi
         de 28 revisões e 21\,\% de taxa S2 para 30 e $\geq$20\,\%, com uma
         reabertura sem rótulo. \textbf{\texttt{gpt-6.1-sol max}} apareceu como
@@ -315,17 +333,17 @@ gpt-6-astra low $\to$ gpt-6.1-sol max & 1 & 2 & 0 & 1 & 0 & 0\\
 \paragraph{Como ler.}
 \begin{itemize}
   \item \textbf{Mesmo implementador, dois revisores:} o Sonnet 5.5 high tem
-        12\,\% de reabertura sob o Sol max (8 revisões) e 0\,\% sob o Opus 5.5
-        xhigh (3). \textbf{Ambos abaixo de 10 revisões: anedota.} E o 0\,\% é
-        do revisor, não do implementador: a seção anterior mostra que o Opus
-        consertou o que o Sol max teria devolvido.
+        12\,\% de taxa S2 sob o Sol max (8 revisões) e 0\,\% sob o Opus 5.5
+        xhigh (3), mas com 3 consertos S2 em 3 revisões. Somando os dois, os
+        deslizes do implementador sob o Opus foram 3 de 3. \textbf{Ambos os
+        pares abaixo de 10 revisões: anedota.}
   \item \textbf{Os pares do Opus 5.5 xhigh com 0\,\%} somam 10 revisões entre
         \texttt{sonnet-5 xhigh}, \texttt{sonnet-5.5 high}, \texttt{sonnet-5.5
-        xhigh} e \texttt{claude-opus-5-5 high}, nenhuma reaberta. Juntos,
-        sugerem um revisor que conserta em vez de devolver; separados, cada par
-        é anedota.
-  \item \textbf{Nenhum rótulo novo:} a tabela de achados não mudou. Os
-        \texttt{Sem rótulo} novos são dos irmãos.
+        xhigh} e \texttt{opus-5.5 high}, nenhuma reaberta. Antes deste run a
+        coluna de consertos não existia, então os 5 do \texttt{sonnet-5
+        xhigh} podem esconder consertos que ninguém rotulou.
+  \item \textbf{Os três rótulos novos são S2-explícito:} o ticket dizia, e o
+        stage 2 não fez. Nada aponta para o stage 1.
 \end{itemize}
 
 \section{Observações sobre os modelos}
@@ -460,14 +478,158 @@ CLEAN-26 e foi mergeada aqui; a 7 (stage 1 de CLEAN-25, PHY-55 e PHY-56)
 também foi feita. As outras (Primary files, proxy antes de reabrir por
 fronteira, Codex por janela) não foram exercitadas neste run.
 
+\section{Decisões do proxy}
+
+As 31 linhas \texttt{Proxy decided} dos tickets deste run, todas de 2026-10-02 e
+todas do stage 1: são as decisões tomadas em nome do Bruno. Ficam em
+\texttt{\#\# Comments} de cada ticket; aqui, citadas na íntegra. CLEAN-26 e
+CLEAN-27 não têm nenhuma (o CLEAN-27 nasceu de uma decisão do PHY-56).
+
+{\small
+\subsection*{CLEAN-25 (8)}
+\begin{enumerate}
+  \item Junções em $t = k/(n + 1)$ na ordem de \texttt{via}, sem projeção --- a
+        junção não faz trabalho físico, e (d) mantém todo segmento
+        $\geq |\mathrm{perna}|/(n + 1)$, o motivo original do PHY-54 para o limite.
+  \item O caso do \texttt{ponytail:} (duas projeções presas na mesma ponta)
+        entra neste ticket, na segunda disposição do critério 2 --- a mesma
+        regra o cobre sem código a mais.
+  \item Substituir a decisão do PHY-54 (ponto mais perto do centro, limitado a
+        $[\frac14, \frac34]$) e corrigir o ADR --- a junção não faz trabalho
+        físico, e (d) mantém todo segmento $\geq |\mathrm{perna}|/(n + 1)$, o
+        motivo original do limite.
+  \item \texttt{arcs[i].start} de uma polia solta fica o ângulo até a junção,
+        sem mudança --- só o código de grip (sem histórico) e o
+        \texttt{scenePath} (sem histórico) leem \texttt{start}.
+  \item Testes só na geometria, chamando \texttt{ropePath} direto, sem cena no
+        \texttt{acceptance.test.ts} --- \texttt{ropeFrame} só soma as direções
+        dos segmentos, e a cena seria artificial. (Revista pela decisão 8.)
+  \item O critério 5 pede o registro do mutante (b) --- só uma janela em torno
+        do cruzamento separa (b) de (d).
+  \item \texttt{Blocked by: CLEAN-26}, \texttt{Difficulty: normal},
+        \texttt{Review: agent}, um ticket só --- mesmo arquivo do CLEAN-26,
+        função privada, critérios independentes.
+  \item ``Testes só na geometria'' revisto pela evidência nova (a cena simples
+        da mesa com duas polias ideais já ganha energia na main): o critério de
+        energia, com \texttt{twoPulleyTableScene} em
+        \texttt{acceptance.test.ts} e o registro de mutação, fica neste ticket
+        --- um ticket posterior nunca conseguiria ficar vermelho primeiro.
+\end{enumerate}
+
+\subsection*{PHY-56 (9)}
+\begin{enumerate}
+  \item A costura é \texttt{RopeState.path}, o caminho que o simulador
+        resolveu na última leitura das poses reais --- desenho = simulação por
+        construção, e o \texttt{readConstraints} já viaja até o \texttt{paint}
+        a cada quadro; recalcular com \texttt{keep}/\texttt{sweeps} repetiria a
+        regra do grip, e um \texttt{readRopePaths()} pediria outro ref no App.
+  \item \texttt{path} opcional no tipo \texttt{RopeState} --- obrigatório
+        quebraria o typecheck do helper \texttt{ropeState} de
+        \texttt{overlay.test.ts} e de dois literais de \texttt{App.test.ts}; o
+        fallback para \texttt{scenePath} existe de qualquer jeito para o
+        editor.
+  \item A guarda do editor fica no \texttt{paint}, numa variável só que
+        alimenta \texttt{drawScene} e \texttt{tensionArrows} (\texttt{[]} sem
+        \texttt{states}), e \texttt{elasticArrows} fica sem guarda --- o
+        \texttt{constraintsRef} só é atualizado no boot, no reset e no rebuild;
+        uma leitura velha com \texttt{via} mais curto faz
+        \texttt{tensionArrows} ler um segmento indefinido e o \texttt{paint}
+        lançar, e $F_{el}$ aparece em $t = 0$.
+  \item \texttt{drawScene} e \texttt{tensionArrows} entram os dois --- sem as
+        setas, com a corda solta, a seta em \texttt{a} aponta para o aro
+        enquanto a corda desenhada vai reta.
+  \item O clique na corda (\texttt{ropeAtPoint}) fica fora e vai para o
+        CLEAN-27 --- é outra costura (editor, não render), e selecionar a corda
+        solta durante o playback é raro.
+  \item \texttt{Blocked by: none} --- o desenho mostra o caminho do simulador
+        qualquer que seja, os testes daqui usam uma polia só e nada aqui diz
+        onde fica a junção; o item ``The unwound sweep (PHY-54)'' do ADR-0004
+        é editado aqui e no CLEAN-25, e o conflito de texto no rebase o stage 3
+        resolve, porque o ADR está nos dois Primary.
+  \item Um ticket, não dois --- umas vinte linhas de produção, uma fatia
+        vertical do simulador até a tela; o simulador expondo \texttt{path}
+        sozinho não muda nada que o usuário veja.
+  \item \texttt{Difficulty: normal}, \texttt{Review: agent} --- nada numérico
+        novo; o ponto que um primeiro passe pode errar, a leitura velha no
+        editor, tem critério e mutação próprios.
+  \item Sem critério próprio para a direção do PHY-45 no desenho --- vem da
+        mesma linha que o critério 1 testa; um cenário a mais mediria o PHY-45
+        de novo, não esta costura.
+\end{enumerate}
+
+\subsection*{PHY-55 (9)}
+\begin{enumerate}
+  \item O grip solto junta as duas peças numa só, de comprimento somado, e
+        fica nela como polia ideal --- a regra do PHY-54 só no grip dá de
+        +42,4\,kJ a +213,7\,kJ; juntar dá $\leq 0{,}0$\,J sem mudar a corda
+        cujo grip segura.
+  \item Soltar também pela previsão do fim do passo, num sentido só --- só na
+        leitura real dá até +45,9\,kJ, e a previsão segue sem escrever
+        \texttt{keep} nem \texttt{sweeps}.
+  \item Histórico em todas as polias de uma corda com grip --- só no grip, a
+        corda mista ganha até +5,3\,kJ; custa uma linha em \texttt{ropeFrame}.
+  \item Cortar em dois, soltura aqui e reengate no PHY-57 --- a corda mista
+        não pede código a mais, e o reengate tem critérios próprios que nenhum
+        critério de energia separa.
+  \item O critério 2 fica com os cenários da corda mista e bloqueia por
+        CLEAN-25 --- 7 deles só passam com a regra de junções do CLEAN-25, e
+        são os casos em que a corda sai das duas polias.
+  \item O A 1/1 com \texttt{vx = 8} sai do critério 2 --- passa hoje
+        ($-0{,}14$\,J) e não fica vermelho com nenhuma das mutações do
+        critério 7.
+  \item \texttt{Blocked by: CLEAN-25, CLEAN-26, PHY-56} --- o CLEAN-26 muda
+        \texttt{gripShares} e o PHY-56 guarda o caminho em \texttt{ropeFrame},
+        as duas funções que este ticket muda; o PHY-56 não diz nada sobre grip
+        que conflite.
+  \item O disco solto segue com o $\omega$ que tinha, e o critério de energia
+        conta só os blocos --- o disco parte do repouso, então blocos acima de
+        $E_0$ já é ganho do sistema.
+  \item Limiar de 0,5\,J (o do PHY-54); \texttt{Difficulty: hard},
+        \texttt{Review: agent} --- critérios que interagem e lógica numérica em
+        funções que todo grip usa; nada de gosto.
+\end{enumerate}
+
+\subsection*{PHY-57 (5)}
+\begin{enumerate}
+  \item Cortar do PHY-55 --- com o grip solto para sempre a energia já fecha
+        ($\leq +0{,}08$\,J), e só os critérios deste ticket separam o
+        reengate.
+  \item Prender de volta só com a peça juntada não frouxa --- uma corda frouxa
+        não aperta o disco, e repartir a folga deixa a corda puxando até
+        0,35\,m mais curta que $L$; esperar dá $\leq 0{,}046$\,m.
+  \item O impacto do reengate sem código próprio --- dividir no comprimento
+        atual deixa a diferença de velocidade para a previsão e a correção, que
+        já tratam a corda que estica, de forma inelástica (energia
+        $\leq +0{,}08$\,J).
+  \item A marca no meio do arco, como em \texttt{buildWorld} --- manter a
+        parte antiga dá os mesmos números, porque cada peça fica com o seu
+        comprimento no caminho; não vira critério.
+  \item Limiares 0,05\,N (medido $\leq 0{,}0054$\,N, mutante
+        $\geq 10{,}69$\,N) e 0,1\,m (medido $\leq 0{,}046$\,m, mutante
+        $\geq 0{,}28$\,m), janelas depois do reengate e antes de \texttt{a}
+        chegar ao disco; \texttt{Difficulty: normal}, \texttt{Review: agent}
+        --- mudança local de uma dúzia de linhas, com o protótipo medido.
+\end{enumerate}
+}
+
 \section{Débito humano}
 
 Nenhuma linha \texttt{Débito humano:} nos seis tickets, e nenhum
-\texttt{Proxy escalated}. As revisões listaram, nas Resolutions, as decisões
-que o proxy tomou pelo Bruno: 8 no CLEAN-25, 9 no PHY-56, 9 no PHY-55 e 5 no
-PHY-57. O PR \href{https://github.com/Laginho/PhysiSyst/pull/13}{\#13} tem as
-seis linhas como \texttt{Review: agent} --- Approve. Para o Bruno: ler as
-decisões do proxy no PR, mergear o PR \#13 e decidir sobre as recomendações 1,
-3 e 5.
+\texttt{Proxy escalated}; as 31 decisões tomadas pelo Bruno estão na seção
+anterior. O PR \href{https://github.com/Laginho/PhysiSyst/pull/13}{\#13} tinha
+as seis linhas como \texttt{Review: agent} --- Approve.
+
+\paragraph{Depois do relatório (2026-10-02).} O Bruno mergeou o PR \#13 e
+aprovou todas as recomendações. As 1--3 entraram no
+\href{https://github.com/Laginho/Agent-Skills/pull/3}{Agent-Skills\#3}: o driver
+grava \texttt{claude-opus-5-5} como \texttt{opus-5.5}; o scoreboard lê as
+grafias antigas do mesmo jeito e conta numa coluna nova os achados que a
+revisão consertou (rodada 0); e o foreman passa a mesclar o run log e a citar
+as decisões do proxy no relatório. O log local foi sincronizado com a cópia
+(178 linhas). Os três consertos da revisão viraram linhas de rodada 0,
+rotuladas pelo GPT-6 Astra, e as seções 4 e 5 já os mostram. A 5 e a 6 viraram o CLEAN-28 (caminho da corda escolhido num
+lugar só, mais o \texttt{drawScene} com 8 argumentos) e o CLEAN-29 (testes das
+três regras do CLEAN-25), os dois à espera do stage 1. A 4 já estava feita, e a
+7 não pede nada.
 
 \end{document}
