@@ -344,6 +344,54 @@ describe('ropePath, kept wrap direction (PHY-45)', () => {
       expectPoint(unit(path.segments[0]!), unit(path.segments[1]!))
     })
 
+    it('CLEAN-29: one loose pulley sits at the midpoint of its straight leg', () => {
+      const path = ropePath({ x: -3, y: 2 }, { x: -1, y: 2 }, pulley, [-1], [-0.5])
+      expect(path.segments).toHaveLength(2)
+      expectPoint(path.segments[0]!.to, { x: -2, y: 2 })
+      expectPoint(path.segments[1]!.from, { x: -2, y: 2 })
+      expect(path.arcs[0]!.sweep).toBeLessThan(0)
+    })
+
+    it('CLEAN-29: a loose arc starts at the angle from its center to the returned joint', () => {
+      const path = ropePath({ x: -3, y: 2 }, { x: -1, y: 2 }, pulley, [-1], [-0.5])
+      const joint = path.segments[0]!.to
+      const center = pulley[0]!.center
+      expect(path.arcs[0]!.start).toBeCloseTo(Math.atan2(joint.y - center.y, joint.x - center.x), 9)
+    })
+
+    it('CLEAN-29: loose pulleys between two engaged pulleys divide the leg equally in via order', () => {
+      const a = { x: -7, y: -5 }
+      const b = { x: 7, y: -5 }
+      const four = [
+        { center: { x: -6, y: 0 }, radius: 1 },
+        { center: { x: -1, y: -3 }, radius: 1 },
+        { center: { x: 3, y: -3 }, radius: 1 },
+        { center: { x: 6, y: 0 }, radius: 1 },
+      ]
+      const path = ropePath(a, b, four, [-1, -1, -1, -1], [undefined, -0.5, -0.5, undefined])
+      expect(path.segments).toHaveLength(5)
+      // The engaged pulleys bound a 12 m horizontal leg; each of its three parts is 4 m.
+      expectPoint(path.segments[1]!.from, { x: -6, y: 1 })
+      expectPoint(path.segments[1]!.to, { x: -2, y: 1 })
+      expectPoint(path.segments[2]!.from, { x: -2, y: 1 })
+      expectPoint(path.segments[2]!.to, { x: 2, y: 1 })
+      expectPoint(path.segments[3]!.from, { x: 2, y: 1 })
+      expectPoint(path.segments[3]!.to, { x: 6, y: 1 })
+      expect(path.arcs).toHaveLength(4)
+      for (let i = 0; i < four.length; i++) expectPoint(path.arcs[i]!.center, four[i]!.center)
+      expect(path.arcs[0]!.sweep).toBeCloseTo(Math.PI / 2, 9)
+      expect(path.arcs[3]!.sweep).toBeCloseTo(Math.PI / 2, 9)
+      expect(path.length).toBeCloseTo(22 + Math.PI, 9)
+      expect(path.length).toBeCloseTo(ropePath(a, b, [four[0]!, four[3]!], [-1, -1]).length, 9)
+      for (const i of [1, 2]) {
+        const arc = path.arcs[i]!
+        const joint = path.segments[i]!.to
+        const center = four[i]!.center
+        expect(arc.sweep).toBeLessThan(0)
+        expect(arc.start).toBeCloseTo(Math.atan2(joint.y - center.y, joint.x - center.x), 9)
+      }
+    })
+
     it('a pulley with no history reads as the path without history', () => {
       const ends: Array<readonly [Vec2, Vec2]> = [
         [{ x: -3, y: 0.5 }, { x: 3, y: -0.5 }],

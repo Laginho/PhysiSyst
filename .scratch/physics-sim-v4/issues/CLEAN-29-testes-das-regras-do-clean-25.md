@@ -1,5 +1,5 @@
 # CLEAN-29: testes para as três regras do CLEAN-25 que nenhum critério cobre
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
