@@ -17,15 +17,13 @@ const PHY45_PULLEY_Y = 5.25
 const PHY45_GRID = [
   ...[3, 4, 5, 6, 7, 8, 10].map((vy) => ({ name: `2/2, a launched at vy = ${vy}`, m1: 2, m2: 2, vy })),
   ...[
+    [1, 2],
     [1, 3],
     [1, 4],
     [2, 1],
     [2, 3],
+    [3, 1],
   ].map(([m1, m2]) => ({ name: `${m1}/${m2} from rest`, m1: m1!, m2: m2!, vy: undefined as number | undefined })),
-]
-const PHY45_IDEAL_ONLY = [
-  { name: '1/2 from rest', m1: 1, m2: 2, vy: undefined as number | undefined },
-  { name: '3/1 from rest', m1: 3, m2: 1, vy: undefined as number | undefined },
 ]
 
 async function phy45Run(scene: Scene, vy: number | undefined): Promise<{ energyGain: number; crossings: string[] }> {
@@ -529,7 +527,7 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(tension(sim).segments).toStrictEqual([tension(sim).tension, tension(sim).tension])
   })
 
-  it.each([...PHY45_GRID, ...PHY45_IDEAL_ONLY])('PHY-45: $name over an ideal pulley gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
+  it.each(PHY45_GRID)('PHY-45: $name over an ideal pulley gains no energy and the block stays on its side of the disk', async ({ m1, m2, vy }) => {
     const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2), vy)
     expect(energyGain).toBeLessThanOrEqual(0.5)
     expect(crossings).toStrictEqual([])
@@ -1093,6 +1091,40 @@ describe('acceptance: pulley with mass (PHY-25)', () => {
     const { energyGain, crossings } = await phy45Run(atwoodScene(m1, m2, 2), vy)
     expect(energyGain).toBeLessThanOrEqual(0.5)
     expect(crossings).toStrictEqual([])
+  })
+
+  it.each([
+    { m1: 2, m2: 1, mu: 0.8 },
+    { m1: 3, m2: 2, mu: 1 },
+  ])('PHY-52: friction holds table mass $m1 under hanging mass $m2 with mu=$mu and M = 2, within 1 mm and each T within 1%', async ({ m1, m2, mu }) => {
+    // PHY-23's table geometry; friction supports the load without tipping:
+    // mu·m1·g > m2·g and the horizontal tension m2·g < m1·g.
+    const sim = await load({
+      version: 1,
+      constants: { g: G },
+      bodies: [
+        { shape: 'rectangle', width: 8, height: 1, id: 'mesa', fixed: true, mass: 0, position: { x: 0, y: -0.5 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.4, height: 0.4, id: 'a', fixed: false, mass: m1, position: { x: -2, y: 0.2 }, rotation: 0 },
+        { shape: 'rectangle', width: 0.3, height: 0.3, id: 'b', fixed: false, mass: m2, position: { x: 4.4, y: -1.5 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [{ a: 'mesa', b: 'a', muS: mu, muK: mu }],
+      pulleys: [{ id: 'p', bodyId: 'mesa', anchor: { x: 4.2, y: 0.5 }, radius: 0.2, mass: 2 }],
+      constraints: [
+        { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0.2, y: 0 } }, b: { bodyId: 'b', anchor: { x: 0, y: 0.15 } }, via: ['p'] },
+      ],
+    })
+    const tClosed = m2 * G
+    for (let step = 1; step <= 300; step++) {
+      sim.step()
+      if (step < 30) continue
+      const segments = rope(sim).segments
+      expect(segments).toHaveLength(2)
+      for (const [leg, t] of segments.entries()) {
+        expect(Math.abs(t - tClosed), `T${leg + 1} at step ${step}`).toBeLessThanOrEqual(0.01 * tClosed)
+      }
+    }
+    expect(Math.abs(sim.readStates().get('a')!.position.x + 2), 'table displacement at step 300').toBeLessThan(0.001)
   })
 
   // Rapier caps |ω|·Δt at π/4 on every body: 15π ≈ 47.1 rad/s at 60 Hz. Each run ends well past it.

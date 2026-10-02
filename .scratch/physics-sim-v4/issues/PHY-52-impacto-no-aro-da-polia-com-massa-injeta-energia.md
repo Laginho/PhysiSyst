@@ -1,5 +1,5 @@
 # PHY-52: Um bloco que bate no aro da polia com massa ganha energia no impacto
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-45
 Review: agent
@@ -65,6 +65,16 @@ Medido sobre `d0b8303`, com protótipos descartáveis:
   - o critério 2, num `it.each` no bloco do PHY-25, verde hoje como guarda e registrado como tal.
 
 ## Comments
+
+- 2026-10-02 Stage 2: `pullPieces` e `correctPieces` são chamados por `step()` para polias com massa e grupos de cordas que compartilham corpos dinâmicos; nestes grupos uma corda ideal usa `RopeBinding` como peça. O alvo precisa existir nos dois tipos. Peças frouxas, tensões zero, sistemas redundantes/singulares e o limite do alvo continuam cobertos pela grade PHY-45 e pelos testes existentes do PHY-41/PHY-25; o caminho escalar fica intacto.
+- 2026-10-02 Red antes da implementação: `npm test -- src/sim/acceptance.test.ts -t 'PHY-45|PHY-52'`: 2 failed, 26 passed, 99 skipped (127). Os novos casos com M = 2 falham por energia: 1/2 `expected 3.0258298162083648 to be less than or equal to 0.5`; 3/1 `expected 54.51779497203695 to be less than or equal to 0.5`. As duas guardas novas da mesa já passam, assim como os 13 cenários ideais, sem alteração de tolerância.
+- 2026-10-02 Mutate-verify pelo motor público, sem mocks; cada mutação foi aplicada temporariamente em `simulator.ts`, testada e restaurada antes da próxima:
+  - Tirar a condição de `ROPE_SLIP` em `correctPieces`, voltando ao residual anterior. Comando `npm test -- src/sim/acceptance.test.ts -t 'PHY-45:.*from rest.*mass M = 2'`: 2 failed, 4 passed, 121 skipped (127). Vermelho nos novos 1/2 e 3/1: `expected 3.0258298162083648 to be less than or equal to 0.5` e `expected 54.51779497203695 to be less than or equal to 0.5`, respectivamente.
+  - `piece.residual = 0` sempre em `correctPieces`. Comando `npm test -- src/sim/acceptance.test.ts -t 'PHY-52'`: 2 failed, 125 skipped (127). Vermelho nas duas guardas da mesa: deslocamento no passo 300 `expected 0.014645576477050781 to be less than 0.001` (2/1, μ=0,8) e `expected 0.03546702861785889 to be less than 0.001` (3/2, μ=1).
+  - `ROPE_SLIP = 0`. Mesmo comando PHY-52: 2 failed, 125 skipped (127). Vermelho nas duas guardas da mesa já no passo 30: erro de T₁ `expected 2.285201730980676 to be less than or equal to 0.0981` (2/1) e `expected 3.926140372917512 to be less than or equal to 0.1962` (3/2).
+  - Guardar também o alvo em `pullRope` e aplicar a regra ao residual em `correctRope`. Comando `npm test -- src/sim/acceptance.test.ts -t 'PHY-45:.*vy = 4.*ideal pulley'`: 1 failed, 126 skipped (127). Vermelho no 2/2 ideal com vy=4: `expected 2.339830628500664 to be less than or equal to 0.5`. O caminho escalar original foi restaurado.
+- 2026-10-02 Green da implementação antes das mutações: `npm test -- src/sim/acceptance.test.ts -t 'PHY-45|PHY-52|PHY-41|pulley with mass'`: 41 passed, 86 skipped (127).
+- 2026-10-02 Gate final após restaurar todas as mutações: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. Vitest: 30 arquivos, 809 testes passed, sem skips; inclui as duas regressões novas com M=2, as duas guardas da mesa, os 13 casos ideais PHY-45, PHY-41 e PHY-25. ESLint e tsc sem erros; Vite: 49 módulos, build concluído. `rg -n 'ROPE_SLIP' docs/adr/0004-rope-as-own-constraint-around-world-step.md` encontra a regra no passo 3 e na seção do aro. `git diff --check` limpo. Diff final restrito aos Primary files e ao ticket; `correctRope` intacto, nenhum teste alterado no commit de implementação. Limitação prevista: limiar absoluto de 1 cm, adequado às cenas medidas na escala do metro.
 
 - 2026-10-01 Aberto no stage 1 de revisão do PHY-45, a partir de probes descartáveis sobre `9d81e26`. Nada foi commitado.
 - 2026-10-01 Triagem (stage 1). Investigação com protótipos descartáveis sobre `d0b8303`; nada commitado. Caminho e critérios acima.
