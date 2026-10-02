@@ -863,7 +863,7 @@ describe('simulator warnings panel (PHY-53)', () => {
   })
 
   it('shows a warning added during play on the next repaint without another interaction', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let frame!: FrameRequestCallback
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1 })
     vi.stubGlobal('cancelAnimationFrame', () => {})
