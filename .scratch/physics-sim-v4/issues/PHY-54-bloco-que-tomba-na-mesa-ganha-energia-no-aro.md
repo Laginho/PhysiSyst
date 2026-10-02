@@ -1,5 +1,5 @@
 # PHY-54: A corda se solta da polia ideal quando o bloco passa por ela, sem ganho de energia
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -79,3 +79,11 @@ Rejeitado: só desenrolar a varredura, sem trocar o caminho pela perna reta (com
 - 2026-10-01 Proxy decided: a varredura acima de 2π entra aqui (item 2 do critério 1) — sai da mesma linha de desenrolar, e deixá-la de fora pediria código a mais para recriar a queda de 2πR.
 - 2026-10-01 Proxy decided: o desenho fica para um ticket à parte, o PHY-56 — não é gosto (desenhar o que a física faz), mas é outra costura, do simulador até o `scenePath`.
 - 2026-10-01 Proxy decided: `Difficulty: hard`, `Review: agent` — critérios que interagem, lógica numérica numa função com muitos chamadores, nada de gosto.
+- 2026-10-02 Stage 2. Commit vermelho `3709798` (só testes, `Stage: implementing`): 4 dos 5 testes de `ropePath.test.ts` e os 12 de `acceptance.test.ts -t PHY-54` vermelhos contra `f2f6d62`; o item 5 do critério 1 é guarda e passa antes. Os 11 cenários dão de +519,10 J (1/1,5 com μ = 3) a +2709,64 J (1/4 com μ = 3); 1/2 com μ = 3 dá +732,86 J, o número do ticket. O typecheck não passa nesse commit (o quinto argumento de `ropePath` não existe ainda): é o vermelho. Gate verde no commit de código `0ab658e` e neste: 831 testes.
+- 2026-10-02 Mutate-verify (critério 5), cada mutação aplicada ao código de produção e desfeita com `git checkout -- <arquivo>`:
+  1. Tirar o histórico (`ropeFrame` passa `undefined` como quinto argumento de `ropePath`): `acceptance.test.ts -t PHY-54`, 12 vermelhos, todos os 11 cenários (de `expected 519.10… to be less than or equal to 0.5` a `expected 2709.63…`) e o teste da corda em grupo (`expected 7.704… to be less than or equal to 7.674…`).
+  2. Desenrolar sem trocar pela perna reta (em `release`, `on` começa todo verdadeiro e nenhuma polia sai): `acceptance.test.ts -t PHY-54`, 4 vermelhos: 1/4 com μ = 3 (`expected 1748.83… to be less than or equal to 0.5`), 2/1 com μ = 0,2 (`24.17…`), 2/1 com μ = 0,2 e `vx = 6` (`90.85…`) e o da corda em grupo (`7.782… to be less than or equal to 7.674…`); `ropePath.test.ts`, 3 vermelhos (itens 1, 3 e 4 do critério 1: `expected 6.00000033… to be close to 6`, `expected 12.3331392… to be close to 12.3331391…`, `expected 3.586… to be close to 2`). São os mesmos três cenários que o ticket mediu.
+  3. Junção sem o limite [¼, ¾]: sem limite nenhum (`t` solto), `ropePath.test.ts` 1 vermelho, o item 4 (`expected 4 to be close to 2`); limitada a [0, 1], 1 vermelho, o mesmo item (`expected 0 to be greater than 0.1`, o segmento da ponta some).
+  4. Tirar o `Math.max(0, …)` de `pieceLengths`: `acceptance.test.ts -t PHY-54`, 1 vermelho, o da corda em grupo (`expected 8.295… to be less than or equal to 7.674…`); os 11 cenários seguem verdes, porque a energia não mostra (a correção só drena).
+- 2026-10-02 Um teste a mais do que o ticket listava, pela leitura em volta da mudança: `PHY-54: a rope solved in a group with a tether…` no bloco do PHY-23. `pieceLengths` soma `R·varredura` de cada arco sem massa dentro da peça, e uma corda sem grip dentro de um grupo (PHY-41) passa por ele; com a varredura negativa de uma polia solta, a peça parecia mais curta e a corda esticava 0,63 m além de L. Um bloco `c` preso a `a` por uma corda curta forma o grupo; o critério é a distância entre as pontas, `≤ L + 0,01`, que não vem do código. A correção é o `Math.max(0, …)` em `simulator.ts`.
+- 2026-10-02 Candidato a `CLEAN-*`: `wrapAngle` existe duas vezes, privada em `ropePath.ts` e em `simulator.ts` (linha 442); exportar a de `ropePath.ts` e usar nos dois.
