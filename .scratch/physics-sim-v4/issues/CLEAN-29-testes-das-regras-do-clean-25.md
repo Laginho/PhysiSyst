@@ -1,5 +1,5 @@
 # CLEAN-29: testes para as três regras do CLEAN-25 que nenhum critério cobre
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -106,3 +106,29 @@ O teste do meio da perna passou. No teste entre polias engatadas, as verificaç�
 - Verde após restaurar produção: `npx vitest run src/scene/ropePath.test.ts` → `1 passed (1)`, `28 passed (28)`, incluindo os 25 testes existentes sem nenhuma alteração de texto ou tolerância.
 - Gate `npm test && npm run lint && npm run typecheck && npm run build`: exit 0; `30 passed (30)` arquivos, `937 passed (937)` testes; lint e typecheck verdes; Vite build verde (49 módulos). O build emitiu apenas o aviso de chunks maiores que 500 kB; este ticket não muda produção nem bundling.
 - Revisão final de escopo: `git diff --check` verde; `git diff --stat main...HEAD -- src` lista exclusivamente `src/scene/ropePath.test.ts` (48 linhas adicionadas). `git diff --exit-code main...HEAD -- src/scene/ropePath.ts` verde. O segundo commit contém somente este ticket, com as evidências e `Stage: to-review`; não toca testes ou produção. Stage 2 concluído; revisão e merge ficam para o stage 3 em outra sessão.
+
+#### Resolution (2026-10-02)
+Verdict: Approve
+
+**Standards — 0 findings.** Revisão independente, somente leitura, do diff `19e4f90...e4ebc7b`: nenhuma violação documentada nem smell acionável. As 48 linhas novas seguem as convenções de geometria do bloco, reutilizam `expectPoint` e mantêm as duas regras da polia única em testes independentes. Os registros atendem ao mutate-verify e à exceção test-first aprovada; as transições de estágio estão nos dois commits previstos.
+
+**Spec — 0 findings.** Outra revisão independente confirmou os sete critérios: três testes na costura real de `ropePath`, no bloco do PHY-54; meio da perna, continuidade, espaçamento interior, ordem dos centros, varreduras, comprimentos e ângulos derivados das junções devolvidas. Nenhum teste existente mudou e nenhum arquivo de produção tem diff commitado. Não houve requisito faltante, implementação incorreta ou expansão de escopo. Nenhum fix foi necessário.
+
+As sete decisões `Proxy decided` do stage 1 foram conferidas individualmente:
+
+- Exceção de dois commits: `a78af55` contém os testes verdes e `Stage: implementing`; `e4ebc7b` contém somente o ticket, as provas de mutação e `Stage: to-review`.
+- Fronteira de produção: `ropePath.ts` foi usado apenas para mutações temporárias, revertidas antes de qualquer commit.
+- Ângulo da junção devolvida: o teste independente lê `segments[0].to`; os ângulos interiores leem `segments[1].to` e `segments[2].to`, sem fixar o espaçamento no cálculo esperado.
+- Três mutantes: somente (a), (b) e (c), sem adicionar a projeção limitada.
+- Três `it` com `CLEAN-29` no nome: um por regra, com os vermelhos sobrepostos permitidos pelo contrato.
+- `Blocked by: none`: o diff fica no bloco do PHY-54; não altera `scenePath` nem interfere no CLEAN-28.
+- `Difficulty: normal`, `Review: agent`: três testes de comportamento existente numa função, com provas de mutação conferidas.
+
+Verificação independente do stage 3, antes do merge:
+
+- `npx vitest run src/scene/ropePath.test.ts`: `1 passed (1)` arquivo, `28 passed (28)` testes.
+- Reexecução das três mutações exatas do critério 5 no `release` real, uma por vez. Baseline: `3 passed | 25 skipped (28)`. Mutante (a): `2 failed | 1 passed | 25 skipped (28)`, junções x = −2,3333333333333335 e −3 em vez de −2; o teste independente de ângulo passou. Mutante (b): `1 failed | 2 passed | 25 skipped (28)`, junção x = 0 em vez de −2. Mutante (c): `2 failed | 1 passed | 25 skipped (28)`, ângulos −0,7853981633974483 e −1,3258176636680326 em vez de 2,356194490192345 e 1,8157749899217608; o teste do meio passou. São os mesmos vermelhos registrados no stage 2. A produção foi restaurada byte a byte em `finally`, e `git diff --exit-code -- src/scene/ropePath.ts` passou após cada mutação.
+- Gate completo após restaurar produção: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; `30 passed (30)` arquivos, `937 passed (937)` testes; lint e typecheck verdes; build verde, 49 módulos. Permanece o aviso preexistente de chunks acima de 500 kB.
+- `git diff --check` verde; `git diff --stat main...HEAD -- src` lista somente `src/scene/ropePath.test.ts`, 48 linhas adicionadas; `git diff --exit-code main...HEAD -- src/scene/ropePath.ts` verde. O commit posterior ao commit de testes não toca testes nem produção.
+
+Rebase sobre `sweatshop/2026-10-02-1452` sem mudanças (base `19e4f90`). Merge local com `--no-ff`, `d745a15`, preservando os dois commits do stage 2. `Stage: done`, este veredito e a linha do ledger são registrados juntos no commit de fechamento da sessão, conforme o fluxo.
