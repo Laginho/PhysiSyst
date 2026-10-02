@@ -1,5 +1,5 @@
 import * as RAPIER from '@dimforge/rapier2d-compat'
-import { bodyPointToWorld, localVertices, ropePath, scenePath } from '../scene'
+import { bodyPointToWorld, localVertices, ropePath, scenePath, wrapAngle } from '../scene'
 import type { RopePath, Scene, Vec2 } from '../scene'
 import { TIMESTEP } from './timestep'
 
@@ -437,10 +437,6 @@ function placeChain(s: SpringBinding, chain: Chain): void {
   chain.p = f.map((t) => t * x)
   chain.w = f.map((t) => ua + t * (ub - ua))
   chain.force = { a: force, b: force }
-}
-
-function wrapAngle(a: number): number {
-  return a - 2 * Math.PI * Math.round(a / (2 * Math.PI))
 }
 
 /** Path-point indices where the pieces meet: end a, each grip's pulley, end b. */

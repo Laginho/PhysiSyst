@@ -75,7 +75,7 @@ export function ropePath(
   return release(a, b, pulleys, directions, sweeps)
 }
 
-function wrapAngle(angle: number): number {
+export function wrapAngle(angle: number): number {
   return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI))
 }
 
