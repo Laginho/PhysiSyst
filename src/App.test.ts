@@ -2301,7 +2301,16 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
   })
 
   it('uma leitura velha, com um caminho de um segmento só, não derruba o paint e a corda sai do documento', async () => {
-    await boot({ segments: [{ from: { x: 100, y: 100 }, to: { x: 101, y: 100 } }], arcs: [], length: 1 })
+    // The drawing runs before the arrows, so a throw from the arrows still leaves the rope drawn: listen for it.
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent) => { e.preventDefault(); errors.push(e.error) }
+    window.addEventListener('error', onError)
+    try {
+      await boot({ segments: [{ from: { x: 100, y: 100 }, to: { x: 101, y: 100 } }], arcs: [], length: 1 })
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+    expect(errors).toStrictEqual([])
     expect(drew(101, 100)).toBe(false)
     expect(drew(docTangent().x, docTangent().y)).toBe(true)
   })
