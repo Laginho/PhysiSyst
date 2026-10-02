@@ -887,6 +887,44 @@ describe('simulator warnings panel (PHY-53)', () => {
     act(() => frame(48))
     expect(warningLines(host)).toEqual(["body 'ball' approaches Rapier's ω ceiling"])
   })
+
+  it('lists scene warnings before simulator warnings', async () => {
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), warnings: ['Friction is degraded'] })
+    const scene = blankScene()
+    scene.constants.g = 0
+    const { host } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'warning-scene', name: 'Warning scene', updatedAt: 1 }])
+      saveScene(storage, 'warning-scene', scene)
+      saveCurrentSceneId(storage, 'warning-scene')
+    })
+    await settleSimImport()
+
+    expect(warningLines(host)).toEqual(['constants.g: g should be a positive number', 'Friction is degraded'])
+  })
+
+  it('hides the panel when both the scene and simulator have no warnings', async () => {
+    const host = renderApp()
+    await settleSimImport()
+
+    expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+  })
+
+  it('removes simulator warnings after rebuilding without them', async () => {
+    const warnings = ['Friction is degraded']
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(),
+      warnings,
+      replaceScene: () => { warnings.length = 0 },
+    })
+    const host = renderApp()
+    await settleSimImport()
+    expect(warningLines(host)).toEqual(['Friction is degraded'])
+
+    await act(async () => { findButton(host, ptBR['playback.reset'])!.click() })
+
+    expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+  })
 })
 
 describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', () => {
