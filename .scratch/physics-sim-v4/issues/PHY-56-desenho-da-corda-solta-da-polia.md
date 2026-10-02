@@ -1,5 +1,5 @@
 # PHY-56: O desenho da corda mostra a corda solta da polia
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -87,6 +87,33 @@ O primeiro `git grep` acha o item `The kept direction`. O segundo não acha nada
 
 O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando está fora dos caminhos padrão), por causa dos testes de layout do `AGENTS.md`. Os testes deste ticket não precisam dele.
 
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ 1.1 `toStrictEqual` against `scenePath(parse(scene), rope)` in the 1/2 μ = 3 table and `atwoodScene(3, 2)`. 1.2 checks the ends against `readStates()` anchors at 1e-9 after every one of 600 steps, the first negative sweep before step 200, and `|length − |a − b|| ≤ 1e-9` on every loose step.
+- Criterion 2 ✅ 2.1–2.4 in `drawScene, rope path (PHY-56)`: exact `moveTo`/`lineTo`/`arc` arguments, no `lineTo` on a `scenePath` tangent, only the disk's and axle's two `arc` calls at the pulley's center for the loose path, span `direction · 7` both ways and `end = start` at sweep 0, scenePath with no entry or only spring readings.
+- Criterion 3 ✅ 3.1 end arrows along (±0.6, ±0.8) at 5e-10; 3.2 two arrows, none at the dynamic mount's center; 3.3 existing `tensionArrows` tests unchanged.
+- Criterion 4 ✅ 4.1–4.4 in `desenho da corda durante o playback (PHY-56)`. 4.1 checks the marker is absent and one document tangent is drawn: enough to tell the two apart, but not a full `scenePath` comparison.
+- Criterion 5 ✅ after a review fix. The `The kept direction` item lacked "no history" for `scenePath` (criterion 5 asks for both); added in `5b8bc5a`. PHY-56's own ADR text does not say where the loose joint sits. The rule that is there (t = k/(n + 1)) is CLEAN-25's, merged before this branch was cut. The `RopeState.path` comment names both sources.
+- Criterion 6 ✅ the only edit to an existing test is the readout `toStrictEqual` gaining `path: expect.any(Object)`, plus imports. No tolerance changed.
+- Criterion 7 ✅ all five mutations are recorded with red output under Comments. Mutation 3's record showed the 4.1/4.3 test red at 4.1's first assertion, so 4.3 had no evidence of its own. The review supplied it: 4.1's three asserts removed, mutation 3 applied, and the post-reset `expect(drew(101, 100)).toBe(false)` failed (`App.test.ts:2295`, `expected true to be false`). Reverted.
+- Test-first ✅ `1ffbf37`, `0eb2562` and `0f6293d` touch only tests (plus the ticket's `Stage:` in `1ffbf37`); `b1aaa08` touches no test file. Every changed file is in Primary files.
+- Regressions: none found. Every rope reaches `correctRope` or `correctPieces` after `world.step()`, and both call `ropeFrame(rope)` with no `moved`, so `path` is always the post-step reading. Editing is locked at t > 0, and a structural edit nulls `states`, so the guarded readings never pair a stale path with a moved document.
+- Review fixes in `5b8bc5a`, docs and one rename, no behaviour change:
+  - `overlay.ts`: the comment justifying the `!` lookups still said "scenePath returned a path"; it now names the reading's path. The `tensionArrows` docblock now notes that a loose pulley gets no arrow.
+  - `draw.ts`: the `drawConstraints` docblock wording.
+  - `App.tsx`: the `paint` comment blamed the reset, but the stale case is an edit at t = 0; `playing`, an array that read as a boolean, is now `ropeReadings`.
+  - ADR-0004: "no history".
+- Standards judgement calls, not fixed: the "reading's path, else `scenePath`" fallback is written twice (`draw.ts`, `overlay.ts`); `sweep < 0` as "loose" is a bare test in three places (`draw.ts`, `overlay.ts`, `simulator.ts`); `drawScene` now takes eight positional arguments with `undefined` for `style`; the `RopeState & { path?: RopePath }` cast in `acceptance.test.ts`'s `pathOf` has been redundant since the field landed.
+- Proxy decided, on the human's behalf (9 lines under Comments): the seam is `RopeState.path`; `path` optional on the type; the editor guard is one variable in `paint`, with `elasticArrows` unguarded; both `drawScene` and `tensionArrows` in scope; `ropeAtPoint` out, to CLEAN-27; `Blocked by: none`; one ticket; `normal`/`agent`; no separate criterion for PHY-45's direction in the drawing.
+
+Red-green proof: production files from `b4a34e9` with the branch's tests, filtered `PHY-56|tensionArrows`: `9 failed | 8 passed`. App 4.2 `expected false to be true`. draw: loose path `expected [ [ 5.5, 2 ], [ 6.5, 6 ] ] to strictly equal [ [ 5.5, 2 ], [ 6, 2 ] ]`, 7 rad spans `expected -3.14… to be close to 7` / `-7`. overlay: 3.1 `expected -0.0745… to be close to 0.4472…`, 3.2 `expected [ …(4) ] to have a length of 2 but got 4`. acceptance: 1.1 ×2 `expected undefined to strictly equal { …(3) }`, 1.2 `TypeError … reading 'segments'`. The 8 that pass are the guards (2.1, 2.4, 4.4, existing `tensionArrows`). On the branch, all pass.
+
+Gate on the branch at `5b8bc5a`, based on the session tip `b4a34e9`: `npm test` 30 files, 850 tests passed; `lint`, `typecheck` and `build` clean. `git grep "RopeState.path"` finds ADR-0004 line 41; `git grep "Drawing the loose rope is PHY-56"` finds nothing.
+
+Merged into `sweatshop/2026-10-02-1156` as `af9d30e` (`--no-ff`).
+
 ## Tests stage 2 writes (own commit, red)
 
 - `src/sim/acceptance.test.ts`, bloco `rope over a fixed pulley (PHY-23)`, pelo motor público, sem mocks: os itens 1 e 2 do critério 1, com `PHY-56` no nome. Ficam vermelhos hoje porque `RopeState` não tem `path`. No mesmo commit, o `toStrictEqual` do teste do readout ganha `path: expect.any(Object)` (critério 6), vermelho hoje pela mesma razão. Registro: as duas primeiras mutações do critério 7.
@@ -115,3 +142,13 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 - 2026-10-02 Proxy decided: um ticket, não dois — umas vinte linhas de produção, uma fatia vertical do simulador até a tela; o simulador expondo `path` sozinho não muda nada que o usuário veja.
 - 2026-10-02 Proxy decided: `Difficulty: normal`, `Review: agent` — nada numérico novo; o ponto que um primeiro passe pode errar, a leitura velha no editor, tem critério e mutação próprios.
 - 2026-10-02 Proxy decided: sem critério próprio para a direção do PHY-45 no desenho — vem da mesma linha que o critério 1 testa; um cenário a mais mediria o PHY-45 de novo, não esta costura.
+- 2026-10-02 Stage 2. Dois testes tinham defeito de harness e foram corrigidos em commits só de teste:
+  - `draw.test.ts`, polia solta: comparava com todos os pontos do `scenePath`, inclusive as âncoras que o caminho solto também tem, e nunca passava. Agora exclui os pontos do próprio caminho solto e exige que sobre algum ponto de tangência. Vermelho contra a base: 3 falhas no bloco `rope path (PHY-56)`.
+  - `App.test.ts`, leitura velha: o desenho roda antes das setas, então um `throw` de `tensionArrows` deixava a corda desenhada e o teste verde (a mutação 5 sobrevivia). Agora escuta o evento `error` da janela.
+- 2026-10-02 Stage 2, mutate-verify (critério 7). Cada mutação aplicada, saída vermelha vista, revertida com `git checkout`:
+  1. `readConstraints` com `path: ropePath(...)` montado nas poses atuais com `r.keep` e sem `sweeps`: `acceptance.test.ts -t PHY-56` vermelho, 2 falhas. `before any step ... the PHY-54 table` (`expected { …(3) } to strictly equal { …(3) }`) e `the table rope comes loose ...` (`expected -1 to be greater than 0`: a varredura nunca fica negativa).
+  2. `readConstraints` sem `path`: `acceptance.test.ts -t PHY-56` vermelho, 3 falhas (`expected undefined to strictly equal { …(3) }` nas duas cenas, e a da mesa solta).
+  3. `paint` passa a `drawScene` `opts?.constraints ?? []` sem a guarda de `states`: `App.test.ts -t PHY-56` vermelho, 2 falhas (`expected true to be false` no teste do editor/reset e no da leitura velha).
+  4. `paint` passa `[]` a `drawScene`: `App.test.ts -t PHY-56` vermelho, 1 falha (`expected false to be true`: o marcador não é desenhado depois do passo).
+  5. `paint` passa a `tensionArrows` `constraints` sem a guarda: `App.test.ts -t PHY-56` vermelho, 1 falha (`expected [ …(1) ] to strictly equal []`, um `TypeError` do `outOf.to` num segmento indefinido), depois do conserto do harness acima. Antes dele a mutação sobrevivia.
+  Gate: `npm test` 30 arquivos, 850 testes passando; `npm run lint`, `npm run typecheck` e `npm run build` limpos. `git grep "RopeState.path"` acha o item `The kept direction`; `git grep "Drawing the loose rope is PHY-56"` não acha nada.

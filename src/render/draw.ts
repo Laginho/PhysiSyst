@@ -1,5 +1,6 @@
 import { bodyPointToWorld, localVertices, scenePath, triangleHeight } from '../scene'
 import type { Scene } from '../scene'
+import type { ConstraintState } from '../sim/simulator'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
 
 export interface DrawStyle {
@@ -185,6 +186,7 @@ export function drawScene(
   height: number,
   style: DrawStyle = DEFAULT_STYLE,
   selection: Selection = null,
+  constraints: readonly ConstraintState[] = [],
 ): void {
   const t = makeTransform(camera, width, height)
   const labels = massLabels(scene)
@@ -241,7 +243,7 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection)
+  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection, constraints)
   ctx.restore()
 }
 
@@ -254,6 +256,9 @@ function selectionStroke(ctx: CanvasRenderingContext2D, ppm: number): void {
 /**
  * Pulleys as outlined circles with an axle dot, ropes as their tangent legs
  * plus the arc wrapped on each pulley (PHY-23), springs as zigzags (PHY-26).
+ * During playback a rope is drawn from the path the simulator solved (PHY-56),
+ * so a rope loose from a pulley (`sweep < 0`, PHY-54) is the straight leg with
+ * no arc. With no reading's path (the editor) a rope is drawn from scenePath.
  * Drawn in world meters under one y-flipped transform, so canvas arc angles
  * are the path's own angles.
  */
@@ -264,6 +269,7 @@ function drawConstraints(
   ppm: number,
   style: DrawStyle,
   selection: Selection,
+  readings: readonly ConstraintState[],
 ): void {
   const selectedConstraintId = selectedOf(selection, 'constraint')
   const selectedPulleyId = selectedOf(selection, 'pulley')
@@ -307,7 +313,8 @@ function drawConstraints(
       ctx.restore()
       continue
     }
-    const path = scenePath(scene, constraint)
+    const reading = readings.find((r) => r.id === constraint.id)
+    const path = (reading?.kind === 'rope' ? reading.path : undefined) ?? scenePath(scene, constraint)
     if (!path) continue
     ctx.save()
     if (constraint.id === selectedConstraintId) selectionStroke(ctx, ppm)
@@ -316,7 +323,7 @@ function drawConstraints(
       ctx.moveTo(s.from.x, s.from.y)
       ctx.lineTo(s.to.x, s.to.y)
       const arc = path.arcs[i]
-      if (arc) ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.start, arc.start + arc.direction * arc.sweep, arc.direction < 0)
+      if (arc && arc.sweep >= 0) ctx.arc(arc.center.x, arc.center.y, arc.radius, arc.start, arc.start + arc.direction * arc.sweep, arc.direction < 0)
     })
     ctx.stroke()
     ctx.restore()

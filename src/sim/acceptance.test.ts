@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSimulator, TIMESTEP } from './index'
-import { parse } from '../scene'
-import type { Scene } from '../scene'
+import { parse, scenePath } from '../scene'
+import type { RopePath, Scene } from '../scene'
 import type { ConstraintState, RopeState } from './index'
 import { groundBody } from '../persistence'
 
@@ -520,7 +520,7 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     const sim = await createSimulator(atwoodScene(3, 2))
     sim.step()
     expect(sim.readConstraints()).toStrictEqual([
-      { id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false, segments: [expect.any(Number), expect.any(Number)] },
+      { id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false, segments: [expect.any(Number), expect.any(Number)], path: expect.any(Object) },
     ])
     expect(tension(sim).tension).toBeGreaterThan(0)
     // PHY-25: over a massless pulley every segment reads the one T.
@@ -620,6 +620,191 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(farthest).toBeLessThanOrEqual(L + 0.01)
   })
 
+  /**
+   * CLEAN-25: the table scene with a second ideal pulley `q` (r = 0.2) on the
+   * table at (4.6, −0.6) in the world. The rope goes over `p`, down the right
+   * side of `q`, and drops straight to `b` at (4.8, −1.8).
+   */
+  function twoPulleyTableScene(m1: number, m2: number, mu: number, vx?: number): Scene {
+    const scene = tableScene(m1, m2, mu, vx)
+    scene.bodies = scene.bodies.map((body) => (body.id === 'b' ? { ...body, position: { x: 4.8, y: -1.8 } } : body))
+    scene.pulleys!.push({ id: 'q', bodyId: 'mesa', anchor: { x: 4.6, y: -0.1 }, radius: 0.2 })
+    scene.constraints = scene.constraints!.map((c) => (c.id === 'corda' ? { ...c, via: ['p', 'q'] } : c))
+    return scene
+  }
+
+  it.each([
+    { m1: 1, m2: 3, mu: 3 },
+    { m1: 2, m2: 1, mu: 0.2 },
+  ])('CLEAN-25: table $m1/$m2, μ = $mu, over two ideal pulleys: the blocks never gain more than 0.5 J', async ({ m1, m2, mu }) => {
+    expect(await maxEnergyGain(twoPulleyTableScene(m1, m2, mu))).toBeLessThanOrEqual(0.5)
+  })
+
+  const pathOf = (sim: Awaited<ReturnType<typeof createSimulator>>) => (tension(sim) as RopeState & { path?: RopePath }).path
+
+  it.each([
+    { name: 'the PHY-54 table, 1/2 with μ = 3', scene: () => tableScene(1, 2, 3) },
+    { name: 'the PHY-23 Atwood, 3/2', scene: () => atwoodScene(3, 2) },
+  ])('PHY-56: before any step, the readout path of $name is the scenePath of the document', async ({ scene }) => {
+    const doc = parse(scene())
+    const sim = await createSimulator(doc)
+    const rope = doc.constraints!.find((c) => c.kind === 'rope')!
+    expect(pathOf(sim)).toStrictEqual(scenePath(doc, rope as Extract<typeof rope, { kind: 'rope' }>))
+  })
+
+  it('PHY-56: the table rope comes loose from the pulley and the readout path is the straight rope between the anchors the bodies show', async () => {
+    const sim = await createSimulator(parse(tableScene(1, 2, 3)))
+    const anchor = (id: string, local: { x: number; y: number }): { x: number; y: number } => {
+      const s = sim.readStates().get(id)!
+      return {
+        x: s.position.x + local.x * Math.cos(s.rotation) - local.y * Math.sin(s.rotation),
+        y: s.position.y + local.x * Math.sin(s.rotation) + local.y * Math.cos(s.rotation),
+      }
+    }
+    let firstLoose = -1
+    for (let step = 1; step <= 600; step++) {
+      sim.step()
+      const path = pathOf(sim)!
+      const a = anchor('a', { x: 0.2, y: 0 })
+      const b = anchor('b', { x: 0, y: 0.15 })
+      expect(Math.abs(path.segments[0]!.from.x - a.x)).toBeLessThanOrEqual(1e-9)
+      expect(Math.abs(path.segments[0]!.from.y - a.y)).toBeLessThanOrEqual(1e-9)
+      expect(Math.abs(path.segments.at(-1)!.to.x - b.x)).toBeLessThanOrEqual(1e-9)
+      expect(Math.abs(path.segments.at(-1)!.to.y - b.y)).toBeLessThanOrEqual(1e-9)
+      if (path.arcs[0]!.sweep < 0) {
+        if (firstLoose < 0) firstLoose = step
+        expect(Math.abs(path.length - Math.hypot(a.x - b.x, a.y - b.y))).toBeLessThanOrEqual(1e-9)
+      }
+    }
+    expect(firstLoose).toBeGreaterThan(0)
+    expect(firstLoose).toBeLessThan(200)
+  })
+
+  /**
+   * PHY-55: the PHY-54 and CLEAN-25 scenes with a disk of mass 2 on the pulley `grip`, so the rope grips it
+   * (PHY-25). `vxB` launches `b` sideways. `arc` is the index of the grip's arc in the rope's path.
+   */
+  const gripScene = (scene: Scene, grip: 'p' | 'q', vxB?: number): Scene => {
+    scene.pulleys = scene.pulleys!.map((pulley) => (pulley.id === grip ? { ...pulley, mass: 2 } : pulley))
+    if (vxB !== undefined) scene.bodies = scene.bodies.map((body) => (body.id === 'b' ? { ...body, vx: vxB } : body))
+    return scene
+  }
+
+  interface Phy55Run {
+    m1: number
+    m2: number
+    mu: number
+    vx: number | undefined
+  }
+  const PHY55_TABLE: Phy55Run[] = [
+    ...[2, 3, 4].map((m2) => ({ m1: 1, m2, mu: 3, vx: undefined as number | undefined })),
+    { m1: 2, m2: 3, mu: 3, vx: undefined },
+    { m1: 1, m2: 1.5, mu: 3, vx: undefined },
+    { m1: 1, m2: 2, mu: 1, vx: undefined },
+    { m1: 1, m2: 2, mu: 0.5, vx: undefined },
+    { m1: 2, m2: 1, mu: 0.2, vx: undefined },
+    { m1: 2, m2: 1, mu: 0.2, vx: 6 },
+    { m1: 1, m2: 2, mu: 3, vx: 4 },
+    { m1: 1, m2: 1, mu: 0.1, vx: 8 },
+  ]
+  const PHY55_AWAY: Phy55Run[] = [
+    { m1: 5, m2: 0.5, mu: 0, vx: 7 },
+    { m1: 5, m2: 0.5, mu: 0, vx: 9 },
+    { m1: 3, m2: 1, mu: 0, vx: 8 },
+    { m1: 2, m2: 1, mu: 0.2, vx: 8 },
+    { m1: 5, m2: 1, mu: 3, vx: 8 },
+    { m1: 5, m2: 1, mu: 3, vx: 10 },
+    { m1: 50, m2: 1, mu: 3, vx: 9 },
+  ]
+  const phy55Label = ({ m1, m2, mu, vx }: Phy55Run): string => `${m1}/${m2}, μ = ${mu}${vx === undefined ? '' : `, vx = ${vx}`}`
+  const PHY55_TABLE_RUNS = PHY55_TABLE.map((run) => ({
+    name: `table ${phy55Label(run)}`,
+    arc: 0,
+    scene: () => gripScene(tableScene(run.m1, run.m2, run.mu, run.vx), 'p'),
+  }))
+  const PHY55_MIXED_RUNS = (['A', 'B'] as const).flatMap((rope) =>
+    PHY55_TABLE.filter((run) => !(rope === 'A' && run.m1 === 1 && run.m2 === 1 && run.mu === 0.1 && run.vx === 8)).map((run) => ({
+      name: `rope ${rope}, ${phy55Label(run)}`,
+      arc: rope === 'A' ? 1 : 0,
+      scene: () => gripScene(twoPulleyTableScene(run.m1, run.m2, run.mu, run.vx), rope === 'A' ? 'q' : 'p'),
+    })),
+  )
+  const PHY55_AWAY_RUNS = PHY55_AWAY.map((run) => ({
+    name: `b launched, ${run.m1}/${run.m2}, μ = ${run.mu}, vx of b = ${run.vx}`,
+    arc: 0,
+    scene: () => gripScene(tableScene(run.m1, run.m2, run.mu), 'p', run.vx),
+  }))
+
+  it.each(PHY55_TABLE_RUNS)('PHY-55: $name: the block rides over a pulley with mass and the blocks never gain more than 0.5 J', async ({ scene }) => {
+    expect(await maxEnergyGain(scene())).toBeLessThanOrEqual(0.5)
+  })
+
+  it.each(PHY55_MIXED_RUNS)('PHY-55: $name: over a pulley with mass and an ideal one, the blocks never gain more than 0.5 J', async ({ scene }) => {
+    expect(await maxEnergyGain(scene())).toBeLessThanOrEqual(0.5)
+  })
+
+  it.each(PHY55_AWAY_RUNS)('PHY-55: $name: the rope leaves the disk and comes back, and the blocks never gain more than 0.5 J', async ({ scene }) => {
+    expect(await maxEnergyGain(scene())).toBeLessThanOrEqual(0.5)
+  })
+
+  it.each([...PHY55_TABLE_RUNS, ...PHY55_MIXED_RUNS, ...PHY55_AWAY_RUNS])(
+    'PHY-55: $name: while the rope is off the disk, every leg reads the one tension',
+    async ({ scene, arc }) => {
+      const sim = await createSimulator(parse(scene()))
+      let loose = 0
+      let split = 0
+      for (let step = 1; step <= 600; step++) {
+        sim.step()
+        const rope = tension(sim)
+        if (pathOf(sim)!.arcs[arc]!.sweep >= 0) continue
+        loose++
+        const legs = pathOf(sim)!.arcs.length + 1
+        if (rope.segments.length !== legs || rope.segments.some((t) => t !== rope.tension)) split++
+      }
+      expect(loose).toBeGreaterThan(0)
+      expect(split).toBe(0)
+    },
+  )
+
+  /** PHY-57: the PHY-55 table 5/0.5, μ = 0, with `b` launched at `vxB` and a disk of mass `M` on the pulley. */
+  const phy57Scene = (M: number, vxB: number): Scene => {
+    const scene = gripScene(tableScene(5, 0.5, 0), 'p', vxB)
+    scene.pulleys = scene.pulleys!.map((pulley) => ({ ...pulley, mass: M }))
+    return scene
+  }
+
+  it.each([2, 5])('PHY-57: M = %d: the rope that comes back to the disk turns it again, (T_b − T_a) = (M/2)·aₓ', async (M) => {
+    const sim = await createSimulator(parse(phy57Scene(M, 7)))
+    let vxBefore = sim.readStates().get('a')!.linvel.x
+    let worst = 0
+    let checked = 0
+    for (let step = 1; step <= 600; step++) {
+      sim.step()
+      const vx = sim.readStates().get('a')!.linvel.x
+      const ax = (vx - vxBefore) / TIMESTEP
+      vxBefore = vx
+      if (step < 90 || step > 200) continue
+      const [ta, tb] = tension(sim).segments
+      if (ta! <= 0.5 || tb! <= 0.5) continue
+      checked++
+      worst = Math.max(worst, Math.abs(tb! - ta! - (M / 2) * ax))
+    }
+    expect(checked).toBeGreaterThanOrEqual(100)
+    expect(worst).toBeLessThanOrEqual(0.05)
+  })
+
+  it.each([2, 5])('PHY-57: M = %d: the rope that comes back onto the disk is not short of L once it pulls', async (M) => {
+    const sim = await createSimulator(parse(phy57Scene(M, 9)))
+    const L = 6 + (Math.PI / 2) * 0.2 + 1.35
+    let worst = 0
+    for (let step = 1; step <= 600; step++) {
+      sim.step()
+      if (step < 95 || step > 195) continue
+      const rope = tension(sim)
+      if (rope.tension > 0.5) worst = Math.max(worst, Math.abs(pathOf(sim)!.length - L))
+    }
+    expect(worst).toBeLessThanOrEqual(0.1)
+  })
 })
 
 /**

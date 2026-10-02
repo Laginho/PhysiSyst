@@ -75,7 +75,7 @@ export function ropePath(
   return release(a, b, pulleys, directions, sweeps)
 }
 
-function wrapAngle(angle: number): number {
+export function wrapAngle(angle: number): number {
   return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI))
 }
 
@@ -127,7 +127,9 @@ function release(
   const { idx, path, sweeps } = over(on)
   const sweep = pulleys.map((_, i) => (on[i] ? sweeps[idx.indexOf(i)]! : measure(on, i)))
 
-  // Each leg of the path over the engaged pulleys takes the loose ones between its ends as joints.
+  // Each leg of the path over the engaged pulleys takes the loose ones between its ends as joints,
+  // the k-th of n at t = k/(n + 1) in `via` order whatever the centers: the joint does no work, and
+  // this keeps the segments collinear, the same way on, and each at least 1/(n + 1) of the leg.
   const segments: RopeSegment[] = []
   const arcs: RopeArc[] = []
   let length = 0
@@ -138,7 +140,8 @@ function release(
     let at = from
     for (let i = first; i < last; i++) {
       const { center, radius } = pulleys[i]!
-      const joint = along(from, to, center)
+      const t = (i - first + 1) / (last - first + 1)
+      const joint = { x: from.x + t * (to.x - from.x), y: from.y + t * (to.y - from.y) }
       segments.push({ from: at, to: joint })
       arcs.push({
         center,
@@ -157,21 +160,6 @@ function release(
   }
   for (const s of segments) length += Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)
   return { segments, arcs, length }
-}
-
-/**
- * The joint of a loose pulley on the leg `from`–`to`: the leg's point nearest
- * the center, kept within [¼, ¾] of the leg. Past that the center projects off
- * an end and a segment would shrink to nothing: its unit direction is then 0, so
- * the end stops being pulled.
- */
-// ponytail: two loose pulleys on one leg whose projections clamp to the same end sit on one point; order them if a scene needs it
-function along(from: Vec2, to: Vec2, center: Vec2): Vec2 {
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const d2 = dx * dx + dy * dy
-  const t = d2 === 0 ? 0.5 : Math.max(0.25, Math.min(0.75, ((center.x - from.x) * dx + (center.y - from.y) * dy) / d2))
-  return { x: from.x + t * dx, y: from.y + t * dy }
 }
 
 function build(centers: readonly Vec2[], pulleys: readonly PathPulley[], directions: readonly (1 | -1)[]): RopePath {

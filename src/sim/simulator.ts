@@ -1,5 +1,5 @@
 import * as RAPIER from '@dimforge/rapier2d-compat'
-import { bodyPointToWorld, localVertices, ropePath, scenePath } from '../scene'
+import { bodyPointToWorld, localVertices, ropePath, scenePath, wrapAngle } from '../scene'
 import type { RopePath, Scene, Vec2 } from '../scene'
 import { TIMESTEP } from './timestep'
 
@@ -28,6 +28,12 @@ export interface RopeState {
    * `tension` unless a pulley on the path has mass.
    */
   segments: number[]
+  /**
+   * The path the rope was last solved on (PHY-56): its last reading of the real
+   * poses, or the document poses before the first step. What the canvas draws
+   * during playback.
+   */
+  path?: RopePath
 }
 
 export interface SpringState {
@@ -132,8 +138,10 @@ interface RopeBinding {
   length: number
   /** The wrap direction each pulley in `via` holds (PHY-45), refreshed at every read of the real poses. */
   keep: Array<1 | -1>
-  /** The unwound sweep each pulley in `via` holds (PHY-54), refreshed where `keep` is. Unused with grips. */
+  /** The unwound sweep each pulley in `via` holds (PHY-54), refreshed where `keep` is. Every rope keeps it, grips or not (PHY-55). */
   sweeps: number[]
+  /** The path of the last read of the real poses (PHY-56), refreshed where `keep` is. */
+  path: RopePath
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
@@ -150,13 +158,23 @@ interface RopeBinding {
 
 /**
  * A pulley with mass on a rope's path. The rope does not slip on the disk, so
- * the disk splits the rope into two pieces, each of fixed length: the rope's
- * arc on it is shared at a mark that turns with the disk.
+ * while the grip holds, the disk splits the rope into two pieces of fixed
+ * length: the rope's arc on it is shared at a mark that turns with the disk.
+ * When the rope leaves the disk the grip lets go (PHY-55).
  */
 interface Grip {
   /** Index of the pulley in `via`. */
   at: number
   disk: RAPIER.RigidBody
+  /**
+   * The rope has left the disk (its sweep went negative, on the real poses or the step's prediction): the two
+   * pieces around it became one, the pulley sits in that piece as an ideal one and pulls nothing on the disk,
+   * which spins on with the ω it had. It grips again (PHY-57) when, on the real poses, the sweep is back to 0 or
+   * more and the piece is not slack: the piece splits at the middle of the arc into two halves that share its
+   * stretch and add up to its length. The next prediction and correction absorb the impact, the rim and the rope
+   * meeting at different speeds, as when a slack rope stretches.
+   */
+  loose: boolean
   /** Angle from where the rope meets the disk to the mark, in the wrap direction: the arriving piece's share. */
   share: number
   /** The rope's meeting angle (`RopeArc.start`) when `share` was last brought up to date. */
@@ -166,7 +184,12 @@ interface Grip {
 }
 
 interface Piece {
-  /** Fixed for the world's life, from the document poses like `RopeBinding.length`. */
+  /**
+   * From the document poses like `RopeBinding.length`, and fixed while the grips at its ends hold. A grip that lets
+   * go joins its two pieces into one of the summed length; one that grips again (when, and the impact: `Grip.loose`)
+   * splits it in two, each half at its length on the path less half the stretch (PHY-57), so the pieces always add
+   * up to L.
+   */
   length: number
   tension: number
   residual: number
@@ -230,12 +253,13 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
     at.at(-1)!,
     rope.via.map((p, i) => ({ center: at[i + 1]!, radius: p.radius })),
     rope.keep,
-    rope.grips.length ? undefined : rope.sweeps,
+    rope.sweeps,
   )
   // Only the bodies' real poses move the kept wrap; the predicted ones (mid and end of step) read it.
   if (!moved) {
     rope.keep = path.arcs.map((arc) => arc.direction)
     rope.sweeps = path.arcs.map((arc) => arc.sweep)
+    rope.path = path
   }
   const s = path.segments
   const pulls = points.map((point, i): RopePull => {
@@ -439,24 +463,68 @@ function placeChain(s: SpringBinding, chain: Chain): void {
   chain.force = { a: force, b: force }
 }
 
-function wrapAngle(a: number): number {
-  return a - 2 * Math.PI * Math.round(a / (2 * Math.PI))
+/** The grips still holding the rope, in path order; a loose one is only an ideal pulley inside its piece. */
+function heldGrips(rope: RopeBinding): Grip[] {
+  return rope.grips.filter((g) => !g.loose)
 }
 
-/** Path-point indices where the pieces meet: end a, each grip's pulley, end b. */
+/**
+ * A grip whose arc on `path` has a negative sweep lets go: the two pieces around it become one, of the summed
+ * length, with tension, residual, prediction and target at 0 (PHY-55). Gripping again is `regripGrips`'s.
+ */
+function releaseGrips(rope: RopeBinding, path: RopePath): void {
+  let held = 0
+  for (const grip of rope.grips) {
+    if (grip.loose) continue
+    if (path.arcs[grip.at]!.sweep >= 0) {
+      held++
+      continue
+    }
+    grip.loose = true
+    const [before, after] = rope.pieces.splice(held, 2)
+    rope.pieces.splice(held, 0, { length: before!.length + after!.length, tension: 0, residual: 0, predicted: 0, target: 0 })
+  }
+}
+
+/**
+ * A loose grip whose arc on `path` is back to a sweep of 0 or more, and whose piece is not slack (its length on
+ * `path` is at least its own), grips again (PHY-57). The piece splits at the middle of the arc, and each half keeps
+ * its length on `path` less half the stretch, so the two add up to the piece's length.
+ */
+function regripGrips(rope: RopeBinding, path: RopePath): void {
+  let held = 0
+  for (const grip of rope.grips) {
+    if (!grip.loose) {
+      held++
+      continue
+    }
+    const arc = path.arcs[grip.at]!
+    if (arc.sweep < 0) continue
+    const stretch = pieceLengths(rope, path, gripShares(rope, path))[held]! - rope.pieces[held]!.length
+    if (stretch < 0) continue
+    grip.loose = false
+    grip.share = arc.sweep / 2
+    grip.start = arc.start
+    const halves = pieceLengths(rope, path, gripShares(rope, path)).slice(held, held + 2)
+    rope.pieces.splice(held, 1, ...halves.map((length) => ({ length: length - stretch / 2, tension: 0, residual: 0, predicted: 0, target: 0 })))
+    held++
+  }
+}
+
+/** Path-point indices where the pieces meet: end a, each held grip's pulley, end b. */
 function pieceBounds(rope: RopeBinding): number[] {
-  return [0, ...rope.grips.map((g) => g.at + 1), rope.via.length + 1]
+  return [0, ...heldGrips(rope).map((g) => g.at + 1), rope.via.length + 1]
 }
 
-/** Each grip's share of its arc on `path`, with the disks turned `turns` since `share` was last brought up to date. */
+/** Each held grip's share of its arc on `path`, with the disks turned `turns` since `share` was last brought up to date. */
 function gripShares(rope: RopeBinding, path: RopePath, turns?: readonly number[]): number[] {
-  return rope.grips.map((g, k) => {
+  return heldGrips(rope).map((g, k) => {
     const arc = path.arcs[g.at]!
     return g.share + arc.direction * ((turns?.[k] ?? 0) - wrapAngle(arc.start - g.start))
   })
 }
 
-/** Each piece's length on `path`: its legs, the arcs of massless pulleys inside it, and its shares of the grips at its ends. */
+/** Each piece's length on `path`: its legs, the arcs of massless and loose pulleys inside it, and its shares of the held grips at its ends. */
 function pieceLengths(rope: RopeBinding, path: RopePath, shares: readonly number[]): number[] {
   const bounds = pieceBounds(rope)
   return bounds.slice(1).map((last, k) => {
@@ -469,32 +537,33 @@ function pieceLengths(rope: RopeBinding, path: RopePath, shares: readonly number
     // A loose pulley (negative sweep) adds no rope.
     for (let i = first + 1; i < last; i++) length += path.arcs[i - 1]!.radius * Math.max(0, path.arcs[i - 1]!.sweep)
     if (k > 0) length += path.arcs[first - 1]!.radius * (path.arcs[first - 1]!.sweep - shares[k - 1]!)
-    if (k < rope.grips.length) length += path.arcs[last - 1]!.radius * shares[k]!
+    if (k < shares.length) length += path.arcs[last - 1]!.radius * shares[k]!
     return length
   })
 }
 
 /**
- * Each piece's pulls at `frame`. A grip pulls its mount at the axle and its
+ * Each piece's pulls at `frame`. A held grip pulls its mount at the axle and its
  * disk at the tangent point, both along the one leg of the piece: the disk
- * takes the torque, the axle the force.
+ * takes the torque, the axle the force. A loose one pulls its axle like an ideal pulley.
  */
 function piecePulls(rope: RopeBinding, frame: RopeFrame): RopePull[][] {
   const s = frame.path.segments
   const bounds = pieceBounds(rope)
+  const held = heldGrips(rope)
   return bounds.slice(1).map((last, k) => {
     const first = bounds[k]!
     const pulls: RopePull[] = []
     if (k === 0) pulls.push(frame.pulls[0]!)
     else {
       const u = unit(s[first]!.from, s[first]!.to)
-      pulls.push({ ...frame.pulls[first]!, u }, { rigid: rope.grips[k - 1]!.disk, p: s[first]!.from, u })
+      pulls.push({ ...frame.pulls[first]!, u }, { rigid: held[k - 1]!.disk, p: s[first]!.from, u })
     }
     pulls.push(...frame.pulls.slice(first + 1, last))
-    if (k === rope.grips.length) pulls.push(frame.pulls[last]!)
+    if (k === held.length) pulls.push(frame.pulls[last]!)
     else {
       const u = unit(s[last - 1]!.to, s[last - 1]!.from)
-      pulls.push({ ...frame.pulls[last]!, u }, { rigid: rope.grips[k]!.disk, p: s[last - 1]!.to, u })
+      pulls.push({ ...frame.pulls[last]!, u }, { rigid: held[k]!.disk, p: s[last - 1]!.to, u })
     }
     return pulls
   })
@@ -892,6 +961,7 @@ class RapierSimulator implements Simulator {
           length: path.length,
           keep: path.arcs.map((arc) => arc.direction),
           sweeps: path.arcs.map((arc) => arc.sweep),
+          path,
           tension: 0,
           residual: 0,
           predicted: 0,
@@ -901,7 +971,7 @@ class RapierSimulator implements Simulator {
           grips: rope.via.flatMap((id, at) => {
             const disk = disks.get(id)
             const arc = path.arcs[at]!
-            return disk ? [{ at, disk, share: arc.sweep / 2, start: arc.start, w0: disk.angvel() }] : []
+            return disk ? [{ at, disk, loose: false, share: arc.sweep / 2, start: arc.start, w0: disk.angvel() }] : []
           }),
           pieces: [],
         }
@@ -1196,14 +1266,18 @@ class RapierSimulator implements Simulator {
       this.placeDisks(rope)
       const frame = ropeFrame(rope)
       const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
-      // Each disk's free turn over the step, the same way.
-      const spin = rope.grips.map((grip) => {
+      const endFrame = ropeFrame(rope, free)
+      // A grip grips again only on the real poses, and lets go on them or on where the step is about to leave the rope.
+      regripGrips(rope, frame.path)
+      releaseGrips(rope, frame.path)
+      releaseGrips(rope, endFrame.path)
+      // Each held disk's free turn over the step, the same way.
+      const spin = heldGrips(rope).map((grip) => {
         const { disk } = grip
         const w0 = (grip.w0 = disk.angvel())
         const w1 = w0 + TIMESTEP * disk.userTorque() * disk.effectiveWorldInvInertia()
         return TIMESTEP * (w0 + phi * (w1 - w0))
       })
-      const endFrame = ropeFrame(rope, free)
       const midFrame = ropeFrame(
         rope,
         free.map((q, i) => ({ x: (q.x + frame.pulls[i]!.p.x) / 2, y: (q.y + frame.pulls[i]!.p.y) / 2 })),
@@ -1256,10 +1330,12 @@ class RapierSimulator implements Simulator {
     const rows = ropes.flatMap((rope) => {
       this.placeDisks(rope)
       const frame = ropeFrame(rope)
+      releaseGrips(rope, frame.path)
       // The same turn pullPieces predicted, now with the ω the step ended on.
-      const turns = rope.grips.map(({ disk, w0 }) => TIMESTEP * (w0 + phi * (disk.angvel() - w0)))
+      const held = heldGrips(rope)
+      const turns = held.map(({ disk, w0 }) => TIMESTEP * (w0 + phi * (disk.angvel() - w0)))
       const shares = gripShares(rope, frame.path, turns)
-      rope.grips.forEach((grip, k) => {
+      held.forEach((grip, k) => {
         grip.share = shares[k]!
         grip.start = frame.path.arcs[grip.at]!.start
       })
@@ -1303,7 +1379,7 @@ class RapierSimulator implements Simulator {
     const read: Array<[number, ConstraintState]> = [
       ...this.ropes.map((r): [number, ConstraintState] => [
         r.index,
-        { id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r) },
+        { id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r), path: r.path },
       ]),
       ...this.springs.map((s): [number, ConstraintState] => [s.index, readSpring(s)]),
     ]

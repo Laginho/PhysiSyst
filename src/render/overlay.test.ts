@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Scene } from '../scene'
+import type { RopePath, Scene } from '../scene'
 import { applyStates } from '../playback/view'
 import {
   ARROW_MAX_PX,
@@ -424,6 +424,46 @@ describe('tensionArrows', () => {
   it('slack rope (T = 0) and a rope with no reading draw nothing', () => {
     expect(tensionArrows(atwood(), [ropeState('r', [0, 0])], PPM)).toEqual([])
     expect(tensionArrows(atwood(), [], PPM)).toEqual([])
+  })
+
+  describe('with the path of the reading (PHY-56)', () => {
+    // A straight rope from (0, 0) to (3, 4) with a pulley joint at (1.5, 2); the path says the rope left the pulley (sweep < 0).
+    const loose: RopePath = {
+      segments: [
+        { from: { x: 0, y: 0 }, to: { x: 1.5, y: 2 } },
+        { from: { x: 1.5, y: 2 }, to: { x: 3, y: 4 } },
+      ],
+      arcs: [{ center: { x: 1.5, y: 2 }, radius: 0.5, start: 0, sweep: -0.5, direction: 1 }],
+      length: 5,
+    }
+    const withPath = (id: string, segments: number[], path: RopePath): ConstraintState => ({ ...ropeState(id, segments), path } as ConstraintState)
+
+    it('the end arrows follow the path legs, not the scenePath around a pulley off the a–b line', () => {
+      const scene: Scene = {
+        ...sceneWithBodies([block('a', 0, 0), block('b', 3, 4), block('teto', 0, 5, true)]),
+        pulleys: [{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: 0 }, radius: 0.5 }],
+        constraints: [rope('r', 'a', 'b', ['p'])],
+      }
+      const arrows = tensionArrows(scene, [withPath('r', [5, 5], loose)], PPM)
+      const len = vectorArrowLengthPx(5) / PPM
+      expect(arrows).toHaveLength(2)
+      expectArrow(arrows[0], { x: 0, y: 0 }, { x: 0.6 * len, y: 0.8 * len })
+      expectArrow(arrows[1], { x: 3, y: 4 }, { x: -0.6 * len, y: -0.8 * len })
+    })
+
+    it('a loose pulley on a dynamic mount gets no arrow, and the ends follow the end legs of the path', () => {
+      const scene: Scene = {
+        ...sceneWithBodies([block('a', 0, 0), block('b', 3, 4), block('bloco', 1, 4)]),
+        pulleys: [{ id: 'p', bodyId: 'bloco', anchor: { x: 0, y: 0 }, radius: 0.5 }],
+        constraints: [rope('r', 'a', 'b', ['p'])],
+      }
+      const arrows = tensionArrows(scene, [withPath('r', [5, 5], loose)], PPM)
+      const len = vectorArrowLengthPx(5) / PPM
+      expect(arrows).toHaveLength(2)
+      expect(arrows.some((a) => a.from.x === 1 && a.from.y === 4)).toBe(false)
+      expectArrow(arrows[0], { x: 0, y: 0 }, { x: 0.6 * len, y: 0.8 * len })
+      expectArrow(arrows[1], { x: 3, y: 4 }, { x: -0.6 * len, y: -0.8 * len })
+    })
   })
 })
 

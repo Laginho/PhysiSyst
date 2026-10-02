@@ -1,5 +1,5 @@
 # CLEAN-25: Junções de polias soltas em ordem invertida alongam o caminho e puxam as polias
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: CLEAN-26
 Review: agent
@@ -54,6 +54,28 @@ Rejeitado: ordenar as junções pela projeção. Resolve a reprodução no fim, 
 
 Os dois primeiros `git grep` não devem achar nada; o terceiro deve achar a linha do ADR com a regra.
 
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ `CLEAN-25: two loose pulleys that swap order…` walks (a) k = 0…4000, (b) j = 1…3000, (c) j = 1…5000 with positions from the integer index, checks from k ≥ 3001: both sweeps < 0, length |a − b| at 1e-9, 3 segments > 0.1 m along (1, 0), pull summed as `ropeFrame` sums (`simulator.ts:244`) zero at 1e-9, `arcs[i].center` and the single-pulley sweep (item 1.5), final sweeps at 1e-9.
+- Criterion 2 ✅ `it.each` over the three layouts with sweeps `[−0.5, −0.5]`, items 1.1–1.4 via `expectStraightOverLoose`.
+- Criterion 3 ✅ both test files only gain lines; no existing tolerance, name or the block's `walk` changed. `ropePath.test.ts` + `acceptance.test.ts`: 166/166.
+- Criterion 4 ✅ the three Verification greps: first two empty, third finds ADR-0004 line 42. `along` and its `ponytail:` are gone.
+- Criterion 5 ✅ mutant (a), mutant (b) and the integration mutation are recorded under Comments with their red output. Note: the walk test stops at its first failure, (c) j = 2450, for both mutants, so the record shows "criterion 1 red" but never the 21 m / (∓2, 0) at the end of the walk; the criterion asks only for red.
+- Criterion 6 ✅ `twoPulleyTableScene` matches the geometry (q r = 0.2 on `mesa` at (4.6, −0.1), `b` at (4.8, −1.8), anchor (0, 0.15) inherited, `via: ['p', 'q']`, no mass); `maxEnergyGain` (600 steps) ≤ 0.5 J in both scenarios; `tableScene` unchanged.
+- Test-first ✅ `7c0320f` touches only the two test files and the ticket; `bac4d31` only `ropePath.ts` and the ADR; `2af2c17` (harness, 30 s timeout) only `ropePath.test.ts`. All inside Primary files.
+- Regressions: none found. `scenePath` takes no sweeps and goes through `build`; the only readers of `start` (`draw.ts`, grip code) never see a loose pulley; a zero-length leg puts every joint on its end, as `along` did.
+- Prose-only, no criterion behind them (not reopens): one loose pulley now sits at the leg's midpoint, the rule on a leg between two engaged pulleys, and `arcs[i].start` of a loose pulley, are implemented but untested.
+- Standards: no hard violations, no stale docs. Judgement calls, not fixed: "joint" for a loose pulley's point clashes with the glossary's _Avoid: joint_ (`CONTEXT.md:55`), usage dates from PHY-54; `ends` in the walk test is a function where the block's other `ends` are arrays; the ADR's CLEAN-25 rule is a long parenthetical.
+- Proxy decided, on the human's behalf (8 lines under Comments): joints at t = k/(n + 1) in `via` order; the `ponytail:` case folded into criterion 2; PHY-54's nearest-center rule replaced and the ADR corrected; loose `arcs[i].start` unchanged; geometry-only tests (later revised); the mutant (b) record in criterion 5; `Blocked by: CLEAN-26`, `normal`, `agent`, one ticket; the energy criterion 6 kept in this ticket.
+
+Red-green proof: the new tests at `bdca5c9` (the test-only commit before the rebase, now `7c0320f`; pre-fix production): `5 failed | 1 passed` — walk `segment length at (c) j = 2450: expected 0.09999999999999964 to be greater than 0.1`; `equal projections` and `both past b` `expected 0 to be greater than 0.1`; 1/3 μ = 3 `expected 186.13415247104996 to be less than or equal to 0.5`; 2/1 μ = 0.2 `expected 291.36368714518346 …`. On the branch: 6/6.
+
+Gate on the branch rebased onto the session tip `f42a2c9`: `npm test` 30 files, 838 tests passed; `lint`, `typecheck`, `build` clean.
+
+Merged into `sweatshop/2026-10-02-1156` as `6f5cdf1` (`--no-ff`).
+
 ## Tests stage 2 writes (own commit, red)
 
 - `src/scene/ropePath.test.ts`, no bloco `ropePath, unwound sweep (PHY-54)`, chamando `ropePath` direto, com `CLEAN-25` no nome: um teste para o critério 1 (a caminhada inteira, num laço local que leva as varreduras pelas três fases; o `walk` do bloco recebe polias fixas e fica intocado, como o critério 3 pede) e um para o critério 2 (as três disposições num `it.each`). Vermelhos hoje porque as junções seguem a projeção na ordem de `via`: 21 m e puxões (∓2, 0) no fim da caminhada; segmento do meio nulo e puxões (∓1, 0) com projeções iguais ou presas em `b`. O item 1.5 e a terceira disposição do critério 2 são guarda e passam antes. Como os testes chamam a função mudada direto, o `AGENTS.md` não pede registro de mutação; o critério 5 pede o dos dois mutantes porque o segundo é a alternativa rejeitada e só uma janela em torno do cruzamento a separa.
@@ -76,3 +98,10 @@ Os dois primeiros `git grep` não devem achar nada; o terceiro deve achar a linh
 - 2026-10-02 Proxy decided: `Blocked by: CLEAN-26`, `Difficulty: normal`, `Review: agent`, um ticket só — mesmo arquivo do CLEAN-26, função privada, critérios independentes.
 - 2026-10-02 Stage 1, com a evidência do PHY-55: a cena da mesa com duas polias ideais (critério 6) medida na main e com a regra `t = k/(n + 1)` por `vi.mock` (conferido: o mock muda os dois cenários vermelhos), na grade de 11 do PHY-54. Main: 1/3 com μ = 3 +186,1342 J (passo 479) e 2/1 com μ = 0,2 +291,3637 J (passo 398); os outros nove, de −4,69 J a −0,0049 J. Com a regra: +0,0042 J e −0,0042 J nesses dois, e os nove iguais à main. Probes apagados.
 - 2026-10-02 Proxy decided: "testes só na geometria" revisto pela evidência nova (a cena simples da mesa com duas polias ideais já ganha energia na main): o critério de energia, com `twoPulleyTableScene` em `acceptance.test.ts` e o registro de mutação, fica neste ticket — um ticket posterior nunca conseguiria ficar vermelho primeiro.
+- 2026-10-02 Stage 2. Leitura em volta: `release` é o único chamador de `along`; `ropePath` é lido por `ropeFrame`/`simulator.ts` e `scenePath`, e nenhum lê o `start` de uma polia solta. Perna de comprimento 0: a regra põe todas as junções na ponta, como `along` (t = 0,5 num ponto) já fazia; nenhum teste novo. Testes em `bdca5c9` (só testes), correção em `dbb3228` (só `ropePath.ts` e o ADR), sem tocar teste.
+- Critério 5, mutante (a) — junções na projeção limitada, na ordem de `via` (a produção de antes, `git show bdca5c9~1:src/scene/ropePath.ts`):
+  - `ropePath.test.ts -t CLEAN-25`: `Tests 3 failed | 1 passed`. Critério 1: `AssertionError: segment length at (c) j = 2450: expected 0.09999999999999964 to be greater than 0.1` (o teste para na primeira falha, antes do fim da caminhada, onde estão os 21 m). Critério 2, `equal projections` e `both past b`: `AssertionError: segment length : expected 0 to be greater than 0.1`; `in via order` verde (guarda).
+  - Mutação de integração, `acceptance.test.ts -t CLEAN-25`: `Tests 2 failed`. 1/3, μ = 3: `AssertionError: expected 186.13415247104996 to be less than or equal to 0.5`; 2/1, μ = 0,2: `AssertionError: expected 291.36368714518346 to be less than or equal to 0.5`.
+- Critério 5, mutante (b) — projeções limitadas a [¼, ¾], ordenadas por parâmetro, aplicado em `release` e revertido: `Tests 3 failed | 1 passed`. Critério 1: `AssertionError: segment length at (c) j = 2450: expected 0.09999999999999964 to be greater than 0.1` (início da janela j de 2450 a 2550). Critério 2: as mesmas duas disposições vermelhas, `expected 0 to be greater than 0.1`.
+- Harness corrigido em `59e4a32` (só teste): a caminhada de 12 000 leituras roda em ~2 s sozinha e ~14 s com a suíte inteira, além dos 5 s padrão do vitest; ganhou 30 s, como os testes lentos do `App.test.ts`. Reprovado vermelho contra a produção de antes, com a mesma saída do mutante (a).
+- Gate: `npm test` 30 arquivos, 838 de 838; `lint`, `typecheck` e `build` verdes. Os três `git grep` da Verification: os dois primeiros sem saída, o terceiro acha `docs/adr/0004-…:42`.

@@ -1,5 +1,5 @@
 # CLEAN-27: O clique na corda durante o playback segue o caminho simulado
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-56
 Review: agent
@@ -51,3 +51,39 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 ## Comments
 
 - 2026-10-02 Aberto no stage 1 do PHY-56 por decisão do proxy: o clique na corda é outra costura (editor, não render), e ficou fora daquele ticket. Depende do `RopeState.path` e da guarda do `paint` que o PHY-56 cria. Nada commitado.
+- 2026-10-02 Stage 2. Red commit: both new tests failed for the right reason (hitTest: `ropeAtPoint` ignored the fourth argument, got `undefined` for (0; 0,25); App: panel `corda` absent after `⏭ passo`). Gate green: 852 tests, lint, typecheck, build.
+- 2026-10-02 Stage 2. Mutate-verify, App test `CLEAN-27: o clique na corda segue o caminho...` (`src/App.tsx`, `onPointerDown`):
+  - `ropeAtPoint(view, w, tolerance, constraintsRef.current)` (no `statesRef.current` guard): red, `AssertionError: expected <fieldset …(1)>…(4)</fieldset> to be undefined` at `App.test.ts:2339` (the click after `⟲ reiniciar` still selected the rope).
+  - `ropeAtPoint(view, w, tolerance)` (no readings): red, `AssertionError: expected undefined to be defined` at `App.test.ts:2333` (the click after `⏭ passo` selected nothing).
+  - Production code restored after both; the guarded call is what is committed.
+- 2026-10-02 Stage 3. The App test never clicked before the first step, so half of criterion 3.2 ("Antes de qualquer passo") was unexercised. The case is real: the simulator boots at mount and `ensureSim` fills `constraintsRef` with the marker reading while `statesRef` is still `null`. Review added `click(canvas, OPEN_SPACE)` before the pre-step assertion (test-only commit). Mutations re-run on the amended test:
+  - no guard: red, `AssertionError: expected <fieldset …(1)>…(4)</fieldset> to be undefined` at `App.test.ts:2330:34` (now the pre-step click; it was 2339 before).
+  - no readings: red, `AssertionError: expected undefined to be defined` at `App.test.ts:2334:34` (the stage-2 line, shifted by one).
+  - Production code restored after both.
+
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ `hitTest.test.ts`, PHY-28 `SCENE`: the straight leg (−0,5; 0,2)→(0,5; 0,2) split at (0; 0,2) into two collinear segments, an arc of `p1` with sweep −0,5, tolerance 0,1. (0; 0,25) hits `r1`; (−0,45; 2) hits nothing.
+- Criterion 2 ✅ the same test checks `undefined`, `[]`, a state without `path` and a state for another id: (−0,45; 2) hits `r1` and (0; 0,25) misses, as before. The existing tests in the block are unchanged.
+- Criterion 3 ✅ after a review fix. 3.1 is met. For 3.2, the code met the pre-step half, because the guard covers `statesRef === null` at boot. The test did not exercise it until `9f95310` added the pre-step click (see Comments). `OPEN_SPACE` (2,5; 0,5) is about 2 m from the document rope, the pulley and every body.
+- Criterion 4 ✅ both mutations are recorded with red output by stage 2, and again by the review on the amended test.
+- Criterion 5 ✅ both test files gain additions only, plus one type import. No tolerance or name changed.
+- The guard in `onPointerDown` (`statesRef.current ? constraintsRef.current : []`) is equivalent to `paint`'s (`states ? (opts?.constraints ?? []) : []`). `App.tsx:1320` is the only production caller of `ropeAtPoint`.
+- Test-first ✅ `1c96be0` touches only tests, plus the ticket's `Stage:`. `8920c02` touches no test file. Every changed source file is in Primary files.
+- Regressions: none found.
+- Review fixes:
+  - `9f95310`: test only, the pre-step click.
+  - `59f3bcd`: docs only. The `constraintsRef` docblock, the `paint` guard comment and the "kept direction" item in ADR-0004 now name the click among the users of `RopeState.path`.
+  - The ticket's Comments are reordered by date.
+- Not fixed, judgement calls:
+  - The parameter is `readings`, not the ticket's `constraints`, because the function's local `constraints` already holds `scene.constraints`. `drawConstraints` uses the same name. The new test loop still calls the value `constraints`.
+  - The "reading's path, else `scenePath`" lookup now appears three times (`draw.ts`, `overlay.ts`, `hitTest.ts`).
+  - The editor guard appears twice (`paint`, `onPointerDown`).
+  - The branch is `clean-27`, not `AGENTS.md`'s `phy/<ID>-<slug>`. The driver named it.
+- Proxy decided: none on this ticket. The proxy decision that opened it is PHY-56's.
+
+Gate on `clean-27` at `59f3bcd`, based on the session tip `180309f`: `npm test` 30 files, 852 tests passed; `lint`, `typecheck` and `build` clean.
+
+Merged into `sweatshop/2026-10-02-1156` as `ab63211` (`--no-ff`).
