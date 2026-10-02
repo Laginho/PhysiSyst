@@ -1,5 +1,5 @@
 # PHY-53: Os avisos do simulador chegam à tela
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-51
 Review: agent
@@ -48,3 +48,36 @@ Um aviso do simulador aparece no painel a partir do primeiro repaint depois de s
 - 2026-10-02 Harness corrigido, red repetido antes do commit: mutação de play acima → **1 failed | 91 skipped (92), exit 1**, `expected [] to deeply equal [ Array(1) ]` no segundo frame. Restaurado `App.tsx`. Green com os cinco novos testes e os quatro afetados: `npx vitest run src/App.test.ts -t 'simulator warnings panel|durante o playback|cada ponta com o seu valor|com polia de massa no caminho'` → **9 passed | 83 skipped (92)**.
 - 2026-10-02 Gate final, após corrigir o harness e restaurar todas as mutações: `npm test && npm run lint && npm run typecheck && npm run build` (execução sequencial equivalente em PowerShell, interrompendo no primeiro erro) → **exit 0; 30 arquivos e 814 testes passaram (814)**, suíte em **39,65 s**, ESLint e TypeScript sem erros, build Vite concluído com 49 módulos. Persiste o aviso existente do chunk tardio `sim` acima de 500 kB (2.134,29 kB); não bloqueia o build.
 - 2026-10-02 Handoff do stage 2: critérios 1–4 implementados e limpeza após rebuild coberta. `App.tsx` publica uma cópia dos avisos no boot e a atualiza no repaint quando o conteúdo muda, mantendo a lista anterior quando é igual; os avisos da cena precedem os do simulador. Diff final revisado: somente os dois Primary files e este ticket; nenhum log, segredo ou artefato gerado incluído. `git diff --check` passou. Commits de produção `3b6bd6a`/`2225547` não alteram testes; testes e correção de harness estão em commits próprios com red registrado. Branch pronta para stage 3; sem merge ou push neste stage.
+
+#### Resolution (2026-10-02)
+Verdict: Approve
+
+##### Standards
+
+0 violações e 0 smells na revisão independente. O diff respeita os dois Primary files e o registro do ticket. Os commits de produção `3b6bd6a` e `2225547` não alteram testes; testes e correção do harness estão em commits próprios, com red registrado antes da implementação ou por mutação da produção. O snapshot trata o array mutável do simulador e preserva o estado React quando o conteúdo não muda. Revisão aprovada sem correção de código.
+
+##### Spec
+
+0 achados na revisão independente. Critério 1: avisos da construção são publicados no boot. Critério 2: o segundo frame do play publica o aviso novo sem poll de leitura ou outra interação. Critério 3: avisos da cena precedem os do simulador. Critério 4: listas vazias mantêm o painel ausente. A limpeza após rebuild também é coberta usando o mesmo array mutável. Conferidos os caminhos de boot/retry, play, reset, reconstrução, troca de cena, edição, seleção, idioma, resize e gestos; nenhuma regressão identificada.
+
+##### Prova red-green repetida pelo stage 3
+
+As cinco mutações registradas no stage 2 foram repetidas em `src/App.tsx`. Cada execução de `node node_modules/vitest/vitest.mjs run src/App.test.ts -t '<filtro>'` deu **exit 1; 1 failed | 91 skipped (92)**, por falha da asserção DOM correspondente:
+
+| Filtro | Mutação de produção | Saída vermelha |
+| --- | --- | --- |
+| `shows simulator construction warnings after boot` | Omitir `...simWarnings` da concatenação | `expected [] to include 'Friction is degraded for this contact…'` |
+| `shows a warning added during play` | Ler uma lista vazia no repaint | `expected [] to deeply equal [ Array(1) ]`; falta a linha de ω no segundo frame |
+| `lists scene warnings before simulator warnings` | Concatenar os avisos do simulador primeiro | `expected [ 'Friction is degraded', …(1) ] to deeply equal [ …(2) ]`; diff mostra a ordem invertida |
+| `hides the panel when both` | Renderizar com `warnings.length >= 0` | `expected <fieldset …(1)>…(2)</fieldset> to be undefined`; painel vazio presente |
+| `removes simulator warnings after rebuilding` | Preservar o snapshot anterior quando a lista nova está vazia | `expected <fieldset …(1)>…(2)</fieldset> to be undefined`; permanece `Friction is degraded` |
+
+Produção restaurada byte a byte após cada mutação. Green final com `-t 'simulator warnings panel'`: **exit 0; 5 passed | 87 skipped (92)**. `git diff --exit-code` confirmou a restauração completa.
+
+##### Gate e integração
+
+Gate executado pelo stage 3: `npm test && npm run lint && npm run typecheck && npm run build` (sequência equivalente em PowerShell, interrompendo no primeiro erro) → **exit 0; 30 arquivos e 814 testes passaram (814)**, suíte em **49,81 s**. ESLint e TypeScript sem erros; build Vite concluído com 49 módulos. O chunk tardio do simulador mantém o tamanho existente de aproximadamente 2,13 MB. `git diff --check` passou.
+
+Rebase sobre `sweatshop/2026-10-01-2342` já atualizado, sem conflitos. Merge `--no-ff` em `71b7834`, com a árvore idêntica à validada (`2da33bb`). Resolução, ledger e `Stage: done` no mesmo commit de fechamento na sessão.
+
+Totais: Standards 0 achados; Spec 0 achados.
