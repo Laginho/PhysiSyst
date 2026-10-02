@@ -1,5 +1,5 @@
 # PHY-54: A corda se solta da polia ideal quando o bloco passa por ela, sem ganho de energia
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -8,7 +8,7 @@ Difficulty: hard
 - Primary files:
   - src/scene/ropePath.ts (`ropePath`, `RopeArc`)
   - src/scene/ropePath.test.ts (bloco `ropePath, kept wrap direction (PHY-45)`)
-  - src/sim/simulator.ts (`RopeBinding`, `ropeFrame`, a montagem do `RopeBinding` em `buildWorld`)
+  - src/sim/simulator.ts (`RopeBinding`, `ropeFrame`, a montagem do `RopeBinding` em `buildWorld`, e em `pieceLengths` a soma dos arcos sem massa dentro da peça: polia solta, de varredura negativa, soma 0)
   - src/sim/acceptance.test.ts (bloco `rope over a fixed pulley (PHY-23)`)
   - docs/adr/0004-rope-as-own-constraint-around-world-step.md (seção `The rim and the kept wrap direction (PHY-45)`)
 
@@ -56,6 +56,7 @@ Rejeitado: só desenrolar a varredura, sem trocar o caminho pela perna reta (com
    - tirar o histórico (varredura bruta, como hoje): o critério 2 fica vermelho (medido: os 11);
    - desenrolar sem trocar pela perna reta: o critério 2 fica vermelho em pelo menos um cenário (medido: 1/4 com μ = 3 e os dois 2/1 com μ = 0,2);
    - junção sem o limite [¼, ¾]: o item 4 do critério 1 fica vermelho.
+6. Corda ideal resolvida em grupo (PHY-41): cena da mesa do PHY-23 com polia ideal, 2/1 com μ = 0,2, mais um bloco `c` de 0,5 kg em (−3; 0,2) preso a `a` por uma corda curta sem polia (`cabo`, da âncora local (0,2; 0) de `c` à (−0,2; 0) de `a`). Em 600 passos, a distância entre as pontas da corda da polia nunca passa de `L + 0,01 m`, com `L = 6 + (π/2)·0,2 + 1,35`. Sem a guarda em `pieceLengths`: 8,30 m contra L = 7,67 m. Mutate-verify: tirar o `Math.max(0, …)` de `pieceLengths` deixa este critério vermelho e os 11 cenários do critério 2 verdes (a energia não mostra, a correção só drena).
 
 #### Verification
 
@@ -86,6 +87,8 @@ Rejeitado: só desenrolar a varredura, sem trocar o caminho pela perna reta (com
   3. Junção sem o limite [¼, ¾]: sem limite nenhum (`t` solto), `ropePath.test.ts` 1 vermelho, o item 4 (`expected 4 to be close to 2`); limitada a [0, 1], 1 vermelho, o mesmo item (`expected 0 to be greater than 0.1`, o segmento da ponta some).
   4. Tirar o `Math.max(0, …)` de `pieceLengths`: `acceptance.test.ts -t PHY-54`, 1 vermelho, o da corda em grupo (`expected 8.295… to be less than or equal to 7.674…`); os 11 cenários seguem verdes, porque a energia não mostra (a correção só drena).
 - 2026-10-02 Um teste a mais do que o ticket listava, pela leitura em volta da mudança: `PHY-54: a rope solved in a group with a tether…` no bloco do PHY-23. `pieceLengths` soma `R·varredura` de cada arco sem massa dentro da peça, e uma corda sem grip dentro de um grupo (PHY-41) passa por ele; com a varredura negativa de uma polia solta, a peça parecia mais curta e a corda esticava 0,63 m além de L. Um bloco `c` preso a `a` por uma corda curta forma o grupo; o critério é a distância entre as pontas, `≤ L + 0,01`, que não vem do código. A correção é o `Math.max(0, …)` em `simulator.ts`.
+- 2026-10-02 Proxy decided: ampliar o Primary de simulator.ts para a soma dos arcos em pieceLengths e adicionar o critério 6 (corda ideal em grupo), guarda fica onde está — é a única função que re-deriva o comprimento somando R·varredura por arco, e o ticket já nomeava pieceLengths na linha 33; faltou só a corda sem grip dentro de grupo. Alternativa B (clamp em `ropeFrame`) descartada: `frame.path.arcs[].sweep` passaria a divergir de `rope.sweeps`, que precisa ficar negativo para a corda reengatar.
+- 2026-10-02 Stage 2 (reabertura, 14811fb e o commit de contrato): os dois ❌ do stage 3 tratados. (1) Fronteira de produção: sem mudança de código, a decisão do proxy acima amplia o Primary e dá ao teste da corda em grupo o critério 6. (2) Fronteira dos testes: o `describe('ropePath, unwound sweep (PHY-54)')` foi aninhado em `ropePath, kept wrap direction (PHY-45)`, em commit só de testes; `git diff -w` mostra só a fronteira do bloco, e o nome completo segue contendo `PHY-54`, então `-t PHY-54` continua pegando os cinco. Red-green da realocação: contra `ropePath.ts` de `f2f6d62` (pré-PHY-54), 4 vermelhos e 16 verdes em `ropePath.test.ts` (`expected 6.283185640500566 to be less than or equal to 0.001`, `expected 6.282480598581058 to be greater than 6.283185307179586`, `expected 6.283185473840078 to be less than or equal to 0.001`, `expected 4.4054212783399365 to be less than 0`; o item 5 é guarda e passa); contra a produção atual, 20 verdes. Produção restaurada com `git checkout -- src/scene/ropePath.ts`. Código de produção e testes de integração não mudaram, e as mutações do critério 5 seguem valendo. O critério 6 foi mutado de novo nesta árvore: sem o `Math.max(0, …)` de `pieceLengths`, `acceptance.test.ts -t PHY-54` dá 1 vermelho e 11 verdes (`expected 8.295840125582401 to be less than or equal to 7.674159265358979`); restaurado com `git checkout -- src/sim/simulator.ts`, 12 verdes. Gate sobre esta árvore: `npm test && npm run lint && npm run typecheck && npm run build` → exit 0, 30 arquivos e 831 testes, sem skips; persiste o aviso conhecido do chunk `sim` acima de 500 kB. `grep -n "PHY-55"` no ADR-0004 segue achando a exclusão.
 - 2026-10-02 Candidato a `CLEAN-*`: `wrapAngle` existe duas vezes, privada em `ropePath.ts` e em `simulator.ts` (linha 442); exportar a de `ropePath.ts` e usar nos dois.
 
 #### Review stage 3 (2026-10-02)
