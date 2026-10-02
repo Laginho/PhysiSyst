@@ -170,6 +170,12 @@ function screenCircle(ctx: CanvasRenderingContext2D, at: { x: number; y: number 
   ctx.restore()
 }
 
+// In the editor the readings go stale (refreshed only at boot, reset and rebuild): the rope there follows the
+// document, and only a simulated frame's readings shape its drawing and its T arrows (PHY-56) and click (CLEAN-27).
+function ropeReadingsOf(states: ReadonlyMap<string, BodyState> | null, readings: readonly ConstraintState[]): readonly ConstraintState[] {
+  return states !== null ? readings : []
+}
+
 function paint(
   ctx: CanvasRenderingContext2D,
   doc: Scene,
@@ -191,11 +197,8 @@ function paint(
   const selectedId = selectedOf(selection, 'body')
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  // In the editor the readings go stale (refreshed only at boot, reset and rebuild): the rope there follows the
-  // document, and only a simulated frame's readings shape its drawing and its T arrows (PHY-56); onPointerDown
-  // applies the same guard to the click (CLEAN-27).
-  const ropeReadings = states ? (opts?.constraints ?? []) : []
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selection, ropeReadings)
+  const ropeReadings = ropeReadingsOf(states, opts?.constraints ?? [])
+  drawScene(ctx, view, camera, transform.width, transform.height, { selection, readings: ropeReadings })
 
   const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
   if (pendingBody) {
@@ -1318,7 +1321,7 @@ export default function App() {
       return
     }
     const tolerance = LINE_HIT_TOLERANCE_PX / camera.pixelsPerMeter
-    const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance, statesRef.current ? constraintsRef.current : [])
+    const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance, ropeReadingsOf(statesRef.current, constraintsRef.current))
     setSelection(line ? { kind: 'constraint', id: line.id } : null)
   }
 

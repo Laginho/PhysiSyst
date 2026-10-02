@@ -1,5 +1,5 @@
 import { getCatalog, type I18nKey, type Lang } from '../i18n'
-import { bodyPointToWorld, scenePath, type Scene, type Vec2 } from '../scene'
+import { bodyPointToWorld, currentPath, type Scene, type Vec2 } from '../scene'
 import type { BodyState, ConstraintState, ContactPoint } from '../sim/simulator'
 
 /**
@@ -120,7 +120,7 @@ function arrowToward(from: Vec2, toward: Vec2, magnitude: number, pixelsPerMeter
  * the next point of the path; on a dynamic body mounting a pulley, one arrow
  * per adjacent segment at the pulley center, along that segment away from it,
  * unless the rope is loose from it (`sweep < 0`). The path is the reading's
- * when it has one (PHY-56), else scenePath. A slack rope (T = 0) or one with
+ * when it has one (PHY-56), else the document path. A slack rope (T = 0) or one with
  * no reading draws nothing.
  */
 export function tensionArrows(view: Scene, constraints: readonly ConstraintState[], pixelsPerMeter: number): OverlayArrow[] {
@@ -131,7 +131,7 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
     if (rope.kind !== 'rope') continue
     const state = constraints.find((c) => c.id === rope.id)
     if (state?.kind !== 'rope') continue
-    const path = state.path ?? scenePath(view, rope)
+    const path = currentPath(view, rope, constraints)
     if (!path) continue
     // With a pulley of mass T differs per segment, and so does the label.
     const perSegment = rope.via.some((id) => (pulleys.get(id)?.mass ?? 0) > 0)
@@ -143,7 +143,7 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
     const last = path.segments.length - 1
     if (bodies.get(rope.a.bodyId)?.fixed === false) push(first.from, first.to, 0)
     rope.via.forEach((id, i) => {
-      // A path resolved, so every pulley and mount does: scenePath checks them, and a reading's path comes from the
+      // A path resolved, so every pulley and mount does: the document path checks them, and a reading's path comes from the
       // world built from this document (paint passes readings only during playback, PHY-56).
       const pulley = pulleys.get(id)!
       const mount = bodies.get(pulley.bodyId)!

@@ -267,6 +267,11 @@ export function scenePath(scene: Scene, rope: Rope): RopePath | null {
   return ropePath(a, b, via)
 }
 
+/** The simulated reading's path when present, otherwise the path at the document poses. */
+export function currentPath(scene: Scene, rope: Rope, readings: readonly { id: string; path?: RopePath }[]): RopePath | null {
+  return readings.find((reading) => reading.id === rope.id)?.path ?? scenePath(scene, rope)
+}
+
 /** A constraint touches a body when either end is on it, or it is a rope passing over a pulley mounted on it. */
 export function constraintTouchesBody(scene: Scene, constraint: Constraint, bodyId: string): boolean {
   return (
