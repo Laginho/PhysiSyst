@@ -4,7 +4,7 @@
  * tangent-length theorem and the figure, never from the module's formula.
  */
 import { describe, expect, it } from 'vitest'
-import { ropePath, scenePath, wrapAngle } from './ropePath'
+import { currentPath, ropePath, scenePath, wrapAngle } from './ropePath'
 import type { PathPulley, RopePath, RopeSegment } from './ropePath'
 import type { Rope, Scene, Vec2 } from './types'
 
@@ -102,6 +102,30 @@ describe('scenePath: rope path from document poses', () => {
   it('returns null when a reference dangles', () => {
     const rope = { ...(scene.constraints![0] as Rope), via: ['ghost'] }
     expect(scenePath(scene, rope)).toBeNull()
+  })
+
+  describe('currentPath (CLEAN-28)', () => {
+    const rope = scene.constraints![0] as Rope
+    const path: RopePath = {
+      segments: [{ from: { x: -0.25, y: 2.2 }, to: { x: 0.25, y: 1.2 } }],
+      arcs: [],
+      length: Math.hypot(0.5, 1),
+    }
+
+    it('returns the same path object from the matching reading', () => {
+      expect(currentPath(scene, rope, [{ id: 'other', path: { segments: [], arcs: [], length: 0 } }, { id: 'corda', path }])).toBe(path)
+    })
+
+    it('falls back to the document path without a matching path, including spring readings', () => {
+      const spring = { id: 'corda', kind: 'spring', dx: 0, force: { a: 1, b: 1 } }
+      for (const readings of [[], [{ id: 'other', path }], [{ id: 'corda' }], [spring]]) {
+        expect(currentPath(scene, rope, readings)).toStrictEqual(scenePath(scene, rope))
+      }
+    })
+
+    it('returns null when the document reference dangles and no reading has a path', () => {
+      expect(currentPath(scene, { ...rope, via: ['ghost'] }, [])).toBeNull()
+    })
   })
 })
 
