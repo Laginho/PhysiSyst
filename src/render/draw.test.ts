@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { Body, Scene } from '../scene'
+import { scenePath } from '../scene'
+import type { Body, RopePath, Scene } from '../scene'
+import type { ConstraintState } from '../sim'
 import { drawArrow, drawScene, massLabels } from './draw'
 import { makeTransform } from './transform'
 
@@ -139,6 +141,89 @@ describe('textbook rendering (drawScene)', () => {
     drawScene(ctx, sceneWith([makeBody('chao', 'rectangle', true), makeBody('r', 'rectangle'), makeBody('t', 'triangle')]), CAMERA, 900, 600)
     const texts = callsOf(log, 'fillText').map((e) => e.args![0])
     expect(texts).toEqual(['m', 'M'])
+  })
+})
+
+describe('drawScene, rope path (PHY-56)', () => {
+  // Pulley of radius 0.5 centered (6, 6) on the fixed ceiling; blocks hang at x = 5.5 and 6.5, so the legs touch the pulley at y = 6.
+  const CENTER = { x: 6, y: 6 }
+  const scene: Scene = {
+    ...sceneWith([
+      { ...makeBody('teto', 'rectangle', true), position: { x: 6, y: 6 } },
+      { ...makeBody('a', 'rectangle'), position: { x: 5.5, y: 2 } },
+      { ...makeBody('b', 'rectangle'), position: { x: 6.5, y: 2 } },
+    ]),
+    pulleys: [{ id: 'p', bodyId: 'teto', anchor: { x: 0, y: 0 }, radius: 0.5 }],
+    constraints: [
+      { id: 'corda', kind: 'rope', a: { bodyId: 'a', anchor: { x: 0, y: 0 } }, b: { bodyId: 'b', anchor: { x: 0, y: 0 } }, via: ['p'] },
+    ],
+  }
+  const rope = scene.constraints![0] as Extract<NonNullable<Scene['constraints']>[number], { kind: 'rope' }>
+
+  const draw = (constraints?: readonly ConstraintState[]) => {
+    const { ctx, log } = recordingCtx()
+    drawScene(ctx, scene, CAMERA, 900, 600, undefined, null, constraints)
+    return log
+  }
+  // The scene without its rope draws everything but the rope, so the rope's calls are what the full log has on top, before the closing restore.
+  const baseline = (() => {
+    const { ctx, log } = recordingCtx()
+    drawScene(ctx, { ...scene, constraints: [] }, CAMERA, 900, 600)
+    return log.length
+  })()
+  const ropeLog = (log: LogEntry[]) => log.slice(baseline - 1, -1)
+
+  const stateOf = (path: RopePath): ConstraintState => ({ id: 'corda', kind: 'rope', tension: 5, slack: false, segments: [5, 5], path })
+  const arcsOf = (log: LogEntry[]) => callsOf(log, 'arc').map((e) => e.args as number[])
+
+  const handPath = (sweep: number, direction: 1 | -1): RopePath => ({
+    segments: [
+      { from: { x: 5.5, y: 2 }, to: { x: 6, y: 2 } },
+      { from: { x: 6, y: 2 }, to: { x: 6.5, y: 2 } },
+    ],
+    arcs: [{ center: CENTER, radius: 0.5, start: -Math.PI / 2, sweep, direction }],
+    length: 1,
+  })
+
+  it('without constraints, the rope is drawn from the scenePath of the scene', () => {
+    const path = scenePath(scene, rope)!
+    const rec = ropeLog(draw())
+    expect(callsOf(rec, 'moveTo').map((e) => e.args)).toStrictEqual(path.segments.map((s) => [s.from.x, s.from.y]))
+    expect(callsOf(rec, 'lineTo').map((e) => e.args)).toStrictEqual(path.segments.map((s) => [s.to.x, s.to.y]))
+    expect(arcsOf(rec)).toStrictEqual(path.arcs.map((a) => [a.center.x, a.center.y, a.radius, a.start, a.start + a.direction * a.sweep, a.direction < 0]))
+  })
+
+  it('a loose pulley (sweep < 0) is drawn as the two straight legs of the path, with no arc and nothing at the scenePath tangents', () => {
+    const loose = handPath(-0.5, 1)
+    const log = draw([stateOf(loose)])
+    const rec = ropeLog(log)
+    expect(callsOf(rec, 'moveTo').map((e) => e.args)).toStrictEqual(loose.segments.map((s) => [s.from.x, s.from.y]))
+    expect(callsOf(rec, 'lineTo').map((e) => e.args)).toStrictEqual(loose.segments.map((s) => [s.to.x, s.to.y]))
+    for (const tangent of scenePath(scene, rope)!.segments.flatMap((s) => [s.from, s.to])) {
+      expect(callsOf(rec, 'lineTo').some((e) => e.args![0] === tangent.x && e.args![1] === tangent.y)).toBe(false)
+    }
+    expect(arcsOf(rec)).toStrictEqual([])
+    // The pulley's own disk and axle are still drawn.
+    expect(arcsOf(log).filter(([x, y]) => x === CENTER.x && y === CENTER.y)).toHaveLength(2)
+  })
+
+  it.each([1, -1] as const)('a wrap of 7 rad (direction %i) is one arc call that spans 7 rad; a wrap of 0 is one arc call that spans nothing', (direction) => {
+    const [wrapped] = arcsOf(ropeLog(draw([stateOf(handPath(7, direction))]))).map(([, , , start, end, anticlockwise]) => ({ span: end! - start!, anticlockwise }))
+    expect(wrapped!.span).toBeCloseTo(direction * 7, 12)
+    expect(wrapped!.anticlockwise).toBe(direction < 0)
+    expect(arcsOf(ropeLog(draw([stateOf(handPath(7, direction))])))).toHaveLength(1)
+
+    const flat = arcsOf(ropeLog(draw([stateOf(handPath(0, direction))])))
+    expect(flat).toHaveLength(1)
+    expect(flat[0]![4]).toBe(flat[0]![3])
+  })
+
+  it('constraints with no entry for the rope, or only spring states, draw the scenePath', () => {
+    const expected = ropeLog(draw())
+    const spring: ConstraintState = { id: 'mola', kind: 'spring', dx: 0, force: { a: 1, b: 1 } }
+    expect(ropeLog(draw([]))).toStrictEqual(expected)
+    expect(ropeLog(draw([spring]))).toStrictEqual(expected)
+    expect(ropeLog(draw([{ id: 'corda', kind: 'rope', tension: 5, slack: false, segments: [5, 5] }]))).toStrictEqual(expected)
   })
 })
 
