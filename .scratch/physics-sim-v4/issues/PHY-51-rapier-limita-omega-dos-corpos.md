@@ -1,5 +1,5 @@
 # PHY-51: O Rapier limita o ω de qualquer corpo a 15π rad/s, e uma bola pequena não rola acima de 4,7 m/s
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -49,6 +49,10 @@ Cena de todos: um círculo dinâmico de 1 kg num chão fixo comprido, `Contact` 
 - `src/sim/simulator.test.ts`, no `Simulator` público: os critérios 1 a 3. O 1 é vermelho hoje porque o `step()` nunca escreve em `warnings`. O 2 e o 3 passam hoje e vão junto para fixar que o aviso não aparece abaixo do teto nem sobrevive ao `replaceScene`.
 
 ## Comments
+
+- 2026-10-02 Stage 2: base `sweatshop/2026-10-01-2342`, branch `phy/PHY-51-rapier-limita-omega-dos-corpos`. Leitura dos callers: `App.tsx` chama `step()` no playback e `replaceScene()` nas edições estruturais; nenhum caller externo lê `warnings`. Preservar avisos de construção e rebuild transacional. Corpos fixos/particle mode têm ω = 0; discos de polia ficam fora de `bodies` e já contornam o teto pelo PHY-50. Testes cobrem ambos os sinais, dois corpos, deduplicação e reutilização do id após rebuild.
+- 2026-10-02 Probe pelo `Simulator` público antes da implementação: r = 0,1, g = 9,81, chão de 200 m, muS = muK = 0,5. vx = 6: máximo |ω| = 40,655708 rad/s em 240 passos (0,862741 do teto). vx = ±15: |ω| = 45,548443 em 120 passos (0,966568), máximo 46,456573 em 240 (0,985839). Limiar escolhido: |ω|·TIMESTEP ≥ 0,95·π/4.
+- 2026-10-02 Red antes de código: `npx vitest run src/sim/simulator.test.ts -t 'angular speed limit warnings'`: **4 failed | 1 passed | 29 skipped (34)**. Os dois sentidos e o rebuild falham com `expected [] to have a length of 1 but got +0`; dois corpos falham com `expected [] to have a length of 2 but got +0`. O caso abaixo do teto passa.
 
 - 2026-10-01 Aberto no stage 1 do PHY-50, a partir de um probe descartável sobre `0c75336`. Nada foi commitado.
 - 2026-10-01 Triagem (stage 1). Proxy decided: avisar em `warnings` e documentar no ADR-0001; não reduzir o Δt — (b) recalibra todas as cordas e molas e o teto continua lá; um aviso é reversível e segue o ADR-0002 (desvio do livro não fica calado). O proxy também achou que `Simulator.warnings` não chega à UI; isso virou o PHY-53.

@@ -203,6 +203,65 @@ describe('contact friction mapping (M3)', () => {
   })
 })
 
+describe('angular speed limit warnings (PHY-51)', () => {
+  const rollingScene = (vx: number): Scene => ({
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [
+      { id: 'ground', shape: 'rectangle', width: 200, height: 1, fixed: true, mass: 1000, position: { x: 0, y: -0.5 }, rotation: 0 },
+      { id: 'ball', shape: 'circle', radius: 0.1, fixed: false, mass: 1, position: { x: 0, y: 0.1 }, rotation: 0, vx },
+    ],
+    forces: [],
+    contacts: [{ a: 'ground', b: 'ball', muS: 0.5, muK: 0.5 }],
+  })
+
+  it.each([15, -15])('warns once with the body id and omega ceiling for vx = %s', async (vx) => {
+    const sim = await createSimulator(rollingScene(vx))
+    expect(sim.warnings).toEqual([])
+    for (let i = 0; i < 120; i++) sim.step()
+    expect(sim.warnings).toHaveLength(1)
+    expect(sim.warnings[0]).toContain("body 'ball'")
+    expect(sim.warnings[0]).toContain('ω')
+    // The ticket's 15π rad/s ceiling, rounded for a readable diagnostic.
+    expect(sim.warnings[0]).toContain('47.12 rad/s')
+    const warnings = [...sim.warnings]
+    for (let i = 0; i < 120; i++) sim.step()
+    expect(sim.warnings).toEqual(warnings)
+  })
+
+  it('keeps construction warnings unchanged below the ceiling', async () => {
+    const sim = await createSimulator(rollingScene(6))
+    const warnings = [...sim.warnings]
+    for (let i = 0; i < 240; i++) sim.step()
+    expect(sim.warnings).toEqual(warnings)
+  })
+
+  it('replaceScene clears ceiling warnings and allows the same body to warn in a new run', async () => {
+    const sim = await createSimulator(rollingScene(15))
+    for (let i = 0; i < 120; i++) sim.step()
+    expect(sim.warnings).toHaveLength(1)
+    sim.replaceScene(rollingScene(6))
+    expect(sim.warnings).toEqual([])
+    for (let i = 0; i < 240; i++) sim.step()
+    expect(sim.warnings).toEqual([])
+    sim.replaceScene(rollingScene(15))
+    for (let i = 0; i < 120; i++) sim.step()
+    expect(sim.warnings).toHaveLength(1)
+    expect(sim.warnings[0]).toContain("body 'ball'")
+  })
+
+  it('reports each body independently when two circles reach the ceiling', async () => {
+    const scene = rollingScene(15)
+    scene.bodies.push({ ...scene.bodies[1]!, id: 'other', position: { x: -40, y: 0.1 } })
+    scene.contacts.push({ a: 'ground', b: 'other', muS: 0.5, muK: 0.5 })
+    const sim = await createSimulator(scene)
+    for (let i = 0; i < 240; i++) sim.step()
+    expect(sim.warnings).toHaveLength(2)
+    expect(sim.warnings.filter((warning) => warning.includes("body 'ball'"))).toHaveLength(1)
+    expect(sim.warnings.filter((warning) => warning.includes("body 'other'"))).toHaveLength(1)
+  })
+})
+
 describe('mid-run mutations (M3)', () => {
   it('doubling force magnitude mid-run bends trajectory vs control', async () => {
     const base = (): Scene => ({
