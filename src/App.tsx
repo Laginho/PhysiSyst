@@ -1317,7 +1317,7 @@ export default function App() {
       return
     }
     const tolerance = LINE_HIT_TOLERANCE_PX / camera.pixelsPerMeter
-    const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance)
+    const line = springAtPoint(view, w, tolerance) ?? ropeAtPoint(view, w, tolerance, statesRef.current ? constraintsRef.current : [])
     setSelection(line ? { kind: 'constraint', id: line.id } : null)
   }
 

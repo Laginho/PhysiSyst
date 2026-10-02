@@ -1,5 +1,5 @@
 # CLEAN-27: O clique na corda durante o playback segue o caminho simulado
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-56
 Review: agent
@@ -49,5 +49,11 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 - `src/App.test.ts`, bloco `desenho da corda durante o playback (PHY-56)`: o critério 3, com `CLEAN-27` no nome, sobre o mesmo contexto gravado e o mesmo simulador falso. O item 1 fica vermelho hoje. O item 2 passa hoje e é a guarda do editor, que só a mutação mostra. Costura de DOM: registro das duas mutações do critério 4 no ticket.
 
 ## Comments
+
+- 2026-10-02 Stage 2. Red commit: both new tests failed for the right reason (hitTest: `ropeAtPoint` ignored the fourth argument, got `undefined` for (0; 0,25); App: panel `corda` absent after `⏭ passo`). Gate green: 852 tests, lint, typecheck, build.
+- Mutate-verify, App test `CLEAN-27: o clique na corda segue o caminho...` (`src/App.tsx`, `onPointerDown`):
+  - `ropeAtPoint(view, w, tolerance, constraintsRef.current)` (no `statesRef.current` guard): red, `AssertionError: expected <fieldset …(1)>…(4)</fieldset> to be undefined` at `App.test.ts:2339` (the click after `⟲ reiniciar` still selected the rope).
+  - `ropeAtPoint(view, w, tolerance)` (no readings): red, `AssertionError: expected undefined to be defined` at `App.test.ts:2333` (the click after `⏭ passo` selected nothing).
+  - Production code restored after both; the guarded call is what is committed.
 
 - 2026-10-02 Aberto no stage 1 do PHY-56 por decisão do proxy: o clique na corda é outra costura (editor, não render), e ficou fora daquele ticket. Depende do `RopeState.path` e da guarda do `paint` que o PHY-56 cria. Nada commitado.
