@@ -1247,6 +1247,48 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     expect(findButton(host, '↶')?.disabled).toBe(true)
   })
 
+  it.each(['mola', 'corda'] as const)('CLEAN-24: %s mostra a recusa ao clicar no próprio corpo e mantém A', (name) => {
+    const { host, canvas } = setup()
+    tool(host, name)
+    click(canvas, B1_CLICK)
+    click(canvas, B1_CLICK)
+
+    const hint = findButton(host, name)?.parentElement?.nextElementSibling
+    expect(hint?.textContent).toContain(ptBR['error.parConsigoMesmo'])
+    expect(hint?.textContent).toContain(ptBR[name === 'mola' ? 'tool.springSecond' : 'tool.ropeNext'])
+    expect(panel(host, name)).toBeUndefined()
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+
+    click(canvas, B2_CLICK)
+    expect(panel(host, name)).toBeDefined()
+  })
+
+  it('CLEAN-24: corda pode voltar ao corpo A depois de passar por uma polia', () => {
+    const { host, canvas } = setup()
+    tool(host, 'polia')
+    click(canvas, TETO_CLICK)
+    tool(host, 'corda')
+    click(canvas, B1_CLICK)
+    click(canvas, PULLEY_SPOT)
+    click(canvas, B1_CLICK)
+
+    expect(panel(host, 'corda')?.textContent).toContain('bloco1 → polia → bloco1')
+    expect(host.textContent).not.toContain(ptBR['error.parConsigoMesmo'])
+  })
+
+  it('CLEAN-24: depois da recusa a mola ainda usa A e limpa o erro ao criar o vínculo com B', () => {
+    const { host, canvas } = setup()
+    tool(host, 'mola')
+    click(canvas, B1_CLICK)
+    click(canvas, B1_CLICK)
+    click(canvas, B2_CLICK)
+
+    expect(panel(host, 'mola')).toBeDefined()
+    expect(field(host, 'mola', 'x₀ (m)')).toBeCloseTo(0.5, 8)
+    expect(host.textContent).not.toContain(ptBR['error.parConsigoMesmo'])
+    expect(findButton(host, '↶')?.disabled).toBe(false)
+  })
+
   it('sem polia, clicar em B = A não cria nada e a ferramenta continua esperando B', () => {
     const { host, canvas } = setup()
     tool(host, 'corda')

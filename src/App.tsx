@@ -1202,8 +1202,8 @@ export default function App() {
   /**
    * Palette tool click, every body anchor through Anchor snap. Pulley: one
    * click on a body. Spring: anchor A, then anchor B. Rope: anchor A, then the
-   * pulleys in order, then anchor B. A click off every body is ignored, and so
-   * is one that would join A's body to itself with nothing in between.
+   * pulleys in order, then anchor B. A click off every body is ignored;
+   * rejected constraints show the document's refusal on the tool's hint line.
    */
   function onToolClick(w: Vec2) {
     const tool = toolRef.current
@@ -1229,7 +1229,6 @@ export default function App() {
       setTool({ ...tool, a: end })
       return
     }
-    if (tool.a.bodyId === hit.id && (tool.kind === 'spring' || tool.via.length === 0)) return
     finishTool(tool.kind === 'spring' ? addSpring(docRef.current, tool.a, end) : addRope(docRef.current, tool.a, tool.via, end))
   }
 
