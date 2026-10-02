@@ -176,3 +176,8 @@
 | 2026-10-02 13:11 | PHY-55 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 9m | 7.2M in (96% cached), 53k out | $4.069 |
 | 2026-10-02 13:14 | PHY-57 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-02-1156 | 3m | 2.1M in (97% cached), 12k out | $1.142 |
 | 2026-10-02 13:23 | PHY-57 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 9m | 5.2M in (94% cached), 52k out | $3.893 |
+| 2026-10-02 15:06 | CLEAN-28 | implement | gpt-6.1-sol high | 1 | asked, blocked | sweatshop/2026-10-02-1452 | 14m | 3.0M in (97% cached), 13k out | $0.906 |
+| 2026-10-02 15:14 | CLEAN-29 | implement | gpt-6.1-sol high | 1 | to-review | sweatshop/2026-10-02-1452 | 7m | 1.8M in (96% cached), 7k out | $0.545 |
+| 2026-10-02 15:21 | CLEAN-29 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-02-1452 | 8m | 1.3M in (95% cached), 11k out | $0.486 |
+| 2026-10-02 15:27 | CLEAN-28 | implement | gpt-6.1-sol high | 1 | to-review | sweatshop/2026-10-02-1452 | 4m | 1.0M in (94% cached), 3k out | $0.344 |
+| 2026-10-02 15:37 | CLEAN-28 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-02-1452 | 11m | 1.8M in (95% cached), 15k out | $0.681 |
