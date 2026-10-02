@@ -158,7 +158,7 @@ interface RopeBinding {
 
 /**
  * A pulley with mass on a rope's path. The rope does not slip on the disk, so
- * while the grip holds the disk splits the rope into two pieces, each of fixed
+ * while the grip holds, the disk splits the rope into two pieces of fixed
  * length: the rope's arc on it is shared at a mark that turns with the disk.
  * When the rope leaves the disk the grip lets go (PHY-55).
  */
@@ -183,8 +183,8 @@ interface Grip {
 interface Piece {
   /**
    * From the document poses like `RopeBinding.length`, and fixed while the grips at its ends hold. A grip that lets
-   * go joins its two pieces into one of the summed length, so the pieces always add up to L. A loose grip stays
-   * loose for the world's life: re-engagement is PHY-57.
+   * go joins its two pieces into one of the summed length, so the pieces always add up to L.
+   * A loose grip stays loose for the world's life: re-engagement is PHY-57.
    */
   length: number
   tension: number

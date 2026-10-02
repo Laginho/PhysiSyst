@@ -1,5 +1,5 @@
 # PHY-55: A corda se solta da polia com massa quando o bloco passa por ela, sem ganho de energia
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: CLEAN-25, CLEAN-26, PHY-56
 Review: agent
