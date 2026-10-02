@@ -1,5 +1,5 @@
 # PHY-51: O Rapier limita o ω de qualquer corpo a 15π rad/s, e uma bola pequena não rola acima de 4,7 m/s
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -52,3 +52,41 @@ Cena de todos: um círculo dinâmico de 1 kg num chão fixo comprido, `Contact` 
 
 - 2026-10-01 Aberto no stage 1 do PHY-50, a partir de um probe descartável sobre `0c75336`. Nada foi commitado.
 - 2026-10-01 Triagem (stage 1). Proxy decided: avisar em `warnings` e documentar no ADR-0001; não reduzir o Δt — (b) recalibra todas as cordas e molas e o teto continua lá; um aviso é reversível e segue o ADR-0002 (desvio do livro não fica calado). O proxy também achou que `Simulator.warnings` não chega à UI; isso virou o PHY-53.
+
+- 2026-10-02 Stage 2: base `sweatshop/2026-10-01-2342`, branch `phy/PHY-51-rapier-limita-omega-dos-corpos`. Leitura dos callers: `App.tsx` chama `step()` no playback e `replaceScene()` nas edições estruturais; nenhum caller externo lê `warnings`. Preservar avisos de construção e rebuild transacional. Corpos fixos/particle mode têm ω = 0; discos de polia ficam fora de `bodies` e já contornam o teto pelo PHY-50. Testes cobrem ambos os sinais, dois corpos, deduplicação e reutilização do id após rebuild.
+- 2026-10-02 Probe pelo `Simulator` público antes da implementação: r = 0,1, g = 9,81, chão de 200 m, muS = muK = 0,5. vx = 6: máximo |ω| = 40,655708 rad/s em 240 passos (0,862741 do teto). vx = ±15: |ω| = 45,548443 em 120 passos (0,966568), máximo 46,456573 em 240 (0,985839). Limiar escolhido: |ω|·TIMESTEP ≥ 0,95·π/4.
+- 2026-10-02 Red antes de código: `npx vitest run src/sim/simulator.test.ts -t 'angular speed limit warnings'`: **4 failed | 1 passed | 29 skipped (34)**. Os dois sentidos e o rebuild falham com `expected [] to have a length of 1 but got +0`; dois corpos falham com `expected [] to have a length of 2 but got +0`. O caso abaixo do teto passa.
+- 2026-10-02 Mutate-verify no código de produção, com restauração após cada execução. Todos os comandos usam `npx vitest run src/sim/simulator.test.ts -t '<nome abaixo>'`:
+  - `warns once with the body id` (vx = 15 e -15): trocar `0.95 * angularLimit` por `Infinity` → **2 failed | 32 skipped**, `expected [] to have a length of 1 but got +0`. Retirar a guarda por id (`!this.angularLimitWarnedBodies.has(id)` → `true`) → **2 failed | 32 skipped**, `expected [ …(92) ] to have a length of 1 but got 92`.
+  - `keeps construction warnings unchanged`: trocar o limiar de 0,95 por 0,80 → **1 failed | 33 skipped**, `expected [ Array(1) ] to deeply equal []`, contendo o aviso indevido para `ball`.
+  - `replaceScene clears ceiling warnings`: retirar `this._warnings.length = 0` → **1 failed | 33 skipped**, `expected [ Array(1) ] to deeply equal []` logo após rebuild. Retirar `this.angularLimitWarnedBodies.clear()` → **1 failed | 33 skipped**, `expected [] to have a length of 1 but got +0` ao reutilizar `ball` na nova corrida rápida.
+  - `reports each body independently`: trocar a guarda por id por `this.angularLimitWarnedBodies.size === 0` → **1 failed | 33 skipped**, `expected [ Array(1) ] to have a length of 2 but got 1`.
+- 2026-10-02 Green inicial: `npx vitest run src/sim/simulator.test.ts` → **34 passed (34)**. Documentação conferida com `rg -n 'π/4' docs/adr/0001-rapier2d-physics-engine.md`, incluindo teto, rolamento e `warnings`.
+- 2026-10-02 Gate final após restaurar as mutações: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **30 test files passed; 805 tests passed (805)**, ESLint e TypeScript sem erros, Vite build concluído (49 módulos). Vite avisa sobre chunk maior que 500 kB (`sim` ≈ 2,13 MB); não bloqueia o build. `git diff --check` passou. Diff revisado: somente os três Primary files e este registro; testes no commit red `d910f16`, commit de produção sem alterações nos testes. Critérios 1–4 implementados; aviso continua na API, com apresentação na UI reservada ao PHY-53.
+
+#### Resolution (2026-10-02)
+Verdict: Approve
+
+##### Standards
+
+0 achados bloqueantes e 0 smells na revisão independente. O diff respeita os Primary files; `d910f16` contém testes e registro do ticket antes da produção, e `84ba53d` altera produção/documentação sem tocar testes. Cada teste novo tem mutação de produção e saída vermelha concreta registradas no stage 2. Uma nota documental foi corrigida neste fechamento: os comentários do stage 2 agora ficam depois do histórico de 2026-10-01, conforme a convenção de append em `docs/agents/issue-tracker.md`. Sem correção de código pelo revisor.
+
+##### Spec
+
+0 achados na revisão independente. Critério 1: uma linha com id e teto após 120 passos, mantida após mais 120; deduplicação por corpo e cobertura dos dois sentidos. Critério 2: `vx = 6` mantém os avisos da construção em 240 passos. Critério 3: `replaceScene` limpa avisos de execução e deduplicação, permite reutilizar o id e só muda o estado depois de um rebuild bem-sucedido. Critério 4: o ADR-0001 registra `|ω|·Δt ≤ π/4`, `15π rad/s`, `v = 15π·r`, o exemplo de 4,7 m/s e `Simulator.warnings`.
+
+A linha `Proxy decided` da triagem foi conferida: avisar/documentar mantendo Δt = 1/60, com UI reservada ao PHY-53. O diff segue essa decisão. O aviso apenas lê o ω dos corpos comuns e acrescenta a mensagem; preserva os avisos de construção, a dinâmica e o contorno dos discos de polia do PHY-50.
+
+##### Prova red-green repetida pelo stage 3
+
+Um worktree temporário em `d910f16` reproduziu o commit de testes, antes da implementação. `node node_modules/vitest/vitest.mjs run src/sim/simulator.test.ts -t 'angular speed limit warnings'` → **4 failed | 1 passed | 29 skipped (34)**, exit 1. Ambos os sentidos e o rebuild falham com `expected [] to have a length of 1 but got +0`; dois corpos falham com `expected [] to have a length of 2 but got +0`. O caso abaixo do teto passa. O worktree e a junction temporária de dependências foram removidos depois da execução.
+
+Com a produção de `84ba53d`, o gate completo passa, incluindo os cinco testes novos. As mutações registradas no stage 2 conferem a ausência do aviso, deduplicação por corpo, limiar e os dois resets do rebuild; os testes chamam o `Simulator` público de produção, sem copiar a lógica.
+
+##### Gate e integração
+
+`npm test && npm run lint && npm run typecheck && npm run build` → **exit 0; 30 arquivos e 805 testes passaram (805)**, suíte em **43,82 s**, com concorrência padrão. ESLint e TypeScript sem erros; build concluído com 49 módulos. Permanece o aviso existente do chunk do simulador acima de 500 kB (≈ 2,13 MB). `rg -n 'π/4|15π|warnings|4\.7 m/s' docs/adr/0001-rapier2d-physics-engine.md` confirma a documentação; `git diff --check` passou.
+
+Rebase sobre `sweatshop/2026-10-01-2342` sem conflitos e sem mudança da árvore validada. Merge `--no-ff` em `e00a1af`, com árvore idêntica à validada (`0c4b17c`). Resolução, ledger e `Stage: done` no mesmo commit de fechamento na sessão.
+
+Totais: Standards 0 bloqueadores, 1 nota documental corrigida; Spec 0 achados.

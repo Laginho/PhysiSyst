@@ -132,11 +132,15 @@ interface RopeBinding {
   length: number
   /** The wrap direction each pulley in `via` holds (PHY-45), refreshed at every read of the real poses. */
   keep: Array<1 | -1>
+  /** The unwound sweep each pulley in `via` holds (PHY-54), refreshed where `keep` is. Unused with grips. */
+  sweeps: number[]
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
   /** The reading the contact-free model expects this step, warm start excluded. */
   predicted: number
+  /** End-of-step stretch aimed at by pullPieces when this rope belongs to a group. */
+  target: number
   slack: boolean
   /** The pulleys with mass on the path (PHY-25). Empty: one piece, the scalar fields above. */
   grips: Grip[]
@@ -167,10 +171,16 @@ interface Piece {
   tension: number
   residual: number
   predicted: number
+  /** End-of-step stretch aimed at by pullPieces. */
+  target: number
 }
 
 /** Fraction of a rope's stretch pulled back per step. */
 const ROPE_BETA = 0.2
+
+// ponytail: absolute meters assume meter-scale scenes; impacts missing the target
+// by less than 1 cm keep the residual. Upgrade to a threshold relative to the predicted step displacement if needed.
+const ROPE_SLIP = 0.01
 
 /**
  * The lengthening rate a rope `c` past its length L may have: a slack rope
@@ -220,9 +230,13 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
     at.at(-1)!,
     rope.via.map((p, i) => ({ center: at[i + 1]!, radius: p.radius })),
     rope.keep,
+    rope.grips.length ? undefined : rope.sweeps,
   )
   // Only the bodies' real poses move the kept wrap; the predicted ones (mid and end of step) read it.
-  if (!moved) rope.keep = path.arcs.map((arc) => arc.direction)
+  if (!moved) {
+    rope.keep = path.arcs.map((arc) => arc.direction)
+    rope.sweeps = path.arcs.map((arc) => arc.sweep)
+  }
   const s = path.segments
   const pulls = points.map((point, i): RopePull => {
     // An end is pulled along its one leg; a pulley back along the leg that
@@ -452,7 +466,8 @@ function pieceLengths(rope: RopeBinding, path: RopePath, shares: readonly number
       const s = path.segments[i]!
       length += Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)
     }
-    for (let i = first + 1; i < last; i++) length += path.arcs[i - 1]!.radius * path.arcs[i - 1]!.sweep
+    // A loose pulley (negative sweep) adds no rope.
+    for (let i = first + 1; i < last; i++) length += path.arcs[i - 1]!.radius * Math.max(0, path.arcs[i - 1]!.sweep)
     if (k > 0) length += path.arcs[first - 1]!.radius * (path.arcs[first - 1]!.sweep - shares[k - 1]!)
     if (k < rope.grips.length) length += path.arcs[last - 1]!.radius * shares[k]!
     return length
@@ -729,6 +744,7 @@ class RapierSimulator implements Simulator {
   /** The disks of pulleys with mass, by pulley id (PHY-25). */
   private disks = new Map<string, RAPIER.RigidBody>()
   private readonly _warnings: string[] = []
+  private readonly angularLimitWarnedBodies = new Set<string>()
 
   constructor(scene: Scene) {
     const built = this.buildWorld(scene)
@@ -875,9 +891,11 @@ class RapierSimulator implements Simulator {
           }),
           length: path.length,
           keep: path.arcs.map((arc) => arc.direction),
+          sweeps: path.arcs.map((arc) => arc.sweep),
           tension: 0,
           residual: 0,
           predicted: 0,
+          target: 0,
           slack: false,
           // The mark starts mid-arc: at the document poses each piece holds half of every arc it ends on.
           grips: rope.via.flatMap((id, at) => {
@@ -889,7 +907,7 @@ class RapierSimulator implements Simulator {
         }
         if (binding.grips.length) {
           const lengths = pieceLengths(binding, path, gripShares(binding, path))
-          binding.pieces = lengths.map((length) => ({ length, tension: 0, residual: 0, predicted: 0 }))
+          binding.pieces = lengths.map((length) => ({ length, tension: 0, residual: 0, predicted: 0, target: 0 }))
         }
         ropes.push(binding)
       }
@@ -966,6 +984,14 @@ class RapierSimulator implements Simulator {
     const spins = [...this.disks.values()].map((disk) => ({ disk, w: disk.angvel() }))
     for (const { disk } of spins) disk.setAngvel(0, true)
     this.world.step()
+    const angularLimit = Math.PI / (4 * TIMESTEP)
+    for (const [id, rigid] of this.bodies) {
+      // Contacts settle slightly below the cap; PHY-51 measured 96.7% for a capped rolling circle.
+      if (Math.abs(rigid.angvel()) >= 0.95 * angularLimit && !this.angularLimitWarnedBodies.has(id)) {
+        this._warnings.push(`body '${id}' approaches Rapier's ω ceiling of ${angularLimit.toFixed(2)} rad/s (|ω|·Δt ≤ π/4); rolling may slip`)
+        this.angularLimitWarnedBodies.add(id)
+      }
+    }
     for (const { disk, w } of spins) disk.setAngvel(w + disk.angvel(), true)
     for (const rebase of rebaseChains) rebase()
     for (const group of groups) {
@@ -1192,7 +1218,7 @@ class RapierSimulator implements Simulator {
       const along = now.map((piece, k) => piece.map((pull, i) => ({ ...pull, u: end[k]![i]!.u })))
       const pieces = rope.grips.length ? rope.pieces : [rope]
       return pieces.map((piece, k) => {
-        const target = Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length))
+        const target = (piece.target = Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length)))
         return {
           piece,
           pulls: pulls[k]!,
@@ -1253,11 +1279,12 @@ class RapierSimulator implements Simulator {
       b,
       rows.map((r) => r.piece.tension),
     )
-    rows.forEach(({ piece, pulls }, k) => {
+    rows.forEach(({ piece, pulls, length }, k) => {
       const impulse = (corrected[k]! - piece.tension) * TIMESTEP
       if (impulse !== 0) applyPulls(pulls, impulse, true)
       piece.tension = corrected[k]!
-      piece.residual = piece.tension > 0 ? piece.tension - piece.predicted : 0
+      // A contact that cancelled the pull must not turn the missed target into stored tension.
+      piece.residual = piece.tension > 0 && length - piece.length - piece.target <= ROPE_SLIP ? piece.tension - piece.predicted : 0
     })
     for (const rope of ropes) {
       if (rope.grips.length) rope.tension = Math.max(...rope.pieces.map((p) => p.tension))
@@ -1419,6 +1446,7 @@ class RapierSimulator implements Simulator {
     this.disks = next.disks
     this._warnings.length = 0
     this._warnings.push(...next.warnings)
+    this.angularLimitWarnedBodies.clear()
   }
 }
 
