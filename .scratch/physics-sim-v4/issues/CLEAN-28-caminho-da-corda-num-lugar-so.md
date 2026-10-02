@@ -1,5 +1,5 @@
 # CLEAN-28: o caminho da corda (simulado, senão o do documento) escolhido num lugar só
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -79,3 +79,5 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 - 2026-10-02 Proxy decided: `Difficulty: normal`, `Review: agent`, um ticket só — extração mecânica atrás de testes existentes nos três chamadores; sem numérica nem concorrência; reversível.
 - 2026-10-02 Proxy decided: registrar M1–M5, cada uma num `npx vitest run` só contra o mutante listando os testes vermelhos por arquivo, e um critério de que M1 e M2 deixam vermelho pelo menos um teste em cada um de `draw.test.ts`, `hitTest.test.ts` e `overlay.test.ts` — o ticket promete que a escolha é feita num lugar só; um arquivo de chamador que fica verde com a função quebrada ainda tem a sua própria cópia.
 - 2026-10-02 Proxy decided: os docblocks dos três chamadores ficam como estão, sem critério — descrevem comportamento que continua verdadeiro; o stage 3 conserta qualquer um que ficar velho como conserto de docs.
+
+- 2026-10-02 Attempt 1 stopped to ask (its commits are on branch `clean-28-asked-20261002-1506`): CLEAN-28 implementado na branch `clean-28`: `currentPath`, guarda única do editor e opções de `drawScene`. /  / Passaram **938 testes**, lint, typecheck e build. M1–M5 detectadas e registradas. Árvore limpa. /  / Ficou `blocked`: duas expectativas de M2 contradizem os testes existentes. Recomendo corrigir essas expectativas no ticket, preservando os testes. Autoriza esse ajuste? /  / A pausa segue [`ticket-flow`](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md): “a committed test proves the contract wrong”.
