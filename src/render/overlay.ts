@@ -129,7 +129,7 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
     if (rope.kind !== 'rope') continue
     const state = constraints.find((c) => c.id === rope.id)
     if (state?.kind !== 'rope') continue
-    const path = scenePath(view, rope)
+    const path = state.path ?? scenePath(view, rope)
     if (!path) continue
     // With a pulley of mass T differs per segment, and so does the label.
     const perSegment = rope.via.some((id) => (pulleys.get(id)?.mass ?? 0) > 0)
@@ -144,7 +144,8 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
       // scenePath returned a path, so every pulley and mount resolves.
       const pulley = pulleys.get(id)!
       const mount = bodies.get(pulley.bodyId)!
-      if (mount.fixed) return
+      // A rope loose from the pulley (sweep < 0, PHY-54) does not pull its mount.
+      if (mount.fixed || (path.arcs[i]?.sweep ?? 0) < 0) return
       const c = bodyPointToWorld(mount, pulley.anchor)
       const into = path.segments[i]!
       const outOf = path.segments[i + 1]!

@@ -28,6 +28,12 @@ export interface RopeState {
    * `tension` unless a pulley on the path has mass.
    */
   segments: number[]
+  /**
+   * The path the rope was last solved on (PHY-56): its last reading of the real
+   * poses, or the document poses before the first step. What the canvas draws
+   * during playback.
+   */
+  path?: RopePath
 }
 
 export interface SpringState {
@@ -134,6 +140,8 @@ interface RopeBinding {
   keep: Array<1 | -1>
   /** The unwound sweep each pulley in `via` holds (PHY-54), refreshed where `keep` is. Unused with grips. */
   sweeps: number[]
+  /** The path of the last read of the real poses (PHY-56), refreshed where `keep` is. */
+  path: RopePath
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
@@ -236,6 +244,7 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
   if (!moved) {
     rope.keep = path.arcs.map((arc) => arc.direction)
     rope.sweeps = path.arcs.map((arc) => arc.sweep)
+    rope.path = path
   }
   const s = path.segments
   const pulls = points.map((point, i): RopePull => {
@@ -888,6 +897,7 @@ class RapierSimulator implements Simulator {
           length: path.length,
           keep: path.arcs.map((arc) => arc.direction),
           sweeps: path.arcs.map((arc) => arc.sweep),
+          path,
           tension: 0,
           residual: 0,
           predicted: 0,
@@ -1299,7 +1309,7 @@ class RapierSimulator implements Simulator {
     const read: Array<[number, ConstraintState]> = [
       ...this.ropes.map((r): [number, ConstraintState] => [
         r.index,
-        { id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r) },
+        { id: r.id, kind: 'rope', tension: r.tension, slack: r.slack, segments: this.segmentTensions(r), path: r.path },
       ]),
       ...this.springs.map((s): [number, ConstraintState] => [s.index, readSpring(s)]),
     ]

@@ -191,7 +191,9 @@ function paint(
   const selectedId = selectedOf(selection, 'body')
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
-  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selection)
+  // The readings outlive a reset's repaint; only a live playback frame owns the rope's drawn path.
+  const playing = states ? (opts?.constraints ?? []) : []
+  drawScene(ctx, view, camera, transform.width, transform.height, undefined, selection, playing)
 
   const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
   if (pendingBody) {
@@ -231,7 +233,7 @@ function paint(
     { arrows: initialVelocityArrows(view, ppm), style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
     { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
     { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
-    { arrows: tensionArrows(view, constraints, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
+    { arrows: tensionArrows(view, playing, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
     { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
