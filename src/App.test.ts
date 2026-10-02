@@ -14,6 +14,7 @@ import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang } from './i18n'
 import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { scenePath } from './scene'
 import type { Scene } from './scene/types'
 import { presetById } from './presets'
 import { withBrowserSession } from './test/browser'
@@ -2220,5 +2221,97 @@ describe('edição estrutural só em t0 (PHY-39)', () => {
     click(canvas, { x: 5.75, y: 5 })
     act(() => { vi.advanceTimersByTime(100) })
     expect(panel(host, 'leitura — corda')!.textContent).toContain('T: 23.54 N')
+  })
+})
+
+describe('desenho da corda durante o playback (PHY-56)', () => {
+  const storage = () => window.localStorage as unknown as PersistStorage
+  // A pulley of radius 0.5 mounted on the movable block `bloco`, the rope tied to two fixed blocks.
+  const doc = (): Scene => ({
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [
+      { id: 'esq', shape: 'rectangle', width: 0.4, height: 0.4, fixed: true, mass: 0, position: { x: 4.5, y: 5 }, rotation: 0 },
+      { id: 'dir', shape: 'rectangle', width: 0.4, height: 0.4, fixed: true, mass: 0, position: { x: 5.5, y: 5 }, rotation: 0 },
+      { id: 'bloco', shape: 'rectangle', width: 0.4, height: 0.4, fixed: false, mass: 1, position: { x: 5, y: 2 }, rotation: 0 },
+    ],
+    forces: [],
+    contacts: [],
+    pulleys: [{ id: 'polia', bodyId: 'bloco', anchor: { x: 0, y: 0 }, radius: 0.5 }],
+    constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'esq', anchor: { x: 0, y: 0 } }, b: { bodyId: 'dir', anchor: { x: 0, y: 0 } }, via: ['polia'] }],
+  })
+  const MARKER = {
+    segments: [
+      { from: { x: 100, y: 100 }, to: { x: 101, y: 100 } },
+      { from: { x: 101, y: 100 }, to: { x: 102, y: 100 } },
+    ],
+    arcs: [{ center: { x: 101, y: 100 }, radius: 0.5, start: 0, sweep: -0.5, direction: 1 as const }],
+    length: 2,
+  }
+  const reading = (path: unknown) => ({ id: 'corda', kind: 'rope' as const, tension: 5, slack: false, segments: [5, 5], path }) as never
+
+  const lineTos: Array<[number, number]> = []
+  function recordCanvas(): void {
+    lineTos.length = 0
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get: (_t, name) => (...args: unknown[]) => {
+        if (name === 'lineTo') lineTos.push([args[0] as number, args[1] as number])
+      },
+      set: () => true,
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+  }
+  const drew = (x: number, y: number) => lineTos.some(([lx, ly]) => lx === x && ly === y)
+
+  async function boot(path: unknown) {
+    vi.useFakeTimers()
+    recordCanvas()
+    vi.mocked(createSimulator).mockImplementation(async () => ({ ...makeFakeSimulator(), readConstraints: () => [reading(path)] }))
+    const { host, canvas } = setupWith(() => {
+      saveIndex(storage(), [{ id: 'cena-1', name: 'Cena 1', updatedAt: 1 }])
+      saveScene(storage(), 'cena-1', doc())
+      saveCurrentSceneId(storage(), 'cena-1')
+    })
+    await settleSimImport()
+    for (let i = 0; i < 100 && loadingOverlay(host); i++) await act(async () => { await vi.advanceTimersByTimeAsync(5) })
+    expect(loadingOverlay(host)).toBeUndefined()
+    // A click on empty canvas repaints at t = 0.
+    click(canvas, { x: 1, y: 1 })
+    return host
+  }
+  const stepOnce = (host: HTMLElement) => act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+  const resetOnce = (host: HTMLElement) => act(async () => { findButton(host, ptBR['playback.reset'])!.click() })
+  const docTangent = () => scenePath(doc(), doc().constraints![0] as never)!.segments[0]!.to
+
+  it('no editor o desenho segue o documento, e só depois do primeiro passo vem do caminho do simulador; reiniciar volta ao documento', async () => {
+    const host = await boot(MARKER)
+    expect(drew(101, 100)).toBe(false)
+    expect(drew(102, 100)).toBe(false)
+    expect(drew(docTangent().x, docTangent().y)).toBe(true)
+
+    await stepOnce(host)
+    expect(drew(101, 100)).toBe(true)
+    expect(drew(102, 100)).toBe(true)
+
+    lineTos.length = 0
+    await resetOnce(host)
+    expect(drew(101, 100)).toBe(false)
+    expect(drew(102, 100)).toBe(false)
+    expect(drew(docTangent().x, docTangent().y)).toBe(true)
+  })
+
+  it('uma leitura velha, com um caminho de um segmento só, não derruba o paint e a corda sai do documento', async () => {
+    // The drawing runs before the arrows, so a throw from the arrows still leaves the rope drawn: listen for it.
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent) => { e.preventDefault(); errors.push(e.error) }
+    window.addEventListener('error', onError)
+    try {
+      await boot({ segments: [{ from: { x: 100, y: 100 }, to: { x: 101, y: 100 } }], arcs: [], length: 1 })
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+    expect(errors).toStrictEqual([])
+    expect(drew(101, 100)).toBe(false)
+    expect(drew(docTangent().x, docTangent().y)).toBe(true)
   })
 })

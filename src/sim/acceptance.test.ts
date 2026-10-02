@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSimulator, TIMESTEP } from './index'
-import { parse } from '../scene'
-import type { Scene } from '../scene'
+import { parse, scenePath } from '../scene'
+import type { RopePath, Scene } from '../scene'
 import type { ConstraintState, RopeState } from './index'
 import { groundBody } from '../persistence'
 
@@ -520,7 +520,7 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     const sim = await createSimulator(atwoodScene(3, 2))
     sim.step()
     expect(sim.readConstraints()).toStrictEqual([
-      { id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false, segments: [expect.any(Number), expect.any(Number)] },
+      { id: 'corda', kind: 'rope', tension: expect.any(Number), slack: false, segments: [expect.any(Number), expect.any(Number)], path: expect.any(Object) },
     ])
     expect(tension(sim).tension).toBeGreaterThan(0)
     // PHY-25: over a massless pulley every segment reads the one T.
@@ -638,6 +638,46 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     { m1: 2, m2: 1, mu: 0.2 },
   ])('CLEAN-25: table $m1/$m2, μ = $mu, over two ideal pulleys: the blocks never gain more than 0.5 J', async ({ m1, m2, mu }) => {
     expect(await maxEnergyGain(twoPulleyTableScene(m1, m2, mu))).toBeLessThanOrEqual(0.5)
+  })
+
+  const pathOf = (sim: Awaited<ReturnType<typeof createSimulator>>) => (tension(sim) as RopeState & { path?: RopePath }).path
+
+  it.each([
+    { name: 'the PHY-54 table, 1/2 with μ = 3', scene: () => tableScene(1, 2, 3) },
+    { name: 'the PHY-23 Atwood, 3/2', scene: () => atwoodScene(3, 2) },
+  ])('PHY-56: before any step, the readout path of $name is the scenePath of the document', async ({ scene }) => {
+    const doc = parse(scene())
+    const sim = await createSimulator(doc)
+    const rope = doc.constraints!.find((c) => c.kind === 'rope')!
+    expect(pathOf(sim)).toStrictEqual(scenePath(doc, rope as Extract<typeof rope, { kind: 'rope' }>))
+  })
+
+  it('PHY-56: the table rope comes loose from the pulley and the readout path is the straight rope between the anchors the bodies show', async () => {
+    const sim = await createSimulator(parse(tableScene(1, 2, 3)))
+    const anchor = (id: string, local: { x: number; y: number }): { x: number; y: number } => {
+      const s = sim.readStates().get(id)!
+      return {
+        x: s.position.x + local.x * Math.cos(s.rotation) - local.y * Math.sin(s.rotation),
+        y: s.position.y + local.x * Math.sin(s.rotation) + local.y * Math.cos(s.rotation),
+      }
+    }
+    let firstLoose = -1
+    for (let step = 1; step <= 600; step++) {
+      sim.step()
+      const path = pathOf(sim)!
+      const a = anchor('a', { x: 0.2, y: 0 })
+      const b = anchor('b', { x: 0, y: 0.15 })
+      expect(Math.abs(path.segments[0]!.from.x - a.x)).toBeLessThanOrEqual(1e-9)
+      expect(Math.abs(path.segments[0]!.from.y - a.y)).toBeLessThanOrEqual(1e-9)
+      expect(Math.abs(path.segments.at(-1)!.to.x - b.x)).toBeLessThanOrEqual(1e-9)
+      expect(Math.abs(path.segments.at(-1)!.to.y - b.y)).toBeLessThanOrEqual(1e-9)
+      if (path.arcs[0]!.sweep < 0) {
+        if (firstLoose < 0) firstLoose = step
+        expect(Math.abs(path.length - Math.hypot(a.x - b.x, a.y - b.y))).toBeLessThanOrEqual(1e-9)
+      }
+    }
+    expect(firstLoose).toBeGreaterThan(0)
+    expect(firstLoose).toBeLessThan(200)
   })
 
 })
