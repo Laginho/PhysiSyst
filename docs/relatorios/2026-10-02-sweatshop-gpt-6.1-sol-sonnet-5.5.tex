@@ -1,0 +1,438 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs,array,tabularx}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=1.4em}
+\emergencystretch=2em
+
+\definecolor{sol}{HTML}{3B6EA8}
+\definecolor{perda}{HTML}{C0504D}
+\definecolor{pergunta}{HTML}{E0A030}
+
+\title{Sweatshop no PhysiSyst: avisos do simulador, recusa no próprio corpo e corda solta da polia ideal\\\large GPT-6.1 Sol (high) no stage 2, Sonnet 5.5 (xhigh) no hard, GPT-6.1 Sol (max) no stage 3}
+\author{Foreman, sessão \texttt{sweatshop/2026-10-01-2342}}
+\date{2 de outubro de 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Resumo}
+
+Run noturno com
+\texttt{-Models 'stage 2 gpt-6.1-sol high, hard sonnet-5.5 xhigh, stage 3
+gpt-6.1-sol max'} (lineup \emph{ad hoc}, o \texttt{Models (sol)} com o hard
+subido de high para xhigh), a pedido do Bruno: ``seguir com os tickets
+restantes''. A fila eram CLEAN-24, PHY-51, PHY-52 e PHY-54 (\texttt{Difficulty:
+hard}), com o PHY-53 atrás do PHY-51.
+
+\begin{itemize}
+  \item \textbf{Produzido:} 5 tickets mergeados, com \textbf{uma reabertura}
+        (PHY-54, por fronteira de Primary files). PR de sessão:
+        \href{https://github.com/Laginho/PhysiSyst/pull/12}{\#12}, 5 linhas,
+        todas \texttt{Review: agent} --- Approve.
+  \item \textbf{Custo:} \textbf{\$15,32} a preço de lista em 12 dos 13
+        estágios registrados: \texttt{gpt-6.1-sol high} \$2,50 (4),
+        \texttt{sonnet-5.5 xhigh} \$8,82 (2), \texttt{gpt-6.1-sol max} \$4,01
+        (6); uma linha saiu com \texttt{?}. 128 min de estágio, 29,8\,M tokens
+        de entrada (95,2\,\% em cache) e 250\,k de saída. \$3,06 por ticket
+        mergeado.
+  \item \textbf{O que deu errado:} o limite de uso do Codex. Às 00:45, 3 min
+        dentro da revisão do PHY-53, o Codex respondeu ``try again at
+        3:49 AM''. O driver esperou até 03:51, como deveria, mas o run ficou
+        3\,h\,06 parado: 58\,\% das 5\,h\,18 de relógio.
+  \item \textbf{Veredito provisório:} o Sol high entregou 4 de 4 em
+        \texttt{to-review}, sem reabrir, a \$0,62 por implementação. O Sonnet
+        5.5 xhigh resolveu o ticket mais difícil da fila e acertou a física de
+        primeira, mas custou \$8,82 por um ticket e reabriu por escopo. Com 2
+        revisões, é anedota.
+\end{itemize}
+
+\section{Linha do tempo}
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+23:42 & Lançamento único, driver \texttt{74dc512}. Sessão nova
+        \texttt{sweatshop/2026-10-01-2342} (o PR \#11 já estava mergeado).\\
+23:52 & CLEAN-24 (recusa visível no clique no próprio corpo) em
+        \texttt{to-review} em 9 min. 00:01: mergeado, sem achados.\\
+00:09 & PHY-51 (aviso do teto de $\omega$ do Rapier na API) em 8 min. 00:16:
+        mergeado; a revisão só ajustou a ordem de comentários.\\
+00:23 & PHY-52 (residual zerado além do \texttt{ROPE\_SLIP} na polia com
+        massa) em 6 min. 00:32: mergeado, sem achados.\\
+00:41 & PHY-53 (avisos do simulador na tela) em 10 min.\\
+00:45 & A revisão do PHY-53 bate no limite de uso do Codex aos 3 min; o
+        driver registra \texttt{api error, not counted} e espera até 03:51.\\
+03:51 & Revisão do PHY-53 recomeça. 04:03: mergeado, sem achados.\\
+04:03 & PHY-54 vai para o implementador hard (\texttt{sonnet-5.5 xhigh}). Em
+        19 min, \texttt{to-review}: a corda se solta da polia ideal em vez de
+        enrolar uma volta.\\
+04:40 & \textbf{PHY-54 reaberto} em 18 min: os critérios passam, mas a guarda
+        de \texttt{pieceLengths} e o bloco de testes estão fora dos Primary
+        files. A revisão abre o CLEAN-25.\\
+04:47 & Passada 2 em 6 min. O próprio stage 2 chama o proxy, que amplia o
+        Primary e cria o critério 6; os testes mudam de bloco num commit só de
+        teste.\\
+04:59 & PHY-54 mergeado em 13 min. 05:00: ``Nothing runnable''; PR \#12
+        aberto.\\
+\bottomrule
+\end{tabularx}
+
+\section{Métricas por estágio}
+
+Linhas 116--128 de \texttt{.scratch/run-log.md}. Minutos, tokens e custo como o
+driver gravou.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l l r r r r r X@{}}
+\toprule
+Estágio & Modelo & Min & Entrada & Cache & Saída & Custo & Desfecho\\
+\midrule
+C24 impl.      & sol high     & 9  & 2,40\,M & 97\,\% & 8\,k   & 0,694 & to-review\\
+C24 revisão    & sol max      & 9  & 1,70\,M & 93\,\% & 12\,k  & 0,649 & mergeado\\
+P51 impl.      & sol high     & 8  & 1,70\,M & 96\,\% & 8\,k   & 0,535 & to-review\\
+P51 revisão    & sol max      & 6  & 0,89\,M & 93\,\% & 9\,k   & 0,385 & mergeado\\
+P52 impl.      & sol high     & 6  & 1,20\,M & 90\,\% & 8\,k   & 0,560 & to-review\\
+P52 revisão    & sol max      & 9  & 1,80\,M & 95\,\% & 13\,k  & 0,652 & mergeado\\
+P53 impl.      & sol high     & 10 & 2,20\,M & 96\,\% & 11\,k  & 0,707 & to-review\\
+P53 revisão    & sol max      & 3  & ?       &        & ?      & ?     & limite de uso\\
+P53 revisão    & sol max      & 12 & 1,80\,M & 96\,\% & 13\,k  & 0,628 & mergeado\\
+P54 impl.      & sonnet xhigh & 19 & 8,10\,M & 96\,\% & 110\,k & 6,058 & to-review\\
+P54 revisão    & sol max      & 18 & 2,90\,M & 96\,\% & 20\,k  & 0,998 & reaberto\\
+P54 impl.\ 2   & sonnet xhigh & 6  & 3,30\,M & 95\,\% & 25\,k  & 2,757 & to-review\\
+P54 revisão 2  & sol max      & 13 & 1,80\,M & 93\,\% & 13\,k  & 0,693 & mergeado\\
+\midrule
+\multicolumn{2}{@{}l}{Total} & 128 & 29,79\,M & 95,2\,\% & 250\,k & 15,316 & 12 de 13 com preço\\
+\multicolumn{2}{@{}l}{Implementação} & 58 & 18,90\,M & 95,6\,\% & 170\,k & 11,311 & 6 estágios\\
+\multicolumn{2}{@{}l}{Revisão} & 70 & 10,89\,M & 94,6\,\% & 80\,k & 4,005 & 6 estágios com preço\\
+\multicolumn{2}{@{}l}{Retrabalho} & 19 & 5,10\,M & & 38\,k & 3,450 & 2 estágios (reabertura)\\
+\multicolumn{2}{@{}l}{Perdido} & 3 & ? & & ? & ? & 1 linha sem preço\\
+\bottomrule
+\end{tabularx}}
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked, bar width=18pt, width=\linewidth, height=6.5cm,
+  ylabel={Tokens de entrada (M)}, ymin=0,
+  symbolic x coords={CLEAN-24,PHY-51,PHY-52,PHY-53,PHY-54},
+  xtick=data, x tick label style={font=\small},
+  legend style={at={(0.02,0.97)},anchor=north west,draw=none,font=\small},
+  axis lines*=left, ymajorgrids, grid style={gray!25}]
+\addplot[fill=sol,draw=none] coordinates
+  {(CLEAN-24,4.10) (PHY-51,2.59) (PHY-52,3.00) (PHY-53,4.00) (PHY-54,11.00)};
+\addplot[fill=perda,draw=none] coordinates
+  {(CLEAN-24,0) (PHY-51,0) (PHY-52,0) (PHY-53,0) (PHY-54,5.10)};
+\legend{primeira passada e revisão, retrabalho da reabertura}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Onde foi o custo.} Por ticket: PHY-54 \$10,51 (56 min), CLEAN-24
+\$1,34, PHY-53 \$1,34 (mais 3 min perdidos), PHY-52 \$1,21, PHY-51 \$0,92. O
+PHY-54 levou 69\,\% do custo do run; só a primeira implementação (\$6,06,
+110\,k de saída) custou mais que os outros quatro tickets juntos (\$4,81). O
+Sol high cobra \$0,62 por implementação; o Sonnet 5.5 xhigh, \$4,41; o Sol max,
+\$0,67 por revisão.
+
+\paragraph{O que se perdeu.} Em tokens, quase nada: uma linha \texttt{?} de
+3 min. Em relógio, 3\,h\,06 de espera pelo reset do Codex (00:45--03:51). O
+limite chegou depois de 7 estágios Codex completos e 11,9\,M tokens de entrada
+desde 23:42.
+
+\section{Comparação}
+
+Os runs anteriores do PhysiSyst com preço, todos com
+\texttt{gpt-6.1-sol max} na revisão.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}X r r r r@{}}
+\toprule
+& 30/09 (1--5) & 30/09 (6) & 01/10 & Este run\\
+\midrule
+Implementador & sol high & sol high & sonnet-5.5 high & sol high + sonnet xhigh\\
+Estágios registrados & 28 & 10 & 21 & 13\\
+Tickets mergeados & 10 & 2 & 7 & 5\\
+Reaberturas & 1 & 3 & 1 & 1\\
+Implementação: falhou ou perguntou & 4 de 15 & 0 de 5 & 0 de 8 & 0 de 6\\
+Mediana da implementação & 7 min & 5 min & 6 min & 8,5 min\\
+Custo médio por implementação & \$0,52 & \$0,45 & \$1,74 & \$1,89\\
+\quad só Sol high & \$0,52 & \$0,45 & --- & \$0,62\\
+Mediana da revisão (com preço) & 10 min & 11 min & 12,5 min & 10,5 min\\
+Custo médio por revisão & \$0,59 & \$0,62 & \$0,65 & \$0,67\\
+Estágios perdidos (\texttt{?}) & 2 & 0 & 5 & 1\\
+Custo registrado & \$14,20 & \$5,39 & \$19,13 & \$15,32\\
+Custo por ticket mergeado & \$1,42 & \$2,69 & \$2,73 & \$3,06\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Sem o PHY-54, o run custaria \$4,81 por 4 tickets (\$1,20 cada), o melhor
+número do PhysiSyst até aqui. O Sol high ficou um pouco mais caro que em 30/09
+(\$0,62 contra \$0,45--0,52) com tickets de UI e física um pouco maiores. O
+gate passou em todos os estágios sem \texttt{VITEST\_MAX\_WORKERS=1}: o
+CLEAN-23 (PR \#11) resolveu o teste lento que o relatório anterior apontava.
+
+\section{Atribuição das reaberturas}
+
+Uma reabertura no run: PHY-54, rodada 1, às 04:40. O revisor foi
+\texttt{gpt-6.1-sol max}, diferente do foreman (Opus 5.5), então o foreman
+classificou. Evidência: o ticket como o stage 2 o recebeu (\texttt{14e3373},
+o mesmo da base da sessão), o diff revisado (\texttt{f2f6d62...497fc6f}) e a
+revisão (\texttt{a552a99}). Linhas em \path{.scratch/reopen-attribution.md}.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}l c l X@{}}
+\toprule
+Ticket & Rodada & Rótulo & Achado e porquê\\
+\midrule
+PHY-54 & 1 & S1 & A guarda \texttt{Math.max(0, \dots)} em
+  \texttt{pieceLengths} está fora dos Primary files de \texttt{simulator.ts},
+  embora a própria revisão a julgue necessária. O stage 1 já sabia que
+  \texttt{pieceLengths} soma a varredura negativa, mas mandou só a corda mista
+  para o PHY-55 e esqueceu a corda ideal em grupo. O conserto pediu um
+  \texttt{Proxy decided} que ampliou o Primary e criou o critério 6.\\
+PHY-54 & 1 & S2-expl./código ? & Os cinco testes novos de \texttt{ropePath}
+  estão num \texttt{describe} próprio, fora do bloco nomeado nos Primary
+  files. O bloco está escrito no ticket, e mover não pediu decisão. Fica em
+  dúvida porque é de lugar, não de comportamento, e beira o S3.\\
+PHY-54 & 1 & S2-implícito & \texttt{wrapAngle} de \texttt{ropePath.ts}
+  repete a fórmula de \texttt{simulator.ts}. Duplicação do próprio stage 2,
+  que a sinalizou e deixou; não bloqueou.\\
+PHY-54 & 1 & S1 & Duas polias soltas com projeções em ordem inversa à de
+  \texttt{via} dão 21\,m e puxões $(\mp2, 0)$ em vez da perna reta de 11\,m.
+  Caso fora da regra das várias polias que o proxy fixou; vira o CLEAN-25 e
+  não bloqueou.\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Totais: 2 S1, 1 S2-explícito/código (em dúvida), 1 S2-implícito, 0 S3. O motivo
+real da reabertura foi o primeiro achado (S1); o segundo veio de carona. Pela
+regra do scoreboard a rodada conta como ``reaberta por S2'' por causa do
+segundo e do terceiro. Sem \emph{drip-feeding}: a revisão 2 não trouxe achado
+novo. Sem \emph{churn}: a passada 2 não mexeu no código de produção.
+
+\section{Scoreboard}
+
+Saída de \path{sweatshop/scripts/scoreboard.ps1} sobre os quatro repositórios
+desta máquina com \path{.scratch/run-log.md} (PhysiSyst, SIGAA-ME, SynchroNice,
+slip), depois de registrar a atribuição acima. Para o PhysiSyst, o scoreboard
+rodou sobre a cópia \path{docs/run-log/run-log.md} com as 13 linhas deste run
+(154 linhas): o log local ainda não tem as 38 linhas de 30/09 da outra
+máquina. Nenhum dos dois logs tem as linhas do CLEAN-23 (PR \#11).
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
+\midrule
+sonnet & 121 & 75 & 31 & 15 & 7m & \$10.53 (4/121)\\
+claude-opus-5-5 & 35 & 31 & 4 & 0 & 6m & \$0.72 (1/35)\\
+gpt-6.1-sol high & 33 & 29 & 0 & 4 & 8m & \$23.85 (33/33)\\
+sonnet-5.5 high & 8 & 8 & 0 & 0 & 6m & \$13.95 (8/8)\\
+sonnet-5.5 xhigh & 2 & 2 & 0 & 0 & 19m & \$8.82 (2/2)\\
+fable & 5 & 5 & 0 & 0 & 3m & ?\\
+gpt-6-luna & 23 & 11 & 10 & 2 & 26m & ?\\
+gpt-6-sol & 6 & 5 & 1 & 0 & 17m & ?\\
+gpt-5.6-sol & 5 & 4 & 1 & 0 & 17m & ?\\
+gpt-6-astra & 18 & 11 & 6 & 1 & 8m & ?\\
+sonnet-5 xhigh & 11 & 6 & 2 & 3 & 8m & \$18.09 (11/11)\\
+gpt-6-astra low & 2 & 2 & 0 & 0 & 30m & \$19.03 (2/2)\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r@{}}
+\toprule
+Implementador & Revisor & Reviews & Reabertos & Taxa & Por S2 & Taxa S2 & Sem rótulo\\
+\midrule
+sonnet & opus & 68 & 20 & 29\,\% & 1 & $\geq$1\,\% & 19\\
+? & opus & 4 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+claude-opus-5-5 & claude-fable-5-1 & 30 & 1 & 3\,\% & 0 & $\geq$0\,\% & 1\\
+gpt-6.1-sol high & gpt-6.1-sol max & 28 & 7 & 25\,\% & 6 & 21\,\% & 0\\
+sonnet-5.5 high & gpt-6.1-sol max & 8 & 1 & 12\,\% & 1 & 12\,\% & 0\\
+sonnet-5.5 xhigh & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
+sonnet & fable & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+fable & fable & 4 & 1 & 25\,\% & 0 & $\geq$0\,\% & 1\\
+gpt-6-luna & gpt-6-sol & 11 & 7 & 64\,\% & 0 & $\geq$0\,\% & 7\\
+gpt-6-sol & gpt-5.6-sol & 5 & 4 & 80\,\% & 0 & $\geq$0\,\% & 4\\
+gpt-5.6-sol & gpt-6-astra & 4 & 3 & 75\,\% & 0 & $\geq$0\,\% & 3\\
+gpt-6-astra & gpt-5.6-sol & 11 & 5 & 45\,\% & 0 & $\geq$0\,\% & 5\\
+sonnet-5 xhigh & opus-5.5 xhigh & 5 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+gpt-6-astra low & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2 implícito & S1 & S3 ruído\\
+\midrule
+gpt-6.1-sol high $\to$ gpt-6.1-sol max & 7 & 3 & 0 & 7 & 1 & 0\\
+sonnet-5.5 high $\to$ gpt-6.1-sol max & 1 & 0 & 0 & 2 & 3 & 0\\
+sonnet-5.5 xhigh $\to$ gpt-6.1-sol max & 1 & 1 & 0 & 1 & 2 & 0\\
+sonnet $\to$ opus & 1 & 1 & 1 & 0 & 0 & 0\\
+gpt-6-astra low $\to$ gpt-6.1-sol max & 1 & 2 & 0 & 1 & 0 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\paragraph{O que mudou desde o relatório anterior.}
+\begin{itemize}
+  \item \textbf{Linha nova: \texttt{sonnet-5.5 xhigh} $\to$
+        \texttt{gpt-6.1-sol max}}, 2 revisões, 1 reaberta, taxa S2 de 50\,\%.
+        É deste run.
+  \item \textbf{\texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol max}} foi
+        de 16 revisões e 19\,\% para 28 e 21\,\%. Este run soma 4 revisões sem
+        reabertura; as outras 8 revisões e as 3 reaberturas novas vieram dos
+        repositórios irmãos desde 01/10.
+  \item \textbf{Linhas novas dos irmãos:} \texttt{gpt-6-astra},
+        \texttt{gpt-6-sol}, \texttt{gpt-5.6-sol}, \texttt{sonnet-5 xhigh} e
+        \texttt{gpt-6-astra low}. \texttt{sonnet} $\to$ \texttt{opus} ganhou 3
+        revisões e uma reabertura classificada como S2. Nenhuma delas é deste
+        run.
+\end{itemize}
+
+\paragraph{Como ler.}
+\begin{itemize}
+  \item \textbf{Mesmo revisor, três implementadores:} sob
+        \texttt{gpt-6.1-sol max}, o Sol high tem taxa S2 de 21\,\% (28
+        revisões), o Sonnet 5.5 high 12\,\% (8) e o Sonnet 5.5 xhigh 50\,\%
+        (2). \textbf{Os dois pares do Sonnet estão abaixo de 10 revisões: são
+        anedota.} O xhigh rodou um único ticket, o hard da fila.
+  \item \textbf{Os 50\,\% do xhigh superestimam o implementador.} A rodada
+        conta como S2 por um achado de lugar dos testes (em dúvida) e por uma
+        duplicação que não bloqueou; o achado que reabriu é S1. Contando só os
+        achados que bloquearam, a taxa continua em 50\,\% só por causa do segundo
+        achado, que é S2 em dúvida.
+  \item \textbf{5 S1 em 2 rodadas do Sonnet 5.5} apontam para o stage 1
+        dos tickets que ele recebeu, PHY-45 e PHY-54, não para o
+        implementador.
+\end{itemize}
+
+\section{Observações sobre os modelos}
+
+\subsection*{GPT-6.1 Sol (high), implementação}
+\begin{itemize}
+  \item \textbf{4 de 4 em \texttt{to-review}, 4 de 4 mergeados de primeira.}
+        6--10 min, \$0,54--0,71.
+  \item \textbf{Mutate-verify por teste, com a saída vermelha copiada no
+        ticket} em todos os quatro, inclusive nos testes de DOM do CLEAN-24 e
+        do PHY-53, como o AGENTS.md exige.
+  \item \textbf{No PHY-53, 3 dos 5 testes passaram na primeira execução}
+        (ordem, ausência, limpeza): eram caracterização do comportamento que a
+        primeira fatia já trazia. A prova veio das mutações, e o
+        \texttt{.final} disse isso. O harness foi corrigido depois do commit
+        de testes, com o vermelho repetido. A revisão aceitou.
+  \item \textbf{Respeitou o escopo:} deixou a exibição do aviso para o PHY-53
+        no PHY-51, como o ticket mandava, e registrou a limitação do limiar de
+        1\,cm no PHY-52, prevista pelo ticket.
+\end{itemize}
+
+\subsection*{Sonnet 5.5 (xhigh), implementação hard}
+\begin{itemize}
+  \item \textbf{A física saiu certa na primeira passada.} Os 11 cenários de
+        energia, a volta acima de $2\pi$ e as duas polias passaram; a revisão
+        repetiu o vermelho (16 testes) e as cinco mutações.
+  \item \textbf{Achou um defeito que o ticket não previa:} sem o clamp, uma
+        corda ideal em grupo esticava de 7,66 para 8,30\,m. Escreveu o teste,
+        provou com mutação e corrigiu, mas fora dos Primary files. Foi isso que
+        reabriu.
+  \item \textbf{Na passada 2, chamou o proxy por conta própria} para ampliar o
+        contrato, em vez de remover a guarda ou escrever o
+        \texttt{Proxy decided} ele mesmo. É o segundo run seguido em que o
+        Sonnet 5.5 faz isso.
+  \item \textbf{Caro:} \$6,06 e 110\,k de saída na passada 1, 9,8 vezes uma
+        implementação do Sol high no mesmo run. Não dá para separar o efeito do
+        xhigh do efeito do ticket: foi o único hard.
+\end{itemize}
+
+\subsection*{GPT-6.1 Sol (max), revisão}
+\begin{itemize}
+  \item \textbf{Repetiu vermelho e mutações em todas as seis revisões} e rodou
+        o gate completo antes de cada merge.
+  \item \textbf{Reabriu o PHY-54 pela regra, não pelo mérito:} escreveu que a
+        guarda era necessária e que os critérios passavam, e mesmo assim
+        devolveu, citando o \texttt{ticket-flow}. O ciclo extra custou \$3,45 e
+        19 min para nenhuma linha de produção.
+  \item \textbf{Achou um caso que ninguém pediu} (CLEAN-25, projeções
+        invertidas), reproduzido com o código de produção, e o tirou do
+        contrato em vez de reabrir por ele.
+  \item \textbf{Nenhum CLEAN de documentação neste run}, ao contrário do
+        anterior. A revisão do PHY-51 ajustou ela mesma a ordem de comentários.
+\end{itemize}
+
+\section{Driver e runtime}
+\begin{itemize}
+  \item \textbf{Limite de uso do Codex:} 00:45, ``try again at 3:49 AM''. O
+        driver esperou até 03:51 e retomou sozinho, sem gastar tentativa. É o
+        segundo run seguido com esse limite (o anterior às 15:44), e este
+        custou 3\,h\,06 de relógio.
+  \item \textbf{As recomendações do relatório anterior já estão no driver:}
+        teto de revisão de 40 min, arquivo \texttt{STOP} e parada imediata num
+        400. Nenhuma foi exercitada neste run: a revisão mais longa levou
+        18 min.
+  \item \textbf{Gate estável:} nenhum estágio precisou de
+        \texttt{VITEST\_MAX\_WORKERS=1}.
+  \item \textbf{Aviso inofensivo de novo:} o \texttt{.err} do Claude traz
+        \texttt{claude-code:unrecognized\_model} para
+        \texttt{claude-sonnet-5-5}; o estágio rodou normalmente. Os do Codex
+        trazem ``failed to refresh available models: request timed out'', sem
+        efeito.
+  \item \textbf{Log local incompleto:} \path{.scratch/run-log.md} desta
+        máquina não tem as 38 linhas de 30/09, e nenhum log tem o CLEAN-23. A
+        cópia em \path{docs/run-log/} é a mais completa.
+\end{itemize}
+
+\section{Recomendações}
+\begin{enumerate}
+  \item \textbf{Stage 1: quando o proxy corta o escopo, listar nos Primary
+        files toda função que o corte toca.} O PHY-54 nomeava
+        \texttt{pieceLengths} no texto, mas não no Primary. Apoia-se nos 5 S1
+        das linhas \texttt{sonnet-5.5 high} e \texttt{sonnet-5.5 xhigh}
+        $\to$ \texttt{gpt-6.1-sol max} (1 rodada cada; anedota).
+  \item \textbf{\texttt{ticket-flow}: o stage 3 pode consultar o proxy antes
+        de reabrir só por fronteira}, quando ele mesmo julga o código fora da
+        fronteira necessário. O proxy deu a resposta em minutos na passada 2; a
+        reabertura custou \$3,45 e 19 min a mais.
+  \item \textbf{Primary files: nomear o arquivo de teste, não o
+        \texttt{describe}.} Um bloco de testes no lugar errado foi o segundo
+        motivo da reabertura do PHY-54, sem efeito em comportamento.
+  \item \textbf{Codex: contar com cerca de 7--8 estágios por janela} do plano
+        atual em runs longos. Os dois últimos runs bateram no limite depois de
+        poucas horas; um lineup com o implementador no Claude dividiria a
+        carga.
+  \item \textbf{Sonnet 5.5 xhigh no hard:} manter só se o próximo hard
+        confirmar. Hoje há 2 revisões, e o custo (\$8,82 por ticket) é 7 vezes
+        o de um ticket do Sol high (\$1,20). A recomendação não se apoia no
+        scoreboard; o par tem 2 revisões.
+  \item \textbf{Abrir um CLEAN para o \texttt{wrapAngle} duplicado}
+        (\texttt{ropePath.ts} e \texttt{simulator.ts}). O stage 2 e a revisão
+        o anotaram, mas nenhum ticket existe.
+  \item \textbf{A fila acabou:} restam CLEAN-25, PHY-55 e PHY-56, todos
+        \texttt{blocked} à espera do stage 1.
+\end{enumerate}
+
+\section{Débito humano}
+
+Nenhuma linha \texttt{Débito humano:} nos cinco tickets. O PR
+\href{https://github.com/Laginho/PhysiSyst/pull/12}{\#12} tem as cinco linhas
+como \texttt{Review: agent} --- Approve, sem ``Needs your call''. Para o Bruno:
+mergear o PR \#12, rodar o stage 1 de CLEAN-25, PHY-55 e PHY-56, e decidir
+sobre o CLEAN do \texttt{wrapAngle} (recomendação 6).
+
+\end{document}
