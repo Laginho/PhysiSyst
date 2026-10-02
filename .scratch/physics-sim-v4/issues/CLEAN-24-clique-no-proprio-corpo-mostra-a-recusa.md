@@ -1,5 +1,5 @@
 # CLEAN-24: O segundo clique da ferramenta no corpo da âncora A mostra a recusa
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -31,5 +31,8 @@ O clique numa polia antes da âncora A continua ignorado: não há texto para el
 - `src/App.test.ts`, com os helpers `tool()`/`click()` existentes: critérios 1 a 4. O 1 e o 2 são vermelhos hoje pelo `return` antecipado em ~1233; o 3 e o 4 passam hoje e vão junto. É uma costura de DOM: o ticket registra, por teste novo, a mutação aplicada no `App.tsx` e a saída vermelha que ela deu (AGENTS.md, Mutate-verify).
 
 ## Comments
+
+- 2026-10-01 Stage 2: costura aprovada `tool()`/`click()` no DOM do App. `onToolClick` tem um único chamador, `onPointerDown`, que encaminha cliques quando há ferramenta armada. Os casos afetados são a segunda âncora no mesmo corpo, a tentativa válida depois da recusa e a corda que volta a A passando por polia; clique fora de corpo e polia antes de A conservam seus retornos.
+- Red antes da produção: `node node_modules/vitest/vitest.mjs run src/App.test.ts -t CLEAN-24 --maxWorkers=1` (PTY) → **2 failed, 2 passed, 83 skipped**. Os dois testes de recusa falham em `expected … to contain 'par consigo mesmo'`; recebido apenas `mola: clique no segundo corpo (Esc cancela)` / `corda: clique nas polias, na ordem, e depois no corpo da outra ponta (Esc cancela)`. As duas preservações passam na base. As primeiras tentativas sem PTY (forks e threads) não iniciaram testes: `Timeout waiting for worker to respond`, 60 s cada.
 
 - 2026-10-01 Aberto na triagem do CLEAN-13 (item 2). Proxy decided: mostrar a recusa em vez de ignorar o clique — o `doc.ts` já recusa o caso com texto próprio; o clique na polia antes de A fica ignorado porque exigiria texto novo.
