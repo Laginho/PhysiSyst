@@ -793,7 +793,7 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(worst).toBeLessThanOrEqual(0.05)
   })
 
-  it.each([2, 5])('PHY-57: M = %d: the rope that grips the disk again is not short of L once it pulls', async (M) => {
+  it.each([2, 5])('PHY-57: M = %d: the rope that comes back onto the disk is not short of L once it pulls', async (M) => {
     const sim = await createSimulator(parse(phy57Scene(M, 9)))
     const L = 6 + (Math.PI / 2) * 0.2 + 1.35
     let worst = 0

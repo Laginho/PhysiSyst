@@ -170,7 +170,9 @@ interface Grip {
    * The rope has left the disk (its sweep went negative, on the real poses or the step's prediction): the two
    * pieces around it became one, the pulley sits in that piece as an ideal one and pulls nothing on the disk,
    * which spins on with the ω it had. It grips again (PHY-57) when, on the real poses, the sweep is back to 0 or
-   * more and the piece is not slack: the piece splits at the middle of the arc, the stretch shared between halves.
+   * more and the piece is not slack: the piece splits at the middle of the arc into two halves that share its
+   * stretch and add up to its length. The next prediction and correction absorb the impact, the rim and the rope
+   * meeting at different speeds, as when a slack rope stretches.
    */
   loose: boolean
   /** Angle from where the rope meets the disk to the mark, in the wrap direction: the arriving piece's share. */
@@ -184,8 +186,9 @@ interface Grip {
 interface Piece {
   /**
    * From the document poses like `RopeBinding.length`, and fixed while the grips at its ends hold. A grip that lets
-   * go joins its two pieces into one of the summed length; one that grips again splits it in two, each half at its
-   * length on the path less half the stretch (PHY-57), so the pieces always add up to L.
+   * go joins its two pieces into one of the summed length; one that grips again (when, and the impact: `Grip.loose`)
+   * splits it in two, each half at its length on the path less half the stretch (PHY-57), so the pieces always add
+   * up to L.
    */
   length: number
   tension: number
@@ -467,7 +470,7 @@ function heldGrips(rope: RopeBinding): Grip[] {
 
 /**
  * A grip whose arc on `path` has a negative sweep lets go: the two pieces around it become one, of the summed
- * length, with tension, residual, prediction and target at 0 (PHY-55). Never the other way round.
+ * length, with tension, residual, prediction and target at 0 (PHY-55). Gripping again is `regripGrips`'s.
  */
 function releaseGrips(rope: RopeBinding, path: RopePath): void {
   let held = 0
@@ -496,13 +499,12 @@ function regripGrips(rope: RopeBinding, path: RopePath): void {
       continue
     }
     const arc = path.arcs[grip.at]!
-    const joined = rope.pieces[held]!
-    const stretch = pieceLengths(rope, path, gripShares(rope, path))[held]! - joined.length
-    if (arc.sweep < 0 || stretch < 0) continue
+    if (arc.sweep < 0) continue
+    const stretch = pieceLengths(rope, path, gripShares(rope, path))[held]! - rope.pieces[held]!.length
+    if (stretch < 0) continue
     grip.loose = false
     grip.share = arc.sweep / 2
     grip.start = arc.start
-    grip.w0 = grip.disk.angvel()
     const halves = pieceLengths(rope, path, gripShares(rope, path)).slice(held, held + 2)
     rope.pieces.splice(held, 1, ...halves.map((length) => ({ length: length - stretch / 2, tension: 0, residual: 0, predicted: 0, target: 0 })))
     held++
@@ -1265,7 +1267,7 @@ class RapierSimulator implements Simulator {
       const frame = ropeFrame(rope)
       const free = frame.pulls.map(({ rigid, p }) => freePoint(rigid, p, freePointVelocity(rigid, p, g), phi))
       const endFrame = ropeFrame(rope, free)
-      // A grip lets go on the real poses or on where the step is about to leave the rope; the prediction never grips.
+      // A grip grips again only on the real poses, and lets go on them or on where the step is about to leave the rope.
       regripGrips(rope, frame.path)
       releaseGrips(rope, frame.path)
       releaseGrips(rope, endFrame.path)
