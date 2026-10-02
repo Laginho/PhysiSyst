@@ -1,5 +1,5 @@
 # PHY-55: A corda se solta da polia com massa quando o bloco passa por ela, sem ganho de energia
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: CLEAN-25, CLEAN-26, PHY-56
 Review: agent
@@ -146,6 +146,51 @@ Protótipo descartável: uma cópia de `simulator.ts` com cerca de 40 linhas a m
     npm test && npm run lint && npm run typecheck && npm run build
 
 O primeiro `git grep` acha a frase do ADR e os comentários de `Grip.loose` e `Piece.length`. O segundo não acha nada.
+
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ `it.each` of the 11 PHY-54 table scenarios, `mass: 2` on `p`, 600 steps, `maxEnergyGain` ≤ 0.5 J.
+- Criterion 2 ✅ 21 scenarios: rope A (`mass: 2` on `q`, arc 1) 10, without the 1/1 μ = 0.1 `vx = 8`; rope B (`mass: 2` on `p`, arc 0) 11. Built on CLEAN-25's `twoPulleyTableScene`.
+- Criterion 3 ✅ the 7 scenarios, with `vx` on `b`.
+- Criterion 4 ✅ on every step where the grip's arc in `RopeState.path` has a negative sweep, the test checks `arcs.length + 1` segments (one arc per pulley, so `via.length + 1`), each strictly equal to `tension`. It also requires at least one loose step per scenario.
+- Criterion 5 ✅ `acceptance.test.ts` only gains lines; no existing test or tolerance changed. Full suite green.
+- Criterion 6 ✅ every ADR statement is present, including the exact PHY-57 sentence in `Grips and pieces`. The PHY-54 item says every rope keeps the history and the predicted poses write only the release; the pointer to PHY-55 is gone. Before the review fix, two of the code checks passed only because of line wrapping (fix below). The `git grep`s now find `stays loose for the world's life` on one line in `Grip.loose` (172), `Piece.length` (187) and the ADR (34), and nothing for the three removed phrases.
+- Criterion 7 ✅ all four mutations are recorded under the ticket. The review reproduced two of them on `bdadc09`:
+  - Mutation 1 (`releaseGrips(rope, endFrame.path)` removed): 27 red, namely 10 of criterion 1, 10 of rope A and 7 of criterion 3. Rope B and criterion 4 stay green, exactly the record's pattern.
+  - Mutation 4: 39 of 39 criterion-4 scenarios red. With the assertion temporarily changed to `split === loose`, all 39 pass, so every loose step splits (16,627 of 16,627). The ticket's 17,160 was the prototype's loose-step count. Both files were reverted afterwards.
+  - Mutation 1's ranges for criterion 1 and rope A differ from the ticket's prototype numbers. That is harmless: removing the end-of-step release still leaves the real-pose release in `correctPieces`, which the prototype probably lacked. The red/green pattern matches, and the tests assert ≤ 0.5 J, not the size of the gain.
+- Test-first ✅ `06ca814` touches only `acceptance.test.ts` and the ticket's `Stage:`. `632bffc` touches only `simulator.ts`. `b7b0bbc` touches only the ADR. Every changed file is in Primary files.
+- Red-green: 78/78 PHY-55 tests red with `simulator.ts` from `8ac107c`, 78/78 green at HEAD.
+- Regressions: none found.
+  - `releaseGrips` keeps piece and grip indices aligned: `held` counts the held grips before the one that lets go, which is the index of its arriving piece.
+  - `spin`, `turns`, `gripShares`, `pieceLengths` (`k < shares.length`), `piecePulls` and `segmentTensions` all count held grips only.
+  - `placeDisks` and the shared-body grouping in `step()` still walk every grip. That is harmless: a loose disk stays on its axle and only widens a group.
+- The release is also in `correctPieces`, on its real-pose read. That function's Primary-files scope names only "giro e parte só dos grips presos". It still falls under "na leitura das poses reais", and criterion 4 depends on it, since `RopeState.path` comes from that read.
+  - Side effect: a piece joined there starts the correction with base tension 0, although `pullPieces` already applied the two old pieces' forces that step. The ticket asks for that 0, and all 39 scenarios stay ≤ 0.5 J.
+- Review fix in `e791745`, comments only, no behaviour change: the `Grip` docblock no longer carries "two pieces, each of fixed length" across a line break, and `Piece.length` keeps "stays loose for the world's life" on one line.
+- Standards judgement calls, not fixed:
+  - `PHY55_TABLE` repeats the inline PHY-54 grid line for line.
+  - `PHY55_AWAY_RUNS` builds its name next to `phy55Label` instead of with it.
+  - The piece literal with zero tension, residual, `predicted` and `target` appears in both `releaseGrips` and `buildWorld`.
+  - `held` is a piece index in `releaseGrips` but a `Grip[]` in `piecePulls` and `correctPieces`.
+  - The rope A exclusion predicate carries no reason in the test. The reason is under Comments.
+  - The `gripScene` docblock describes the runs' `arc` field, not one of its own parameters.
+- Proxy decided, on the human's behalf (9 lines under Comments):
+  - the loose grip joins the two pieces into one and sits there as an ideal pulley;
+  - release on the end-of-step prediction too, one way only;
+  - history on every pulley of a rope with a grip;
+  - re-engagement cut to PHY-57;
+  - criterion 2 uses the mixed rope and is blocked by CLEAN-25;
+  - A 1/1 `vx = 8` out of criterion 2;
+  - `Blocked by: CLEAN-25, CLEAN-26, PHY-56`;
+  - the loose disk keeps its ω and the energy counts only the blocks;
+  - 0.5 J threshold, `hard`/`agent`.
+
+Gate on the branch at `e791745`, based on the session tip `8ac107c`: `npm test` 30 files, 930 tests passed; `lint`, `typecheck` and `build` clean.
+
+Merged into `sweatshop/2026-10-02-1156` as `4cdc99d` (`--no-ff`).
 
 ## Tests stage 2 writes (own commit, red)
 
