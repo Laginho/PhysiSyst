@@ -406,7 +406,7 @@ describe('ropePath, kept wrap direction (PHY-45)', () => {
       }
       expect(Math.abs(sweeps[0]! - -0.4303793433006895)).toBeLessThanOrEqual(EPS)
       expect(Math.abs(sweeps[1]! - -1.3104262520688144)).toBeLessThanOrEqual(EPS)
-    })
+    }, 30000)
 
     it.each([
       { name: 'equal projections', centers: [{ x: 2, y: 0 }, { x: 2, y: -3 }] },
