@@ -1,5 +1,5 @@
 # PHY-53: Os avisos do simulador chegam à tela
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-51
 Review: agent
@@ -33,3 +33,6 @@ Um aviso do simulador aparece no painel a partir do primeiro repaint depois de s
 ## Comments
 
 - 2026-10-01 Aberto na triagem do PHY-51. O proxy viu que `Simulator.warnings` não chega à UI (`src/App.tsx` ~1434 só lê `collectWarnings(doc)`) e separou isso do PHY-51 por ser outra costura.
+
+- 2026-10-02 Stage 2: base `sweatshop/2026-10-01-2342`, branch `phy/PHY-53-avisos-do-simulador-chegam-a-tela`. Costura aprovada: painel DOM de avisos em `App.test.ts`, com o fake existente. Callers de `repaint`: resize, seleção, idioma, passos, reset, documento e gestos; boot publica o simulador em `ensureSim`. `Simulator.warnings` é uma lista readonly para o consumidor, mas o motor a modifica no mesmo array em `step()` e `replaceScene()`: copiar o conteúdo ao publicar na UI. Casos de fronteira: sem simulador no boot, listas vazias, surgimento depois do primeiro frame (sem depender do lock inicial nem do poll de 100 ms) e limpeza após rebuild.
+- 2026-10-02 Primeiro red: `npx vitest run src/App.test.ts -t 'simulator warnings panel'` → **1 failed | 87 skipped (88)**, `expected [] to include 'Friction is degraded for this contact…'`. O teste de boot lê as linhas do painel real; não há aviso do simulador na UI atual.

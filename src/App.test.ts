@@ -847,6 +847,22 @@ describe('loading screen (PHY-16)', () => {
   })
 })
 
+describe('simulator warnings panel (PHY-53)', () => {
+  function warningLines(host: HTMLElement): string[] {
+    return [...(panel(host, ptBR['warnings.title'])?.querySelectorAll('li') ?? [])].map((li) => li.textContent ?? '')
+  }
+
+  it('shows simulator construction warnings after boot', async () => {
+    const sim = { ...makeFakeSimulator(), warnings: ['Friction is degraded for this contact graph'] }
+    vi.mocked(createSimulator).mockResolvedValue(sim)
+
+    const host = renderApp()
+    await settleSimImport()
+
+    expect(warningLines(host)).toContain('Friction is degraded for this contact graph')
+  })
+})
+
 describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', () => {
   // Wall face midpoint (1.5, 2) and block center (5, 0.5): the relaxed x₀
   // between the snapped anchors is √(3.5² + 1.5²). Raw clicks near them are
