@@ -765,6 +765,46 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
       expect(split).toBe(0)
     },
   )
+
+  /** PHY-57: the PHY-55 table 5/0.5, μ = 0, with `b` launched at `vxB` and a disk of mass `M` on the pulley. */
+  const phy57Scene = (M: number, vxB: number): Scene => {
+    const scene = gripScene(tableScene(5, 0.5, 0), 'p', vxB)
+    scene.pulleys = scene.pulleys!.map((pulley) => ({ ...pulley, mass: M }))
+    return scene
+  }
+
+  it.each([2, 5])('PHY-57: M = %d: the rope that comes back to the disk turns it again, (T_b − T_a) = (M/2)·aₓ', async (M) => {
+    const sim = await createSimulator(parse(phy57Scene(M, 7)))
+    let vxBefore = sim.readStates().get('a')!.linvel.x
+    let worst = 0
+    let checked = 0
+    for (let step = 1; step <= 600; step++) {
+      sim.step()
+      const vx = sim.readStates().get('a')!.linvel.x
+      const ax = (vx - vxBefore) / TIMESTEP
+      vxBefore = vx
+      if (step < 90 || step > 200) continue
+      const [ta, tb] = tension(sim).segments
+      if (ta! <= 0.5 || tb! <= 0.5) continue
+      checked++
+      worst = Math.max(worst, Math.abs(tb! - ta! - (M / 2) * ax))
+    }
+    expect(checked).toBeGreaterThanOrEqual(100)
+    expect(worst).toBeLessThanOrEqual(0.05)
+  })
+
+  it.each([2, 5])('PHY-57: M = %d: the rope that comes back onto the disk is not short of L once it pulls', async (M) => {
+    const sim = await createSimulator(parse(phy57Scene(M, 9)))
+    const L = 6 + (Math.PI / 2) * 0.2 + 1.35
+    let worst = 0
+    for (let step = 1; step <= 600; step++) {
+      sim.step()
+      if (step < 95 || step > 195) continue
+      const rope = tension(sim)
+      if (rope.tension > 0.5) worst = Math.max(worst, Math.abs(pathOf(sim)!.length - L))
+    }
+    expect(worst).toBeLessThanOrEqual(0.1)
+  })
 })
 
 /**
