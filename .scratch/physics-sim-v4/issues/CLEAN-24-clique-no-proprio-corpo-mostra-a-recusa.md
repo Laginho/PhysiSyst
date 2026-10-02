@@ -1,6 +1,6 @@
 # CLEAN-24: O segundo clique da ferramenta no corpo da âncora A mostra a recusa
-Stage: to-review
-Status: ready-for-agent
+Stage: done
+Status: resolved
 Blocked by: none
 Review: agent
 Difficulty: normal
@@ -44,3 +44,34 @@ O clique numa polia antes da âncora A continua ignorado: não há texto para el
 - Implementação limitada a remover o guard de segundo clique em `onToolClick` e atualizar seu docblock. A recusa mantém a âncora A pelo fluxo existente de `finishTool`; nova tentativa válida cria e seleciona o vínculo. Critérios 1–4 verdes, mutações documentadas acima, diff final conferido sem mudanças fora dos Primary files e do ticket. Branch `clean-24`, base da sessão `sweatshop/2026-10-01-2342`.
 
 - 2026-10-01 Aberto na triagem do CLEAN-13 (item 2). Proxy decided: mostrar a recusa em vez de ignorar o clique — o `doc.ts` já recusa o caso com texto próprio; o clique na polia antes de A fica ignorado porque exigiria texto novo.
+
+#### Resolution (2026-10-02)
+Verdict: Approve
+
+##### Standards
+
+0 violações documentadas e 0 smells justificáveis na revisão independente. `onToolClick` reutiliza a validação do documento e `finishTool`; seu docblock acompanha o comportamento. Os quatro testes observam cliques e resultados no DOM pelos helpers existentes. Cada teste tem mutação e saída vermelha registradas. `702605b` contém testes e o registro do ticket, antes da produção; `13bb793` contém produção e o handoff, sem alterar testes. O diff fica nos Primary files e no ticket. Sem correções do revisor.
+
+##### Spec
+
+0 achados na revisão independente. Critérios 1 e 2: a segunda tentativa no corpo de A mostra `t('error.parConsigoMesmo')`, não grava vínculo nem undo e preserva a ferramenta com A. Critério 3: B1 → polia → B1 continua criando corda. Critério 4: depois da recusa, B2 cria a mola com A e limpa o erro; `x₀ = 0,5 m` confirma as âncoras esperadas.
+
+A linha `Proxy decided` da triagem do CLEAN-13 foi conferida: mostrar a recusa existente, mantendo o clique na polia antes de A ignorado. O diff respeita essa decisão; sem nova decisão de proxy, regressão identificada ou comportamento fora do pedido.
+
+##### Prova red-green repetida pelo stage 3
+
+As três mutações registradas no stage 2 foram reaplicadas temporariamente em `src/App.tsx::onToolClick`, sem alterar testes:
+
+- `CLEAN-24: mola mostra a recusa…` e `CLEAN-24: corda mostra a recusa…`: reinserir `if (tool.a.bodyId === hit.id && (tool.kind === 'spring' || tool.via.length === 0)) return`. `npm test -- src/App.test.ts -t 'CLEAN-24:.*mostra a recusa'` → **2 failed, 85 skipped**, exit 1. Cada teste falha em `App.test.ts:1257`: esperado `par consigo mesmo`, recebido apenas a dica de mola ou corda.
+- `CLEAN-24: corda pode voltar…`: guard `if (tool.a.bodyId === hit.id) return`, inclusive após a polia. `npm test -- src/App.test.ts -t 'CLEAN-24: corda pode voltar'` → **1 failed, 86 skipped**, exit 1. `App.test.ts:1275`: `undefined` no painel, em vez do caminho `bloco1 → polia → bloco1`.
+- `CLEAN-24: depois da recusa…`: ao reencontrar A na mola, executar `setTool({ ...tool, a: null }); return`. `npm test -- src/App.test.ts -t 'CLEAN-24: depois da recusa'` → **1 failed, 86 skipped**, exit 1. `App.test.ts:1286`: `expected undefined to be defined`, pois B2 passa a ser A.
+
+Mutações removidas, blob de produção conferido contra `13bb793` (`8db0834`). `npm test -- src/App.test.ts -t CLEAN-24` → **4 passed, 83 skipped**, exit 0. Todas as chamadas usaram PTY, sem flags de concorrência ou timeout.
+
+##### Gate e integração
+
+Gate independente: `npm test && npm run lint && npm run typecheck && npm run build`, todos exit 0. **30 arquivos e 800 testes passaram**, suíte em **57,37 s**, com concorrência padrão. Build somente com o aviso existente do chunk tardio do simulador acima de 500 kB. `git diff --check` passou.
+
+Rebase sobre `sweatshop/2026-10-01-2342` já atualizado, sem conflitos ou mudança da árvore validada. Merge `--no-ff` em `40ee251`, com árvore idêntica à validada (`21c95b3`). Resolução, ledger e `Stage: done` no mesmo commit de fechamento na sessão.
+
+Totais: Standards 0 achados; Spec 0 achados.
