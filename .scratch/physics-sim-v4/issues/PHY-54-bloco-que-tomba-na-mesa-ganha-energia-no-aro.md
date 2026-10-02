@@ -1,5 +1,5 @@
 # PHY-54: A corda se solta da polia ideal quando o bloco passa por ela, sem ganho de energia
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -8,7 +8,7 @@ Difficulty: hard
 - Primary files:
   - src/scene/ropePath.ts (`ropePath`, `RopeArc`)
   - src/scene/ropePath.test.ts (bloco `ropePath, kept wrap direction (PHY-45)`)
-  - src/sim/simulator.ts (`RopeBinding`, `ropeFrame`, a montagem do `RopeBinding` em `buildWorld`)
+  - src/sim/simulator.ts (`RopeBinding`, `ropeFrame`, a montagem do `RopeBinding` em `buildWorld`, e em `pieceLengths` a soma dos arcos sem massa dentro da peça: polia solta, de varredura negativa, soma 0)
   - src/sim/acceptance.test.ts (bloco `rope over a fixed pulley (PHY-23)`)
   - docs/adr/0004-rope-as-own-constraint-around-world-step.md (seção `The rim and the kept wrap direction (PHY-45)`)
 
@@ -56,6 +56,7 @@ Rejeitado: só desenrolar a varredura, sem trocar o caminho pela perna reta (com
    - tirar o histórico (varredura bruta, como hoje): o critério 2 fica vermelho (medido: os 11);
    - desenrolar sem trocar pela perna reta: o critério 2 fica vermelho em pelo menos um cenário (medido: 1/4 com μ = 3 e os dois 2/1 com μ = 0,2);
    - junção sem o limite [¼, ¾]: o item 4 do critério 1 fica vermelho.
+6. Corda ideal resolvida em grupo (PHY-41): cena da mesa do PHY-23 com polia ideal, 2/1 com μ = 0,2, mais um bloco `c` de 0,5 kg em (−3; 0,2) preso a `a` por uma corda curta sem polia (`cabo`, da âncora local (0,2; 0) de `c` à (−0,2; 0) de `a`). Em 600 passos, a distância entre as pontas da corda da polia nunca passa de `L + 0,01 m`, com `L = 6 + (π/2)·0,2 + 1,35`. Sem a guarda em `pieceLengths`: 8,30 m contra L = 7,67 m. Mutate-verify: tirar o `Math.max(0, …)` de `pieceLengths` deixa este critério vermelho e os 11 cenários do critério 2 verdes (a energia não mostra, a correção só drena).
 
 #### Verification
 
@@ -79,3 +80,79 @@ Rejeitado: só desenrolar a varredura, sem trocar o caminho pela perna reta (com
 - 2026-10-01 Proxy decided: a varredura acima de 2π entra aqui (item 2 do critério 1) — sai da mesma linha de desenrolar, e deixá-la de fora pediria código a mais para recriar a queda de 2πR.
 - 2026-10-01 Proxy decided: o desenho fica para um ticket à parte, o PHY-56 — não é gosto (desenhar o que a física faz), mas é outra costura, do simulador até o `scenePath`.
 - 2026-10-01 Proxy decided: `Difficulty: hard`, `Review: agent` — critérios que interagem, lógica numérica numa função com muitos chamadores, nada de gosto.
+- 2026-10-02 Stage 2. Commit vermelho `3709798` (só testes, `Stage: implementing`): 4 dos 5 testes de `ropePath.test.ts` e os 12 de `acceptance.test.ts -t PHY-54` vermelhos contra `f2f6d62`; o item 5 do critério 1 é guarda e passa antes. Os 11 cenários dão de +519,10 J (1/1,5 com μ = 3) a +2709,64 J (1/4 com μ = 3); 1/2 com μ = 3 dá +732,86 J, o número do ticket. O typecheck não passa nesse commit (o quinto argumento de `ropePath` não existe ainda): é o vermelho. Gate verde no commit de código `0ab658e` e neste: 831 testes.
+- 2026-10-02 Mutate-verify (critério 5), cada mutação aplicada ao código de produção e desfeita com `git checkout -- <arquivo>`:
+  1. Tirar o histórico (`ropeFrame` passa `undefined` como quinto argumento de `ropePath`): `acceptance.test.ts -t PHY-54`, 12 vermelhos, todos os 11 cenários (de `expected 519.10… to be less than or equal to 0.5` a `expected 2709.63…`) e o teste da corda em grupo (`expected 7.704… to be less than or equal to 7.674…`).
+  2. Desenrolar sem trocar pela perna reta (em `release`, `on` começa todo verdadeiro e nenhuma polia sai): `acceptance.test.ts -t PHY-54`, 4 vermelhos: 1/4 com μ = 3 (`expected 1748.83… to be less than or equal to 0.5`), 2/1 com μ = 0,2 (`24.17…`), 2/1 com μ = 0,2 e `vx = 6` (`90.85…`) e o da corda em grupo (`7.782… to be less than or equal to 7.674…`); `ropePath.test.ts`, 3 vermelhos (itens 1, 3 e 4 do critério 1: `expected 6.00000033… to be close to 6`, `expected 12.3331392… to be close to 12.3331391…`, `expected 3.586… to be close to 2`). São os mesmos três cenários que o ticket mediu.
+  3. Junção sem o limite [¼, ¾]: sem limite nenhum (`t` solto), `ropePath.test.ts` 1 vermelho, o item 4 (`expected 4 to be close to 2`); limitada a [0, 1], 1 vermelho, o mesmo item (`expected 0 to be greater than 0.1`, o segmento da ponta some).
+  4. Tirar o `Math.max(0, …)` de `pieceLengths`: `acceptance.test.ts -t PHY-54`, 1 vermelho, o da corda em grupo (`expected 8.295… to be less than or equal to 7.674…`); os 11 cenários seguem verdes, porque a energia não mostra (a correção só drena).
+- 2026-10-02 Um teste a mais do que o ticket listava, pela leitura em volta da mudança: `PHY-54: a rope solved in a group with a tether…` no bloco do PHY-23. `pieceLengths` soma `R·varredura` de cada arco sem massa dentro da peça, e uma corda sem grip dentro de um grupo (PHY-41) passa por ele; com a varredura negativa de uma polia solta, a peça parecia mais curta e a corda esticava 0,63 m além de L. Um bloco `c` preso a `a` por uma corda curta forma o grupo; o critério é a distância entre as pontas, `≤ L + 0,01`, que não vem do código. A correção é o `Math.max(0, …)` em `simulator.ts`.
+- 2026-10-02 Proxy decided: ampliar o Primary de simulator.ts para a soma dos arcos em pieceLengths e adicionar o critério 6 (corda ideal em grupo), guarda fica onde está — é a única função que re-deriva o comprimento somando R·varredura por arco, e o ticket já nomeava pieceLengths na linha 33; faltou só a corda sem grip dentro de grupo. Alternativa B (clamp em `ropeFrame`) descartada: `frame.path.arcs[].sweep` passaria a divergir de `rope.sweeps`, que precisa ficar negativo para a corda reengatar.
+- 2026-10-02 Stage 2 (reabertura, 14811fb e o commit de contrato): os dois ❌ do stage 3 tratados. (1) Fronteira de produção: sem mudança de código, a decisão do proxy acima amplia o Primary e dá ao teste da corda em grupo o critério 6. (2) Fronteira dos testes: o `describe('ropePath, unwound sweep (PHY-54)')` foi aninhado em `ropePath, kept wrap direction (PHY-45)`, em commit só de testes; `git diff -w` mostra só a fronteira do bloco, e o nome completo segue contendo `PHY-54`, então `-t PHY-54` continua pegando os cinco. Red-green da realocação: contra `ropePath.ts` de `f2f6d62` (pré-PHY-54), 4 vermelhos e 16 verdes em `ropePath.test.ts` (`expected 6.283185640500566 to be less than or equal to 0.001`, `expected 6.282480598581058 to be greater than 6.283185307179586`, `expected 6.283185473840078 to be less than or equal to 0.001`, `expected 4.4054212783399365 to be less than 0`; o item 5 é guarda e passa); contra a produção atual, 20 verdes. Produção restaurada com `git checkout -- src/scene/ropePath.ts`. Código de produção e testes de integração não mudaram, e as mutações do critério 5 seguem valendo. O critério 6 foi mutado de novo nesta árvore: sem o `Math.max(0, …)` de `pieceLengths`, `acceptance.test.ts -t PHY-54` dá 1 vermelho e 11 verdes (`expected 8.295840125582401 to be less than or equal to 7.674159265358979`); restaurado com `git checkout -- src/sim/simulator.ts`, 12 verdes. Gate sobre esta árvore: `npm test && npm run lint && npm run typecheck && npm run build` → exit 0, 30 arquivos e 831 testes, sem skips; persiste o aviso conhecido do chunk `sim` acima de 500 kB. `grep -n "PHY-55"` no ADR-0004 segue achando a exclusão.
+- 2026-10-02 Candidato a `CLEAN-*`: `wrapAngle` existe duas vezes, privada em `ropePath.ts` e em `simulator.ts` (linha 442); exportar a de `ropePath.ts` e usar nos dois.
+
+#### Review stage 3 (2026-10-02)
+
+Verdict: Reopen — duas violações da fronteira de Primary files
+
+Revisão do diff inteiro `git diff f2f6d62e3e9726f091f77073e62ee5691c533f9e...497fc6f`, com Standards e Spec em agentes independentes. Commits conferidos: `3709798` (testes), `0ab658e` (produção/ADR) e `497fc6f` (handoff). Os critérios numerados passam; a reabertura é pela regra de fronteira do `ticket-flow`, não por um critério novo. O texto dos critérios e a lista de Primary files permanecem como aprovados.
+
+##### Standards
+
+- ❌ **Fronteira de produção:** `src/sim/simulator.ts:470` altera `pieceLengths` com `Math.max(0, …)`, mas o Primary desse arquivo autoriza somente `RopeBinding`, `ropeFrame` e a montagem em `buildWorld`. A mutação abaixo prova que a guarda evita uma falha real de corda ideal em grupo; o comentário do stage 2 não amplia o contrato. É preciso alinhar a fronteira aprovada com essa correção necessária antes de aceitar o diff. Remover a guarda sem resolver o alongamento não atende à preservação de comportamento.
+- ❌ **Fronteira dos testes:** os cinco testes novos estão no `describe('ropePath, unwound sweep (PHY-54)')`, em `src/scene/ropePath.test.ts:247`, fora do bloco nomeado em Primary files, `ropePath, kept wrap direction (PHY-45)`. A costura e os casos estão aprovados; alinhar sua localização ao bloco autorizado, ou obter a alteração da fronteira pelo stage 1.
+- **Possível Duplicated Code, sem bloquear:** `wrapAngle` em `ropePath.ts:78` repete a fórmula de `simulator.ts:442`. Continua como candidato de cleanup já registrado, sem refatoração neste stage.
+
+O test-first foi respeitado: `3709798` contém somente testes e a transição de estágio; `0ab658e` não toca testes. Os testes antigos e as tolerâncias não mudaram. Sem logs acidentais, segredos ou artefatos gerados no diff. A evidência individual dos cenários de integração, antes registrada como conjunto e faixa, foi completada nas tabelas abaixo.
+
+##### Spec
+
+**0 achados bloqueantes; 1 limitação nova para triagem; 0 regressões anteriores demonstradas.** Critério 1: saída/reengate, volta acima de 2π, duas polias, junção interior e ausência de histórico passam. Critério 2: os 11 cenários do motor público passam com limite de 0,5 J. Critério 3: os testes existentes passam sem alteração de tolerância. Critério 4: comentário de `RopeArc.sweep` e ADR descrevem a varredura desenrolada, a perna reta, a regra múltipla, a continuidade acima de 2π e a exclusão das cordas com grip. Critério 5: todas as mutações registradas foram repetidas e ficaram vermelhas pelos motivos esperados.
+
+Conferidas as seis decisões `Proxy decided`: corte ideal/mista (qualquer grip desativa o histórico da corda inteira); histórico no módulo puro `ropePath`; regra de várias polias e junção limitada a [¼, ¾]; varredura acima de 2π; desenho adiado para PHY-56; `Difficulty: hard` e `Review: agent`. O histórico nasce das poses do documento e somente as leituras reais o atualizam; as previsões apenas o leem. A guarda de `pieceLengths` é necessária para a corda ideal em grupo e não muda a aritmética das cordas com grip, cujo sweep permanece bruto e não negativo.
+
+Achado adicional do eixo Spec, reproduzido pelo revisor principal com o código de produção em memória: duas polias soltas com projeções interiores em ordem inversa à sequência `via` geram segmentos que voltam. Com as pontas em (−3, 2)/(8, 2), R = 1, `keep = [−1, −1]` e polias finais em (5, 0)/(0, −3), as varreduras continuam negativas, mas as junções ficam em x = 5 e x = 0; o comprimento é 21 m e os puxões por unidade de tensão são (−2, 0)/(2, 0), em vez da perna reta de 11 m e puxões nulos. Não é o caso excluído de projeções presas na mesma ponta. Não falha os cenários numerados nem prova um comportamento anterior correto perdido; registrado separadamente no **CLEAN-25**, sem ampliar este contrato.
+
+##### Prova red-green repetida pelo stage 3
+
+Worktree temporário separado, com dependências por junction. No commit vermelho `3709798`, `node node_modules/vitest/vitest.mjs run src/scene/ropePath.test.ts src/sim/acceptance.test.ts -t PHY-54 --reporter=json --outputFile=phy54-red.json` deu **exit 1; 16 failed | 1 passed | 142 skipped (159)**: os quatro testes de geometria, os 11 cenários de energia e a corda em grupo falham; a guarda sem histórico já passa.
+
+Sobre `497fc6f`, as cinco execuções abaixo mutaram a produção e deram **exit 1**. Arquivos restaurados byte a byte no `finally` de cada execução. Comandos usam `node node_modules/vitest/vitest.mjs run <arquivos> -t PHY-54 --reporter=json --outputFile=<relatório>.json`:
+
+| Mutação de produção | Arquivos de teste | Resultado |
+| --- | --- | --- |
+| `ropeFrame` passa `undefined` no quinto argumento de `ropePath` | `src/sim/acceptance.test.ts` | 12 failed, 127 skipped (139); saídas por teste abaixo |
+| Em `release`, `on` começa todo verdadeiro e `out` nunca encontra uma polia | `src/scene/ropePath.test.ts src/sim/acceptance.test.ts` | 7 failed, 10 passed, 142 skipped (159): 3 geometria e 4 integração |
+| Em `along`, projeção sem limite | `src/scene/ropePath.test.ts` | 1 failed, 4 passed, 15 skipped (20); item 1.4: `expected 4 to be close to 2` |
+| Em `along`, limite [0, 1] | `src/scene/ropePath.test.ts` | 1 failed, 4 passed, 15 skipped (20); item 1.4: `expected 0 to be greater than 0.1` |
+| `pieceLengths` soma o sweep sem `Math.max(0, …)` | `src/sim/acceptance.test.ts` | 1 failed, 11 passed, 127 skipped (139); corda em grupo: `expected 8.295840125582401 to be less than or equal to 7.674159265358979` |
+
+Saída individual de cada teste de integração na mutação **sem histórico**; os mesmos valores aparecem no commit vermelho. Cada cenário da mesa falha com `expected <ganho abaixo> to be less than or equal to 0.5`:
+
+| m₁/m₂ | μ | vx inicial de a | Ganho de energia observado (J) |
+| --- | --- | --- | --- |
+| 1/2 | 3 | 0 | 732.8572494634037 |
+| 1/3 | 3 | 0 | 1293.1060846818677 |
+| 1/4 | 3 | 0 | 2709.6365629573615 |
+| 2/3 | 3 | 0 | 1038.2062218946267 |
+| 1/1,5 | 3 | 0 | 519.1031109473133 |
+| 1/2 | 1 | 0 | 1172.72043731615 |
+| 1/2 | 0,5 | 0 | 1038.6513094041184 |
+| 2/1 | 0,2 | 0 | 648.5481489295688 |
+| 2/1 | 0,2 | 6 | 1753.126787290827 |
+| 1/2 | 3 | 4 | 997.2863499734576 |
+| 1/1 | 0,1 | 8 | 700.7566764999923 |
+
+A corda em grupo, na mesma mutação, falha com `expected 7.704104462546497 to be less than or equal to 7.674159265358979`.
+
+Na mutação **sem perna reta**, as três falhas de energia são: 1/4, μ = 3, vx = 0 → `expected 1748.8394551589074 to be less than or equal to 0.5`; 2/1, μ = 0,2, vx = 0 → `expected 24.17939364019537 to be less than or equal to 0.5`; 2/1, μ = 0,2, vx = 6 → `expected 90.85200367569963 to be less than or equal to 0.5`. A corda em grupo falha com `expected 7.782551394915897 to be less than or equal to 7.674159265358979`. As falhas de geometria são 1.1 (`expected 6.00000033332098 to be close to 6`), 1.3 (`expected 12.333139286848626 to be close to 12.33313918268781`) e 1.4 (`expected 3.5863375862981046 to be close to 2`).
+
+Produção restaurada: o mesmo comando dos dois arquivos com `-t PHY-54` deu **exit 0; 17 passed | 142 skipped (159)**. `git diff --exit-code` confirmou a restauração. O worktree, os relatórios temporários e a junction desta revisão foram removidos.
+
+##### Gate e handoff
+
+Gate executado pelo stage 3 sobre `497fc6f`: `npm test && npm run lint && npm run typecheck && npm run build`, por `cmd /d /c` no PowerShell → **exit 0; 30 arquivos e 831 testes passaram (831)**, suíte em **49,29 s**, sem skips. ESLint e TypeScript sem erros; build Vite concluído com 49 módulos. Persiste o aviso conhecido do chunk tardio `sim` acima de 500 kB (2.134,40 kB). `rg` confirmou PHY-55 no ADR e `git diff --check` passou.
+
+Sem alteração de produção ou testes pelo revisor. `Stage: to-implement` e este registro no mesmo commit de reabertura, na branch existente `phy/PHY-54-corda-solta-da-polia-ideal`. Sem merge, push ou linha de ledger. A próxima etapa trata somente os dois ❌ acima; mudanças da fronteira aprovadas pertencem ao stage 1. PHY-55/PHY-56 continuam fora do escopo, e CLEAN-25 precisa de triagem/especificação própria.
+
+Totais: Standards 2 violações de fronteira, 1 smell de julgamento não bloqueante e 1 nota de evidência corrigida; Spec 0 bloqueadores, 1 limitação nova em CLEAN-25. Pior achado de Standards: alteração de produção fora da fronteira; pior achado de Spec: comprimento/puxões falsos com duas polias soltas de projeções invertidas, fora dos cenários contratados.

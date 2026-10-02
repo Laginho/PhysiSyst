@@ -11,7 +11,11 @@ export interface RopeArc {
   radius: number
   /** Angle (rad, CCW from +x) of the point where the rope meets the pulley. */
   start: number
-  /** Wrapped angle, rad, in [0, 2π). */
+  /**
+   * Wrapped angle, rad. In [0, 2π) without history. With history (PHY-54) it is
+   * the unwound sweep: it may pass 2π, and a negative one means the rope has come
+   * loose from the pulley, which then sits as a joint on a straight leg.
+   */
   sweep: number
   /** +1 counter-clockwise, −1 clockwise, following the rope from `a` to `b`. */
   direction: 1 | -1
@@ -44,8 +48,22 @@ interface Node {
  * flip the wrap. Never yielding is deliberate: the two wraps only have the same
  * length when the ends and the center are collinear, so any other switch jumps
  * the length.
+ *
+ * With `sweeps` (PHY-54), `sweeps[i]` is pulley `i`'s unwound sweep from the
+ * previous reading. The new one is that plus the wrapped change, so it does not
+ * jump at the 0/2π seam: it passes 2π when the rope winds on, and goes negative
+ * when the rope leaves the pulley. A pulley with a negative sweep is loose: the
+ * path is the straight leg between its neighbours and the pulley is a joint on
+ * it, pulling nothing. A pulley whose entry is `undefined` has no history and
+ * behaves as without `sweeps`.
  */
-export function ropePath(a: Vec2, b: Vec2, pulleys: readonly PathPulley[], keep?: readonly (1 | -1)[]): RopePath {
+export function ropePath(
+  a: Vec2,
+  b: Vec2,
+  pulleys: readonly PathPulley[],
+  keep?: readonly (1 | -1)[],
+  sweeps?: readonly (number | undefined)[],
+): RopePath {
   const centers = [a, ...pulleys.map((p) => p.center), b]
   const directions = pulleys.map((p, i): 1 | -1 => {
     const prev = centers[i]!
@@ -53,7 +71,107 @@ export function ropePath(a: Vec2, b: Vec2, pulleys: readonly PathPulley[], keep?
     const turn = (p.center.x - prev.x) * (next.y - p.center.y) - (p.center.y - prev.y) * (next.x - p.center.x)
     return keep?.[i] ?? (turn >= 0 ? 1 : -1)
   })
-  return build(centers, pulleys, directions)
+  if (!sweeps?.some((sweep) => sweep !== undefined)) return build(centers, pulleys, directions)
+  return release(a, b, pulleys, directions, sweeps)
+}
+
+function wrapAngle(angle: number): number {
+  return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI))
+}
+
+/**
+ * The path with history: finds which pulleys the rope is on, builds it over
+ * those, and puts the others on the straight legs as joints. A pulley leaves
+ * the set when its unwound sweep over the set goes negative, and joins it when
+ * its sweep measured over the set plus itself is not; one change per pass, and
+ * the pass count is capped in case a degenerate scene makes the answer cycle.
+ */
+function release(
+  a: Vec2,
+  b: Vec2,
+  pulleys: readonly PathPulley[],
+  directions: readonly (1 | -1)[],
+  history: readonly (number | undefined)[],
+): RopePath {
+  const on = pulleys.map((_, i) => history[i] === undefined || history[i]! >= 0)
+  const over = (set: readonly boolean[]) => {
+    const idx = pulleys.flatMap((_, i) => (set[i] ? [i] : []))
+    const path = build(
+      [a, ...idx.map((i) => pulleys[i]!.center), b],
+      idx.map((i) => pulleys[i]!),
+      idx.map((i) => directions[i]!),
+    )
+    // The previous sweep is the reference branch; a pulley with none reads the raw sweep.
+    const sweeps = idx.map((i, k) => {
+      const raw = path.arcs[k]!.sweep
+      const before = history[i]
+      return before === undefined ? raw : before + wrapAngle(raw - before)
+    })
+    return { idx, path, sweeps }
+  }
+  const measure = (set: readonly boolean[], i: number): number => {
+    const { idx, sweeps } = over(set.map((x, j) => x || j === i))
+    return sweeps[idx.indexOf(i)]!
+  }
+  for (let pass = 0; pass <= 2 * pulleys.length; pass++) {
+    const { idx, sweeps } = over(on)
+    const out = idx.find((_, k) => sweeps[k]! < 0)
+    if (out !== undefined) {
+      on[out] = false
+      continue
+    }
+    const back = pulleys.findIndex((_, i) => !on[i] && measure(on, i) >= 0)
+    if (back < 0) break
+    on[back] = true
+  }
+  const { idx, path, sweeps } = over(on)
+  const sweep = pulleys.map((_, i) => (on[i] ? sweeps[idx.indexOf(i)]! : measure(on, i)))
+
+  // Each leg of the path over the engaged pulleys takes the loose ones between its ends as joints.
+  const segments: RopeSegment[] = []
+  const arcs: RopeArc[] = []
+  let length = 0
+  for (let leg = 0; leg <= idx.length; leg++) {
+    const { from, to } = path.segments[leg]!
+    const first = leg === 0 ? 0 : idx[leg - 1]! + 1
+    const last = leg === idx.length ? pulleys.length : idx[leg]!
+    let at = from
+    for (let i = first; i < last; i++) {
+      const { center, radius } = pulleys[i]!
+      const joint = along(from, to, center)
+      segments.push({ from: at, to: joint })
+      arcs.push({
+        center,
+        radius,
+        start: Math.atan2(joint.y - center.y, joint.x - center.x),
+        sweep: sweep[i]!,
+        direction: directions[i]!,
+      })
+      at = joint
+    }
+    segments.push({ from: at, to })
+    if (leg < idx.length) {
+      arcs.push({ ...path.arcs[leg]!, sweep: sweep[idx[leg]!]! })
+      length += path.arcs[leg]!.radius * sweep[idx[leg]!]!
+    }
+  }
+  for (const s of segments) length += Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)
+  return { segments, arcs, length }
+}
+
+/**
+ * The joint of a loose pulley on the leg `from`–`to`: the leg's point nearest
+ * the center, kept within [¼, ¾] of the leg. Past that the center projects off
+ * an end and a segment would shrink to nothing: its unit direction is then 0, so
+ * the end stops being pulled.
+ */
+// ponytail: two loose pulleys on one leg whose projections clamp to the same end sit on one point; order them if a scene needs it
+function along(from: Vec2, to: Vec2, center: Vec2): Vec2 {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const d2 = dx * dx + dy * dy
+  const t = d2 === 0 ? 0.5 : Math.max(0.25, Math.min(0.75, ((center.x - from.x) * dx + (center.y - from.y) * dy) / d2))
+  return { x: from.x + t * dx, y: from.y + t * dy }
 }
 
 function build(centers: readonly Vec2[], pulleys: readonly PathPulley[], directions: readonly (1 | -1)[]): RopePath {
