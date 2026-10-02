@@ -137,6 +137,8 @@ interface RopeBinding {
   residual: number
   /** The reading the contact-free model expects this step, warm start excluded. */
   predicted: number
+  /** End-of-step stretch aimed at by pullPieces when this rope belongs to a group. */
+  target: number
   slack: boolean
   /** The pulleys with mass on the path (PHY-25). Empty: one piece, the scalar fields above. */
   grips: Grip[]
@@ -167,10 +169,16 @@ interface Piece {
   tension: number
   residual: number
   predicted: number
+  /** End-of-step stretch aimed at by pullPieces. */
+  target: number
 }
 
 /** Fraction of a rope's stretch pulled back per step. */
 const ROPE_BETA = 0.2
+
+// ponytail: absolute meters assume meter-scale scenes; impacts missing the target
+// by less than 1 cm keep the residual. Upgrade to a threshold relative to the predicted step displacement if needed.
+const ROPE_SLIP = 0.01
 
 /**
  * The lengthening rate a rope `c` past its length L may have: a slack rope
@@ -879,6 +887,7 @@ class RapierSimulator implements Simulator {
           tension: 0,
           residual: 0,
           predicted: 0,
+          target: 0,
           slack: false,
           // The mark starts mid-arc: at the document poses each piece holds half of every arc it ends on.
           grips: rope.via.flatMap((id, at) => {
@@ -890,7 +899,7 @@ class RapierSimulator implements Simulator {
         }
         if (binding.grips.length) {
           const lengths = pieceLengths(binding, path, gripShares(binding, path))
-          binding.pieces = lengths.map((length) => ({ length, tension: 0, residual: 0, predicted: 0 }))
+          binding.pieces = lengths.map((length) => ({ length, tension: 0, residual: 0, predicted: 0, target: 0 }))
         }
         ropes.push(binding)
       }
@@ -1201,7 +1210,7 @@ class RapierSimulator implements Simulator {
       const along = now.map((piece, k) => piece.map((pull, i) => ({ ...pull, u: end[k]![i]!.u })))
       const pieces = rope.grips.length ? rope.pieces : [rope]
       return pieces.map((piece, k) => {
-        const target = Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length))
+        const target = (piece.target = Math.max(0, (1 - ROPE_BETA) * (nowLengths[k]! - piece.length)))
         return {
           piece,
           pulls: pulls[k]!,
@@ -1262,11 +1271,12 @@ class RapierSimulator implements Simulator {
       b,
       rows.map((r) => r.piece.tension),
     )
-    rows.forEach(({ piece, pulls }, k) => {
+    rows.forEach(({ piece, pulls, length }, k) => {
       const impulse = (corrected[k]! - piece.tension) * TIMESTEP
       if (impulse !== 0) applyPulls(pulls, impulse, true)
       piece.tension = corrected[k]!
-      piece.residual = piece.tension > 0 ? piece.tension - piece.predicted : 0
+      // A contact that cancelled the pull must not turn the missed target into stored tension.
+      piece.residual = piece.tension > 0 && length - piece.length - piece.target <= ROPE_SLIP ? piece.tension - piece.predicted : 0
     })
     for (const rope of ropes) {
       if (rope.grips.length) rope.tension = Math.max(...rope.pieces.map((p) => p.tension))
