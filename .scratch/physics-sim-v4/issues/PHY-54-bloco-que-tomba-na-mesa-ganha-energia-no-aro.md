@@ -1,5 +1,5 @@
 # PHY-54: A corda se solta da polia ideal quando o bloco passa por ela, sem ganho de energia
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
