@@ -1,5 +1,5 @@
 # CLEAN-25: Junções de polias soltas em ordem invertida alongam o caminho e puxam as polias
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: CLEAN-26
 Review: agent
@@ -76,3 +76,10 @@ Os dois primeiros `git grep` não devem achar nada; o terceiro deve achar a linh
 - 2026-10-02 Proxy decided: `Blocked by: CLEAN-26`, `Difficulty: normal`, `Review: agent`, um ticket só — mesmo arquivo do CLEAN-26, função privada, critérios independentes.
 - 2026-10-02 Stage 1, com a evidência do PHY-55: a cena da mesa com duas polias ideais (critério 6) medida na main e com a regra `t = k/(n + 1)` por `vi.mock` (conferido: o mock muda os dois cenários vermelhos), na grade de 11 do PHY-54. Main: 1/3 com μ = 3 +186,1342 J (passo 479) e 2/1 com μ = 0,2 +291,3637 J (passo 398); os outros nove, de −4,69 J a −0,0049 J. Com a regra: +0,0042 J e −0,0042 J nesses dois, e os nove iguais à main. Probes apagados.
 - 2026-10-02 Proxy decided: "testes só na geometria" revisto pela evidência nova (a cena simples da mesa com duas polias ideais já ganha energia na main): o critério de energia, com `twoPulleyTableScene` em `acceptance.test.ts` e o registro de mutação, fica neste ticket — um ticket posterior nunca conseguiria ficar vermelho primeiro.
+- 2026-10-02 Stage 2. Leitura em volta: `release` é o único chamador de `along`; `ropePath` é lido por `ropeFrame`/`simulator.ts` e `scenePath`, e nenhum lê o `start` de uma polia solta. Perna de comprimento 0: a regra põe todas as junções na ponta, como `along` (t = 0,5 num ponto) já fazia; nenhum teste novo. Testes em `bdca5c9` (só testes), correção em `dbb3228` (só `ropePath.ts` e o ADR), sem tocar teste.
+- Critério 5, mutante (a) — junções na projeção limitada, na ordem de `via` (a produção de antes, `git show bdca5c9~1:src/scene/ropePath.ts`):
+  - `ropePath.test.ts -t CLEAN-25`: `Tests 3 failed | 1 passed`. Critério 1: `AssertionError: segment length at (c) j = 2450: expected 0.09999999999999964 to be greater than 0.1` (o teste para na primeira falha, antes do fim da caminhada, onde estão os 21 m). Critério 2, `equal projections` e `both past b`: `AssertionError: segment length : expected 0 to be greater than 0.1`; `in via order` verde (guarda).
+  - Mutação de integração, `acceptance.test.ts -t CLEAN-25`: `Tests 2 failed`. 1/3, μ = 3: `AssertionError: expected 186.13415247104996 to be less than or equal to 0.5`; 2/1, μ = 0,2: `AssertionError: expected 291.36368714518346 to be less than or equal to 0.5`.
+- Critério 5, mutante (b) — projeções limitadas a [¼, ¾], ordenadas por parâmetro, aplicado em `release` e revertido: `Tests 3 failed | 1 passed`. Critério 1: `AssertionError: segment length at (c) j = 2450: expected 0.09999999999999964 to be greater than 0.1` (início da janela j de 2450 a 2550). Critério 2: as mesmas duas disposições vermelhas, `expected 0 to be greater than 0.1`.
+- Harness corrigido em `59e4a32` (só teste): a caminhada de 12 000 leituras roda em ~2 s sozinha e ~14 s com a suíte inteira, além dos 5 s padrão do vitest; ganhou 30 s, como os testes lentos do `App.test.ts`. Reprovado vermelho contra a produção de antes, com a mesma saída do mutante (a).
+- Gate: `npm test` 30 arquivos, 838 de 838; `lint`, `typecheck` e `build` verdes. Os três `git grep` da Verification: os dois primeiros sem saída, o terceiro acha `docs/adr/0004-…:42`.

@@ -620,6 +620,26 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(farthest).toBeLessThanOrEqual(L + 0.01)
   })
 
+  /**
+   * CLEAN-25: the table scene with a second ideal pulley `q` (r = 0.2) on the
+   * table at (4.6, −0.6) in the world. The rope goes over `p`, down the right
+   * side of `q`, and drops straight to `b` at (4.8, −1.8).
+   */
+  function twoPulleyTableScene(m1: number, m2: number, mu: number, vx?: number): Scene {
+    const scene = tableScene(m1, m2, mu, vx)
+    scene.bodies = scene.bodies.map((body) => (body.id === 'b' ? { ...body, position: { x: 4.8, y: -1.8 } } : body))
+    scene.pulleys!.push({ id: 'q', bodyId: 'mesa', anchor: { x: 4.6, y: -0.1 }, radius: 0.2 })
+    scene.constraints = scene.constraints!.map((c) => (c.id === 'corda' ? { ...c, via: ['p', 'q'] } : c))
+    return scene
+  }
+
+  it.each([
+    { m1: 1, m2: 3, mu: 3 },
+    { m1: 2, m2: 1, mu: 0.2 },
+  ])('CLEAN-25: table $m1/$m2, μ = $mu, over two ideal pulleys: the blocks never gain more than 0.5 J', async ({ m1, m2, mu }) => {
+    expect(await maxEnergyGain(twoPulleyTableScene(m1, m2, mu))).toBeLessThanOrEqual(0.5)
+  })
+
 })
 
 /**
