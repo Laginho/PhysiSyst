@@ -1,5 +1,5 @@
 # PHY-54: A corda se solta da polia ideal quando o bloco passa por ela, sem ganho de energia
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -156,3 +156,51 @@ Gate executado pelo stage 3 sobre `497fc6f`: `npm test && npm run lint && npm ru
 Sem alteração de produção ou testes pelo revisor. `Stage: to-implement` e este registro no mesmo commit de reabertura, na branch existente `phy/PHY-54-corda-solta-da-polia-ideal`. Sem merge, push ou linha de ledger. A próxima etapa trata somente os dois ❌ acima; mudanças da fronteira aprovadas pertencem ao stage 1. PHY-55/PHY-56 continuam fora do escopo, e CLEAN-25 precisa de triagem/especificação própria.
 
 Totais: Standards 2 violações de fronteira, 1 smell de julgamento não bloqueante e 1 nota de evidência corrigida; Spec 0 bloqueadores, 1 limitação nova em CLEAN-25. Pior achado de Standards: alteração de produção fora da fronteira; pior achado de Spec: comprimento/puxões falsos com duas polias soltas de projeções invertidas, fora dos cenários contratados.
+
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+Re-revisão de `100183a`, com Standards e Spec em agentes independentes. Base fixada em `f2f6d62e3e9726f091f77073e62ee5691c533f9e` (`sweatshop/2026-10-01-2342`); conferidos os dois ❌ anteriores e o diff `a552a99..100183a`. Produção, ADR e testes de integração não mudaram desde a primeira revisão. Nenhuma alteração de produção ou testes pelo revisor.
+
+##### Standards
+
+**0 violações de padrão; os dois bloqueadores anteriores resolvidos.**
+
+- A guarda em `src/sim/simulator.ts:470` agora corresponde ao Primary ampliado e ao critério 6. A decisão do proxy mantém a contribuição zero do arco solto em `pieceLengths`, preservando o histórico negativo usado para reengate. Cumpre a regra de contrato e a incorporação de decisões do proxy do `ticket-flow`.
+- O bloco novo em `src/scene/ropePath.test.ts:246` está dentro do bloco autorizado do PHY-45. A fixture externa tem exatamente o mesmo centro (0, 0) e R = 1; permanecem os cinco testes, entradas, asserções e tolerâncias.
+- Test-first preservado: `3709798` contém testes e transição; `0ab658e` contém produção/ADR, sem testes; `14811fb` realoca testes e transição, sem produção; `100183a` registra contrato/handoff. Nenhum teste antigo ou tolerância mudou. A prova mutate-verify foi repetida sobre a árvore atual, conforme abaixo.
+
+Permanece o **possível Duplicated Code**, julgamento não bloqueante já registrado: `wrapAngle` em `ropePath.ts:78` e `simulator.ts:442` repete a fórmula. Continua como candidato de cleanup, sem refatoração neste stage. Nenhum novo achado de Standards ou omissão da revisão anterior.
+
+##### Spec
+
+**0 requisitos ausentes/parciais, 0 comportamentos contratados incorretos, 0 excessos de escopo pendentes. Critérios 1–6 atendidos.**
+
+A realocação preserva todos os casos do critério 1, inclusive a equivalência estrita de `[undefined]` com ausência de histórico. O teste da corda em grupo em `acceptance.test.ts:596` corresponde ao critério 6: 2/1, μ = 0,2, bloco `c` de 0,5 kg em (−3; 0,2), âncoras aprovadas, 600 passos e limite `L + 0,01 m` com o L publicado. O ADR-0004 descreve contribuição zero de arcos soltos, histórico negativo para reengate e exclusão de cordas com grip; segue consistente com a produção. Os critérios 2–5 conservam suas provas, repetidas nesta revisão.
+
+Conferidas as **sete decisões `Proxy decided`**: divisão ideal/mista para PHY-55; histórico no módulo `ropePath`; construção sobre polias engatadas e junção [¼, ¾]; continuidade acima de 2π; desenho adiado para PHY-56; `Difficulty: hard`/`Review: agent`; ampliação do Primary de `pieceLengths` com critério 6, mantendo sweeps negativos. Nenhuma nova limitação ou regressão anterior demonstrada. A limitação das projeções invertidas continua registrada em CLEAN-25 para triagem própria.
+
+##### Prova red-green repetida na re-revisão
+
+Worktree temporário isolado em `100183a`, com dependências por junction. Cada mutação foi aplicada à produção e restaurada byte a byte no `finally`. Comando: `node node_modules/vitest/vitest.mjs run <arquivos> -t PHY-54 --reporter=json --outputFile=<relatório>.json`.
+
+| Produção examinada | Arquivos de teste | Exit | Resultado |
+| --- | --- | --- | --- |
+| `ropePath.ts` e `simulator.ts` de `f2f6d62`, testes atuais realocados | geometria + integração | 1 | 16 failed, 1 passed, 142 skipped (159) |
+| `ropeFrame` sem histórico no quinto argumento | integração | 1 | 12 failed, 127 skipped (139) |
+| `release` mantém todas as polias engatadas, sem perna reta | geometria + integração | 1 | 7 failed, 10 passed, 142 skipped (159) |
+| `along` sem limite na projeção | geometria | 1 | 1 failed, 4 passed, 15 skipped (20); `expected 4 to be close to 2` |
+| `along` com limite [0, 1] | geometria | 1 | 1 failed, 4 passed, 15 skipped (20); `expected 0 to be greater than 0.1` |
+| `pieceLengths` sem `Math.max(0, …)` | integração | 1 | 1 failed, 11 passed, 127 skipped (139); `expected 8.295840125582401 to be less than or equal to 7.674159265358979` |
+| Produção atual restaurada | geometria + integração | 0 | 17 passed, 142 skipped (159) |
+
+As saídas individuais dos 11 cenários e da corda em grupo sem histórico são exatamente as da tabela da revisão anterior acima, inclusive os ganhos de 519.1031109473133 a 2709.6365629573615 J. Sem perna reta, também se repetiram as três falhas de energia registradas (1748.8394551589074, 24.17939364019537 e 90.85200367569963 J), a falha da corda em grupo (7.782551394915897 m) e as três falhas de geometria. A guarda sem histórico permaneceu verde contra a produção anterior; os quatro casos de geometria restantes ficaram vermelhos pelos mesmos motivos registrados. Nenhum teste de integração ficou sem prova individual de produção mutada. `git diff --exit-code` confirmou a restauração; worktree, junction, helper e relatórios temporários removidos.
+
+##### Gate e integração
+
+Gate independente sobre `100183a`: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0; 30 arquivos e 831 testes passaram (831), sem skips; suíte em 50,25 s**. ESLint e TypeScript sem erros; build Vite concluído com 49 módulos. Persiste o aviso conhecido do chunk `sim` acima de 500 kB (2.134,40 kB). `rg` confirmou PHY-55 no ADR e `git diff --check` passou.
+
+Rebase sobre a sessão já atualizado, preservando `100183a`. Merge `--no-ff` na sessão `sweatshop/2026-10-01-2342`: **`ad1e39b`**. `git diff 100183a ad1e39b --exit-code` confirmou que a árvore integrada é exatamente a árvore validada. `Stage: done`, esta resolução e a linha do ledger são registrados juntos no commit de fechamento da sessão.
+
+Totais: Standards 0 violações, 1 smell de julgamento já conhecido (duplicação de `wrapAngle`); Spec 0 achados pendentes, sem novo problema identificado. PHY-55, PHY-56 e CLEAN-25 mantêm seus escopos próprios.
