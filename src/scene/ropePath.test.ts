@@ -4,7 +4,7 @@
  * tangent-length theorem and the figure, never from the module's formula.
  */
 import { describe, expect, it } from 'vitest'
-import { ropePath, scenePath } from './ropePath'
+import { ropePath, scenePath, wrapAngle } from './ropePath'
 import type { PathPulley, RopePath, RopeSegment } from './ropePath'
 import type { Rope, Scene, Vec2 } from './types'
 
@@ -352,5 +352,18 @@ describe('ropePath, kept wrap direction (PHY-45)', () => {
       ]
       for (const [a, b] of ends) expect(ropePath(a, b, pulley, [-1], [undefined])).toStrictEqual(ropePath(a, b, pulley, [-1]))
     })
+  })
+})
+
+describe('wrapAngle (CLEAN-26)', () => {
+  it('maps an angle to its equivalent modulo 2π with absolute value at most π', () => {
+    const cases: Array<[number, number]> = [
+      [0, 0],
+      [2 * Math.PI, 0],
+      [(3 * Math.PI) / 2, -Math.PI / 2],
+      [(-3 * Math.PI) / 2, Math.PI / 2],
+      [Math.PI / 2 + 4 * Math.PI, Math.PI / 2],
+    ]
+    for (const [x, expected] of cases) expect(Math.abs(wrapAngle(x) - expected), `wrapAngle(${x})`).toBeLessThan(1e-12)
   })
 })

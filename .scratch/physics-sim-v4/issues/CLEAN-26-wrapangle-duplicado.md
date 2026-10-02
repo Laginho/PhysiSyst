@@ -1,5 +1,5 @@
 # CLEAN-26: `wrapAngle` duplicado em `ropePath.ts` e `simulator.ts`
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -38,3 +38,4 @@ O `git grep` lista exatamente uma linha, em `src/scene/ropePath.ts`.
 
 - 2026-10-02 Aberto pelo foreman a pedido do Bruno, a partir do PHY-54. O PHY-54 (`0ab658e`) criou `wrapAngle` em `src/scene/ropePath.ts:78` com a mesma fórmula que já existia em `src/sim/simulator.ts:442`: `angle - 2π·round(angle / 2π)`. O stage 2 do PHY-54 sinalizou a duplicação como candidata a CLEAN, e o stage 3 a anotou como Duplicated Code sem bloquear. Nada foi commitado além deste ticket. Cabe ao stage 1 escolher onde a função mora (o módulo de geometria pura `ropePath` já é importado pelo simulador) e se a mudança precisa de teste próprio ou é coberta pelos testes de PHY-45/PHY-54.
 - 2026-10-02 Stage 1: a função mora em `ropePath.ts`, que já é a dependência do simulador (o contrário, `scene` importando de `sim`, inverteria a direção dos módulos). As duas cópias são idênticas, então a troca não muda número nenhum; o teste próprio só fixa a exportação e o intervalo, e os testes de PHY-25/45/54 cobrem os chamadores.
+- 2026-10-02 Stage 2: test-only commit `5677133` red with `TypeError: wrapAngle is not a function` (1 failed, 20 passed in ropePath.test.ts). After the change: 21/21 there; `git grep -n "function wrapAngle" -- src` lists only `src/scene/ropePath.ts:78`; gate green, 30 files / 832 tests, lint, typecheck and build clean. Only caller in the simulator is `gripShares`, now on the imported function; same formula, so no number moves.
