@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Body, Scene } from '../scene'
+import type { ConstraintState, RopeState } from '../sim'
 import { bodyAtPoint, pointInBody, pulleyAtPoint, ropeAtPoint, springAtPoint } from './hitTest'
 
 // Partial-union spread can't be proven to re-form the Body union; runtime
@@ -189,6 +190,24 @@ describe('pulleyAtPoint and ropeAtPoint (PHY-28)', () => {
     expect(ropeAtPoint(SCENE, { x: 0.55, y: 3 }, 0.1)?.id).toBe('r1')
     expect(ropeAtPoint(SCENE, { x: 0, y: 2 }, 0.1)).toBeNull()
     expect(ropeAtPoint(SCENE, { x: -0.5, y: -0.5 }, 0.1)).toBeNull()
+  })
+
+  it('CLEAN-27: a rope whose state has a path is tested against that path, and other cases fall back to the scene path', () => {
+    const state = (path?: RopeState['path']): ConstraintState[] => [{ id: 'r1', kind: 'rope', tension: 5, slack: false, segments: [5, 5], path }]
+    const drawn: RopeState['path'] = {
+      segments: [
+        { from: { x: -0.5, y: 0.2 }, to: { x: 0, y: 0.2 } },
+        { from: { x: 0, y: 0.2 }, to: { x: 0.5, y: 0.2 } },
+      ],
+      arcs: [{ center: { x: 0, y: 4 }, radius: 0.5, start: 0, sweep: -0.5, direction: 1 }],
+      length: 1,
+    }
+    expect(ropeAtPoint(SCENE, { x: 0, y: 0.25 }, 0.1, state(drawn))?.id).toBe('r1')
+    expect(ropeAtPoint(SCENE, { x: -0.45, y: 2 }, 0.1, state(drawn))).toBeNull()
+    for (const constraints of [undefined, [], state(undefined), [{ id: 'other', kind: 'rope', tension: 0, slack: true, segments: [0, 0], path: drawn } as ConstraintState]]) {
+      expect(ropeAtPoint(SCENE, { x: -0.45, y: 2 }, 0.1, constraints)?.id).toBe('r1')
+      expect(ropeAtPoint(SCENE, { x: 0, y: 0.25 }, 0.1, constraints)).toBeNull()
+    }
   })
 
   it('a spring is never a rope hit', () => {

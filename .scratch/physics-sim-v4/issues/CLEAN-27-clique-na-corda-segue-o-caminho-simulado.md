@@ -1,5 +1,5 @@
 # CLEAN-27: O clique na corda durante o playback segue o caminho simulado
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-56
 Review: agent
