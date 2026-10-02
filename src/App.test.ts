@@ -2326,6 +2326,7 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
       length: 1,
     })
     const canvas = host.querySelector('canvas')!
+    click(canvas, OPEN_SPACE)
     expect(panel(host, 'corda')).toBeUndefined()
 
     await stepOnce(host)
