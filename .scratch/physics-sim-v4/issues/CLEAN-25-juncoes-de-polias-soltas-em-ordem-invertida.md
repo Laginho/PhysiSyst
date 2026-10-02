@@ -1,5 +1,5 @@
 # CLEAN-25: Junções de polias soltas em ordem invertida alongam o caminho e puxam as polias
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: CLEAN-26
 Review: agent
@@ -53,6 +53,28 @@ Rejeitado: ordenar as junções pela projeção. Resolve a reprodução no fim, 
     npm test && npm run lint && npm run typecheck && npm run build
 
 Os dois primeiros `git grep` não devem achar nada; o terceiro deve achar a linha do ADR com a regra.
+
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ `CLEAN-25: two loose pulleys that swap order…` walks (a) k = 0…4000, (b) j = 1…3000, (c) j = 1…5000 with positions from the integer index, checks from k ≥ 3001: both sweeps < 0, length |a − b| at 1e-9, 3 segments > 0.1 m along (1, 0), pull summed as `ropeFrame` sums (`simulator.ts:244`) zero at 1e-9, `arcs[i].center` and the single-pulley sweep (item 1.5), final sweeps at 1e-9.
+- Criterion 2 ✅ `it.each` over the three layouts with sweeps `[−0.5, −0.5]`, items 1.1–1.4 via `expectStraightOverLoose`.
+- Criterion 3 ✅ both test files only gain lines; no existing tolerance, name or the block's `walk` changed. `ropePath.test.ts` + `acceptance.test.ts`: 166/166.
+- Criterion 4 ✅ the three Verification greps: first two empty, third finds ADR-0004 line 42. `along` and its `ponytail:` are gone.
+- Criterion 5 ✅ mutant (a), mutant (b) and the integration mutation are recorded under Comments with their red output. Note: the walk test stops at its first failure, (c) j = 2450, for both mutants, so the record shows "criterion 1 red" but never the 21 m / (∓2, 0) at the end of the walk; the criterion asks only for red.
+- Criterion 6 ✅ `twoPulleyTableScene` matches the geometry (q r = 0.2 on `mesa` at (4.6, −0.1), `b` at (4.8, −1.8), anchor (0, 0.15) inherited, `via: ['p', 'q']`, no mass); `maxEnergyGain` (600 steps) ≤ 0.5 J in both scenarios; `tableScene` unchanged.
+- Test-first ✅ `7c0320f` touches only the two test files and the ticket; `bac4d31` only `ropePath.ts` and the ADR; `2af2c17` (harness, 30 s timeout) only `ropePath.test.ts`. All inside Primary files.
+- Regressions: none found. `scenePath` takes no sweeps and goes through `build`; the only readers of `start` (`draw.ts`, grip code) never see a loose pulley; a zero-length leg puts every joint on its end, as `along` did.
+- Prose-only, no criterion behind them (not reopens): one loose pulley now sits at the leg's midpoint, the rule on a leg between two engaged pulleys, and `arcs[i].start` of a loose pulley, are implemented but untested.
+- Standards: no hard violations, no stale docs. Judgement calls, not fixed: "joint" for a loose pulley's point clashes with the glossary's _Avoid: joint_ (`CONTEXT.md:55`), usage dates from PHY-54; `ends` in the walk test is a function where the block's other `ends` are arrays; the ADR's CLEAN-25 rule is a long parenthetical.
+- Proxy decided, on the human's behalf (8 lines under Comments): joints at t = k/(n + 1) in `via` order; the `ponytail:` case folded into criterion 2; PHY-54's nearest-center rule replaced and the ADR corrected; loose `arcs[i].start` unchanged; geometry-only tests (later revised); the mutant (b) record in criterion 5; `Blocked by: CLEAN-26`, `normal`, `agent`, one ticket; the energy criterion 6 kept in this ticket.
+
+Red-green proof: the new tests at `bdca5c9` (the test-only commit before the rebase, now `7c0320f`; pre-fix production): `5 failed | 1 passed` — walk `segment length at (c) j = 2450: expected 0.09999999999999964 to be greater than 0.1`; `equal projections` and `both past b` `expected 0 to be greater than 0.1`; 1/3 μ = 3 `expected 186.13415247104996 to be less than or equal to 0.5`; 2/1 μ = 0.2 `expected 291.36368714518346 …`. On the branch: 6/6.
+
+Gate on the branch rebased onto the session tip `f42a2c9`: `npm test` 30 files, 838 tests passed; `lint`, `typecheck`, `build` clean.
+
+Merged into `sweatshop/2026-10-02-1156` as `6f5cdf1` (`--no-ff`).
 
 ## Tests stage 2 writes (own commit, red)
 
