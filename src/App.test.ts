@@ -861,6 +861,32 @@ describe('simulator warnings panel (PHY-53)', () => {
 
     expect(warningLines(host)).toContain('Friction is degraded for this contact graph')
   })
+
+  it('shows a warning added during play on the next repaint without another interaction', async () => {
+    vi.useFakeTimers()
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const warnings: string[] = []
+    let steps = 0
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(),
+      warnings,
+      step: () => {
+        if (++steps === 2) warnings.push("body 'ball' approaches Rapier's ω ceiling")
+      },
+    })
+    const host = renderApp()
+    await settleSimImport()
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+
+    act(() => frame(16))
+    expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+    act(() => frame(32))
+    expect(warningLines(host)).toEqual(["body 'ball' approaches Rapier's ω ceiling"])
+    act(() => frame(48))
+    expect(warningLines(host)).toEqual(["body 'ball' approaches Rapier's ω ceiling"])
+  })
 })
 
 describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', () => {
