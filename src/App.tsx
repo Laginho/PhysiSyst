@@ -192,7 +192,8 @@ function paint(
   ctx.clearRect(0, 0, transform.width, transform.height)
   drawGrid(ctx, camera, transform.width, transform.height)
   // In the editor the readings go stale (refreshed only at boot, reset and rebuild): the rope there follows the
-  // document, and only a simulated frame's readings shape its drawing and its T arrows (PHY-56).
+  // document, and only a simulated frame's readings shape its drawing and its T arrows (PHY-56); onPointerDown
+  // applies the same guard to the click (CLEAN-27).
   const ropeReadings = states ? (opts?.constraints ?? []) : []
   drawScene(ctx, view, camera, transform.width, transform.height, undefined, selection, ropeReadings)
 
@@ -676,7 +677,7 @@ export default function App() {
   const statesRef = useRef<Map<string, BodyState> | null>(null)
   const accelRef = useRef(initialTracker())
   const contactsRef = useRef<ContactPoint[]>([])
-  /** Rope and spring readings, refreshed with the contacts, for the T and F_el arrows. */
+  /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
   /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
