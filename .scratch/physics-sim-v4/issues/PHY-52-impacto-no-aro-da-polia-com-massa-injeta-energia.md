@@ -1,5 +1,5 @@
 # PHY-52: Um bloco que bate no aro da polia com massa ganha energia no impacto
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-45
 Review: agent
@@ -66,6 +66,12 @@ Medido sobre `d0b8303`, com protótipos descartáveis:
 
 ## Comments
 
+- 2026-10-01 Aberto no stage 1 de revisão do PHY-45, a partir de probes descartáveis sobre `9d81e26`. Nada foi commitado.
+- 2026-10-01 Triagem (stage 1). Investigação com protótipos descartáveis sobre `d0b8303`; nada commitado. Caminho e critérios acima.
+- 2026-10-01 Proxy decided: `ROPE_SLIP` absoluto de 1 cm — o que se compara é um comprimento, e os dois grupos medidos estão separados por uma folga absoluta (≤ 0,68 mm contra ≥ 42 mm).
+- 2026-10-01 Proxy decided: o texto do ADR-0004 entra neste ticket, não num CLEAN à parte — a regra dos Primary files põe o ADR do mecanismo em jogo, e os CLEAN-20 a 22 só existiram porque o ADR tinha ficado de fora.
+- 2026-10-01 Achado lateral: a cena da mesa 1/2 com μ = 3 diverge também com polia ideal. Proxy decided: abrir à parte, virou o PHY-54.
+
 - 2026-10-02 Stage 2: `pullPieces` e `correctPieces` são chamados por `step()` para polias com massa e grupos de cordas que compartilham corpos dinâmicos; nestes grupos uma corda ideal usa `RopeBinding` como peça. O alvo precisa existir nos dois tipos. Peças frouxas, tensões zero, sistemas redundantes/singulares e o limite do alvo continuam cobertos pela grade PHY-45 e pelos testes existentes do PHY-41/PHY-25; o caminho escalar fica intacto.
 - 2026-10-02 Red antes da implementação: `npm test -- src/sim/acceptance.test.ts -t 'PHY-45|PHY-52'`: 2 failed, 26 passed, 99 skipped (127). Os novos casos com M = 2 falham por energia: 1/2 `expected 3.0258298162083648 to be less than or equal to 0.5`; 3/1 `expected 54.51779497203695 to be less than or equal to 0.5`. As duas guardas novas da mesa já passam, assim como os 13 cenários ideais, sem alteração de tolerância.
 - 2026-10-02 Mutate-verify pelo motor público, sem mocks; cada mutação foi aplicada temporariamente em `simulator.ts`, testada e restaurada antes da próxima:
@@ -76,8 +82,38 @@ Medido sobre `d0b8303`, com protótipos descartáveis:
 - 2026-10-02 Green da implementação antes das mutações: `npm test -- src/sim/acceptance.test.ts -t 'PHY-45|PHY-52|PHY-41|pulley with mass'`: 41 passed, 86 skipped (127).
 - 2026-10-02 Gate final após restaurar todas as mutações: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. Vitest: 30 arquivos, 809 testes passed, sem skips; inclui as duas regressões novas com M=2, as duas guardas da mesa, os 13 casos ideais PHY-45, PHY-41 e PHY-25. ESLint e tsc sem erros; Vite: 49 módulos, build concluído. `rg -n 'ROPE_SLIP' docs/adr/0004-rope-as-own-constraint-around-world-step.md` encontra a regra no passo 3 e na seção do aro. `git diff --check` limpo. Diff final restrito aos Primary files e ao ticket; `correctRope` intacto, nenhum teste alterado no commit de implementação. Limitação prevista: limiar absoluto de 1 cm, adequado às cenas medidas na escala do metro.
 
-- 2026-10-01 Aberto no stage 1 de revisão do PHY-45, a partir de probes descartáveis sobre `9d81e26`. Nada foi commitado.
-- 2026-10-01 Triagem (stage 1). Investigação com protótipos descartáveis sobre `d0b8303`; nada commitado. Caminho e critérios acima.
-- 2026-10-01 Proxy decided: `ROPE_SLIP` absoluto de 1 cm — o que se compara é um comprimento, e os dois grupos medidos estão separados por uma folga absoluta (≤ 0,68 mm contra ≥ 42 mm).
-- 2026-10-01 Proxy decided: o texto do ADR-0004 entra neste ticket, não num CLEAN à parte — a regra dos Primary files põe o ADR do mecanismo em jogo, e os CLEAN-20 a 22 só existiram porque o ADR tinha ficado de fora.
-- 2026-10-01 Achado lateral: a cena da mesa 1/2 com μ = 3 diverge também com polia ideal. Proxy decided: abrir à parte, virou o PHY-54.
+#### Resolution (2026-10-02)
+Verdict: Approve
+
+##### Standards
+
+0 violações de contrato e 0 smells acionáveis na revisão independente. O diff respeita os três Primary files e o registro do ticket. `624e30c` contém somente testes e evidência antes da produção; `0b28aa7` altera produção/documentação sem tocar testes. Todos os novos casos têm mutação de produção, comando e saída vermelha concreta. Sem correção de código pelo revisor.
+
+Uma nota documental foi corrigida no fechamento: o histórico de 2026-10-01 agora precede os registros de 2026-10-02, conforme a convenção de append em `docs/agents/issue-tracker.md`.
+
+##### Spec
+
+0 achados na revisão independente. Critério 1: 1/2 e 3/1 estão no `PHY45_GRID`, sem `PHY45_IDEAL_ONLY`; a energia máxima dos blocos e o lado das âncoras são verificados durante 600 passos, inclusive com M = 2. Critério 2: as duas cenas da mesa verificam ambos os segmentos a 1% de m₂·g em cada passo de 30 a 300 e deslocamento final menor que 1 mm. Critério 3: `pullRope`/`correctRope` e as tolerâncias existentes permanecem intactos; os 13 cenários ideais, PHY-41 e PHY-25 passam. Critério 4: o ADR registra o alvo guardado, a condição de `ROPE_SLIP`, a preservação da tensão/impulso e a exclusão do caminho escalar pelo +2,34 J. Critério 5: as quatro mutações foram repetidas pelo stage 3 e falharam pelos motivos registrados abaixo.
+
+As três linhas `Proxy decided` foram conferidas: limiar absoluto de 1 cm com limitação de escala documentada; ADR incluído neste ticket; divergência da mesa 1/2 com μ = 3 separada no PHY-54. O diff respeita essas decisões. `target` existe tanto em `Piece` quanto em `RopeBinding`, cobrindo também cordas ideais em grupos; a regra altera somente o residual para o passo seguinte.
+
+##### Prova red-green repetida pelo stage 3
+
+Worktree temporário separado, com as dependências ligadas por uma junction, sem mocks. No commit de testes `624e30c`, `node node_modules/vitest/vitest.mjs run src/sim/acceptance.test.ts -t 'PHY-45|PHY-52'` → **2 failed | 26 passed | 99 skipped (127)**, exit 1. Os novos casos 1/2 e 3/1 com M = 2 falham, respectivamente, com `expected 3.0258298162083648 to be less than or equal to 0.5` e `expected 54.51779497203695 to be less than or equal to 0.5`. As duas guardas da mesa e os 13 casos ideais já passam.
+
+Sobre a produção de `0b28aa7`, cada mutação foi aplicada em `simulator.ts` e restaurada antes da próxima. Todos os comandos abaixo usam `node node_modules/vitest/vitest.mjs run src/sim/acceptance.test.ts -t '<filtro>'`, com exit 1:
+
+- Retirar a condição de `ROPE_SLIP` em `correctPieces`; filtro `PHY-45:.*from rest.*mass M = 2` → **2 failed | 4 passed | 121 skipped (127)**. 1/2 volta a +3,0258298162083648 J e 3/1 a +54,51779497203695 J; ambas as asserções exigem ≤ 0,5 J.
+- `piece.residual = 0` sempre; filtro `PHY-52` → **2 failed | 125 skipped (127)**. Deslocamentos no passo 300: `expected 0.014645576477050781 to be less than 0.001` (2/1, μ = 0,8) e `expected 0.03546702861785889 to be less than 0.001` (3/2, μ = 1).
+- `ROPE_SLIP = 0`; filtro `PHY-52` → **2 failed | 125 skipped (127)**. T₁ já falha no passo 30: `expected 2.285201730980676 to be less than or equal to 0.0981` (2/1) e `expected 3.926140372917512 to be less than or equal to 0.1962` (3/2).
+- Guardar também o alvo em `pullRope` e aplicar a condição ao residual de `correctRope`; filtro `PHY-45:.*vy = 4.*ideal pulley` → **1 failed | 126 skipped (127)**. O 2/2 ideal falha com `expected 2.339830628500664 to be less than or equal to 0.5`.
+
+Após restaurar todas as mutações, `git diff --exit-code` passou e o filtro `PHY-45|PHY-52|PHY-41|pulley with mass` → **41 passed | 86 skipped (127)**, exit 0. O worktree e a junction temporários foram removidos.
+
+##### Gate e integração
+
+Gate executado pelo stage 3: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0; 30 arquivos e 809 testes passaram (809)**, suíte em **46,69 s**, sem skips. ESLint e TypeScript sem erros; Vite build concluído com 49 módulos. No PowerShell 5.1, a cadeia foi executada por `cmd /d /c` para preservar os `&&` do gate. `rg -n 'ROPE_SLIP' docs/adr/0004-rope-as-own-constraint-around-world-step.md` confirmou o passo 3 e a seção do aro; `git diff --check` passou.
+
+Rebase sobre `sweatshop/2026-10-01-2342` já atualizado, sem conflitos e sem mudança da árvore validada (`95362b5`). Merge `--no-ff` em `91cdb26`, com a mesma árvore. Resolução, ledger e `Stage: done` no mesmo commit de fechamento na sessão. Limitação aceita: limiar absoluto de 1 cm para cenas na escala do metro; impactos menores podem manter residual.
+
+Totais: Standards 0 bloqueadores, 1 nota documental corrigida; Spec 0 achados.
