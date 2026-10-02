@@ -1,0 +1,49 @@
+# PHY-65: Play e passo único a partir de um ponto anterior
+Stage: to-implement
+Status: ready-for-agent
+Blocked by: PHY-64
+Review: human
+Difficulty: normal
+
+- Primary files:
+  - src/playback/scheduler.ts (`advance`: `play`, `frame`, `stepOnce` com cursor)
+  - src/playback/scheduler.test.ts
+  - src/App.tsx (o laço de `frame` e o `stepOnce`, que hoje rodam passos no mundo vivo)
+  - src/App.test.ts
+
+#### What to build
+
+Com o PHY-64, play ou passo único com o slider para trás primeiro voltam ao vivo. Depois deste ticket, eles tocam o que está gravado a partir do ponto do slider e, ao chegar ao fim da gravação, continuam ao vivo (decisão do Bruno). O replay respeita a velocidade: o cursor avança pelos registros à mesma taxa de passos que o mundo vivo avançaria.
+
+Regra no scheduler, com `length` = registros na gravação, que `frame` e `stepOnce` passam a carregar como o `seek` do PHY-64: o cursor `c` avança `k` passos (os `k` de hoje: o crédito de velocidade no `frame`, 1 no `stepOnce`). Se `c + k < length − 1`, o cursor vai a `c + k` e nenhum passo roda no mundo. Senão, o cursor fica `null` (ao vivo) e rodam no mundo os `c + k − (length − 1)` passos que sobraram. Sem a gravação cheia, o último registro é o próprio mundo vivo, então o replay emenda no ao vivo sem salto. Com a gravação cheia e o mundo além de 10 s, chegar ao fim pula para o mundo vivo.
+
+Isso substitui o critério 3 e o 15 do PHY-64 (play e passo com o cursor num registro voltavam ao vivo antes de agir).
+
+#### Acceptance criteria
+
+1. No scheduler, `play` com o cursor num registro passa a tocar e mantém o cursor.
+2. No scheduler, `frame` tocando com o cursor `c` e `k` passos de crédito: com `c + k < length − 1`, o cursor vai a `c + k`, a transição pede 0 passos e `stepsTaken` não muda; com `c + k ≥ length − 1`, o cursor fica `null` e a transição pede `c + k − (length − 1)` passos.
+3. No scheduler, `stepOnce` com o cursor `c` segue a mesma regra com `k = 1`, em qualquer status.
+4. No scheduler, com o cursor `null`, `play`, `frame` e `stepOnce` agem exatamente como hoje.
+5. No app, play com o slider no registro i desenha os registros i+1, i+2… nos quadros seguintes (em 1x, um registro por quadro; em 0,5x, um a cada dois quadros), e o slider, o rótulo de tempo e o painel de leitura acompanham.
+6. Durante o replay a gravação não cresce. Ao chegar ao fim (sem a gravação cheia), o mundo vivo volta a dar passos e a gravação volta a crescer, sem salto: as poses do primeiro quadro ao vivo continuam as do último registro.
+7. Os campos de g e F, undo e redo voltam a ficar habilitados quando o replay chega ao ao vivo.
+8. Pausar durante o replay mantém o cursor onde está.
+9. Passo único com o slider no registro i mostra o registro i+1, sem dar passo no mundo; no penúltimo registro, vai ao ao vivo.
+10. Com a gravação cheia e o mundo além de 10 s, o replay que chega ao fim passa a mostrar o mundo vivo.
+
+#### Verification
+
+    npm test && npm run lint && npm run typecheck && npm run build
+
+## Tests stage 2 writes (own commit, red)
+
+- `src/playback/scheduler.test.ts`: critérios 1 a 4 chamando `advance` direto; 1 a 3 vermelhos hoje (o PHY-64 manda o cursor a `null`). Os testes do PHY-64 que fixam "volta ao vivo antes de agir" (critério 3 dele) são trocados nesse mesmo commit. O 4 passa hoje e vai junto.
+- `src/App.test.ts`, com o simulador falso e o `requestAnimationFrame` controlado: critérios 5 a 10; vermelhos hoje. Os testes do critério 15 do PHY-64 são trocados no mesmo commit. Costura de DOM: registrar no ticket, por teste novo, a mutação aplicada e a saída vermelha.
+
+## Comments
+
+- 2026-10-02 Aberto no stage 1 dos tickets do feedback da v4 (fatiado do PHY-64 pelo Bruno).
+- Bruno decidiu: play depois de voltar toca o gravado e depois continua ao vivo.
+- Proxy decided: passo único com o slider para trás avança um passo seguindo a regra do play; a velocidade continua sendo só a taxa do play — o passo é a menor unidade da mesma regra.
+- Planner: o excesso de passos além do fim da gravação roda no mundo vivo; com a gravação cheia isso é um salto para o mundo vivo, aceito porque só acontece depois de 10 s.

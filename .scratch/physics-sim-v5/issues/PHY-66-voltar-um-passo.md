@@ -1,0 +1,41 @@
+# PHY-66: Voltar um passo
+Stage: to-implement
+Status: ready-for-agent
+Blocked by: PHY-64
+Review: agent
+Difficulty: normal
+
+- Primary files:
+  - src/editor/shortcuts.ts (`ShortcutAction`, `actionForKey`)
+  - src/editor/shortcuts.test.ts
+  - src/App.tsx (barra de transporte em ~1573, listener de teclado em ~1133, tabela de atalhos em ~1619)
+  - src/App.test.ts
+  - src/i18n/pt-BR.ts, src/i18n/en.ts
+
+#### What to build
+
+O espelho do passo único: um botão "voltar um passo" ao lado do "Passo" e a seta ← mostram o registro anterior da gravação do PHY-64. Pausa se estiver tocando. Não roda nada no mundo: é um `seek` para `(cursor ?? length − 1) − 1`, limitado a 0. Em t = 0 (cursor 0, ou gravação com um registro só) o botão fica desabilitado e a ← não faz nada.
+
+#### Acceptance criteria
+
+1. `actionForKey` devolve `'stepBack'` para `ArrowLeft` fora de campo de texto e sem Ctrl/Cmd, como `ArrowRight` devolve `'stepOnce'`.
+2. A barra de transporte tem um botão de voltar um passo, com título i18n, ao lado do botão "Passo".
+3. Ao vivo, depois de N > 0 passos, clicar no botão (ou apertar ←) mostra o registro N − 1: poses, rótulo de tempo, slider e painel de leitura, como um `seek` do PHY-64.
+4. Com o cursor no registro i > 0, o botão e a ← levam ao registro i − 1.
+5. Durante o play, o botão e a ← pausam e voltam um registro.
+6. Com o cursor em 0, ou com a gravação com um registro só, o botão está desabilitado e a ← não muda nada.
+7. A tabela de atalhos lista ← com o texto `t('shortcuts.stepBack')` ("voltar um passo").
+
+#### Verification
+
+    npm test && npm run lint && npm run typecheck && npm run build
+
+## Tests stage 2 writes (own commit, red)
+
+- `src/editor/shortcuts.test.ts`: critério 1 chamando `actionForKey` direto; vermelho hoje (devolve `null`).
+- `src/App.test.ts`, com o simulador falso e o `requestAnimationFrame` controlado: critérios 2 a 7; vermelhos hoje. Costura de DOM: registrar no ticket, por teste novo, a mutação aplicada e a saída vermelha.
+
+## Comments
+
+- 2026-10-02 Aberto no stage 1 dos tickets do feedback da v4. O proxy propôs separar "voltar um passo" do PHY-64 e o Bruno aceitou no fatiamento (PHY-64, PHY-65, PHY-66).
+- Proxy decided: atalhos fora do PHY-64, → continua passo único, ← e o botão de voltar viram este ticket — mantém o PHY-64 no tamanho de um ticket.
