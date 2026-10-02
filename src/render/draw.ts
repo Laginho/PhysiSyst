@@ -1,4 +1,4 @@
-import { bodyPointToWorld, localVertices, scenePath, triangleHeight } from '../scene'
+import { bodyPointToWorld, currentPath, localVertices, triangleHeight } from '../scene'
 import type { Scene } from '../scene'
 import type { ConstraintState } from '../sim/simulator'
 import { makeTransform, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './transform'
@@ -184,10 +184,10 @@ export function drawScene(
   camera: Camera,
   width: number,
   height: number,
-  style: DrawStyle = DEFAULT_STYLE,
-  selection: Selection = null,
-  constraints: readonly ConstraintState[] = [],
+  opts?: { selection?: Selection; readings?: readonly ConstraintState[] },
 ): void {
+  const style = DEFAULT_STYLE
+  const selection = opts?.selection ?? null
   const t = makeTransform(camera, width, height)
   const labels = massLabels(scene)
   ctx.save()
@@ -243,7 +243,7 @@ export function drawScene(
     ctx.fillText(label, 0, 0)
     ctx.restore()
   }
-  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection, constraints)
+  drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection, opts?.readings ?? [])
   ctx.restore()
 }
 
@@ -258,7 +258,7 @@ function selectionStroke(ctx: CanvasRenderingContext2D, ppm: number): void {
  * plus the arc wrapped on each pulley (PHY-23), springs as zigzags (PHY-26).
  * During playback a rope is drawn from the path the simulator solved (PHY-56),
  * so a rope loose from a pulley (`sweep < 0`, PHY-54) is the straight leg with
- * no arc. With no reading's path (the editor) a rope is drawn from scenePath.
+ * no arc. With no reading's path (the editor) a rope is drawn from the document poses.
  * Drawn in world meters under one y-flipped transform, so canvas arc angles
  * are the path's own angles.
  */
@@ -313,8 +313,7 @@ function drawConstraints(
       ctx.restore()
       continue
     }
-    const reading = readings.find((r) => r.id === constraint.id)
-    const path = (reading?.kind === 'rope' ? reading.path : undefined) ?? scenePath(scene, constraint)
+    const path = currentPath(scene, constraint, readings)
     if (!path) continue
     ctx.save()
     if (constraint.id === selectedConstraintId) selectionStroke(ctx, ppm)

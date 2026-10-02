@@ -1,6 +1,6 @@
 import {
   bodyPointToWorld,
-  scenePath,
+  currentPath,
   triangleHeight,
   type Body,
   type Pulley,
@@ -93,8 +93,7 @@ export function ropeAtPoint(scene: Scene, w: Vec2, tolerance: number, readings: 
   for (let i = constraints.length - 1; i >= 0; i--) {
     const c = constraints[i]
     if (c.kind !== 'rope') continue
-    const reading = readings.find((r) => r.id === c.id)
-    const path = (reading?.kind === 'rope' ? reading.path : undefined) ?? scenePath(scene, c)
+    const path = currentPath(scene, c, readings)
     if (path?.segments.some((s) => distanceToSegment(w, s.from, s.to) <= tolerance)) return c
   }
   return null
