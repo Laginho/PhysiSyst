@@ -847,6 +847,86 @@ describe('loading screen (PHY-16)', () => {
   })
 })
 
+describe('simulator warnings panel (PHY-53)', () => {
+  function warningLines(host: HTMLElement): string[] {
+    return [...(panel(host, ptBR['warnings.title'])?.querySelectorAll('li') ?? [])].map((li) => li.textContent ?? '')
+  }
+
+  it('shows simulator construction warnings after boot', async () => {
+    const sim = { ...makeFakeSimulator(), warnings: ['Friction is degraded for this contact graph'] }
+    vi.mocked(createSimulator).mockResolvedValue(sim)
+
+    const host = renderApp()
+    await settleSimImport()
+
+    expect(warningLines(host)).toContain('Friction is degraded for this contact graph')
+  })
+
+  it('shows a warning added during play on the next repaint without another interaction', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const warnings: string[] = []
+    let steps = 0
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(),
+      warnings,
+      step: () => {
+        if (++steps === 2) warnings.push("body 'ball' approaches Rapier's ω ceiling")
+      },
+    })
+    const host = renderApp()
+    await settleSimImport()
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+
+    act(() => frame(16))
+    expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+    act(() => frame(32))
+    expect(warningLines(host)).toEqual(["body 'ball' approaches Rapier's ω ceiling"])
+    act(() => frame(48))
+    expect(warningLines(host)).toEqual(["body 'ball' approaches Rapier's ω ceiling"])
+  })
+
+  it('lists scene warnings before simulator warnings', async () => {
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), warnings: ['Friction is degraded'] })
+    const scene = blankScene()
+    scene.constants.g = 0
+    const { host } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'warning-scene', name: 'Warning scene', updatedAt: 1 }])
+      saveScene(storage, 'warning-scene', scene)
+      saveCurrentSceneId(storage, 'warning-scene')
+    })
+    await settleSimImport()
+
+    expect(warningLines(host)).toEqual(['constants.g: g should be a positive number', 'Friction is degraded'])
+  })
+
+  it('hides the panel when both the scene and simulator have no warnings', async () => {
+    const host = renderApp()
+    await settleSimImport()
+
+    expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+  })
+
+  it('removes simulator warnings after rebuilding without them', async () => {
+    const warnings = ['Friction is degraded']
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(),
+      warnings,
+      replaceScene: () => { warnings.length = 0 },
+    })
+    const host = renderApp()
+    await settleSimImport()
+    expect(warningLines(host)).toEqual(['Friction is degraded'])
+
+    await act(async () => { findButton(host, ptBR['playback.reset'])!.click() })
+
+    expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+  })
+})
+
 describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', () => {
   // Wall face midpoint (1.5, 2) and block center (5, 0.5): the relaxed x₀
   // between the snapped anchors is √(3.5² + 1.5²). Raw clicks near them are
