@@ -34,7 +34,8 @@ Which chat runs which stage is `docs/agents/loop.md`; the per-chat model and eff
 
 - Gate: `npm test && npm run lint && npm run typecheck && npm run build`
 - Base branch: `main`
-- Models: stage 1 fable, stage 2 claude-opus-5-5 high, stage 3 claude-fable-5-1 high
+- Models: stage 1 fable, stage 2 gpt-6.1-sol high, hard sonnet-5.5 xhigh, stage 3 gpt-6.1-sol max
+- Models (opus): stage 1 fable, stage 2 claude-opus-5-5 high, stage 3 claude-fable-5-1 high
 - Models (Codex): stage 1 gpt-6-astra, stage 2 gpt-6-sol xhigh, hard sonnet-5.5 high, stage 3 gpt-6-astra high
 - Models (sol): stage 2 gpt-6.1-sol high, hard sonnet-5.5 high, stage 3 gpt-6.1-sol max
 - Models (sonnet): stage 2 sonnet-5.5 high, stage 3 gpt-6.1-sol max
