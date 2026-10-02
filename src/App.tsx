@@ -744,6 +744,13 @@ export default function App() {
   >(null)
 
   const repaint = useCallback(() => {
+    // The simulator mutates its warning array; publish a snapshot only when its content changes.
+    const nextWarnings = simRef.current?.warnings ?? []
+    setSimWarnings((prev) =>
+      prev.length === nextWarnings.length && prev.every((warning, i) => warning === nextWarnings[i])
+        ? prev
+        : [...nextWarnings],
+    )
     const ctx = ctxRef.current
     if (ctx)
       paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
