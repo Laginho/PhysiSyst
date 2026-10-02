@@ -1,0 +1,473 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs,array,tabularx}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=1.4em}
+\emergencystretch=2em
+
+\definecolor{impl}{HTML}{3B6EA8}
+\definecolor{rev}{HTML}{E0A030}
+
+\title{Sweatshop no PhysiSyst: corda solta da polia com massa, desenho e clique no caminho simulado\\\large Sonnet 5.5 (high, hard xhigh) no stage 2, Opus 5.5 (xhigh) no stage 3}
+\author{Foreman, sessão \texttt{sweatshop/2026-10-02-1156}}
+\date{2 de outubro de 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Resumo}
+
+Run diurno em dois lançamentos na mesma sessão. O primeiro (11:56) usou o
+lineup padrão de então, \texttt{Models:} com \texttt{claude-opus-5-5 high} no
+stage 2 e \texttt{claude-fable-5-1 high} no stage 3. Às 12:08 o Bruno pediu
+para parar depois do estágio corrente e trocar o lineup. O driver parou pelo
+arquivo \texttt{STOP} às 12:13 e foi relançado às 12:15 com
+\texttt{-Models 'stage 2 sonnet-5.5 high, hard sonnet-5.5 xhigh, stage 3
+opus-5.5 xhigh'}, só para este run. No mesmo intervalo o \texttt{Models:} do
+\texttt{AGENTS.md} virou \texttt{gpt-6.1-sol high}, hard \texttt{sonnet-5.5
+xhigh}, \texttt{gpt-6.1-sol max} (\texttt{1948857} na \texttt{main},
+\texttt{f42a2c9} na sessão); o antigo ficou como \texttt{Models (opus)}.
+
+\begin{itemize}
+  \item \textbf{Produzido:} 6 tickets mergeados, \textbf{nenhuma reabertura}:
+        CLEAN-26, CLEAN-25, PHY-56, CLEAN-27, PHY-55 (\texttt{Difficulty:
+        hard}) e PHY-57. A fila esvaziou. PR de sessão:
+        \href{https://github.com/Laginho/PhysiSyst/pull/13}{\#13}, 6 linhas,
+        todas \texttt{Review: agent} --- Approve.
+  \item \textbf{Custo:} \textbf{\$31,40} a preço de lista nos 12 estágios,
+        todos com preço: \texttt{claude-opus-5-5 high} \$2,31 (2),
+        \texttt{claude-fable-5-1 high} \$1,73 (1), \texttt{sonnet-5.5 high}
+        \$6,46 (3), \texttt{sonnet-5.5 xhigh} \$3,63 (1), \texttt{opus-5.5
+        xhigh} \$17,27 (5). 84 min de estágio, 48,7\,M tokens de entrada
+        (95,8\,\% em cache) e 372\,k de saída. \$5,23 por ticket mergeado.
+  \item \textbf{O que deu errado:} nada quebrou. O ponto fraco é de medida: a
+        revisão do Opus 5.5 xhigh fechou sozinha, em 4 de 5 tickets, lacunas que
+        outro revisor teria devolvido (um teste faltando no CLEAN-27, o
+        vermelho isolado do critério 4.3 no PHY-56). O scoreboard registra 0
+        reaberturas e não vê esses achados.
+  \item \textbf{Veredito provisório:} lineup caro e sem atrito. A revisão
+        custou \$3,45 em média, 5 vezes a do Sol max (\$0,67 no run anterior),
+        e levou 61\,\% do custo do run. O Sonnet 5.5 entregou 4 de 4 em
+        \texttt{to-review} de primeira. Com 3 e 1 revisões nos pares novos, é
+        anedota.
+\end{itemize}
+
+\section{Linha do tempo}
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+11:56 & Lançamento 1, driver \texttt{74dc512}, lineup padrão. Sessão nova
+        \texttt{sweatshop/2026-10-02-1156} (o PR \#12 já estava mergeado).\\
+12:01 & CLEAN-26 (um \texttt{wrapAngle} exportado em \texttt{ropePath}) em
+        \texttt{to-review} em 4 min. 12:04: mergeado pelo Fable, sem achados.\\
+12:08 & O Bruno pede parada depois do estágio corrente e novo lineup;
+        \texttt{STOP} criado com o CLEAN-25 em implementação.\\
+12:13 & CLEAN-25 (junções das polias soltas igualmente espaçadas) em
+        \texttt{to-review} em 9 min. O driver acha o \texttt{STOP}, publica o
+        PR \#13 com 1 ticket e volta à \texttt{main}.\\
+12:15 & Lineup padrão trocado no \texttt{AGENTS.md}; lançamento 2 com
+        \texttt{-Models}. A \texttt{main} tinha 4 commits do stage 1 sem push,
+        que subiram junto.\\
+12:22 & CLEAN-25 mergeado pelo Opus 5.5 xhigh em 7 min.\\
+12:33 & PHY-56 (desenho da corda pelo caminho simulado) em 11 min. 12:43:
+        mergeado; a revisão isolou o vermelho do critério 4.3.\\
+12:47 & CLEAN-27 (clique na corda pelo caminho simulado) em 3 min. 12:53:
+        mergeado; a revisão acrescentou o clique antes do primeiro passo.\\
+13:03 & PHY-55 (corda se solta da polia com massa) vai para o hard
+        (\texttt{sonnet-5.5 xhigh}): 78 testes vermelhos, \texttt{to-review}
+        em 10 min. 13:11: mergeado.\\
+13:14 & PHY-57 (corda volta a prender no disco) em 3 min. 13:23: mergeado.\\
+13:24 & ``Nothing runnable''; PR \#13 atualizado com 6 tickets.\\
+\bottomrule
+\end{tabularx}
+
+\section{Métricas por estágio}
+
+Linhas 129--140 de \texttt{.scratch/run-log.md}. Minutos, tokens e custo como o
+driver gravou.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l l r r r r r X@{}}
+\toprule
+Estágio & Modelo & Min & Entrada & Cache & Saída & Custo & Desfecho\\
+\midrule
+C26 impl.    & opus-5-5 high  & 4  & 1,00\,M & 93\,\% & 5\,k  & 0,907 & to-review\\
+C26 revisão  & fable-5-1 high & 3  & 0,91\,M & 93\,\% & 4\,k  & 1,734 & mergeado\\
+C25 impl.    & opus-5-5 high  & 9  & 2,60\,M & 97\,\% & 16\,k & 1,402 & to-review\\
+C25 revisão  & opus xhigh     & 7  & 5,50\,M & 96\,\% & 37\,k & 3,186 & mergeado\\
+P56 impl.    & sonnet high    & 11 & 6,60\,M & 96\,\% & 47\,k & 4,158 & to-review\\
+P56 revisão  & opus xhigh     & 10 & 5,10\,M & 95\,\% & 48\,k & 3,488 & mergeado\\
+C27 impl.    & sonnet high    & 3  & 2,40\,M & 97\,\% & 11\,k & 1,164 & to-review\\
+C27 revisão  & opus xhigh     & 6  & 4,20\,M & 96\,\% & 35\,k & 2,631 & mergeado\\
+P55 impl.    & sonnet xhigh   & 10 & 5,90\,M & 97\,\% & 52\,k & 3,628 & to-review\\
+P55 revisão  & opus xhigh     & 9  & 7,20\,M & 96\,\% & 53\,k & 4,069 & mergeado\\
+P57 impl.    & sonnet high    & 3  & 2,10\,M & 97\,\% & 12\,k & 1,142 & to-review\\
+P57 revisão  & opus xhigh     & 9  & 5,20\,M & 94\,\% & 52\,k & 3,893 & mergeado\\
+\midrule
+\multicolumn{2}{@{}l}{Total} & 84 & 48,71\,M & 95,8\,\% & 372\,k & 31,402 & 12 de 12 com preço\\
+\multicolumn{2}{@{}l}{Implementação} & 40 & 20,60\,M & 96,5\,\% & 143\,k & 12,401 & 6 estágios\\
+\multicolumn{2}{@{}l}{Revisão} & 44 & 28,11\,M & 95,4\,\% & 229\,k & 19,001 & 6 estágios\\
+\multicolumn{2}{@{}l}{Retrabalho} & 0 & --- & & --- & 0 & nenhuma reabertura\\
+\multicolumn{2}{@{}l}{Perdido} & 0 & --- & & --- & 0 & nenhuma linha \texttt{?}\\
+\bottomrule
+\end{tabularx}}
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked, bar width=18pt, width=\linewidth, height=6.5cm,
+  ylabel={Tokens de entrada (M)}, ymin=0,
+  symbolic x coords={CLEAN-26,CLEAN-25,PHY-56,CLEAN-27,PHY-55,PHY-57},
+  xtick=data, x tick label style={font=\small},
+  legend style={at={(0.02,0.97)},anchor=north west,draw=none,font=\small},
+  axis lines*=left, ymajorgrids, grid style={gray!25}]
+\addplot[fill=impl,draw=none] coordinates
+  {(CLEAN-26,1.00) (CLEAN-25,2.60) (PHY-56,6.60) (CLEAN-27,2.40) (PHY-55,5.90) (PHY-57,2.10)};
+\addplot[fill=rev,draw=none] coordinates
+  {(CLEAN-26,0.91) (CLEAN-25,5.50) (PHY-56,5.10) (CLEAN-27,4.20) (PHY-55,7.20) (PHY-57,5.20)};
+\legend{implementação, revisão}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Onde foi o custo.} Por ticket: PHY-55 \$7,70 (19 min), PHY-56
+\$7,65 (21 min), PHY-57 \$5,04, CLEAN-25 \$4,59, CLEAN-27 \$3,80, CLEAN-26
+\$2,64. Pela primeira vez no PhysiSyst a revisão custou mais que a
+implementação: \$19,00 contra \$12,40, 58\,\% da entrada e 61\,\% do custo. Em
+4 dos 5 tickets revisados pelo Opus 5.5 xhigh a revisão custou mais que a
+implementação; no PHY-57, 3,4 vezes. Até o Fable 5.1 high, no CLEAN-26, custou
+\$1,73 contra \$0,91 do Opus que implementou.
+
+\paragraph{O que se perdeu.} Nada em tokens: nenhuma reabertura, nenhuma linha
+\texttt{?}. Em relógio, cerca de 2 min entre o \texttt{STOP} (12:13:35) e o
+primeiro estágio do lançamento 2 (12:15:35). Relógio total: 88 min, de 11:56 a
+13:24.
+
+\section{Comparação}
+
+Os runs anteriores do PhysiSyst com preço. Os quatro primeiros revisaram com
+\texttt{gpt-6.1-sol max}; este, com Fable 5.1 high (1) e Opus 5.5 xhigh (5).
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r@{}}
+\toprule
+& 30/09 (1--5) & 30/09 (6) & 01/10 & 02/10 noite & Este run\\
+\midrule
+Implementador & sol high & sol high & sonnet high & sol + sonnet xh & opus + sonnet\\
+Estágios registrados & 28 & 10 & 21 & 13 & 12\\
+Tickets mergeados & 10 & 2 & 7 & 5 & 6\\
+Reaberturas & 1 & 3 & 1 & 1 & 0\\
+Impl.: falhou ou perguntou & 4 de 15 & 0 de 5 & 0 de 8 & 0 de 6 & 0 de 6\\
+Mediana da implementação & 7 min & 5 min & 6 min & 8,5 min & 6,5 min\\
+Custo médio por impl. & \$0,52 & \$0,45 & \$1,74 & \$1,89 & \$2,07\\
+Mediana da revisão & 10 min & 11 min & 12,5 min & 10,5 min & 8 min\\
+Custo médio por revisão & \$0,59 & \$0,62 & \$0,65 & \$0,67 & \$3,17\\
+Estágios perdidos (\texttt{?}) & 2 & 0 & 5 & 1 & 0\\
+Custo registrado & \$14,20 & \$5,39 & \$19,13 & \$15,32 & \$31,40\\
+Custo por ticket mergeado & \$1,42 & \$2,69 & \$2,73 & \$3,06 & \$5,23\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+O custo por ticket quase dobrou em relação ao run da noite, e a diferença é
+quase toda da revisão: com a média de revisão do Sol max (\$0,67), este run
+teria custado cerca de $16,42, ou $2,74 por ticket. O Sonnet 5.5 high saiu a
+\$2,15 por implementação, perto dos \$1,74 de 01/10. O Sonnet 5.5 xhigh fez o
+hard do run por \$3,63, contra \$8,82 do PHY-54 na noite, mas o PHY-55 chegou
+mais mastigado: o proxy tinha fixado 9 decisões no stage 1.
+
+\section{Atribuição das reaberturas}
+
+Nenhuma rodada \texttt{reopened} neste run, logo nenhuma linha nova em
+\path{.scratch/reopen-attribution.md}. Sem \emph{drip-feeding} e sem
+\emph{churn}.
+
+Três achados que a revisão consertou em vez de devolver teriam rótulo se
+tivessem reaberto. O foreman os anota aqui sem registrar linha, porque o
+arquivo só conta rodadas reabertas:
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+Ticket & Rótulo provável & Achado consertado na revisão\\
+\midrule
+CLEAN-27 & S2-explícito/teste & O teste de App nunca clicava antes do
+  primeiro passo, então metade do critério 3.2 não tinha prova. A revisão
+  acrescentou o clique (\texttt{9f95310}) e registrou duas mutações.\\
+PHY-56 & S2-explícito/teste ? & O critério 4.3 não tinha vermelho próprio: no
+  teste compartilhado, a mutação 3 parava no 4.1. A revisão isolou e viu o
+  vermelho, sem commit de teste.\\
+PHY-57 & S2-explícito/código ? & O critério 4 pedia que o comentário de
+  \texttt{Grip.loose} dissesse como o impacto é absorvido; só o ADR dizia. A
+  revisão corrigiu (\texttt{42937d2}).\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Os três são do Sonnet 5.5 high. Contados como reabertura, o par
+\texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh} teria 2 ou 3 de 3, não
+0 de 3.
+
+\section{Scoreboard}
+
+Saída de \path{sweatshop/scripts/scoreboard.ps1} sobre os quatro repositórios
+desta máquina com \path{.scratch/run-log.md} (PhysiSyst, SIGAA-ME, SynchroNice,
+slip). Para o PhysiSyst, rodou sobre \path{docs/run-log/run-log.md} com as 12
+linhas deste run acrescentadas (178 linhas): o log local continua sem as linhas
+de 30/09 da outra máquina.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
+\midrule
+sonnet & 121 & 75 & 31 & 15 & 7m & \$10.53 (4/121)\\
+claude-opus-5-5 & 35 & 31 & 4 & 0 & 6m & \$0.72 (1/35)\\
+gpt-6.1-sol high & 35 & 31 & 0 & 4 & 9m & \$27.53 (35/35)\\
+sonnet-5.5 high & 11 & 11 & 0 & 0 & 6m & \$20.42 (11/11)\\
+sonnet-5.5 xhigh & 3 & 3 & 0 & 0 & 10m & \$12.44 (3/3)\\
+claude-opus-5-5 high & 2 & 2 & 0 & 0 & 9m & \$2.31 (2/2)\\
+fable & 5 & 5 & 0 & 0 & 3m & ?\\
+gpt-6-luna & 23 & 11 & 10 & 2 & 26m & ?\\
+gpt-6-sol & 6 & 5 & 1 & 0 & 17m & ?\\
+gpt-5.6-sol & 5 & 4 & 1 & 0 & 17m & ?\\
+gpt-6-astra & 18 & 11 & 6 & 1 & 8m & ?\\
+sonnet-5 xhigh & 11 & 6 & 2 & 3 & 8m & \$18.09 (11/11)\\
+gpt-6-astra low & 2 & 2 & 0 & 0 & 30m & \$19.03 (2/2)\\
+gpt-6.1-sol max & 3 & 1 & 2 & 0 & 17m & \$1.44 (1/3)\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r@{}}
+\toprule
+Implementador & Revisor & Reviews & Reabertos & Taxa & Por S2 & Taxa S2 & Sem rótulo\\
+\midrule
+sonnet & opus & 68 & 20 & 29\,\% & 1 & $\geq$1\,\% & 19\\
+? & opus & 4 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+claude-opus-5-5 & claude-fable-5-1 & 30 & 1 & 3\,\% & 0 & $\geq$0\,\% & 1\\
+gpt-6.1-sol high & gpt-6.1-sol max & 30 & 8 & 27\,\% & 6 & $\geq$20\,\% & 1\\
+sonnet-5.5 high & gpt-6.1-sol max & 8 & 1 & 12\,\% & 1 & 12\,\% & 0\\
+sonnet-5.5 xhigh & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
+claude-opus-5-5 high & claude-fable-5-1 high & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+claude-opus-5-5 high & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+sonnet-5.5 high & opus-5.5 xhigh & 3 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+sonnet-5.5 xhigh & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+sonnet & fable & 1 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+fable & fable & 4 & 1 & 25\,\% & 0 & $\geq$0\,\% & 1\\
+gpt-6-luna & gpt-6-sol & 11 & 7 & 64\,\% & 0 & $\geq$0\,\% & 7\\
+gpt-6-sol & gpt-5.6-sol & 5 & 4 & 80\,\% & 0 & $\geq$0\,\% & 4\\
+gpt-5.6-sol & gpt-6-astra & 4 & 3 & 75\,\% & 0 & $\geq$0\,\% & 3\\
+gpt-6-astra & gpt-5.6-sol & 11 & 5 & 45\,\% & 0 & $\geq$0\,\% & 5\\
+sonnet-5 xhigh & opus-5.5 xhigh & 5 & 0 & 0\,\% & 0 & 0\,\% & 0\\
+gpt-6-astra low & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0\\
+gpt-6.1-sol max & gpt-6.1-sol max & 1 & 1 & 100\,\% & 0 & $\geq$0\,\% & 1\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2 implícito & S1 & S3 ruído\\
+\midrule
+gpt-6.1-sol high $\to$ gpt-6.1-sol max & 7 & 3 & 0 & 7 & 1 & 0\\
+sonnet-5.5 high $\to$ gpt-6.1-sol max & 1 & 0 & 0 & 2 & 3 & 0\\
+sonnet-5.5 xhigh $\to$ gpt-6.1-sol max & 1 & 1 & 0 & 1 & 2 & 0\\
+sonnet $\to$ opus & 1 & 1 & 1 & 0 & 0 & 0\\
+gpt-6-astra low $\to$ gpt-6.1-sol max & 1 & 2 & 0 & 1 & 0 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\paragraph{O que mudou desde o relatório anterior.}
+\begin{itemize}
+  \item \textbf{Quatro pares novos, todos deste run e todos com 0
+        reaberturas:} \texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh}
+        (3), \texttt{sonnet-5.5 xhigh} $\to$ \texttt{opus-5.5 xhigh} (1),
+        \texttt{claude-opus-5-5 high} $\to$ \texttt{claude-fable-5-1 high} (1)
+        e \texttt{claude-opus-5-5 high} $\to$ \texttt{opus-5.5 xhigh} (1).
+  \item \textbf{\texttt{sonnet-5.5 high}} foi de 8 para 11 estágios e
+        \textbf{\texttt{sonnet-5.5 xhigh}} de 2 para 3 (mediana de 19 para
+        10 min). \texttt{claude-opus-5-5 high} é linha nova, separada de
+        \texttt{claude-opus-5-5} sem esforço.
+  \item \textbf{\texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol max}} foi
+        de 28 revisões e 21\,\% de taxa S2 para 30 e $\geq$20\,\%, com uma
+        reabertura sem rótulo. \textbf{\texttt{gpt-6.1-sol max}} apareceu como
+        implementador (3 estágios, 2 falhas) com um par
+        \texttt{gpt-6.1-sol max} $\to$ \texttt{gpt-6.1-sol max} reaberto e sem
+        rótulo. Nada disso é deste run: vem dos repositórios irmãos.
+\end{itemize}
+
+\paragraph{Como ler.}
+\begin{itemize}
+  \item \textbf{Mesmo implementador, dois revisores:} o Sonnet 5.5 high tem
+        12\,\% de reabertura sob o Sol max (8 revisões) e 0\,\% sob o Opus 5.5
+        xhigh (3). \textbf{Ambos abaixo de 10 revisões: anedota.} E o 0\,\% é
+        do revisor, não do implementador: a seção anterior mostra que o Opus
+        consertou o que o Sol max teria devolvido.
+  \item \textbf{Os pares do Opus 5.5 xhigh com 0\,\%} somam 10 revisões entre
+        \texttt{sonnet-5 xhigh}, \texttt{sonnet-5.5 high}, \texttt{sonnet-5.5
+        xhigh} e \texttt{claude-opus-5-5 high}, nenhuma reaberta. Juntos,
+        sugerem um revisor que conserta em vez de devolver; separados, cada par
+        é anedota.
+  \item \textbf{Nenhum rótulo novo:} a tabela de achados não mudou. Os
+        \texttt{Sem rótulo} novos são dos irmãos.
+\end{itemize}
+
+\section{Observações sobre os modelos}
+
+\subsection*{Opus 5.5 (high), implementação (lançamento 1)}
+\begin{itemize}
+  \item \textbf{2 de 2 em \texttt{to-review}, 2 de 2 mergeados.} CLEAN-26 em
+        4 min (\$0,91), CLEAN-25 em 9 min (\$1,40).
+  \item \textbf{Registro de mutação completo} no CLEAN-25, inclusive a mutação
+        de integração nos dois cenários de aceitação.
+  \item \textbf{Dois deslizes admitidos no próprio \texttt{.final}:} o
+        \texttt{to-review} entrou num commit de docs separado, e o vermelho do
+        critério 1 nunca mostra os 21\,m previstos porque o teste de caminhada
+        para na primeira falha. Ergueu o timeout desse teste para 30\,s num
+        commit só de teste e repetiu o vermelho.
+\end{itemize}
+
+\subsection*{Sonnet 5.5 (high), implementação}
+\begin{itemize}
+  \item \textbf{3 de 3 em \texttt{to-review}, 3 de 3 mergeados.} PHY-56 em
+        11 min (\$4,16), CLEAN-27 e PHY-57 em 3 min (\$1,16 e \$1,14).
+  \item \textbf{Harness errado no commit vermelho do PHY-56:} um teste nunca
+        poderia passar e outro deixava uma mutação viva. Ambos foram corrigidos
+        em commits só de teste, com as cinco mutações repetidas. É o mesmo
+        padrão do PHY-53 do Sol high na noite.
+  \item \textbf{Três lacunas de prova}, todas fechadas pela revisão (seção 4).
+        Nenhuma de comportamento.
+  \item \textbf{PHY-57: o primeiro commit de código deixou o
+        \texttt{Stage:} em \texttt{implementing}}; um commit seguinte o
+        corrigiu. Admitido no \texttt{.final}.
+\end{itemize}
+
+\subsection*{Sonnet 5.5 (xhigh), implementação hard}
+\begin{itemize}
+  \item \textbf{PHY-55 em 10 min, \$3,63, 78 de 78 vermelhos} no commit de
+        testes (+231\,J no caso 1/1 com $v_x = 8$ antes do conserto).
+  \item \textbf{Registrou e não investigou} a divergência entre as faixas de
+        energia da mutação 1 e as do ticket (até +189\,kJ contra +45,9\,kJ
+        previstos). A revisão explicou: o conserto também solta no
+        \texttt{correctPieces}, o que o protótipo provavelmente não fazia.
+  \item \textbf{Mais barato que no PHY-54} (\$3,63 contra \$8,82 com a
+        reabertura), num ticket com 9 decisões do proxy já no stage 1.
+\end{itemize}
+
+\subsection*{Fable 5.1 (high), revisão (lançamento 1)}
+\begin{itemize}
+  \item \textbf{Uma revisão, CLEAN-26, 3 min, \$1,73:} sem achados, vermelho
+        reproduzido (1 de 21). Custou 1,9 vez a implementação de um refactor de
+        uma função.
+\end{itemize}
+
+\subsection*{Opus 5.5 (xhigh), revisão}
+\begin{itemize}
+  \item \textbf{5 de 5 mergeados, 6--10 min, \$2,63--4,07.} Repetiu o vermelho
+        e as mutações em todos e rodou o gate antes de cada merge.
+  \item \textbf{Conserta em vez de devolver.} CLEAN-27: escreveu o teste que
+        faltava e duas mutações. PHY-56: isolou o vermelho do 4.3. PHY-55:
+        explicou a divergência da mutação 1 e refluiu dois comentários que só
+        passavam no \texttt{git grep} do critério 6 pela quebra de linha.
+        PHY-57: cumpriu o critério 4, tirou uma linha morta e evitou recalcular
+        as peças a cada passo.
+  \item \textbf{Anota sem abrir ticket:} a busca ``caminho do simulador, senão
+        o do documento'' em três arquivos (\texttt{draw.ts},
+        \texttt{overlay.ts}, \texttt{hitTest.ts}), \texttt{drawScene} com 8
+        argumentos posicionais, três regras do CLEAN-25 sem teste.
+  \item \textbf{Caro:} 45\,k de saída em média por revisão, contra 13\,k do Sol
+        max na noite.
+\end{itemize}
+
+\section{Driver e runtime}
+\begin{itemize}
+  \item \textbf{\texttt{STOP} funcionou como prometido:} achado às 12:13:35,
+        entre estágios, com o PR publicado e a árvore na \texttt{main}. Foi o
+        primeiro uso real; custou cerca de 2 min.
+  \item \textbf{Mesmo modelo, duas grafias:} a binding escreve
+        \texttt{claude-opus-5-5} e \texttt{claude-fable-5-1}; o
+        \texttt{-Models} aceita \texttt{opus-5.5}. O log grava como foi
+        escrito, e o scoreboard trata \texttt{claude-opus-5-5 high} e
+        \texttt{opus-5.5 xhigh} como modelos diferentes. Aqui o esforço já os
+        separa, mas um \texttt{opus-5.5 high} viraria uma terceira linha.
+  \item \textbf{Base à frente da origem:} a \texttt{main} tinha 4 commits do
+        stage 1 sem push. O Preflight aceitou (o \texttt{pull --ff-only} não
+        falha com a base à frente), e a sessão nasceu deles e os publicou.
+        Inofensivo aqui, mas o PR de sessão mostraria commits que a
+        \texttt{main} remota ainda não tem.
+  \item \textbf{Aviso inofensivo de novo:} o \texttt{.err} dos estágios do
+        Sonnet traz o aviso \texttt{unrecognized\_model} do Claude Code
+        para \texttt{claude-sonnet-5-5}; todos rodaram normalmente.
+  \item \textbf{Log local incompleto:} \path{.scratch/run-log.md} desta máquina
+        tem 140 linhas; \path{docs/run-log/run-log.md} tinha 166. Copiar o
+        local por cima, como o foreman manda, apagaria 38 linhas de 30/09. O
+        foreman acrescentou as 12 linhas deste run à cópia.
+\end{itemize}
+
+\section{Recomendações}
+\begin{enumerate}
+  \item \textbf{Registrar os consertos da revisão que acrescentam prova.}
+        Quando o stage 3 escreve um teste ou fecha um critério em vez de
+        reabrir, uma linha em \path{reopen-attribution.md} (com rodada 0, por
+        exemplo) deixaria o scoreboard ver o achado. Hoje os pares do Opus 5.5
+        xhigh mostram 0\,\% em 10 revisões somadas, e pelo menos 1 dos 3 do
+        \texttt{sonnet-5.5 high} $\to$ \texttt{opus-5.5 xhigh} teria reaberto
+        sob o Sol max. Linhas: \texttt{sonnet-5.5 high} $\to$
+        \texttt{opus-5.5 xhigh} (3) e $\to$ \texttt{gpt-6.1-sol max} (8);
+        ambas anedota.
+  \item \textbf{Normalizar a grafia dos modelos no log} (\texttt{claude-opus-5-5}
+        e \texttt{opus-5.5} como um nome), antes que dois registros do mesmo
+        modelo e esforço se dividam no scoreboard.
+  \item \textbf{Run log: mesclar, não copiar.} Ou sincronizar o
+        \path{.scratch/run-log.md} desta máquina a partir de
+        \path{docs/run-log/run-log.md} antes do próximo run, ou mudar o
+        foreman para acrescentar as linhas do run à cópia.
+  \item \textbf{O lineup padrão novo (Sol high / Sonnet 5.5 xhigh / Sol max)
+        está coerente com o custo:} a revisão do Opus 5.5 xhigh custou 5 vezes
+        a do Sol max sem diferença de qualidade mensurável no scoreboard.
+        Apoia-se em custo, não em taxa: os pares comparáveis têm 3 e 8
+        revisões.
+  \item \textbf{Abrir um CLEAN para a busca de caminho repetida} em
+        \texttt{draw.ts}, \texttt{overlay.ts} e \texttt{hitTest.ts}, e decidir
+        se \texttt{drawScene} merece um objeto de opções. A revisão do CLEAN-27
+        e a do PHY-56 anotaram; nenhum ticket existe.
+  \item \textbf{Testes para as três regras do CLEAN-25 sem critério} (polia
+        solta única no meio, espaçamento entre polias ainda presas, ângulo
+        \texttt{start} inalterado), num CLEAN de testes ou no próximo ticket
+        que mexer em \texttt{ropePath}.
+  \item \textbf{A fila acabou:} nenhum ticket aberto. O próximo run depende do
+        stage 1.
+\end{enumerate}
+
+Do relatório anterior: a recomendação 6 (CLEAN do \texttt{wrapAngle}) virou o
+CLEAN-26 e foi mergeada aqui; a 7 (stage 1 de CLEAN-25, PHY-55 e PHY-56)
+também foi feita. As outras (Primary files, proxy antes de reabrir por
+fronteira, Codex por janela) não foram exercitadas neste run.
+
+\section{Débito humano}
+
+Nenhuma linha \texttt{Débito humano:} nos seis tickets, e nenhum
+\texttt{Proxy escalated}. As revisões listaram, nas Resolutions, as decisões
+que o proxy tomou pelo Bruno: 8 no CLEAN-25, 9 no PHY-56, 9 no PHY-55 e 5 no
+PHY-57. O PR \href{https://github.com/Laginho/PhysiSyst/pull/13}{\#13} tem as
+seis linhas como \texttt{Review: agent} --- Approve. Para o Bruno: ler as
+decisões do proxy no PR, mergear o PR \#13 e decidir sobre as recomendações 1,
+3 e 5.
+
+\end{document}

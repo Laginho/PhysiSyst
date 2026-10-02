@@ -164,3 +164,15 @@
 | 2026-10-02 04:40 | PHY-54 | review | gpt-6.1-sol max | 1 | reopened | sweatshop/2026-10-01-2342 | 18m | 2.9M in (96% cached), 20k out | $0.998 |
 | 2026-10-02 04:47 | PHY-54 | implement | sonnet-5.5 xhigh | 1 | to-review | sweatshop/2026-10-01-2342 | 6m | 3.3M in (95% cached), 25k out | $2.757 |
 | 2026-10-02 04:59 | PHY-54 | review | gpt-6.1-sol max | 1 | merged | sweatshop/2026-10-01-2342 | 13m | 1.8M in (93% cached), 13k out | $0.693 |
+| 2026-10-02 12:01 | CLEAN-26 | implement | claude-opus-5-5 high | 1 | to-review | sweatshop/2026-10-02-1156 | 4m | 1.0M in (93% cached), 5k out | $0.907 |
+| 2026-10-02 12:04 | CLEAN-26 | review | claude-fable-5-1 high | 1 | merged | sweatshop/2026-10-02-1156 | 3m | 907k in (93% cached), 4k out | $1.734 |
+| 2026-10-02 12:13 | CLEAN-25 | implement | claude-opus-5-5 high | 1 | to-review | sweatshop/2026-10-02-1156 | 9m | 2.6M in (97% cached), 16k out | $1.402 |
+| 2026-10-02 12:22 | CLEAN-25 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 7m | 5.5M in (96% cached), 37k out | $3.186 |
+| 2026-10-02 12:33 | PHY-56 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-02-1156 | 11m | 6.6M in (96% cached), 47k out | $4.158 |
+| 2026-10-02 12:43 | PHY-56 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 10m | 5.1M in (95% cached), 48k out | $3.488 |
+| 2026-10-02 12:47 | CLEAN-27 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-02-1156 | 3m | 2.4M in (97% cached), 11k out | $1.164 |
+| 2026-10-02 12:53 | CLEAN-27 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 6m | 4.2M in (96% cached), 35k out | $2.631 |
+| 2026-10-02 13:03 | PHY-55 | implement | sonnet-5.5 xhigh | 1 | to-review | sweatshop/2026-10-02-1156 | 10m | 5.9M in (97% cached), 52k out | $3.628 |
+| 2026-10-02 13:11 | PHY-55 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 9m | 7.2M in (96% cached), 53k out | $4.069 |
+| 2026-10-02 13:14 | PHY-57 | implement | sonnet-5.5 high | 1 | to-review | sweatshop/2026-10-02-1156 | 3m | 2.1M in (97% cached), 12k out | $1.142 |
+| 2026-10-02 13:23 | PHY-57 | review | opus-5.5 xhigh | 1 | merged | sweatshop/2026-10-02-1156 | 9m | 5.2M in (94% cached), 52k out | $3.893 |
