@@ -1,5 +1,5 @@
 # CLEAN-28: o caminho da corda (simulado, senão o do documento) escolhido num lugar só
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -201,3 +201,43 @@ Exit 1: 4 failed / 195 passed (199 tests).
 - 2026-10-02 Stage 2 retomado na branch `clean-28-asked-20261002-1506`, conforme a decisão já registrada no commit `59f5784` da base da sessão. Corrigido apenas o texto de M2 no critério 6 e incorporada a decisão acima; produção e testes preservados byte a byte. O bloqueio anterior está resolvido. Evidência red e M1–M5 permanece nos commits `542e2e2`, `b1c3b4b` e `4dff4e0`; nenhum teste foi alterado após o commit red. Verificação atual: 4 arquivos / 104 testes passaram; App PHY-56/CLEAN-27: 3 passaram / 92 não selecionados; greps dos critérios 2 e 3 conforme esperado, `elasticArrows` sem guarda e `drawGrid` preservado. Gate completo: 30 arquivos / 938 testes passaram, lint exit 0, typecheck exit 0, build exit 0 (49 módulos). Permanece o aviso de tamanho do chunk sim (2.135,04 kB). `git diff --check` passou. Entrega para stage 3, sem revisão nem merge nesta retomada.
 
 - 2026-10-02 Stage 3: corrigida apenas a codificação do comentário de handoff acima. Nenhum arquivo de produção ou teste alterado. Rebase na sessão preservou o histórico da tentativa, a decisão autorizada de M2 e toda a evidência de mutação.
+
+#### Resolution (2026-10-02)
+Verdict: Approve
+
+Revisão em dois eixos pela skill `code-review`, contra o ponto fixo `1cc0f4b` e o HEAD original `7b30995`. Após o rebase em `sweatshop/2026-10-02-1452`, o código revisado permaneceu idêntico; a sessão acrescentou apenas os três testes já aprovados do CLEAN-29. Merge sem squash: `a1682c3`.
+
+**Standards — 0 violações documentadas; 0 smells.** Diff restrito aos Primary files e ao histórico do ticket. O commit red original `542e2e2` (rebase: `19253f4`) contém apenas testes e metadados do ticket; produção entra depois em `b1c3b4b` (rebase: `0063da6`). Nenhum commit posterior deste ticket altera testes. As evidências de mutação satisfazem o AGENTS.md. A única correção do stage 3 foi de documentação: os caracteres danificados do comentário de handoff, em `cfc7cae`.
+
+**Spec — 0 achados.** Todos os critérios 1–8 atendidos, sem mudança de comportamento ou regressão observada. `currentPath` preserva a identidade do path da leitura e o fallback do documento, tem readings obrigatório e tipo estrutural, e é reexportado sem dependência de sim. draw, overlay e hitTest delegam a ele. As duas costuras de App usam `ropeReadingsOf`; as molas continuam recebendo leituras sem guarda. `drawScene` usa options e DEFAULT_STYLE, com seleção coberta pelo novo teste; drawGrid, assertions, textos e tolerâncias existentes preservados.
+
+Arquivos entregues: `src/scene/ropePath.ts`, `src/scene/index.ts`, `src/scene/ropePath.test.ts`, `src/render/draw.ts`, `src/render/draw.test.ts`, `src/render/overlay.ts`, `src/editor/hitTest.ts` e `src/App.tsx`. O fechamento atual altera somente este ticket e o ledger.
+
+**Prova red-green.** Antes da produção, o comando registrado no commit red falhou em 2 arquivos: 7 testes vermelhos e 40 verdes (47). Os relatórios JSON originais de M1–M5, em `<TEMP>/physisyst-clean28-evidence`, foram lidos nesta revisão e seus testes/falhas conferidos contra as tabelas acima:
+
+| Mutação | Vermelhos | Verdes | Total |
+| --- | --- | --- | --- |
+| M1 | 9 | 190 | 199 |
+| M2 | 20 | 179 | 199 |
+| M3 | 3 | 196 | 199 |
+| M4 | 2 | 197 | 199 |
+| M5-selection | 1 | 198 | 199 |
+| M5-readings | 4 | 195 | 199 |
+
+M1 e M2 falham em cada um dos três chamadores: draw, overlay e hitTest. M3/M4 falham nos testes DOM de App; M5-selection mata o teste novo do anel. Todos os relatórios têm zero testes pendentes. A correção autorizada de M2 já estava em `59f5784`: os dois testes relativos ficam verdes por construção, enquanto os testes absolutos do fallback ficam vermelhos; nenhum teste existente foi reescrito.
+
+**Gate após o rebase:** `npm test && npm run lint && npm run typecheck && npm run build`, executado com condicionais equivalentes de exit code no PowerShell. Exit 0 em todos: **30 arquivos / 941 testes passaram**, ESLint verde, TypeScript verde e build Vite verde (49 módulos). Conferidos também os greps dos critérios 2 e 3: zero `scenePath` nos três chamadores, exatamente um `?? scenePath(` em src (currentPath), zero ternárias antigas de states em App. `git diff --check` verde. Permanece o aviso preexistente de tamanho do chunk sim (2.135,04 kB); nenhuma validação ficou pendente.
+
+**Decisões do proxy conferidas:** todas as nove decisões distintas já registradas no ticket foram respeitadas:
+
+1. currentPath ao lado de scenePath, com readings estrutural, sem import de sim ou teste de kind.
+2. readings obrigatório, sem padrão.
+3. Retirar style de drawScene e preservar style de drawGrid.
+4. Guarda de módulo única em App, com comentário explicativo, preservando as leituras de elasticArrows.
+5. Blocked by: none, sem criar dependência do CLEAN-29.
+6. Um ticket, Difficulty: normal e Review: agent.
+7. Registrar M1–M5 e exigir falhas de M1/M2 nos três chamadores.
+8. Preservar o significado dos docblocks dos chamadores; a troca literal de scenePath por document path/poses cumpre o grep do critério 2.
+9. Corrigir somente as duas expectativas impossíveis de M2, como autorizado na base da sessão; preservar os testes existentes.
+
+Fechado em `sweatshop/2026-10-02-1452`, com Stage: done e a linha do ledger no mesmo commit de resolução.
