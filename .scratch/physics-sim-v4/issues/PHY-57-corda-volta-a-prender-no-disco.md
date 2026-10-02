@@ -1,5 +1,5 @@
 # PHY-57: A corda volta a prender no disco da polia com massa
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-55
 Review: agent
@@ -80,3 +80,44 @@ O primeiro `git grep` não acha nada. O segundo acha o item `Grips and pieces`.
   - never regrip (the state after PHY-55, test-only commit): `PHY-57: M = 2/5: ... (T_b − T_a) = (M/2)·aₓ` red, `expected 124.65303182601929 to be less than or equal to 0.05` and `expected 10.688209533691406 to be less than or equal to 0.05`;
   - regrip as soon as the sweep is back to 0 (dropped `|| stretch < 0`, slack shared in halves): `PHY-57: M = 2/5: ... not short of L once it pulls` red, `expected 0.2816884567964255 to be less than or equal to 0.1` and `expected 0.3508216953498211 to be less than or equal to 0.1`. The criterion 1 tests stay green under this mutant; only criterion 2 separates it, as the ticket says;
   - with the real condition: 82 PHY-55 and PHY-57 tests green, gate green (934 tests).
+
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ `it.each([2, 5])`, scene `gripScene(tableScene(5, 0.5, 0), 'p', 7)` with `mass: M`, 600 steps, window 90–200, both segments > 0.5 N, at least 100 checked steps, `|segments[1] − segments[0] − (M/2)·aₓ| ≤ 0.05 N`, with aₓ from `a`'s vₓ.
+- Criterion 2 ✅ the same scene with `vx = 9`, window 95–195, `T` > 0.5 N, `|pathOf(sim).length − L| ≤ 0.1 m`, L = 6 + (π/2)·0.2 + 1.35.
+- Criterion 3 ✅ no PHY-55 test or tolerance changed; 82/82 PHY-55 and PHY-57 tests green.
+- Criterion 4 ✅ after the review fix. The ADR item `A grip grips again (PHY-57)` covers when, how and impact. Stage 2's `Grip.loose` comment left out the impact; the fix adds it, and `Piece.length` now points to `Grip.loose` for when and the impact. The first `git grep` finds nothing; the second finds only ADR line 35.
+- Criterion 5 ✅ recorded under Comments, and the review reproduced both mutants on `daf69eb`:
+  - `regripGrips` call removed: criterion 1 red, 124.65303182601929 and 10.688209533691406;
+  - `|| stretch < 0` dropped: criterion 2 red, 0.2816884567964255 and 0.3508216953498211, with criterion 1 green.
+  - The file was restored afterwards.
+- Test-first ✅
+  - `0dd6dba` touches only `acceptance.test.ts` and the ticket.
+  - `64da5a0` touches `simulator.ts`, the ADR and the ticket, and no test file.
+  - `daf69eb` touches only the ticket. `→ to-review` is in that docs commit rather than the last code commit; the gate was green.
+  - Every file touched is in Primary files.
+- Red-green: criterion 1 is red at the base, which is the never-regrip mutant above, and green at HEAD. Criterion 2 is green at the base by design (one joined piece stays at L); the ticket names it the guard for the grip-with-slack mutant.
+- Regressions: none found.
+  - `regripGrips` runs only on `frame.path` in `pullPieces`, before both `releaseGrips` calls, so the prediction never grips. `correctPieces` only releases.
+  - `held` is the index of the piece holding the loose grip. After a split it points to the second half, so later loose grips in the same piece index correctly.
+  - The halves' arcs, `R(sweep − share)` and `R·share`, add up to the `R·max(0, sweep)` the joined piece counted. So the halves minus `stretch/2` add up to the joined length, and the pieces still add up to L.
+  - `ropeFrame` does not depend on grips, so the frames built before the regrip stay valid.
+- Review fix in `42937d2`, no behaviour change:
+  - criterion 4's comments, as above;
+  - `releaseGrips`' "Never the other way round" and the `pullPieces` note above the call, both stale, now name the regrip;
+  - dropped `grip.w0 = grip.disk.angvel()` in `regripGrips`, which `pullPieces` overwrites for every held grip before any read;
+  - the sweep is checked before `pieceLengths` runs, so a loose grip with a negative sweep no longer computes lengths every step;
+  - the criterion 2 test name says "comes back onto the disk" instead of "grips" (CONTEXT.md, Pulley: _Avoid_ grip).
+- Standards judgement calls, not fixed:
+  - the zero-state piece literal now appears three times (`buildWorld`, `releaseGrips`, `regripGrips`);
+  - `regripGrips` repeats `buildWorld`'s grip init (`share = sweep/2`, `start`);
+  - `phy57Scene` overwrites the `mass: 2` that `gripScene` sets.
+- Proxy decided, on the human's behalf (5 lines under Comments, all from stage 1):
+  - cut re-engagement out of PHY-55;
+  - grip again only when the joined piece is not slack;
+  - no code of its own for the impact;
+  - mark at mid-arc, as in `buildWorld`;
+  - thresholds 0.05 N and 0.1 m, `Difficulty: normal`, `Review: agent`.
+- Gate on `42937d2`, whose tree the merge `febe937` keeps unchanged (the session tip was its base): `npm test` 30 files, 934/934; `npm run lint` clean; `npm run typecheck` clean; `npm run build` ok (the usual chunk-size warning).
