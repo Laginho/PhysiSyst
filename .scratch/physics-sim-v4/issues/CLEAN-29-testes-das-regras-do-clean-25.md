@@ -1,5 +1,5 @@
 # CLEAN-29: testes para as três regras do CLEAN-25 que nenhum critério cobre
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -62,3 +62,47 @@ O `git diff --stat` lista só `src/scene/ropePath.test.ts`. O gate precisa de um
 - 2026-10-02 Proxy decided: três `it`, um por regra, cada um com `CLEAN-29` no nome; o critério pede que cada mutante derrube o teste da sua regra, e os outros podem cair junto — um teste por regra faz do vermelho de cada mutante o registro daquela regra.
 - 2026-10-02 Proxy decided: `Blocked by: none` — o CLEAN-29 não commita produção; os testes dele ficam no bloco do PHY-54 e os do CLEAN-28 no bloco de `scenePath`; um conflito sai barato e as regras de rebase do stage 3 o resolvem.
 - 2026-10-02 Proxy decided: `Difficulty: normal`, `Review: agent` — testes de comportamento existente numa função só, mutantes medidos de antemão.
+
+#### Stage 2 — mutate-verify (2026-10-02)
+
+- Base do ticket: `19e4f90`, na sessão `sweatshop/2026-10-02-1452`; branch `clean-29`. Commit inicial `a78af55`: três testes e `Stage: implementing`, sem mudança de produção. Execução inicial: `3 passed | 25 skipped (28)`.
+- Costura confirmada pelo ticket: `ropePath` chamada diretamente no bloco do PHY-54, com `expectPoint` existente. Leitura dos chamadores: `scenePath` passa poses sem histórico; `ropeFrame` (`src/sim/simulator.ts`) passa direção e varredura e deriva os puxões dos segmentos. Nenhuma função de produção muda; os casos cobertos são uma única polia solta e duas soltas entre duas engatadas, incluindo continuidade das junções, ordem dos arcos, varreduras negativas, comprimento e ângulos.
+- Cada mutação abaixo foi aplicada isoladamente ao `release` real em `src/scene/ropePath.ts`, executada com `npx vitest run src/scene/ropePath.test.ts -t CLEAN-29` (exit 1) e revertida em `finally` restaurando os bytes originais. Após cada execução, `git diff --exit-code -- src/scene/ropePath.ts` passou. Nenhum mutante foi commitado.
+
+**Mutante (a), regra 1 — denominador `last - first + 2`.**
+
+```text
+FAIL CLEAN-29: one loose pulley sits at the midpoint of its straight leg
+AssertionError: expected -2.3333333333333335 to be close to -2, received difference is 0.3333333333333335, but expected 5e-10
+FAIL CLEAN-29: loose pulleys between two engaged pulleys divide the leg equally in via order
+AssertionError: expected -3 to be close to -2, received difference is 1, but expected 5e-10
+Tests  2 failed | 1 passed | 25 skipped (28)
+```
+
+O teste `CLEAN-29: a loose arc starts at the angle from its center to the returned joint` passou: seu ângulo esperado acompanha a junção devolvida, sem fixar seu espaçamento.
+
+**Mutante (b), regra 2 — `leg > 0 && leg < idx.length ? 0.5 : (i - first + 1) / (last - first + 1)`.**
+
+```text
+FAIL CLEAN-29: loose pulleys between two engaged pulleys divide the leg equally in via order
+AssertionError: expected +0 to be close to -2, received difference is 2, but expected 5e-10
+Tests  1 failed | 2 passed | 25 skipped (28)
+```
+
+Os testes da polia única no meio da perna e do ângulo da junção passaram.
+
+**Mutante (c), regra 3 — `start: Math.atan2(center.y - joint.y, center.x - joint.x)`.**
+
+```text
+FAIL CLEAN-29: a loose arc starts at the angle from its center to the returned joint
+AssertionError: expected -0.7853981633974483 to be close to 2.356194490192345, received difference is 3.141592653589793, but expected 5e-10
+FAIL CLEAN-29: loose pulleys between two engaged pulleys divide the leg equally in via order
+AssertionError: expected -1.3258176636680326 to be close to 1.8157749899217608, received difference is 3.141592653589793, but expected 5e-10
+Tests  2 failed | 1 passed | 25 skipped (28)
+```
+
+O teste do meio da perna passou. No teste entre polias engatadas, as verificações anteriores ao ângulo (junções, centros, arcos engatados e comprimento) passaram antes da falha de `start`.
+
+- Verde após restaurar produção: `npx vitest run src/scene/ropePath.test.ts` → `1 passed (1)`, `28 passed (28)`, incluindo os 25 testes existentes sem nenhuma alteração de texto ou tolerância.
+- Gate `npm test && npm run lint && npm run typecheck && npm run build`: exit 0; `30 passed (30)` arquivos, `937 passed (937)` testes; lint e typecheck verdes; Vite build verde (49 módulos). O build emitiu apenas o aviso de chunks maiores que 500 kB; este ticket não muda produção nem bundling.
+- Revisão final de escopo: `git diff --check` verde; `git diff --stat main...HEAD -- src` lista exclusivamente `src/scene/ropePath.test.ts` (48 linhas adicionadas). `git diff --exit-code main...HEAD -- src/scene/ropePath.ts` verde. O segundo commit contém somente este ticket, com as evidências e `Stage: to-review`; não toca testes ou produção. Stage 2 concluído; revisão e merge ficam para o stage 3 em outra sessão.
