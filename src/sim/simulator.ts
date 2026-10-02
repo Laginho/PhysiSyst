@@ -132,6 +132,8 @@ interface RopeBinding {
   length: number
   /** The wrap direction each pulley in `via` holds (PHY-45), refreshed at every read of the real poses. */
   keep: Array<1 | -1>
+  /** The unwound sweep each pulley in `via` holds (PHY-54), refreshed where `keep` is. Unused with grips. */
+  sweeps: number[]
   tension: number
   /** Warm start: the tension the free-motion prediction missed last step (contacts, friction). */
   residual: number
@@ -228,9 +230,13 @@ function ropeFrame(rope: RopeBinding, moved?: Vec2[]): RopeFrame {
     at.at(-1)!,
     rope.via.map((p, i) => ({ center: at[i + 1]!, radius: p.radius })),
     rope.keep,
+    rope.grips.length ? undefined : rope.sweeps,
   )
   // Only the bodies' real poses move the kept wrap; the predicted ones (mid and end of step) read it.
-  if (!moved) rope.keep = path.arcs.map((arc) => arc.direction)
+  if (!moved) {
+    rope.keep = path.arcs.map((arc) => arc.direction)
+    rope.sweeps = path.arcs.map((arc) => arc.sweep)
+  }
   const s = path.segments
   const pulls = points.map((point, i): RopePull => {
     // An end is pulled along its one leg; a pulley back along the leg that
@@ -460,7 +466,8 @@ function pieceLengths(rope: RopeBinding, path: RopePath, shares: readonly number
       const s = path.segments[i]!
       length += Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)
     }
-    for (let i = first + 1; i < last; i++) length += path.arcs[i - 1]!.radius * path.arcs[i - 1]!.sweep
+    // A loose pulley (negative sweep) adds no rope.
+    for (let i = first + 1; i < last; i++) length += path.arcs[i - 1]!.radius * Math.max(0, path.arcs[i - 1]!.sweep)
     if (k > 0) length += path.arcs[first - 1]!.radius * (path.arcs[first - 1]!.sweep - shares[k - 1]!)
     if (k < rope.grips.length) length += path.arcs[last - 1]!.radius * shares[k]!
     return length
@@ -884,6 +891,7 @@ class RapierSimulator implements Simulator {
           }),
           length: path.length,
           keep: path.arcs.map((arc) => arc.direction),
+          sweeps: path.arcs.map((arc) => arc.sweep),
           tension: 0,
           residual: 0,
           predicted: 0,
