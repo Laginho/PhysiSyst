@@ -1,5 +1,5 @@
 # PHY-57: A corda volta a prender no disco da polia com massa
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-55
 Review: agent
