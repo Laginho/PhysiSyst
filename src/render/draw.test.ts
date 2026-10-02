@@ -199,7 +199,10 @@ describe('drawScene, rope path (PHY-56)', () => {
     const rec = ropeLog(log)
     expect(callsOf(rec, 'moveTo').map((e) => e.args)).toStrictEqual(loose.segments.map((s) => [s.from.x, s.from.y]))
     expect(callsOf(rec, 'lineTo').map((e) => e.args)).toStrictEqual(loose.segments.map((s) => [s.to.x, s.to.y]))
-    for (const tangent of scenePath(scene, rope)!.segments.flatMap((s) => [s.from, s.to])) {
+    const own = loose.segments.flatMap((s) => [s.from, s.to])
+    const tangents = scenePath(scene, rope)!.segments.flatMap((s) => [s.from, s.to]).filter((p) => !own.some((o) => o.x === p.x && o.y === p.y))
+    expect(tangents).not.toHaveLength(0)
+    for (const tangent of tangents) {
       expect(callsOf(rec, 'lineTo').some((e) => e.args![0] === tangent.x && e.args![1] === tangent.y)).toBe(false)
     }
     expect(arcsOf(rec)).toStrictEqual([])
