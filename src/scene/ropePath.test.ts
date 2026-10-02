@@ -352,6 +352,72 @@ describe('ropePath, kept wrap direction (PHY-45)', () => {
       ]
       for (const [a, b] of ends) expect(ropePath(a, b, pulley, [-1], [undefined])).toStrictEqual(ropePath(a, b, pulley, [-1]))
     })
+
+    /** Items 1.1–1.4 of CLEAN-25: both loose, length |a − b|, three segments along +x, no pull on either pulley. */
+    function expectStraightOverLoose(path: RopePath, a: Vec2, b: Vec2, at: string): void {
+      expect(path.arcs[0]!.sweep, `sweep 0 ${at}`).toBeLessThan(0)
+      expect(path.arcs[1]!.sweep, `sweep 1 ${at}`).toBeLessThan(0)
+      expect(Math.abs(path.length - Math.hypot(b.x - a.x, b.y - a.y)), `length ${at}`).toBeLessThanOrEqual(EPS)
+      expect(path.segments, `segments ${at}`).toHaveLength(3)
+      for (const s of path.segments) {
+        expect(Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y), `segment length ${at}`).toBeGreaterThan(0.1)
+        const u = unit(s)
+        expect(Math.abs(u.x - 1) + Math.abs(u.y), `segment direction ${at}`).toBeLessThanOrEqual(EPS)
+      }
+      for (let i = 0; i < 2; i++) {
+        const inbound = unit(path.segments[i]!)
+        const outbound = unit(path.segments[i + 1]!)
+        const pull = { x: outbound.x - inbound.x, y: outbound.y - inbound.y }
+        expect(Math.abs(pull.x) + Math.abs(pull.y), `pull on pulley ${i} ${at}`).toBeLessThanOrEqual(EPS)
+      }
+    }
+
+    it('CLEAN-25: two loose pulleys that swap order along the leg leave the rope straight, 11 m long and pulling neither', () => {
+      const ends = (h: number): [Vec2, Vec2] => [
+        { x: -3, y: h },
+        { x: 8, y: h },
+      ]
+      const readings: Array<{ a: Vec2; b: Vec2; centers: [Vec2, Vec2]; check: boolean; at: string }> = []
+      for (let k = 0; k <= 4000; k++) {
+        const [a, b] = ends(-2 + k / 1000)
+        readings.push({ a, b, centers: [{ x: 0, y: 0 }, { x: 5, y: 0 }], check: k >= 3001, at: `at (a) k = ${k}` })
+      }
+      for (let j = 1; j <= 3000; j++) {
+        const [a, b] = ends(2)
+        readings.push({ a, b, centers: [{ x: 0, y: 0 }, { x: 5, y: -j / 1000 }], check: true, at: `at (b) j = ${j}` })
+      }
+      for (let j = 1; j <= 5000; j++) {
+        const [a, b] = ends(2)
+        readings.push({ a, b, centers: [{ x: j / 1000, y: 0 }, { x: 5 - j / 1000, y: -3 }], check: true, at: `at (c) j = ${j}` })
+      }
+      let sweeps: Array<number | undefined> = [undefined, undefined]
+      for (const { a, b, centers, check, at } of readings) {
+        const pulleys = centers.map((center) => ({ center, radius: 1 }))
+        const path = ropePath(a, b, pulleys, [-1, -1], sweeps)
+        if (check) {
+          expectStraightOverLoose(path, a, b, at)
+          for (let i = 0; i < 2; i++) {
+            expectPoint(path.arcs[i]!.center, centers[i]!)
+            const alone = ropePath(a, b, [pulleys[i]!], [-1], [sweeps[i]]).arcs[0]!.sweep
+            expect(Math.abs(path.arcs[i]!.sweep - alone), `sweep ${i} alone ${at}`).toBeLessThanOrEqual(EPS)
+          }
+        }
+        sweeps = path.arcs.map((arc) => arc.sweep)
+      }
+      expect(Math.abs(sweeps[0]! - -0.4303793433006895)).toBeLessThanOrEqual(EPS)
+      expect(Math.abs(sweeps[1]! - -1.3104262520688144)).toBeLessThanOrEqual(EPS)
+    })
+
+    it.each([
+      { name: 'equal projections', centers: [{ x: 2, y: 0 }, { x: 2, y: -3 }] },
+      { name: 'both past b', centers: [{ x: 9, y: 0 }, { x: 10, y: 0 }] },
+      { name: 'in via order', centers: [{ x: 0, y: 0 }, { x: 5, y: -3 }] },
+    ])('CLEAN-25: two loose pulleys with $name leave the rope straight and pulling neither', ({ centers }) => {
+      const a = { x: -3, y: 2 }
+      const b = { x: 8, y: 2 }
+      const path = ropePath(a, b, centers.map((center) => ({ center, radius: 1 })), [-1, -1], [-0.5, -0.5])
+      expectStraightOverLoose(path, a, b, '')
+    })
   })
 })
 

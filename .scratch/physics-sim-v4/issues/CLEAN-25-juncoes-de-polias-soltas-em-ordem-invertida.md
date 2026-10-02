@@ -1,5 +1,5 @@
 # CLEAN-25: Junções de polias soltas em ordem invertida alongam o caminho e puxam as polias
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: CLEAN-26
 Review: agent
