@@ -729,6 +729,7 @@ class RapierSimulator implements Simulator {
   /** The disks of pulleys with mass, by pulley id (PHY-25). */
   private disks = new Map<string, RAPIER.RigidBody>()
   private readonly _warnings: string[] = []
+  private readonly angularLimitWarnedBodies = new Set<string>()
 
   constructor(scene: Scene) {
     const built = this.buildWorld(scene)
@@ -966,6 +967,14 @@ class RapierSimulator implements Simulator {
     const spins = [...this.disks.values()].map((disk) => ({ disk, w: disk.angvel() }))
     for (const { disk } of spins) disk.setAngvel(0, true)
     this.world.step()
+    const angularLimit = Math.PI / (4 * TIMESTEP)
+    for (const [id, rigid] of this.bodies) {
+      // Contacts settle slightly below the cap; PHY-51 measured 96.7% for a capped rolling circle.
+      if (Math.abs(rigid.angvel()) >= 0.95 * angularLimit && !this.angularLimitWarnedBodies.has(id)) {
+        this._warnings.push(`body '${id}' approaches Rapier's ω ceiling of ${angularLimit.toFixed(2)} rad/s (|ω|·Δt ≤ π/4); rolling may slip`)
+        this.angularLimitWarnedBodies.add(id)
+      }
+    }
     for (const { disk, w } of spins) disk.setAngvel(w + disk.angvel(), true)
     for (const rebase of rebaseChains) rebase()
     for (const group of groups) {
@@ -1419,6 +1428,7 @@ class RapierSimulator implements Simulator {
     this.disks = next.disks
     this._warnings.length = 0
     this._warnings.push(...next.warnings)
+    this.angularLimitWarnedBodies.clear()
   }
 }
 
