@@ -658,6 +658,7 @@ export default function App() {
    */
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
+  const [simWarnings, setSimWarnings] = useState<readonly string[]>([])
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
   const [constraintReadout, setConstraintReadout] = useState<ConstraintState | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
@@ -1032,6 +1033,7 @@ export default function App() {
       simBootRef.current = import('./sim').then(({ createSimulator }) => createSimulator(bootDoc)).then(
         (sim) => {
           simRef.current = sim
+          setSimWarnings([...sim.warnings])
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
@@ -1430,7 +1432,7 @@ export default function App() {
   const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
   const selectedConstraint = selectedSpring ?? selectedRope
   const selectedItem = selected ?? selectedConstraint ?? selectedPulley
-  const warnings = collectWarnings(doc)
+  const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 8, minHeight: '100vh', boxSizing: 'border-box', padding: 8 }}>
