@@ -1,5 +1,5 @@
 # CLEAN-27: O clique na corda durante o playback segue o caminho simulado
-Stage: to-implement
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-56
 Review: agent
@@ -51,3 +51,12 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 ## Comments
 
 - 2026-10-02 Aberto no stage 1 do PHY-56 por decisão do proxy: o clique na corda é outra costura (editor, não render), e ficou fora daquele ticket. Depende do `RopeState.path` e da guarda do `paint` que o PHY-56 cria. Nada commitado.
+- 2026-10-02 Stage 2. Red commit: both new tests failed for the right reason (hitTest: `ropeAtPoint` ignored the fourth argument, got `undefined` for (0; 0,25); App: panel `corda` absent after `⏭ passo`). Gate green: 852 tests, lint, typecheck, build.
+- 2026-10-02 Stage 2. Mutate-verify, App test `CLEAN-27: o clique na corda segue o caminho...` (`src/App.tsx`, `onPointerDown`):
+  - `ropeAtPoint(view, w, tolerance, constraintsRef.current)` (no `statesRef.current` guard): red, `AssertionError: expected <fieldset …(1)>…(4)</fieldset> to be undefined` at `App.test.ts:2339` (the click after `⟲ reiniciar` still selected the rope).
+  - `ropeAtPoint(view, w, tolerance)` (no readings): red, `AssertionError: expected undefined to be defined` at `App.test.ts:2333` (the click after `⏭ passo` selected nothing).
+  - Production code restored after both; the guarded call is what is committed.
+- 2026-10-02 Stage 3. The App test never clicked before the first step, so half of criterion 3.2 ("Antes de qualquer passo") was unexercised. The case is real: the simulator boots at mount and `ensureSim` fills `constraintsRef` with the marker reading while `statesRef` is still `null`. Review added `click(canvas, OPEN_SPACE)` before the pre-step assertion (test-only commit). Mutations re-run on the amended test:
+  - no guard: red, `AssertionError: expected <fieldset …(1)>…(4)</fieldset> to be undefined` at `App.test.ts:2330:34` (now the pre-step click; it was 2339 before).
+  - no readings: red, `AssertionError: expected undefined to be defined` at `App.test.ts:2334:34` (the stage-2 line, shifted by one).
+  - Production code restored after both.

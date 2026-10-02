@@ -9,6 +9,7 @@ import {
   type Spring,
   type Vec2,
 } from '../scene'
+import type { ConstraintState } from '../sim/simulator'
 import { closestPoint } from './contactSnap'
 
 /** World point -> body-LOCAL frame: inverse of translate(position)·rotate(rotation). */
@@ -83,14 +84,17 @@ export function pulleyAtPoint(scene: Scene, w: Vec2, axleTolerance: number): Pul
 
 /**
  * Topmost rope with a straight leg within `tolerance` meters of a world point.
- * The arcs are not tested: they lie on the pulley, which is hit first.
+ * The arcs are not tested: they lie on the pulley, which is hit first. A rope
+ * whose reading in `readings` carries a `path` is tested on that path, the one
+ * drawn during playback; any other rope on its scene path.
  */
-export function ropeAtPoint(scene: Scene, w: Vec2, tolerance: number): Rope | null {
+export function ropeAtPoint(scene: Scene, w: Vec2, tolerance: number, readings: readonly ConstraintState[] = []): Rope | null {
   const constraints = scene.constraints ?? []
   for (let i = constraints.length - 1; i >= 0; i--) {
     const c = constraints[i]
     if (c.kind !== 'rope') continue
-    const path = scenePath(scene, c)
+    const reading = readings.find((r) => r.id === c.id)
+    const path = (reading?.kind === 'rope' ? reading.path : undefined) ?? scenePath(scene, c)
     if (path?.segments.some((s) => distanceToSegment(w, s.from, s.to) <= tolerance)) return c
   }
   return null

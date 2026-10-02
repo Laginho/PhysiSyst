@@ -2314,4 +2314,29 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
     expect(drew(101, 100)).toBe(false)
     expect(drew(docTangent().x, docTangent().y)).toBe(true)
   })
+
+  it('CLEAN-27: o clique na corda segue o caminho do simulador só depois do primeiro passo, e reiniciar volta ao documento', async () => {
+    const OPEN_SPACE = { x: 2.5, y: 0.5 }
+    const host = await boot({
+      segments: [
+        { from: { x: 2, y: 0.5 }, to: OPEN_SPACE },
+        { from: OPEN_SPACE, to: { x: 3, y: 0.5 } },
+      ],
+      arcs: [{ center: { x: 2.5, y: 0.5 }, radius: 0.5, start: 0, sweep: -0.5, direction: 1 as const }],
+      length: 1,
+    })
+    const canvas = host.querySelector('canvas')!
+    click(canvas, OPEN_SPACE)
+    expect(panel(host, 'corda')).toBeUndefined()
+
+    await stepOnce(host)
+    click(canvas, OPEN_SPACE)
+    expect(panel(host, 'corda')).toBeDefined()
+
+    click(canvas, { x: 1, y: 1 })
+    expect(panel(host, 'corda')).toBeUndefined()
+    await resetOnce(host)
+    click(canvas, OPEN_SPACE)
+    expect(panel(host, 'corda')).toBeUndefined()
+  })
 })
