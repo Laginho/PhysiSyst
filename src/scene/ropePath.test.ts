@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { ropePath, scenePath } from './ropePath'
+import type { PathPulley, RopePath, RopeSegment } from './ropePath'
 import type { Rope, Scene, Vec2 } from './types'
 
 const EPS = 1e-9
@@ -240,5 +241,117 @@ describe('ropePath, kept wrap direction (PHY-45)', () => {
       const path = ropePath({ x: e, y: -1.2 }, { x: -e, y: -1.2 }, pulley, [1])
       expect(path.arcs[0]!.direction, `direction at e = ${e.toFixed(2)}`).toBe(1)
     }
+  })
+})
+
+describe('ropePath, unwound sweep (PHY-54)', () => {
+  const pulley = [{ center: { x: 0, y: 0 }, radius: 1 }]
+  const unit = (s: RopeSegment): Vec2 => {
+    const d = Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)
+    return { x: (s.to.x - s.from.x) / d, y: (s.to.y - s.from.y) / d }
+  }
+
+  /** Reads `ends` in order, each call given the sweeps the one before returned. */
+  function walk(ends: ReadonlyArray<readonly [Vec2, Vec2]>, pulleys: readonly PathPulley[], keep: readonly (1 | -1)[]): RopePath[] {
+    let sweeps: Array<number | undefined> = pulleys.map(() => undefined)
+    return ends.map(([a, b]) => {
+      const path = ropePath(a, b, pulleys, keep, sweeps)
+      sweeps = path.arcs.map((arc) => arc.sweep)
+      return path
+    })
+  }
+
+  function maxStep(paths: readonly RopePath[]): number {
+    let worst = 0
+    for (let i = 1; i < paths.length; i++) worst = Math.max(worst, Math.abs(paths[i]!.length - paths[i - 1]!.length))
+    return worst
+  }
+
+  /** k from 0 up to 200 and back to 0: the height h = 0.9 + 0.001·k goes through the tangent height 1 and returns. */
+  const ks = [...Array.from({ length: 201 }, (_, k) => k), ...Array.from({ length: 200 }, (_, k) => 199 - k)]
+
+  it('a rope lifted past the tangent height lets go of the pulley, lies straight between its ends, and takes the pulley back on the way down', () => {
+    const ends = ks.map((k): readonly [Vec2, Vec2] => [
+      { x: -3, y: 0.9 + k * 0.001 },
+      { x: 3, y: 0.9 + k * 0.001 },
+    ])
+    const paths = walk(ends, pulley, [-1])
+    expect(maxStep(paths)).toBeLessThanOrEqual(0.001)
+    paths.forEach((path, i) => {
+      const k = ks[i]!
+      const [a, b] = ends[i]!
+      if (k >= 101) {
+        expect(path.arcs[0]!.sweep, `sweep at k = ${k}`).toBeLessThan(0)
+        expect(path.length, `length at k = ${k}`).toBeCloseTo(6, 9)
+        expect(path.segments).toHaveLength(2)
+        expectPoint(path.segments[0]!.to, path.segments[1]!.from)
+        const joint = path.segments[0]!.to
+        expect(joint.y).toBeCloseTo(a.y, 9)
+        expect(joint.x).toBeGreaterThan(a.x)
+        expect(joint.x).toBeLessThan(b.x)
+        // Collinear and the same way on, so the pull back along one and ahead along the other sums to 0.
+        expectPoint(unit(path.segments[0]!), unit(path.segments[1]!))
+      }
+      if (k <= 99) {
+        expect(path.arcs[0]!.direction, `direction at k = ${k}`).toBe(-1)
+        expect(path.length, `length at k = ${k}`).toBeCloseTo(ropePath(a, b, pulley, [-1]).length, 9)
+      }
+    })
+  })
+
+  it('a wrap that goes past a full turn keeps the length continuous', () => {
+    const a = { x: -3, y: 0.5 }
+    const ends: Array<readonly [Vec2, Vec2]> = []
+    for (let i = 0; i * 0.001 <= 2 * Math.PI + 1; i++) ends.push([a, { x: 2 * Math.cos(-i * 0.001), y: 2 * Math.sin(-i * 0.001) }])
+    const paths = walk(ends, pulley, [-1])
+    expect(Math.max(...paths.map((path) => path.arcs[0]!.sweep))).toBeGreaterThan(2 * Math.PI)
+    for (let i = 1; i < paths.length; i++) {
+      const moved = Math.hypot(ends[i]![1].x - ends[i - 1]![1].x, ends[i]![1].y - ends[i - 1]![1].y)
+      expect(Math.abs(paths[i]!.length - paths[i - 1]!.length), `length step ${i}`).toBeLessThanOrEqual(moved + EPS)
+    }
+  })
+
+  it('a rope over two pulleys whose end is lifted past the first drops it and is the rope over the second alone', () => {
+    const two = [
+      { center: { x: 0, y: 0 }, radius: 1 },
+      { center: { x: 5, y: 0 }, radius: 1 },
+    ]
+    const b = { x: 8, y: -2 }
+    const ends = ks.map((k): readonly [Vec2, Vec2] => [{ x: -3, y: 0.9 + k * 0.001 }, b])
+    const paths = walk(ends, two, [-1, -1])
+    expect(maxStep(paths)).toBeLessThanOrEqual(0.001)
+    paths.forEach((path, i) => {
+      const k = ks[i]!
+      const [a] = ends[i]!
+      if (k >= 101) {
+        expect(path.arcs[0]!.sweep, `sweep at k = ${k}`).toBeLessThan(0)
+        expect(path.length, `length at k = ${k}`).toBeCloseTo(ropePath(a, b, [two[1]!], [-1]).length, 9)
+      }
+      if (k <= 99) expect(path.length, `length at k = ${k}`).toBeCloseTo(ropePath(a, b, two, [-1, -1]).length, 9)
+    })
+  })
+
+  it('a loose pulley whose center projects past an end of the straight leg keeps both end segments and a joint that pulls nothing', () => {
+    // The center projects to x = 0, past b = (−1, 2): the joint stays inside the leg.
+    const a = { x: -3, y: 2 }
+    const b = { x: -1, y: 2 }
+    const path = ropePath(a, b, pulley, [-1], [-0.5])
+    expect(path.arcs[0]!.sweep).toBeLessThan(0)
+    expect(path.length).toBeCloseTo(2, 9)
+    expect(path.segments).toHaveLength(2)
+    for (const s of path.segments) expect(Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y)).toBeGreaterThan(0.1)
+    expectPoint(path.segments[0]!.from, a)
+    expectPoint(path.segments[1]!.to, b)
+    expectPoint(path.segments[0]!.to, path.segments[1]!.from)
+    expectPoint(unit(path.segments[0]!), unit(path.segments[1]!))
+  })
+
+  it('a pulley with no history reads as the path without history', () => {
+    const ends: Array<readonly [Vec2, Vec2]> = [
+      [{ x: -3, y: 0.5 }, { x: 3, y: -0.5 }],
+      [{ x: -3, y: 2 }, { x: 3, y: 2 }],
+      [{ x: 0.3, y: -3 }, { x: -0.2, y: -4 }],
+    ]
+    for (const [a, b] of ends) expect(ropePath(a, b, pulley, [-1], [undefined])).toStrictEqual(ropePath(a, b, pulley, [-1]))
   })
 })
