@@ -680,6 +680,91 @@ describe('acceptance: rope over a fixed pulley (PHY-23)', () => {
     expect(firstLoose).toBeLessThan(200)
   })
 
+  /**
+   * PHY-55: the PHY-54 and CLEAN-25 scenes with a disk of mass 2 on the pulley `grip`, so the rope grips it
+   * (PHY-25). `vxB` launches `b` sideways. `arc` is the index of the grip's arc in the rope's path.
+   */
+  const gripScene = (scene: Scene, grip: 'p' | 'q', vxB?: number): Scene => {
+    scene.pulleys = scene.pulleys!.map((pulley) => (pulley.id === grip ? { ...pulley, mass: 2 } : pulley))
+    if (vxB !== undefined) scene.bodies = scene.bodies.map((body) => (body.id === 'b' ? { ...body, vx: vxB } : body))
+    return scene
+  }
+
+  interface Phy55Run {
+    m1: number
+    m2: number
+    mu: number
+    vx: number | undefined
+  }
+  const PHY55_TABLE: Phy55Run[] = [
+    ...[2, 3, 4].map((m2) => ({ m1: 1, m2, mu: 3, vx: undefined as number | undefined })),
+    { m1: 2, m2: 3, mu: 3, vx: undefined },
+    { m1: 1, m2: 1.5, mu: 3, vx: undefined },
+    { m1: 1, m2: 2, mu: 1, vx: undefined },
+    { m1: 1, m2: 2, mu: 0.5, vx: undefined },
+    { m1: 2, m2: 1, mu: 0.2, vx: undefined },
+    { m1: 2, m2: 1, mu: 0.2, vx: 6 },
+    { m1: 1, m2: 2, mu: 3, vx: 4 },
+    { m1: 1, m2: 1, mu: 0.1, vx: 8 },
+  ]
+  const PHY55_AWAY: Phy55Run[] = [
+    { m1: 5, m2: 0.5, mu: 0, vx: 7 },
+    { m1: 5, m2: 0.5, mu: 0, vx: 9 },
+    { m1: 3, m2: 1, mu: 0, vx: 8 },
+    { m1: 2, m2: 1, mu: 0.2, vx: 8 },
+    { m1: 5, m2: 1, mu: 3, vx: 8 },
+    { m1: 5, m2: 1, mu: 3, vx: 10 },
+    { m1: 50, m2: 1, mu: 3, vx: 9 },
+  ]
+  const phy55Label = ({ m1, m2, mu, vx }: Phy55Run): string => `${m1}/${m2}, μ = ${mu}${vx === undefined ? '' : `, vx = ${vx}`}`
+  const PHY55_TABLE_RUNS = PHY55_TABLE.map((run) => ({
+    name: `table ${phy55Label(run)}`,
+    arc: 0,
+    scene: () => gripScene(tableScene(run.m1, run.m2, run.mu, run.vx), 'p'),
+  }))
+  const PHY55_MIXED_RUNS = (['A', 'B'] as const).flatMap((rope) =>
+    PHY55_TABLE.filter((run) => !(rope === 'A' && run.m1 === 1 && run.m2 === 1 && run.mu === 0.1 && run.vx === 8)).map((run) => ({
+      name: `rope ${rope}, ${phy55Label(run)}`,
+      arc: rope === 'A' ? 1 : 0,
+      scene: () => gripScene(twoPulleyTableScene(run.m1, run.m2, run.mu, run.vx), rope === 'A' ? 'q' : 'p'),
+    })),
+  )
+  const PHY55_AWAY_RUNS = PHY55_AWAY.map((run) => ({
+    name: `b launched, ${run.m1}/${run.m2}, μ = ${run.mu}, vx of b = ${run.vx}`,
+    arc: 0,
+    scene: () => gripScene(tableScene(run.m1, run.m2, run.mu), 'p', run.vx),
+  }))
+
+  it.each(PHY55_TABLE_RUNS)('PHY-55: $name: the block rides over a pulley with mass and the blocks never gain more than 0.5 J', async ({ scene }) => {
+    expect(await maxEnergyGain(scene())).toBeLessThanOrEqual(0.5)
+  })
+
+  it.each(PHY55_MIXED_RUNS)('PHY-55: $name: over a pulley with mass and an ideal one, the blocks never gain more than 0.5 J', async ({ scene }) => {
+    expect(await maxEnergyGain(scene())).toBeLessThanOrEqual(0.5)
+  })
+
+  it.each(PHY55_AWAY_RUNS)('PHY-55: $name: the rope leaves the disk and comes back, and the blocks never gain more than 0.5 J', async ({ scene }) => {
+    expect(await maxEnergyGain(scene())).toBeLessThanOrEqual(0.5)
+  })
+
+  it.each([...PHY55_TABLE_RUNS, ...PHY55_MIXED_RUNS, ...PHY55_AWAY_RUNS])(
+    'PHY-55: $name: while the rope is off the disk, every leg reads the one tension',
+    async ({ scene, arc }) => {
+      const sim = await createSimulator(parse(scene()))
+      let loose = 0
+      let split = 0
+      for (let step = 1; step <= 600; step++) {
+        sim.step()
+        const rope = tension(sim)
+        if (pathOf(sim)!.arcs[arc]!.sweep >= 0) continue
+        loose++
+        const legs = pathOf(sim)!.arcs.length + 1
+        if (rope.segments.length !== legs || rope.segments.some((t) => t !== rope.tension)) split++
+      }
+      expect(loose).toBeGreaterThan(0)
+      expect(split).toBe(0)
+    },
+  )
 })
 
 /**
