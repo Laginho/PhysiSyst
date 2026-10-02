@@ -162,13 +162,13 @@ describe('drawScene, rope path (PHY-56)', () => {
 
   const draw = (constraints?: readonly ConstraintState[]) => {
     const { ctx, log } = recordingCtx()
-    drawScene(ctx, scene, CAMERA, 900, 600, undefined, null, constraints)
+    drawScene(ctx, scene, CAMERA, 900, 600, { readings: constraints })
     return log
   }
   // The scene without its rope draws everything but the rope, so the rope's calls are what the full log has on top, before the closing restore.
   const baseline = (() => {
     const { ctx, log } = recordingCtx()
-    drawScene(ctx, { ...scene, constraints: [] }, CAMERA, 900, 600)
+    drawScene(ctx, { ...scene, constraints: [] }, CAMERA, 900, 600, { readings: [] })
     return log.length
   })()
   const ropeLog = (log: LogEntry[]) => log.slice(baseline - 1, -1)
@@ -227,6 +227,19 @@ describe('drawScene, rope path (PHY-56)', () => {
     expect(ropeLog(draw([]))).toStrictEqual(expected)
     expect(ropeLog(draw([spring]))).toStrictEqual(expected)
     expect(ropeLog(draw([{ id: 'corda', kind: 'rope', tension: 5, slack: false, segments: [5, 5] }]))).toStrictEqual(expected)
+  })
+})
+
+describe('drawScene options (CLEAN-28)', () => {
+  it('draws the orange selection outline only when the body is selected', () => {
+    const scene = sceneWith([makeBody('r', 'rectangle')])
+    const selected = recordingCtx()
+    drawScene(selected.ctx, scene, CAMERA, 900, 600, { selection: { kind: 'body', id: 'r' } })
+    expect(setsOf(selected.log, 'strokeStyle')).toContain('#ff8c00')
+
+    const unselected = recordingCtx()
+    drawScene(unselected.ctx, scene, CAMERA, 900, 600)
+    expect(setsOf(unselected.log, 'strokeStyle')).not.toContain('#ff8c00')
   })
 })
 

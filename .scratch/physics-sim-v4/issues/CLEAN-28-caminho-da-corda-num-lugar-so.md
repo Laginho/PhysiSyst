@@ -1,5 +1,5 @@
 # CLEAN-28: o caminho da corda (simulado, senão o do documento) escolhido num lugar só
-Stage: to-implement
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -67,6 +67,8 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 
 ## Comments
 
+- 2026-10-02 Stage 2: seams aprovadas no ticket: `currentPath` direto e `drawScene` com `recordingCtx`; testes existentes de PHY-56/CLEAN-27 cobrem App, overlay e hitTest. Chamadores lidos: `drawScene` em `paint` e draw.test; `paint` em `repaint`; `tensionArrows` em `paint` e overlay.test; `ropeAtPoint` em `onPointerDown` e hitTest.test. Casos de borda: leituras vazias, id diferente, leitura sem path, mola, referência pendente, options ausentes e seleção ausente. Red antes de produção: `npx vitest run src/scene/ropePath.test.ts src/render/draw.test.ts`: 2 arquivos falharam, 7 testes falharam / 40 passaram (47). Os três novos de currentPath falharam com `TypeError: currentPath is not a function`; seleção falhou com `expected [ undefined ] to include '#ff8c00'`; os três PHY-56 de caminho simulado falharam com a nova assinatura. Nenhuma tolerância ou texto existente alterado.
+
 - 2026-10-02 Aberto pelo foreman a pedido do Bruno, a partir da recomendação 5 do relatório `docs/relatorios/2026-10-02-sweatshop-sonnet-5.5-opus-5.5-2`. Depois do PHY-56 e do CLEAN-27, a mesma escolha "caminho que o simulador resolveu, senão o `scenePath` do documento" está escrita três vezes: `src/render/draw.ts:317` e `src/editor/hitTest.ts:97` (`(reading?.kind === 'rope' ? reading.path : undefined) ?? scenePath(scene, …)`) e `src/render/overlay.ts:134` (`state.path ?? scenePath(view, rope)`). A guarda do editor (`[]` sem `states`) também aparece duas vezes em `src/App.tsx` (`paint` e `onPointerDown`). As revisões do PHY-56 e do CLEAN-27 anotaram as duas coisas sem bloquear. A revisão do PHY-56 também apontou que `drawScene` (`src/render/draw.ts:181`) passou a ter 8 argumentos posicionais; a chamada em `src/App.tsx:198` já passa `undefined` para chegar aos dois últimos. Cabe ao stage 1 decidir onde a escolha do caminho mora (provavelmente ao lado de `scenePath`, em `src/scene/ropePath.ts`), se a guarda do editor vira uma variável só, e se `drawScene` ganha um objeto de opções neste ticket ou fica para outro.
 - 2026-10-02 Stage 1. Lido em volta: `src/scene` não importa nada de `src/sim` (zero ocorrências), e `eslint.config.js:15-19` proíbe import de valor de `sim` fora de `src/sim/**` (Rapier no chunk de entrada, PHY-32), então a função não pode morar em `simulator.ts`. `style` de `drawScene` nunca é passado por chamador nenhum em `src/` (produção ou teste; `drawGrid` idem, `transform.test.ts:113`). O anel de seleção (`#ff8c00`) não tem teste em `draw.test.ts` nem em `App.test.ts`. `paint` tem um chamador só (`repaint`, `App.tsx:760`). Os greps da Verification acham hoje exatamente as linhas que o ticket remove (`App.tsx:197` e `:1321`). Nada commitado.
 - 2026-10-02 Bruno decidiu: a função chama-se `currentPath(scene, rope, readings)`.
@@ -82,3 +84,120 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 
 - 2026-10-02 Attempt 1 stopped to ask (its commits are on branch `clean-28-asked-20261002-1506`): CLEAN-28 implementado na branch `clean-28`: `currentPath`, guarda única do editor e opções de `drawScene`. /  / Passaram **938 testes**, lint, typecheck e build. M1–M5 detectadas e registradas. Árvore limpa. /  / Ficou `blocked`: duas expectativas de M2 contradizem os testes existentes. Recomendo corrigir essas expectativas no ticket, preservando os testes. Autoriza esse ajuste? /  / A pausa segue [`ticket-flow`](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md): “a committed test proves the contract wrong”.
 - 2026-10-02 Proxy decided: corrigir as duas expectativas de M2 no critério 6 (draw `constraints with no entry…` e App CLEAN-27 depois de reiniciar ficam verdes por construção) registrando o que de fato fica vermelho, sem tocar em teste existente — M2 mata 20 testes, incluindo pelo menos um em draw, overlay e hitTest (critério 7) e a presença do caminho do documento em App (PHY-56 teste 1, no editor e depois de reiniciar); o fallback já está fixado por `currentPath` 1.2, `without constraints…` e o laço do CLEAN-27 em hitTest, então reforçar (a) duplicaria `without constraints…` e reforçar (b) violaria o critério 5; texto de ticket é reversível. Retomar da branch `clean-28-asked-20261002-1506`: só o ticket muda (este bullet, Stage), sem tocar em código nem teste.
+
+#### Stage 2 mutation evidence (2026-10-02)
+
+Each mutation was applied to production, run in one command, then reverted in finally to the original bytes before the next mutation. CASE = M1, M2, M3, M4, M5-selection, M5-readings.
+
+```text
+npx vitest run src/scene/ropePath.test.ts src/render/draw.test.ts src/render/overlay.test.ts src/editor/hitTest.test.ts src/App.test.ts --reporter=json --outputFile=<TEMP>/physisyst-clean28-evidence/CASE.json
+```
+
+All observed failures and their actual first error lines follow. All other tests passed without skips. M1 and M2 each fail at least one test in draw, overlay and hitTest (criterion 7).
+
+##### M1
+
+`currentPath` always returns `scenePath(scene, rope)`, ignoring readings.
+
+Exit 1: 9 failed / 190 passed (199 tests).
+
+| File | Failing test | Actual red output |
+|---|---|---|
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) no editor o desenho segue o documento, e só depois do primeiro passo vem do caminho do simulador; reiniciar volta ao documento | AssertionError: expected false to be true // Object.is equality |
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) CLEAN-27: o clique na corda segue o caminho do simulador só depois do primeiro passo, e reiniciar volta ao documento | AssertionError: expected undefined to be defined |
+| src/editor/hitTest.test.ts | pulleyAtPoint and ropeAtPoint (PHY-28) CLEAN-27: a rope whose state has a path is tested against that path, and other cases fall back to the scene path | AssertionError: expected undefined to be 'r1' // Object.is equality |
+| src/scene/ropePath.test.ts | scenePath: rope path from document poses currentPath (CLEAN-28) returns the same path object from the matching reading | AssertionError: expected { …(3) } to be { segments: [ { …(2) } ], …(2) } // Object.is equality |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) a loose pulley (sweep < 0) is drawn as the two straight legs of the path, with no arc and nothing at the scenePath tangents | AssertionError: expected [ [ 5.5, 2 ], [ 6.5, 6 ] ] to strictly equal [ [ 5.5, 2 ], [ 6, 2 ] ] |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) a wrap of 7 rad (direction 1) is one arc call that spans 7 rad; a wrap of 0 is one arc call that spans nothing | AssertionError: expected -3.141592653589793 to be close to 7, received difference is 10.141592653589793, but expected 5e-13 |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) a wrap of 7 rad (direction -1) is one arc call that spans 7 rad; a wrap of 0 is one arc call that spans nothing | AssertionError: expected -3.141592653589793 to be close to -7, received difference is 3.858407346410207, but expected 5e-13 |
+
+| src/render/overlay.test.ts | tensionArrows with the path of the reading (PHY-56) the end arrows follow the path legs, not the scenePath around a pulley off the a–b line | AssertionError: expected -0.07453559924999299 to be close to 0.4472135954999579, received difference is 0.521749194749951, but expected 5e-10 |
+| src/render/overlay.test.ts | tensionArrows with the path of the reading (PHY-56) a loose pulley on a dynamic mount gets no arrow, and the ends follow the end legs of the path | AssertionError: expected [ …(4) ] to have a length of 2 but got 4 |
+
+##### M2
+
+`currentPath` returns `readings.find(...)?.path ?? null`, without fallback.
+
+Exit 1: 20 failed / 179 passed (199 tests).
+
+| File | Failing test | Actual red output |
+|---|---|---|
+| src/App.test.ts | ferramentas Polia e Corda (PHY-28) inspetor da polia edita raio e massa; inspetor da corda mostra o caminho e L sem campo editável | TypeError: Cannot read properties of undefined (reading 'textContent') |
+| src/App.test.ts | ferramentas Polia e Corda (PHY-28) remover polia remove as cordas que passam por ela; Ctrl+Z restaura tudo de uma vez | AssertionError: expected undefined to be defined |
+| src/App.test.ts | ferramentas Polia e Corda (PHY-28) remover corpo remove as polias montadas nele, as molas presas e as cordas pelas polias; Ctrl+Z restaura tudo de uma vez | AssertionError: expected undefined to be defined |
+| src/App.test.ts | ferramentas Polia e Corda (PHY-28) clicar na corda seleciona; Delete remove só a corda | AssertionError: expected undefined to be defined |
+| src/App.test.ts | ferramentas Polia e Corda (PHY-28) com polia de massa no caminho, a leitura mostra T₁, T₂ por segmento | AssertionError: expected '' to contain 'T₁: 12.00 N' |
+| src/App.test.ts | edição estrutural só em t0 (PHY-39) desabilita o inspetor de vínculos e polias de atwood | AssertionError: expected undefined to be defined |
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) no editor o desenho segue o documento, e só depois do primeiro passo vem do caminho do simulador; reiniciar volta ao documento | AssertionError: expected false to be true // Object.is equality |
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) uma leitura velha, com um caminho de um segmento só, não derruba o paint e a corda sai do documento | AssertionError: expected false to be true // Object.is equality |
+| src/editor/hitTest.test.ts | pulleyAtPoint and ropeAtPoint (PHY-28) hits a rope within the tolerance of any straight leg, and misses beside it and past its ends | AssertionError: expected undefined to be 'r1' // Object.is equality |
+| src/editor/hitTest.test.ts | pulleyAtPoint and ropeAtPoint (PHY-28) CLEAN-27: a rope whose state has a path is tested against that path, and other cases fall back to the scene path | AssertionError: expected undefined to be 'r1' // Object.is equality |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) without constraints, the rope is drawn from the scenePath of the scene | AssertionError: expected [] to strictly equal [ [ 5.5, 2 ], [ 6.5, 6 ] ] |
+| src/render/overlay.test.ts | tensionArrows Atwood: one T per dynamic end, at the anchor, toward the next path point; none on the fixed pulley | AssertionError: expected [] to have a length of 2 but got +0 |
+| src/render/overlay.test.ts | tensionArrows straight rope between two dynamic bodies: each end pulled toward the other | AssertionError: expected [] to have a length of 2 but got +0 |
+| src/render/overlay.test.ts | tensionArrows movable pulley: one arrow per adjacent segment at the pulley center; fixed ends get none | AssertionError: expected [] to have a length of 2 but got +0 |
+| src/render/overlay.test.ts | tensionArrows pulley with mass: each end sized by its own segment tension | AssertionError: expected [] to have a length of 2 but got +0 |
+| src/render/overlay.test.ts | vectorLabels one of each kind: the bare symbol from the table, per language | AssertionError: expected [ 'P', 'N', 'F', 'F_el', 'v₀' ] to deeply equal [ 'P', 'N', 'F', 'T', 'F_el', 'v₀' ] |
+| src/render/overlay.test.ts | vectorLabels the same rope carries the same T at both ends | AssertionError: expected [] to deeply equal [ 'T', 'T' ] |
+| src/render/overlay.test.ts | vectorLabels pulley with mass: one T per segment | AssertionError: expected [] to deeply equal [ 'T_1', 'T_2' ] |
+| src/render/overlay.test.ts | vectorLabels two ropes number apart; a slack rope loses its arrows and its label | AssertionError: expected [] to deeply equal [ 'T_1', 'T_1', 'T_2', 'T_2' ] |
+| src/scene/ropePath.test.ts | scenePath: rope path from document poses currentPath (CLEAN-28) falls back to the document path without a matching path, including spring readings | AssertionError: expected null to strictly equal { …(3) } |
+
+##### M3
+
+`ropeReadingsOf` returns readings without checking states.
+
+Exit 1: 3 failed / 196 passed (199 tests).
+
+| File | Failing test | Actual red output |
+|---|---|---|
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) no editor o desenho segue o documento, e só depois do primeiro passo vem do caminho do simulador; reiniciar volta ao documento | AssertionError: expected true to be false // Object.is equality |
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) uma leitura velha, com um caminho de um segmento só, não derruba o paint e a corda sai do documento | AssertionError: expected [ …(1) ] to strictly equal [] |
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) CLEAN-27: o clique na corda segue o caminho do simulador só depois do primeiro passo, e reiniciar volta ao documento | AssertionError: expected <fieldset …(1)>…(4)</fieldset> to be undefined |
+
+##### M4
+
+`ropeReadingsOf` always returns `[]`.
+
+Exit 1: 2 failed / 197 passed (199 tests).
+
+| File | Failing test | Actual red output |
+|---|---|---|
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) no editor o desenho segue o documento, e só depois do primeiro passo vem do caminho do simulador; reiniciar volta ao documento | AssertionError: expected false to be true // Object.is equality |
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) CLEAN-27: o clique na corda segue o caminho do simulador só depois do primeiro passo, e reiniciar volta ao documento | AssertionError: expected undefined to be defined |
+
+##### M5-selection
+
+`drawScene` uses `const selection: Selection = null`, ignoring opts.selection.
+
+Exit 1: 1 failed / 198 passed (199 tests).
+
+| File | Failing test | Actual red output |
+|---|---|---|
+| src/render/draw.test.ts | drawScene options (CLEAN-28) draws the orange selection outline only when the body is selected | AssertionError: expected [ '#000000' ] to include '#ff8c00' |
+
+##### M5-readings
+
+`drawScene` passes `[]` to drawConstraints, ignoring opts.readings.
+
+Exit 1: 4 failed / 195 passed (199 tests).
+
+| File | Failing test | Actual red output |
+|---|---|---|
+| src/App.test.ts | desenho da corda durante o playback (PHY-56) no editor o desenho segue o documento, e só depois do primeiro passo vem do caminho do simulador; reiniciar volta ao documento | AssertionError: expected false to be true // Object.is equality |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) a loose pulley (sweep < 0) is drawn as the two straight legs of the path, with no arc and nothing at the scenePath tangents | AssertionError: expected [ [ 5.5, 2 ], [ 6.5, 6 ] ] to strictly equal [ [ 5.5, 2 ], [ 6, 2 ] ] |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) a wrap of 7 rad (direction 1) is one arc call that spans 7 rad; a wrap of 0 is one arc call that spans nothing | AssertionError: expected -3.141592653589793 to be close to 7, received difference is 10.141592653589793, but expected 5e-13 |
+| src/render/draw.test.ts | drawScene, rope path (PHY-56) a wrap of 7 rad (direction -1) is one arc call that spans 7 rad; a wrap of 0 is one arc call that spans nothing | AssertionError: expected -3.141592653589793 to be close to -7, received difference is 3.858407346410207, but expected 5e-13 |
+
+- M2: o teste draw `constraints with no entry for the rope, or only spring states, draw the scenePath` fica verde: seu expected é `ropeLog(draw())`, que também fica vazio com o mutante. O teste draw `without constraints...` compara contra a geometria real e fica vermelho. O teste CLEAN-27 de App também fica verde com M2: no editor e depois de reset ele só exige que o ponto do path simulado não selecione, o que também vale quando nenhuma corda é desenhada/testada; a presença do path do documento está coberta pelos dois testes PHY-56 de App, vermelhos com M2. Não são mutantes sobreviventes (20 testes falham), mas duas expectativas individuais do critério 6 não correspondem às assertions existentes.
+- M3: o teste da leitura velha falha na assertion `expect(errors).toStrictEqual([])` (`App.test.ts:2313`), observando o erro lançado pelo paint quando a leitura de um só segmento entra em tensionArrows.
+- Após restaurar todas as mutações: `npx vitest run src/scene/ropePath.test.ts src/render/draw.test.ts src/render/overlay.test.ts src/editor/hitTest.test.ts`: 4 arquivos, 104 testes passaram. `npx vitest run src/App.test.ts -t "PHY-56|CLEAN-27"`: 1 arquivo, 3 passaram / 92 não selecionados (95).
+- Verificação estrutural: zero `scenePath` nos três chamadores; exatamente uma ocorrência de `?? scenePath(` em src, no retorno de currentPath; zero ternárias antigas de states em App. `elasticArrows` segue recebendo `constraints = opts?.constraints ?? []`, sem guarda; drawGrid preservado. Para cumprir o grep literal do critério 2, somente as menções `scenePath` dos comentários de draw/overlay foram substituídas por document path/poses, sem alterar o comportamento descrito; o ADR não foi alterado.
+- Gate final, sem mutantes: `npm test && npm run lint && npm run typecheck && npm run build` (executado com condicionais de exit code equivalentes no PowerShell): 30 arquivos / 938 testes passaram; ESLint e TypeScript exit 0; Vite build exit 0, 49 módulos. Aviso de tamanho do chunk sim (2.135,04 kB), sem erro. `git diff --check` passou. Diff restrito aos Primary files e ao ticket; nenhum teste alterado depois do commit red `542e2e2`, nenhum artefato gerado incluído.
+- Bloqueio de contrato, não de implementação: o critério 6 prevê que M2 deixe vermelhos o teste relativo de draw `constraints with no entry...` e o CLEAN-27 de App depois de reiniciar, mas ambos ficam verdes por construção das assertions (explicação acima). O critério 5 proíbe alterar esses testes. Pergunta pendente ao Bruno: corrigir essas duas expectativas no ticket e preservar os testes (recomendado; M2 já mata 20 testes, incluindo os três chamadores e a presença do path do documento em App), ou ampliar os testes e ajustar o escopo? Nenhuma expectativa foi reescrita sem decisão. Card proxy encontrado em `~/.claude/agents/proxy.md`, modelo opus/xhigh, indisponível como modelo de subagente neste runtime; usada a saída de bloqueio do ticket-flow, sem linha Proxy decided. A implementação e toda a validação ficam preservadas na branch `clean-28`; após a decisão, retomar para registrar o ajuste autorizado e mover a `to-review`.
+
+- 2026-10-02 Proxy decided: corrigir as duas expectativas de M2 no critério 6 (draw `constraints with no entry…` e App CLEAN-27 depois de reiniciar ficam verdes por construção) registrando o que de fato fica vermelho, sem tocar em teste existente — M2 mata 20 testes, incluindo pelo menos um em draw, overlay e hitTest (critério 7) e a presença do caminho do documento em App (PHY-56 teste 1, no editor e depois de reiniciar); o fallback já está fixado por `currentPath` 1.2, `without constraints…` e o laço do CLEAN-27 em hitTest, então reforçar (a) duplicaria `without constraints…` e reforçar (b) violaria o critério 5; texto de ticket é reversível. Retomar da branch `clean-28-asked-20261002-1506`: só o ticket muda (este bullet, Stage), sem tocar em código nem teste.
+
+- 2026-10-02 Stage 2 retomado na branch `clean-28-asked-20261002-1506`, conforme a decisão já registrada no commit `59f5784` da base da sessão. Corrigido apenas o texto de M2 no critério 6 e incorporada a decisão acima; produção e testes preservados byte a byte. O bloqueio anterior está resolvido. Evidência red e M1–M5 permanece nos commits `542e2e2`, `b1c3b4b` e `4dff4e0`; nenhum teste foi alterado após o commit red. Verificação atual: 4 arquivos / 104 testes passaram; App PHY-56/CLEAN-27: 3 passaram / 92 não selecionados; greps dos critérios 2 e 3 conforme esperado, `elasticArrows` sem guarda e `drawGrid` preservado. Gate completo: 30 arquivos / 938 testes passaram, lint exit 0, typecheck exit 0, build exit 0 (49 módulos). Permanece o aviso de tamanho do chunk sim (2.135,04 kB). `git diff --check` passou. Entrega para stage 3, sem revisão nem merge nesta retomada.
+
+- 2026-10-02 Stage 3: corrigida apenas a codificação do comentário de handoff acima. Nenhum arquivo de produção ou teste alterado. Rebase na sessão preservou o histórico da tentativa, a decisão autorizada de M2 e toda a evidência de mutação.
