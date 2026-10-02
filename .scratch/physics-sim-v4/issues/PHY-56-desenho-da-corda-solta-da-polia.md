@@ -1,5 +1,5 @@
 # PHY-56: O desenho da corda mostra a corda solta da polia
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -115,3 +115,13 @@ O gate precisa de um Chromium na máquina (`CHROME_BIN` aponta para ele quando e
 - 2026-10-02 Proxy decided: um ticket, não dois — umas vinte linhas de produção, uma fatia vertical do simulador até a tela; o simulador expondo `path` sozinho não muda nada que o usuário veja.
 - 2026-10-02 Proxy decided: `Difficulty: normal`, `Review: agent` — nada numérico novo; o ponto que um primeiro passe pode errar, a leitura velha no editor, tem critério e mutação próprios.
 - 2026-10-02 Proxy decided: sem critério próprio para a direção do PHY-45 no desenho — vem da mesma linha que o critério 1 testa; um cenário a mais mediria o PHY-45 de novo, não esta costura.
+- 2026-10-02 Stage 2. Dois testes tinham defeito de harness e foram corrigidos em commits só de teste:
+  - `draw.test.ts`, polia solta: comparava com todos os pontos do `scenePath`, inclusive as âncoras que o caminho solto também tem, e nunca passava. Agora exclui os pontos do próprio caminho solto e exige que sobre algum ponto de tangência. Vermelho contra a base: 3 falhas no bloco `rope path (PHY-56)`.
+  - `App.test.ts`, leitura velha: o desenho roda antes das setas, então um `throw` de `tensionArrows` deixava a corda desenhada e o teste verde (a mutação 5 sobrevivia). Agora escuta o evento `error` da janela.
+- 2026-10-02 Stage 2, mutate-verify (critério 7). Cada mutação aplicada, saída vermelha vista, revertida com `git checkout`:
+  1. `readConstraints` com `path: ropePath(...)` montado nas poses atuais com `r.keep` e sem `sweeps`: `acceptance.test.ts -t PHY-56` vermelho, 2 falhas. `before any step ... the PHY-54 table` (`expected { …(3) } to strictly equal { …(3) }`) e `the table rope comes loose ...` (`expected -1 to be greater than 0`: a varredura nunca fica negativa).
+  2. `readConstraints` sem `path`: `acceptance.test.ts -t PHY-56` vermelho, 3 falhas (`expected undefined to strictly equal { …(3) }` nas duas cenas, e a da mesa solta).
+  3. `paint` passa a `drawScene` `opts?.constraints ?? []` sem a guarda de `states`: `App.test.ts -t PHY-56` vermelho, 2 falhas (`expected true to be false` no teste do editor/reset e no da leitura velha).
+  4. `paint` passa `[]` a `drawScene`: `App.test.ts -t PHY-56` vermelho, 1 falha (`expected false to be true`: o marcador não é desenhado depois do passo).
+  5. `paint` passa a `tensionArrows` `constraints` sem a guarda: `App.test.ts -t PHY-56` vermelho, 1 falha (`expected [ …(1) ] to strictly equal []`, um `TypeError` do `outOf.to` num segmento indefinido), depois do conserto do harness acima. Antes dele a mutação sobrevivia.
+  Gate: `npm test` 30 arquivos, 850 testes passando; `npm run lint`, `npm run typecheck` e `npm run build` limpos. `git grep "RopeState.path"` acha o item `The kept direction`; `git grep "Drawing the loose rope is PHY-56"` não acha nada.
