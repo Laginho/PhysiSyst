@@ -1,5 +1,5 @@
 # CLEAN-26: `wrapAngle` duplicado em `ropePath.ts` e `simulator.ts`
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -29,6 +29,23 @@ Uma só `wrapAngle`, no módulo de geometria pura `ropePath`, que o simulador j�
     npm test && npm run lint && npm run typecheck && npm run build
 
 O `git grep` lista exatamente uma linha, em `src/scene/ropePath.ts`.
+
+#### Resolution (2026-10-02)
+
+Verdict: Approve
+
+- Criterion 1 ✅ `ropePath.ts:78` exports `wrapAngle`; `scene/index.ts:22` reexports it.
+- Criterion 2 ✅ `wrapAngle (CLEAN-26)` block checks the five values at 1e-12.
+- Criterion 3 ✅ `git grep -n "function wrapAngle" -- src` lists only `src/scene/ropePath.ts:78`; the simulator's one caller (`gripShares`, `simulator.ts:451`) uses the import from `../scene`.
+- Criterion 4 ✅ no existing test file changed except the new block appended to `ropePath.test.ts`; 832/832 green.
+- Test-first ✅ `5677133` touches only `ropePath.test.ts` and the ticket; `46b3c07` touches `index.ts`, `ropePath.ts`, `simulator.ts` and the ticket, no test file. All inside Primary files.
+- Standards: no findings. Spec: no findings. No `Proxy decided` lines on this ticket.
+
+Red-green proof: new block run against the pre-change `ropePath.ts`/`index.ts`/`simulator.ts` from the session branch: `1 failed | 20 passed (21)`. On the branch: 21/21.
+
+Gate on the rebased branch (already on the session tip): `npm test` 30 files, 832 tests passed; `lint`, `typecheck`, `build` clean (build's only output is the usual chunk-size warning).
+
+Merged into `sweatshop/2026-10-02-1156` as `4957188` (`--no-ff`).
 
 ## Tests stage 2 writes (own commit, red)
 
