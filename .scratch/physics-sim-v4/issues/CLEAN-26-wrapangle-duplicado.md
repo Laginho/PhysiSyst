@@ -1,5 +1,5 @@
 # CLEAN-26: `wrapAngle` duplicado em `ropePath.ts` e `simulator.ts`
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
