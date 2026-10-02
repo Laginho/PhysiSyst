@@ -1,5 +1,5 @@
 # PHY-56: O desenho da corda mostra a corda solta da polia
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: agent

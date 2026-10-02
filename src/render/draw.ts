@@ -258,7 +258,7 @@ function selectionStroke(ctx: CanvasRenderingContext2D, ppm: number): void {
  * plus the arc wrapped on each pulley (PHY-23), springs as zigzags (PHY-26).
  * During playback a rope is drawn from the path the simulator solved (PHY-56),
  * so a rope loose from a pulley (`sweep < 0`, PHY-54) is the straight leg with
- * no arc; otherwise from the document's scenePath.
+ * no arc. With no reading's path (the editor) a rope is drawn from scenePath.
  * Drawn in world meters under one y-flipped transform, so canvas arc angles
  * are the path's own angles.
  */
