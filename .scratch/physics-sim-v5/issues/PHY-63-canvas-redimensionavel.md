@@ -1,5 +1,5 @@
 # PHY-63: Canvas da cena redimensionável
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -45,6 +45,24 @@ Regra do tamanho: largura = máx(402, mín(escolha do usuário, ajuste automáti
 - `src/App.test.ts` ou `src/App.browser.test.ts`: critérios 7 e 8.
 
 ## Comments
+
+#### Stage 2 — evidência mutate-verify (2026-10-03)
+
+Implementado na branch `phy/PHY-63-canvas-redimensionavel`, a partir de `sweatshop/2026-10-02-2210`. Gate final: **30 arquivos / 967 testes passaram**, incluindo 13 testes Chromium deste arquivo; lint, typecheck e build passaram. Permanece apenas o aviso conhecido do chunk do simulador acima de 500 kB. `git diff --check` sem erros. Testes e correções de harness em commits próprios, separados dos commits de produção. Pronto para stage 3; sem merge nesta etapa.
+
+Mutações temporárias restauradas antes do gate; nenhuma integra a implementação.
+
+| Teste novo | Mutação na produção | Saída vermelha |
+| --- | --- | --- |
+| `drags the real corner handle with matching logical geometry and clamps both extremes` | Desativar o drag no `onPointerMove` da alça | `expected 1440 to be 1260` |
+| `keeps bodies, selection and undo unchanged and exposes a translated resize cursor` | Inserir `setSelection(null)` no início do arraste | `Error: missing caixa panel` (1 failed / 12 skipped) |
+| `loads a dragged preference in a fresh page and restores it after its viewport shrinks` | Salvar `null` em vez da escolha | Após carregar outra página: `expected 1440 to be 900` (1 failed / 12 skipped) |
+| mesmo teste de persistência/viewport | Ignorar a preferência no ResizeObserver | `expected 1440 to be 900` (1 failed / 12 skipped) |
+| mesmo teste de persistência/viewport | Sobrescrever a preferência com a largura limitada pelo viewport | Ao aumentar novamente: `expected 672 to be 900` (1 failed / 12 skipped) |
+
+Os testes diretos também foram mutados: ignorar userWidth → 1200×800 em vez de 750×500; gravar 600 fixo → `'600'` em vez de `'750'`; remover validação finita → `NaN` em vez de `null`. Resultado conjunto: 3 failed / 52 passed (55). O ensaio Chromium inicial sem alça teve 3 falhas `missing resize handle`; a versão correta passou os 3 testes novos.
+
+O teste de viewport carrega o app real em iframe da mesma origem, redimensiona a janela desse app de 1920 para 1000 e de volta para 1920, e recarrega essa página. O arraste usa eventos de mouse reais via CDP; não chama handlers React diretamente.
 
 - 2026-10-03 Gate inicial: 22 failed / 945 passed (967), todos os 22 causados pelo helper `loadingOverlay`, que classificava qualquer irmão do canvas como overlay. Correção restrita ao harness `App.test.ts`, já nomeado na seção Tests stage 2 writes; listado também em Primary files para explicitar essa manutenção. O helper agora seleciona o DIV do overlay e não o botão da alça. Mutação em produção `pointerEvents: 'none'` → `'auto'` derrubou `shows the loading overlay while booting...`: `expected 'auto' to be 'none'` (1 failed / 109 skipped), comprovando que a correção preserva a sensibilidade do teste.
 

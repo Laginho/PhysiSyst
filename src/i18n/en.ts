@@ -1,4 +1,5 @@
 export const en = {
+  'canvas.resize': 'Resize canvas',
   'app.title': 'physics-sim',
   'playback.play': '▶ play',
   'playback.pause': '⏸ pause',

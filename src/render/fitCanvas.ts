@@ -1,7 +1,7 @@
 export const CANVAS_ASPECT = 3 / 2
 export const CANVAS_MIN_WIDTH = 600
 
-/** Largest 3:2 box that fits inside the container, never narrower than the floor. */
+/** Automatic 3:2 fit keeps its 600px floor; a user preference may shrink it to 402px. */
 export function fitCanvas(containerWidth: number, containerHeight: number, userWidth: number | null = null): { width: number; height: number } {
   const raw = Math.max(CANVAS_MIN_WIDTH, Math.min(containerWidth, containerHeight * CANVAS_ASPECT))
   // Containers measure fractional (any browser zoom, any flex leftover). Snapping

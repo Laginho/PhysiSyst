@@ -96,10 +96,12 @@ import {
   exportScene,
   importScene,
   loadCurrentSceneId,
+  loadCanvasSize,
   loadIndex,
   loadIndexResult,
   loadSceneOrBlank,
   saveCurrentSceneId,
+  saveCanvasSize,
   saveIndex,
   saveScene,
   shouldShowGallery,
@@ -596,6 +598,9 @@ export default function App() {
   const storageRef = useRef<Storage | null>(null)
   if (!storageRef.current) storageRef.current = getAppStorage()
   const storage = storageRef.current
+  const preferredWidthRef = useRef(loadCanvasSize(storage))
+  const canvasContainerRef = useRef({ width: 900, height: 600 })
+  const resizeDragRef = useRef<{ pointerId: number; startX: number; width: number } | null>(null)
   let initialSeedWarning: string | null = null
   const [sceneIndex, setSceneIndex] = useState<SceneIndexEntry[]>(() => {
     const res = loadIndexResult(storage)
@@ -815,7 +820,8 @@ export default function App() {
       setStacked((wasStacked) =>
         wasStacked ? width < CANVAS_MIN_WIDTH + INSPECTOR_WIDTH + ROW_GAP : width < CANVAS_MIN_WIDTH,
       )
-      setSize(fitCanvas(width, entry.contentRect.height))
+      canvasContainerRef.current = { width, height: entry.contentRect.height }
+      setSize(fitCanvas(width, entry.contentRect.height, preferredWidthRef.current))
     })
     ro.observe(box)
     return () => ro.disconnect()
@@ -1579,6 +1585,50 @@ export default function App() {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
+            <button
+              type="button"
+              title={t('canvas.resize')}
+              aria-label={t('canvas.resize')}
+              style={{
+                position: 'absolute',
+                left: stacked ? size.width - 18 : `calc(50% + ${size.width / 2 - 18}px)`,
+                top: size.height - 18,
+                width: 20,
+                height: 20,
+                padding: 0,
+                border: 0,
+                background: 'transparent',
+                color: '#666',
+                cursor: 'nwse-resize',
+                touchAction: 'none',
+              }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.preventDefault()
+                event.stopPropagation()
+                resizeDragRef.current = { pointerId: event.pointerId, startX: event.clientX, width: size.width }
+                event.currentTarget.setPointerCapture(event.pointerId)
+              }}
+              onPointerMove={(event) => {
+                const drag = resizeDragRef.current
+                if (!drag || drag.pointerId !== event.pointerId) return
+                const container = canvasContainerRef.current
+                const next = fitCanvas(container.width, container.height, drag.width + event.clientX - drag.startX)
+                const auto = fitCanvas(container.width, container.height)
+                preferredWidthRef.current = next.width === auto.width ? null : next.width
+                setSize(next)
+                saveCanvasSize(storage, preferredWidthRef.current)
+              }}
+              onPointerUp={(event) => {
+                if (resizeDragRef.current?.pointerId !== event.pointerId) return
+                resizeDragRef.current = null
+                event.currentTarget.releasePointerCapture(event.pointerId)
+              }}
+              onLostPointerCapture={() => { resizeDragRef.current = null }}
+              onPointerCancel={() => { resizeDragRef.current = null }}
+            >
+              ◢
+            </button>
             {bootState === 'booting' && (
               // A small badge, not a full-canvas cover: the student can see
               // and edit the scene while the engine loads. pointerEvents:
