@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { graphLayout, seriesFor, type GraphFrame, type Series } from './graph'
+import { graphLayout, indexAtX, seriesFor, type GraphFrame, type Series } from './graph'
 import type { Scene } from '../scene'
 import { initialTracker } from '../playback/accelerationTracker'
 import { bodyEnergy, systemEnergy } from '../sim/energy'
@@ -7,6 +7,20 @@ import { bodyEnergy, systemEnergy } from '../sim/energy'
 const series = (values: number[]): Series[] => [{ name: 'x', unit: 'm', points: values.map((value, t) => ({ t, value })) }]
 const scene: Scene = { version: 1, constants: { g: 10 }, bodies: [{ id: 'b', shape: 'circle', radius: 1, mass: 2, fixed: false, position: { x: 1, y: 3 }, rotation: 0 }], forces: [], contacts: [] }
 const frame: GraphFrame = { scene, states: new Map([['b', { position: { x: 1, y: 3 }, rotation: 0, linvel: { x: 3, y: 4 }, angvel: 0 }]]), constraints: [], pulleys: [], acceleration: initialTracker() }
+
+describe('graph seek index (PHY-73)', () => {
+  it('rounds to the nearest recorded frame and clamps plot margins', () => {
+    const l = graphLayout([], 2, 600, 180)
+    expect([-100, 64, 320, 576, 900].map(x => indexAtX(l, x, 2))).toEqual([0, 0, 60, 120, 120])
+    expect(indexAtX(l, l.mapT(0.509), 2)).toBe(31)
+  })
+  it('inverts the one-second minimum axis without seeking beyond a short recording', () => {
+    const l = graphLayout([], 0.5, 600, 180)
+    expect(indexAtX(l, 192, 0.5)).toBe(15)
+    expect(indexAtX(l, 576, 0.5)).toBe(30)
+    expect(indexAtX(graphLayout([], 0, 600, 180), 576, 0)).toBe(0)
+  })
+})
 
 describe('recording graph (PHY-72)', () => {
   it('maps time edges and decreasing y with two or three ticks', () => {

@@ -1,5 +1,5 @@
 # PHY-73: Interação do gráfico: seek e tipos por seleção
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-72
 Review: agent
