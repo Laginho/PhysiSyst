@@ -4,15 +4,15 @@
  *
  * This module is deliberately React-free and side-effect-free: it decides HOW
  * MANY fixed TIMESTEPs the simulator must execute and which record to show. The rAF
- * wiring in App stays a thin adapter (read state -> advance() -> run that many
- * sim.step() calls -> paint), which is what makes playback testable at all in a
- * project that bars automated UI tests.
+ * wiring in App stays a thin adapter (read state -> advance() -> show the record
+ * or run sim.step() calls -> paint), with the transport rules testable directly.
  *
  * Core invariant (spec, ADR-0001): the speed multiplier scales STEPS PER FRAME,
  * never the timestep. `acc += speed` per animation frame, then whole steps are
  * withdrawn and the remainder carries to the next frame. So 0.5x steps on every
- * other frame with the SAME dt as 1x, and after N frames the world has advanced
- * exactly floor(N * speed) timesteps.
+ * other frame with the SAME dt as 1x. From zero credit, N frames at a fixed speed
+ * consume exactly floor(N * speed) recorded or live timesteps; only credit left
+ * after replay advances the live world and increments stepsTaken.
  */
 
 /** Slider bounds from the spec (story 17). */

@@ -1,5 +1,5 @@
 # PHY-65: Play e passo único a partir de um ponto anterior
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: human
@@ -77,3 +77,11 @@ M3: `npx vitest run src/playback/scheduler.test.ts -t 'play keeps' --reporter=do
 Implementação: play preserva cursor; frame/stepOnce consomem crédito em registros antes do mundo vivo, mantendo stepsTaken como contador físico. `length` é opcional para preservar os consumidores ao vivo existentes; o App fornece o comprimento atual nas duas ações. O frame restaura os refs ao vivo antes dos passos excedentes, atualiza controles ao mudar cursor e repinta cada registro. Sem mudanças no timestep ou no simulador.
 - Gate final (2026-10-03), produção restaurada após todas as mutações: `npm test` **31 files passed, 1003 tests passed**, 48.00 s; `npm run lint`, `npm run typecheck` e `npm run build` **exit 0**. Build: aviso de chunks maiores que 500 kB (bundle de simulação); sem erro. Foco antes das mutações: **2 files passed, 185 tests passed**.
 - Revisão final do diff: somente os quatro Primary files e este ticket; testes em `12988b2`, implementação no commit seguinte sem tocar testes. Critérios 1–10 cobertos; sem alteração no simulador ou na gravação. Etapa 2 concluída; revisão humana permanece para a etapa 3/PR da sessão.
+
+#### Stage 3 — review cleanup (2026-10-03)
+
+- Standards: um achado documental corrigido. O invariante do scheduler ainda dizia que todo crédito avançava o mundo vivo; agora distingue registros e passos físicos. Comentários do App também descrevem a sincronização dos controles durante replay. Sem alteração de comportamento ou testes.
+- Spec: zero achados; critérios 1–10 atendidos. Conferido o `Proxy decided` existente: passo único avança um registro independentemente da velocidade, nos dois status.
+- Separação de commits confirmada: `12988b2` contém testes e ticket; `f90b54a` contém produção e ticket, sem testes. As seis novas instâncias de teste DOM têm mutação e saída vermelha registradas acima.
+- Red reproduzido com os dois arquivos de produção temporariamente em `abd9606` e os testes atuais: `npx vitest run src/playback/scheduler.test.ts src/App.test.ts -t 'recorded replay|recorded time player' --reporter=dot` → **15 failed, 13 passed, 157 skipped (185)**, pelas expectativas de cursor, passos físicos e leituras. Arquivos restaurados byte a byte em `finally`.
+- A primeira reprodução sem filtro confirmou as mesmas 15 falhas e duas desconexões do Chromium nos testes preexistentes PHY-44 (**17 failed, 168 passed**); a verificação focada acima isolou o contrato. O gate completo será executado com acesso ao navegador fora do sandbox.
