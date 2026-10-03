@@ -2681,6 +2681,7 @@ describe('galeria de um clique (PHY-62)', () => {
 
 describe('recorded time player (PHY-64)', () => {
   async function setupRecording(kind?: 'spring' | 'rope') {
+    setLang('pt-BR')
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let frame!: FrameRequestCallback
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
