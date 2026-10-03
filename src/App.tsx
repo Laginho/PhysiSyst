@@ -6,6 +6,7 @@ import {
   applyLiveOps,
   applyStates,
   initialPlayback,
+  Recording,
   routeDocChange,
   SPEED_MAX,
   SPEED_MIN,
@@ -13,6 +14,7 @@ import {
   type PlaybackAction,
   type PlaybackState,
 } from './playback'
+import { TIMESTEP } from './sim/timestep'
 import { DEMO_SCENE } from './scene/demo'
 import { createPresetScene, galleryGroups, nodeLabelKeys, presetById, type Preset } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
@@ -694,9 +696,37 @@ export default function App() {
   /** Last simulator readback; `null` means "nothing simulated, show the doc". */
   const statesRef = useRef<Map<string, BodyState> | null>(null)
   const accelRef = useRef(initialTracker())
+  // Display refs may point into history; the live frame always stays at the tip.
+  type RecordedFrame = {
+    states: Map<string, BodyState> | null
+    contacts: ContactPoint[]
+    constraints: ConstraintState[]
+    acceleration: ReturnType<typeof initialTracker>
+  }
+  const liveFrameRef = useRef<RecordedFrame>({ states: null, contacts: [], constraints: [], acceleration: initialTracker() })
+  const recordingRef = useRef<Recording<RecordedFrame> | null>(null)
+  if (!recordingRef.current) recordingRef.current = new Recording(liveFrameRef.current)
+  const [recordingLength, setRecordingLength] = useState(1)
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
+  const captureFrame = useCallback((): RecordedFrame => ({
+    states: statesRef.current,
+    contacts: contactsRef.current,
+    constraints: constraintsRef.current,
+    acceleration: accelRef.current,
+  }), [])
+  const showFrame = useCallback((frame: RecordedFrame) => {
+    statesRef.current = frame.states
+    contactsRef.current = frame.contacts
+    constraintsRef.current = frame.constraints
+    accelRef.current = frame.acceleration
+  }, [])
+  const resetRecording = useCallback(() => {
+    liveFrameRef.current = captureFrame()
+    recordingRef.current!.reset(liveFrameRef.current)
+    setRecordingLength(1)
+  }, [captureFrame])
   /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
@@ -799,7 +829,7 @@ export default function App() {
     if (ctx)
       paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
-        stepsTaken: playbackRef.current.stepsTaken,
+        stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
         lang: langRef.current,
@@ -902,12 +932,12 @@ export default function App() {
   // Low-frequency readout: polls refs without 60Hz React churn.
   useEffect(() => {
     const id = setInterval(() => {
-      setStepsTick(playbackRef.current.stepsTaken)
+      setStepsTick(playbackRef.current.cursor ?? playbackRef.current.stepsTaken)
+      setRecordingLength(recordingRef.current!.length)
       const constraintSel = selectedOf(selectionRef.current, 'constraint')
       if (constraintSel) {
         // A world awaiting its rebuild still holds the old constraints: no reading.
-        const sim = pendingRebuildRef.current ? null : simRef.current
-        setConstraintReadout(sim?.readConstraints().find((c) => c.id === constraintSel) ?? null)
+        setConstraintReadout(pendingRebuildRef.current ? null : constraintsRef.current.find((c) => c.id === constraintSel) ?? null)
       } else {
         setConstraintReadout(null)
       }
@@ -953,6 +983,7 @@ export default function App() {
       contactsRef.current = sim.readContacts()
       constraintsRef.current = sim.readConstraints()
       pendingRebuildRef.current = false
+      resetRecording()
       setSimError(null)
       return true
     } catch (e) {
@@ -960,7 +991,7 @@ export default function App() {
       pendingRebuildRef.current = true
       return false
     }
-  }, [fail])
+  }, [fail, resetRecording])
 
   /** Runs `n` fixed TIMESTEPs on the running world, then repaints once. */
   const runSteps = useCallback(
@@ -969,13 +1000,18 @@ export default function App() {
       if (!sim || n <= 0) return
       if (!syncWorld()) return
       try {
-        for (let i = 0; i < n; i++) sim.step()
-        const prev = statesRef.current
-        const next = sim.readStates()
-        accelRef.current = onSteps(accelRef.current, n, prev, next)
-        statesRef.current = next
-        contactsRef.current = sim.readContacts()
-        constraintsRef.current = sim.readConstraints()
+        for (let i = 0; i < n; i++) {
+          const prev = statesRef.current
+          sim.step()
+          const next = sim.readStates()
+          accelRef.current = onSteps(accelRef.current, 1, prev, next)
+          statesRef.current = next
+          contactsRef.current = sim.readContacts()
+          constraintsRef.current = sim.readConstraints()
+          liveFrameRef.current = captureFrame()
+          recordingRef.current!.push(liveFrameRef.current)
+        }
+        setRecordingLength(recordingRef.current!.length)
       } catch (e) {
         fail(e)
         return
@@ -985,7 +1021,7 @@ export default function App() {
       // making React follow every later animation frame.
       if (playbackRef.current.stepsTaken === n) setStepsTick(playbackRef.current.stepsTaken)
     },
-    [fail, repaint, syncWorld],
+    [fail, repaint, syncWorld, captureFrame],
   )
 
   /** Discrete transport actions: pure decision in `advance`, effects here. */
@@ -994,7 +1030,8 @@ export default function App() {
       const t = advance(playbackRef.current, action)
       playbackRef.current = t.state
       setPlayback(t.state)
-      setStepsTick(t.state.stepsTaken)
+      setStepsTick(t.state.cursor ?? t.state.stepsTaken)
+      showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
       if (t.rebuild) {
         setToolError(null)
         // Clear readings before rebuilding: a failed reset must still show the document.
@@ -1007,6 +1044,7 @@ export default function App() {
         try {
           simRef.current?.replaceScene(docRef.current)
           pendingRebuildRef.current = false
+          statesRef.current = simRef.current?.readStates() ?? null
           contactsRef.current = simRef.current ? simRef.current.readContacts() : []
           constraintsRef.current = simRef.current ? simRef.current.readConstraints() : []
           builtDocRef.current = docRef.current
@@ -1015,11 +1053,12 @@ export default function App() {
           setSimError(messageOf(e))
           pendingRebuildRef.current = true
         }
-        repaint()
+        resetRecording()
       }
+      repaint()
       if (t.steps > 0) runSteps(t.steps)
     },
-    [repaint, runSteps],
+    [repaint, runSteps, showFrame, resetRecording],
   )
 
   useEffect(() => {
@@ -1111,6 +1150,8 @@ export default function App() {
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
+          statesRef.current = sim.readStates()
+          resetRecording()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc
           setSimError(null)
@@ -1128,7 +1169,7 @@ export default function App() {
       )
     }
     return simBootRef.current
-  }, [])
+  }, [resetRecording])
 
   /** Retries a failed boot, restarting the joke rotation from the top. */
   const retryBoot = useCallback(() => {
@@ -1744,6 +1785,16 @@ export default function App() {
               />
               <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
                 {playback.speed.toFixed(2)}×
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {t('playback.timeLabel')}
+              <input type="range" min={0} max={recordingLength - 1} step={1}
+                value={playback.cursor ?? recordingLength - 1}
+                onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
+              />
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
               </span>
             </label>
           </div>
