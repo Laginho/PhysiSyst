@@ -6,6 +6,25 @@ export const SCENE_KEY_PREFIX = 'physics-sim:scene:'
 export const GALLERY_ACK_KEY = 'physics-sim:galleryAck'
 export const CURRENT_SCENE_KEY = 'physics-sim:currentScene'
 export const AUTOSAVE_DELAY_MS = 400
+export const CANVAS_SIZE_KEY = 'physics-sim:canvasSize'
+
+export function loadCanvasSize(storage: Storage): number | null {
+  try {
+    const raw = storage.getItem(CANVAS_SIZE_KEY)
+    if (raw === null || raw.trim() === '') return null
+    const width = Number(raw)
+    return Number.isFinite(width) ? width : null
+  } catch {
+    return null
+  }
+}
+
+export function saveCanvasSize(storage: Storage, width: number | null): void {
+  try {
+    if (width === null) storage.removeItem(CANVAS_SIZE_KEY)
+    else storage.setItem(CANVAS_SIZE_KEY, String(width))
+  } catch {}
+}
 
 export function isGalleryAcked(storage: Storage): boolean {
   return storage.getItem(GALLERY_ACK_KEY) === 'true'
