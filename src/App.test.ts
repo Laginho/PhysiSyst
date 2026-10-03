@@ -2726,7 +2726,7 @@ describe('recorded time player (PHY-64)', () => {
     }
     return { host, canvas, slider, poll, seek, play, steps, step, replaceScene,
       frame: () => act(() => frame(16)),
-      readout: () => panel(host, 'leitura ? ball')?.textContent ?? '',
+      readout: () => panel(host, t('readout.title', { id: 'ball' }))?.textContent ?? '',
     }
   }
 
@@ -2743,10 +2743,10 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.readout()).toContain('passos: 10')
     expect(p.readout()).toContain('(6.10, 4.00) m')
     expect(p.readout()).toContain('(1.67, 0.00) m/s')
-    expect(p.readout()).toContain('(19.00, 0.00) m/s?')
+    expect(p.readout()).toContain('(19.00, 0.00) m/s²')
     p.seek(200)
     expect(p.readout()).toContain('(8.00, 4.00) m')
-    expect(p.readout()).toContain('(399.00, 0.00) m/s?')
+    expect(p.readout()).toContain('(399.00, 0.00) m/s²')
     expect(p.host.textContent).toContain('t = 3,33 s')
     // Hit-testing uses the same projected bodies as paint; the historical pose is selectable.
     click(p.canvas, { x: 11, y: 7 })
