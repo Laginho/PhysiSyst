@@ -1,5 +1,5 @@
 # PHY-64: Gravação e slider de tempo com a simulação pausada
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -104,3 +104,16 @@ DOM/canvas mutation evidence (every new App test; sources restored after each ru
 - Final gate (2026-10-03): npm test && npm run lint && npm run typecheck && npm run build exited 0. Tests: 31 files passed, 987 tests passed (43.48 s). ESLint and TypeScript passed; Vite build passed. Only the existing large-chunk warning remains. Final diff is restricted to Primary files plus this ticket; test and production changes are in separate commits.
 
 - 2026-10-03 Stage 3 small documentation fix: corrected the stale acceleration-tracker comment to distinguish its batch API from App's per-step sampling (n = 1). No behavior or tests changed; documentation made stale by this ticket is permitted outside Primary files by ticket-flow.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+- Decision: approved against all 16 numbered criteria and integrated without squash into the active session branch `sweatshop/2026-10-02-2210` (merge `567dc80`). `Review: human` remains a session-PR highlight under ticket-flow; this stage does not push or open a per-ticket PR.
+- Standards: source/test scope, separate red-test and production commits, committed stage transitions, and the 10 DOM/canvas mutation-evidence rows conform. One nonblocking process observation: the 14 implementation commits have empty bodies, although their subjects cite PHY-64; ticket-flow asks bodies to explain why. History was preserved. No actionable code smells or ADR conflicts found.
+- Spec: all 16 numbered criteria satisfied; no missing behavior, scope creep, or confirmed regression. Pre-step structural edits refresh record zero at the next syncWorld, before stepping or any subsequent historical view; no observable defect found.
+- Files: bounded Recording and cursor/seek scheduler; per-step App recording, historical display/readouts, edit guards, and native localized time slider; recording/scheduler/App tests; pt-BR/en catalogs. Review commit `e6b8db6` corrected only stale acceleration-tracker documentation; the documentation exception permits that comment outside Primary files.
+- Red-green proof: inspected all implementation commits and all 10 production-mutation/red-output records above. Pure-module tests call production Recording/advance; test and code changes remain in separate commits. Independent green run: 31 test files, 987 tests passed.
+- Gate: `npm test && npm run lint && npm run typecheck && npm run build` completed successfully (test duration 44.58 s; ESLint, TypeScript, Vite exit 0). The restricted run first had 972 passes and 15 Chromium DevTools connection/disconnection failures; the approved unrestricted rerun passed all 987. Existing Rapier chunk-size warning only. The subsequent change was documentation only; rebase was already up to date, merge had no conflicts, and final diff checks passed.
+- Proxy decisions reviewed by name: every displayed value follows the slider; acceleration belongs to the recorded step; localized two-decimal time with step counter; reset/scene-switch clears recording while seek-zero preserves it; native range in transport; seek pauses and stays paused; record zero is initial state; historical g/F and undo/redo are locked; keyboard shortcuts remain unchanged. The proxy's earlier 18,000-record proposal was explicitly superseded by Bruno's 600-record cap, which the implementation uses.
+- Remaining limitation: replay and backward-step controls remain assigned to PHY-65/PHY-66; the current play/step behavior returns to live as required.
