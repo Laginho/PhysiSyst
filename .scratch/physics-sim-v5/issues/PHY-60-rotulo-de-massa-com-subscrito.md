@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -33,3 +33,5 @@ O rótulo de massa sai literal, com o sublinhado (`m_a`, `m_b`), centrado no cor
 ## Comments
 
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 5, "o m_b está bem ruim").
+
+- 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-60-rotulo-massa-asked-20261003-0051`): PHY-60 implementado, mas marcado `blocked` por escopo. /  / - Subscritos e posicionamento externo prontos. / - 27 testes focados, lint, typecheck e build passaram. / - Restam sete falhas causadas por canvases falsos em `src/App.test.ts`. /  / Posso incluir esse arquivo para corrigir os dois retornos de `measureText`? A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “the implementer may touch those files and nothing else”; ele está fora dos `Primary files`. /  / Trabalho preservado nos commits `0426c42` e `9ece33d`.
