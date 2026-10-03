@@ -1,5 +1,5 @@
 # PHY-68: Restituição no simulador por fatores por corpo
-Stage: reviewing
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: PHY-67
 Review: human
@@ -62,3 +62,46 @@ ADR-0005, curto, no formato dos anteriores: contexto (Rapier sem restituição p
 #### Stage 3 — correção documental (2026-10-03)
 
 - Corrigida a entrada Collision em `CONTEXT.md`, que ainda dizia que a integração estava pendente e prometia restituição zero para todo par não declarado. Agora referencia ADR-0005 e registra a herança aceita entre dois fatores positivos. O comentário de `assignPairFrictions` também passa a qualificar restituição zero como padrão. Nenhum comportamento ou teste alterado; documentação tornada obsoleta pela implementação é uma correção pequena permitida pelo fluxo.
+
+#### Stage 3 review (2026-10-03)
+
+Verdict: Reopen — regressão R1: fator finito no JavaScript transborda no Rapier e a colisão perde todo o momento (S2-implícito).
+
+Base: `sweatshop/2026-10-03-1618` (`cf261da`); HEAD de implementação revisado: `ef9e24d`. Primeira revisão, diff inteiro e quatro commits examinados; Standards e Spec em sub-agentes independentes. Rebase sobre a sessão sem conflitos. Correção documental pequena em `bd4c89b`, também revisada; nenhuma alteração de comportamento ou de testes feita na etapa 3.
+
+##### Standards
+
+- Achado documental corrigido em `bd4c89b`: glossário Collision ainda anunciava integração futura e garantia zero em todo par não declarado; comentário do atrito tratava restituição zero como absoluta. Ambos agora descrevem o mecanismo e seu padrão corretamente. A correção em `CONTEXT.md`, fora dos Primary files, é a exceção documental explícita do fluxo.
+- Observação de processo, sem reabertura: `c293613`, `a4efdef`, `f4817a9` e `ef9e24d` têm corpo de mensagem vazio, embora os assuntos citem PHY-68. A seção Commits and closing da skill pede corpo com motivo e ID. Não é uma quebra de Primary files, test-first ou uma regressão; histórico preservado.
+- Primary files e test-first aprovados: `c293613` precede o solve em `a4efdef`; `f4817a9` precede a integração em `ef9e24d`; commits de produção não alteram testes. Logs de mutação existentes conferidos: os dez testes de fatores e os quatro físicos falham sob as mutações registradas na etapa 2. Nenhum smell de baseline exige ação; os dois solvers independentes seguem a costura aprovada.
+
+##### Spec
+
+**P2 — ❌ R1: `Number.isFinite` aceita fatores que o Rapier não representa.** Em `src/sim/simulator.ts:835`, o solve só verifica a finitude em JavaScript; `:878` transfere o fator a `setRestitution`. O grafo solúvel A–B `e = 1e-40`, B–C `e = 1` produz `{ A: 1, B: 9.999999999999985e-41, C: 1.0000000000000016e40 }`, sem fallback nem aviso. O coeficiente de C chega ao Rapier como `Infinity`. Isso contraria a intenção "exato quando solúvel", mas a razão mecânica da reabertura é a regressão demonstrada de conservação do momento, mesmo com os oito critérios numerados atendidos. É distinta da herança aceita de restituição entre pares não declarados.
+
+Reprodução pelo módulo real, sem mocks nem edição de produção: `version = 1`, `g = 0`, sem forças; três círculos de massa 1, raio 0,5 e rotação 0. A é fixo em `(100, 100)`; B é dinâmico em `(-2, 0)`, `vx = 3`; C é dinâmico em `(0, 0)`, parado. Contatos A–B `e = 1e-40` e B–C `e = 1`, ambos `muS = muK = 0`. O codec aceita a cena; seu único aviso é o já existente sobre `g = 0`, nenhum sobre `e`. Executar 120 chamadas de `step()`:
+
+| Produção | v_B,x | v_C,x | Momento total x | Avisos do simulador |
+| --- | --- | --- | --- | --- |
+| Base `cf261da` | 1.4999998807907104 | 1.5000001192092896 | 3 | nenhum |
+| Implementação `ef9e24d` / correção documental `bd4c89b` | 0 | 0 | 0 | nenhum |
+
+O agente principal repetiu a comparação com o simulador da base carregado por `git show` e transpilação apenas em memória. Também repetiu a transferência direta ao Rapier: fator JavaScript finito `1.0000000000000016e40` → restituição lida `Infinity`. Runner: `%TEMP%/phy68-review-overflow-probe.mjs`; saída: `%TEMP%/phy68-review-overflow.log`. Da raiz, executar `Get-Content -Raw -LiteralPath (Join-Path $env:TEMP 'phy68-review-overflow-probe.mjs') | node --input-type=module`. O runner contém a cena completa e compara base e produção atual sem alterar arquivos do repo.
+
+- Critério 1 ✅ Par isolado com produto 0,5; corpo sem aresta em zero; sem fallback ou avisos.
+- Critério 2 ✅ Produtos 0,5 e 1 na componente bipartida.
+- Critério 3 ✅ Conflito com zero, fatores `{1, 1, 1}` e um aviso; ausência de `e` também coberta.
+- Critério 4 ✅ Grafo vazio, fatores zero, sem fallback ou avisos.
+- Critério 5 ✅ Casos frontais `e = 1`, `0.5` e `0` com velocidades e momento dentro das tolerâncias.
+- Critério 6 ✅ Chão não declarado continua inelástico apesar do par elástico distante.
+- Critério 7 ✅ Teste frontal anterior preservado e aprovado.
+- Critério 8 ✅ ADR-0005 existe e referencia ADR-0003.
+- `Proxy decided` da etapa 1 conferido: solve em log, máximo por corpo com Min no fallback, aviso cru em inglês e ADR-0005 referenciando 0003 estão implementados. O desvio residual aceito e o quique indefinido com `e = 1` permanecem decisões documentadas, sem novo requisito nesta revisão.
+
+##### Alcance e validação
+
+- Chamadores examinados: `assignPairRestitutions`, `colliderDescFor` → `buildWorld`, construtor, `createSimulator`, `replaceScene` e publicação de avisos no App. Caminhos de falha: ciclos inconsistentes, conflito com zero/ausência, resultados exponenciais não representáveis, fallback global e limpeza transacional do mundo. Interações: atrito e seus avisos independentes, cenas legadas, corpos fixos, velocidades iniciais, chão e aros de polia em zero/Min.
+- Não examinados experimentalmente além do gate: edição manual no browser e restituição positiva combinada com cordas/molas ativas.
+- Gate de revisão fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; **31 arquivos e 1057 testes aprovados**, lint/typecheck/build aprovados. Log: `%TEMP%/phy68-review-gate.log`. O probe adicional demonstra R1 apesar desse verde. `git diff --check` limpo; nenhum artefato gerado incluído.
+- Pendente para a etapa 2: escrever teste de regressão na costura pública existente e corrigir R1, garantindo que os fatores transferidos ao Rapier sejam representáveis ou que a degradação use o fallback com aviso. Precisa de teste novo, portanto não é correção pequena permitida ao revisor. Critérios e Primary files não foram reescritos.
+- Totais por eixo: Standards — 2 achados (documentação corrigida e metadados históricos não bloqueantes), nenhum smell acionável; Spec — 1 regressão P2 pendente. `Stage: to-implement`, sem merge e sem linha PHY-68 no ledger; a retomada continua nesta mesma branch e trata R1.
