@@ -719,13 +719,13 @@ export default function App() {
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
   const captureFrame = useCallback((): RecordedFrame => ({
-    states: statesRef.current,
+    states: statesRef.current ?? simRef.current?.readStates() ?? null,
     contacts: contactsRef.current,
     constraints: constraintsRef.current,
     acceleration: accelRef.current,
   }), [])
   const showFrame = useCallback((frame: RecordedFrame) => {
-    statesRef.current = frame.states
+    statesRef.current = playbackRef.current.cursor === 0 ? null : frame.states
     contactsRef.current = frame.contacts
     constraintsRef.current = frame.constraints
     accelRef.current = frame.acceleration
@@ -1015,7 +1015,7 @@ export default function App() {
       if (!syncWorld()) return
       try {
         for (let i = 0; i < n; i++) {
-          const prev = statesRef.current
+          const prev = statesRef.current ?? sim.readStates()
           sim.step()
           const next = sim.readStates()
           accelRef.current = onSteps(accelRef.current, 1, prev, next)
@@ -1025,7 +1025,6 @@ export default function App() {
           liveFrameRef.current = captureFrame()
           recordingRef.current!.push(liveFrameRef.current)
         }
-        setRecordingLength(recordingRef.current!.length)
       } catch (e) {
         fail(e)
         return
@@ -1041,11 +1040,14 @@ export default function App() {
   /** Discrete transport actions: pure decision in `advance`, effects here. */
   const dispatch = useCallback(
     (action: PlaybackAction) => {
+      const previousCursor = playbackRef.current.cursor
       const t = advance(playbackRef.current, action)
       playbackRef.current = t.state
       setPlayback(t.state)
       setStepsTick(t.state.cursor ?? t.state.stepsTaken)
-      showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+      if (action.type === 'seek' || previousCursor !== t.state.cursor) {
+        showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+      }
       if (t.rebuild) {
         setToolError(null)
         // Clear readings before rebuilding: a failed reset must still show the document.
@@ -1058,7 +1060,6 @@ export default function App() {
         try {
           simRef.current?.replaceScene(docRef.current)
           pendingRebuildRef.current = false
-          statesRef.current = simRef.current?.readStates() ?? null
           contactsRef.current = simRef.current ? simRef.current.readContacts() : []
           constraintsRef.current = simRef.current ? simRef.current.readConstraints() : []
           builtDocRef.current = docRef.current
@@ -1071,6 +1072,7 @@ export default function App() {
       }
       repaint()
       if (t.steps > 0) runSteps(t.steps)
+      setRecordingLength(recordingRef.current!.length)
     },
     [repaint, runSteps, showFrame, resetRecording],
   )
@@ -1168,7 +1170,6 @@ export default function App() {
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
-          statesRef.current = sim.readStates()
           resetRecording()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc

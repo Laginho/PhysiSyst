@@ -34,8 +34,9 @@ export interface PlaybackState {
   /** Sub-step credit carried over from previous frames, in [0, 1). */
   readonly acc: number
   /** TIMESTEPs executed since the last reset (monotonic; UI/test observable). */
-  readonly cursor: number | null
   readonly stepsTaken: number
+  /** Displayed record, or null for the live world at the tip. */
+  readonly cursor: number | null
 }
 
 export type PlaybackAction =
