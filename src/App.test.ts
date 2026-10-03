@@ -14,6 +14,7 @@ import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang, t } from './i18n'
 import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, INDEX_KEY, GALLERY_ACK_KEY, loadIndex, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { DEMO_SCENE } from './scene/demo'
 import { scenePath } from './scene'
 import type { Scene } from './scene/types'
 import { PRESETS, presetById } from './presets'
@@ -1817,7 +1818,7 @@ describe('galeria em árvore (PHY-31)', () => {
     ])
   })
 
-  it('usar um preset cria a cena com o nome no idioma atual e o conteúdo do preset', () => {
+  it('duplicar um preset cria a cena no idioma atual (PHY-62)', () => {
     const host = renderApp()
     const english = en as Record<string, string>
     try {
@@ -1828,10 +1829,10 @@ describe('galeria em árvore (PHY-31)', () => {
       expect(galleryGroups(host, en['gallery.title'])[0]?.node).toBe('Mechanics / Dynamics / Principles')
 
       const gallery = panel(host, en['gallery.title'])!
-      const atwood = [...gallery.querySelectorAll('label')].find((l) => l.querySelector('strong')?.textContent?.trim() === name(english, 'atwood'))
+      const atwood = [...gallery.querySelectorAll('button')].find((l) => l.querySelector('strong')?.textContent?.trim() === name(english, 'atwood'))
       if (!atwood) throw new Error('missing Atwood preset')
-      act(() => atwood.querySelector('input')?.click())
-      act(() => findButton(host, en['gallery.useSelected'])?.click())
+      act(() => atwood.click())
+      act(() => findButton(host, en['scenes.duplicate'])!.click())
 
       const scenes = panel(host, en['scenes.title'])?.querySelector('select')
       expect(scenes?.selectedOptions[0]?.textContent?.trim()).toBe(name(english, 'atwood'))
@@ -2497,5 +2498,146 @@ describe('galeria de um clique (PHY-62)', () => {
     expect(replaceScene).toHaveBeenCalledTimes(calls)
     expect(host.textContent).toContain(`passos: ${steps}`)
     expect(findButton(host, ptBR['playback.pause'])).toBeDefined()
+  })
+
+  it('primeira edição cria uma cópia; undo mantém o id e reabrir preserva o original', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    act(() => findButton(host, ptBR['palette.rectangle'])!.click())
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadIndex(storage())).toHaveLength(2)
+    expect(loadIndex(storage())[1]!.name).toBe(t('preset.atwood.name'))
+    expect(loadScene(storage(), 'cena-2')!.bodies).toHaveLength(5)
+    expect(host.textContent).not.toContain(t('preset.readOnlyHint'))
+    expect(sceneSelect(host).querySelector('option:disabled')).toBeNull()
+    expect(panel(host, ptBR['gallery.title'])).toBeDefined()
+    act(() => findButton(host, '?')!.click())
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadIndex(storage())).toHaveLength(2)
+    expect(loadScene(storage(), 'cena-2')).toEqual(presetById('atwood')!.buildScene())
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 4))
+    flush()
+    expect(loadIndex(storage())).toHaveLength(2)
+    act(() => card(host, 'atwood').click())
+    expect(inputForLabel(host, ptBR['panel.gLabel']).value).toBe('9.81')
+    expect(loadScene(storage(), 'cena-2')!.constants.g).toBe(4)
+  })
+
+  it.each(['g', 'F'])('primeira edição de %s durante play cria cópia sem reset e chega ao mundo', async (quantity) => {
+    vi.useFakeTimers()
+    let frame: FrameRequestCallback = () => {}
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const replaceScene = vi.fn()
+    const setGravity = vi.fn()
+    const setForceMagnitude = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), replaceScene, setGravity, setForceMagnitude })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'wedge-flagship').click())
+    if (quantity === 'F') click(host.querySelector('canvas')!, { x: 12, y: 0.5 })
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => frame(0))
+    act(() => frame(100))
+    flush()
+    const steps = host.textContent!.match(/passos: (\d+)/)![1]
+    expect(Number(steps)).toBeGreaterThan(0)
+    const rebuilds = replaceScene.mock.calls.length
+    const field = quantity === 'g' ? inputForLabel(host, ptBR['panel.gLabel'])
+      : inputForLabel(panel(host, ptBR['forces.title'].replace('{id}', 'cunha'))!, ptBR['forces.magnitude'])
+    act(() => setNativeInputValue(field, 6))
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(replaceScene).toHaveBeenCalledTimes(rebuilds)
+    expect(host.textContent).toContain(`passos: ${steps}`)
+    expect(findButton(host, ptBR['playback.pause'])).toBeDefined()
+    if (quantity === 'g') {
+      expect(setGravity).toHaveBeenLastCalledWith(6)
+      expect(loadScene(storage(), 'cena-2')!.constants.g).toBe(6)
+    } else {
+      expect(setForceMagnitude).toHaveBeenLastCalledWith('empurrao', 6)
+      expect(loadScene(storage(), 'cena-2')!.forces[0]!.magnitude).toBe(6)
+    }
+    act(() => frame(200))
+    flush()
+    expect(Number(host.textContent!.match(/passos: (\d+)/)![1])).toBeGreaterThan(Number(steps))
+  })
+
+  it('exporta o doc do preset e duplicar cria cópias com nomes distintos', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:preset')
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      act(() => findButton(host, ptBR['scenes.export'])!.click())
+      const blob = createObjectURL.mock.calls[0]![0] as Blob
+      const json = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.readAsText(blob)
+      })
+      expect(JSON.parse(json)).toEqual(presetById('atwood')!.buildScene())
+      expect(loadIndex(storage())).toHaveLength(1)
+      act(() => findButton(host, ptBR['scenes.delete'])!.click())
+      expect(loadIndex(storage())).toHaveLength(1)
+      for (let n = 2; n <= 3; n++) {
+        act(() => findButton(host, ptBR['scenes.duplicate'])!.click())
+        expect(sceneSelect(host).value).toBe(`cena-${n}`)
+        expect(sceneSelect(host).selectedOptions[0]!.textContent).toBe(t('preset.atwood.name') + (n === 2 ? '' : ' (2)'))
+        expect(loadScene(storage(), `cena-${n}`)).toEqual(presetById('atwood')!.buildScene())
+        expect(panel(host, ptBR['gallery.title'])).toBeDefined()
+        act(() => card(host, 'atwood').click())
+      }
+    } finally { download.mockRestore() }
+  })
+
+  it('flush da cena salva precede abertura; cena em branco continua criando uma cena', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    expect(loadScene(storage(), 'cena-1')).toEqual(DEMO_SCENE)
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 3))
+    expect(loadScene(storage(), 'cena-1')!.constants.g).not.toBe(3)
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => card(host, 'atwood').click())
+    expect(loadScene(storage(), 'cena-1')!.constants.g).toBe(3)
+    expect(findButton(host, ptBR['playback.play'])).toBeDefined()
+    expect(host.textContent).toContain('passos: 0')
+    act(() => findButton(host, ptBR['gallery.blank'])!.click())
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadScene(storage(), 'cena-2')).toEqual(blankScene())
+    expect(host.textContent).not.toContain(t('preset.readOnlyHint'))
+  })
+
+  it('falha ao salvar cópia mantém preset intacto; repetir edição cria só uma cópia', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    const original = Storage.prototype.setItem
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === INDEX_KEY) throw new Error('quota PHY-62')
+      original.call(this, key, value)
+    })
+    try {
+      act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 5))
+      flush()
+      expect(sceneSelect(host).value).toBe('preset:atwood')
+      expect(inputForLabel(host, ptBR['panel.gLabel']).value).toBe('9.81')
+      expect(loadIndex(storage())).toHaveLength(1)
+      expect(loadScene(storage(), 'cena-2')).toBeNull()
+      expect(host.textContent).toContain('quota PHY-62')
+    } finally { write.mockRestore() }
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 5))
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadScene(storage(), 'cena-2')!.constants.g).toBe(5)
+    expect(loadIndex(storage())).toHaveLength(2)
   })
 })
