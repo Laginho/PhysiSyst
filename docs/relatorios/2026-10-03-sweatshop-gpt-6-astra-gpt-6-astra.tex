@@ -1,0 +1,506 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs,array,tabularx}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=1.4em}
+\emergencystretch=2em
+
+\definecolor{impl}{HTML}{3B6EA8}
+\definecolor{rev}{HTML}{E0A030}
+
+\title{Sweatshop no PhysiSyst: feedback da v4, galeria, canvas e player de tempo\\\large GPT-6 Astra (medium) no stage 2, GPT-6 Astra (xhigh) no stage 3}
+\author{Foreman, sessão \texttt{sweatshop/2026-10-02-2210}}
+\date{3 de outubro de 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Resumo}
+
+Run noturno em cinco lançamentos na mesma sessão, todos com
+\texttt{-Models 'stage 2 gpt-6-astra medium, stage 3 gpt-6-astra xhigh'}, só
+para este run. A linha não tem \texttt{hard}, então os dois tickets
+\texttt{Difficulty: hard} (PHY-62 e PHY-64) também foram para o Astra medium. O
+primeiro lançamento (22:10) parou depois do PHY-58 num arquivo \texttt{STOP} que
+o foreman não criou. O Bruno pediu para continuar às 00:26 e foi dormir. Os três
+lançamentos seguintes foram para respostas do proxy.
+
+\begin{itemize}
+  \item \textbf{Produzido:} os 9 tickets da v5 mergeados na sessão, PHY-58 a
+        PHY-66. \textbf{Uma reabertura} (PHY-62) e \textbf{três perguntas} de
+        escopo no stage 2 (PHY-60 duas vezes, PHY-61 uma), todas respondidas
+        pelo proxy sem escalar. A fila esvaziou. PR de sessão:
+        \href{https://github.com/Laginho/PhysiSyst/pull/15}{\#15},
+        \textbf{draft}, 9 linhas: PHY-62 a PHY-65 \texttt{Review: human}, as
+        outras \texttt{Review: agent}, todas Approve.
+  \item \textbf{Custo:} \textbf{\$63,37} a preço de lista nos 23 estágios,
+        todos com preço: \texttt{gpt-6-astra medium} \$37,13 (13),
+        \texttt{gpt-6-astra xhigh} \$26,24 (10). 202 min de estágio, 37,6\,M
+        tokens de entrada (95,2\,\% em cache) e 181\,k de saída. \$7,04 por
+        ticket mergeado.
+  \item \textbf{O que deu errado:} um bug do driver. Ele guarda o branch de
+        quem perguntou como \texttt{phy/PHY-NN-...-asked-...}, e a própria
+        busca de branch dele (\texttt{refs/heads/*/PHY-NN-*}) acha esse nome e
+        lê dali o \texttt{Stage: blocked} antigo. O relançamento das 03:10
+        terminou sem rodar nada. O foreman renomeou os branches guardados para
+        \texttt{asked/...}, duas vezes, sem mexer no driver.
+  \item \textbf{Veredito provisório:} o Astra fez bem e caro. 9 de 9
+        mergeados, 1 reabertura em 10 revisões, mutação registrada em todos os
+        tickets. A \$10 por milhão de tokens de entrada, custou 4,8 vezes o
+        ticket do Sol (\$1,48 no run da tarde). As três perguntas foram todas
+        da mesma forma: um arquivo fora dos \texttt{Primary files}.
+\end{itemize}
+
+\section{Linha do tempo}
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+22:10 & Lançamento 1, driver \texttt{4b352b3}. Sessão nova
+        \texttt{sweatshop/2026-10-02-2210}. O driver abre o PR sem
+        \texttt{--draft}; o foreman abre o
+        \href{https://github.com/Laginho/PhysiSyst/pull/15}{\#15} como draft
+        antes, e o driver só reescreve o corpo.\\
+22:16 & PHY-58 (uma normal por par de contato) em \texttt{to-review} em 6 min.
+        22:22: mergeado, sem achados.\\
+22:22 & \texttt{STOP} encontrado; o driver publica o PR com 1 ticket e volta à
+        \texttt{main}. O foreman não relança.\\
+00:26 & ``Please continue'': lançamento 2. O Bruno vai dormir às 00:28.\\
+00:37 & PHY-59 ($v_0$ some depois de $t_0$) em 11 min; 00:43 mergeado.\\
+00:51 & PHY-60 (rótulo de massa com subscrito) pergunta: 7 testes de
+        \texttt{App.test.ts} quebram por canvases falsos sem
+        \texttt{measureText}, e o arquivo está fora dos \texttt{Primary files}.
+        Proxy decide às 00:58.\\
+00:54 & PHY-61 (seta 2T na polia móvel) pergunta: o consumidor em
+        \texttt{App.tsx} lê rótulos pela chave da corda. Proxy decide às 01:00.\\
+01:12 & PHY-62 (galeria abre com um clique, hard) em 18 min. 01:25:
+        reaberto (\texttt{9.810} sobre \texttt{9.81} criava a cópia). 01:31:
+        corrigido em 6 min. 01:39: mergeado.\\
+01:53 & PHY-63 (canvas redimensionável) em 14 min; 02:01 mergeado.\\
+02:26 & PHY-64 (player de tempo, hard) em 25 min, a mediana do run é 8;
+        02:34 mergeado, 16 critérios, sem achados.\\
+02:46 & PHY-65 (replay a partir do slider) em 11 min; 02:53 mergeado.\\
+03:01 & PHY-66 (voltar um passo) em 8 min; 03:09 mergeado. ``Nothing
+        runnable''; PR \#15 com 7 tickets.\\
+03:10 & Decisões do proxy gravadas no PHY-60 e no PHY-61 (\texttt{a4cb7c7});
+        lançamento 3 termina na hora: os dois ainda lidos como
+        \texttt{blocked} (seção 7). Branches guardados renomeados,
+        \texttt{bacb216}, \texttt{-DryRun} confere.\\
+03:13 & Lançamento 4. PHY-60 pergunta de novo às 03:18: mais quatro canvases
+        falsos, trazidos pelos PHY-62 a PHY-66. Proxy decide uma regra por tipo.
+        PHY-61 em \texttt{to-review} às 03:25, mergeado às 03:32.\\
+03:33 & Lançamento 5 (\texttt{ea9a909}). PHY-60 em \texttt{to-review} às 03:38,
+        mergeado às 03:45. PR \#15 com 9 tickets, ainda draft.\\
+\bottomrule
+\end{tabularx}
+
+\section{Métricas por estágio}
+
+As 23 linhas de \texttt{.scratch/run-log.md} da sessão
+\texttt{sweatshop/2026-10-02-2210}. Minutos, tokens e custo como o driver
+gravou.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l l r r r r r X@{}}
+\toprule
+Estágio & Modelo & Min & Entrada & Cache & Saída & Custo & Desfecho\\
+\midrule
+P58 impl.        & medium & 6  & 1,30\,M & 96\,\% & 4\,k  & 1,962 & to-review\\
+P58 revisão      & xhigh  & 6  & 1,10\,M & 94\,\% & 5\,k  & 1,919 & mergeado\\
+P59 impl.        & medium & 11 & 2,20\,M & 97\,\% & 6\,k  & 3,059 & to-review\\
+P59 revisão      & xhigh  & 6  & 0,96\,M & 92\,\% & 5\,k  & 1,958 & mergeado\\
+P60 impl.        & medium & 8  & 1,00\,M & 93\,\% & 7\,k  & 2,011 & perguntou\\
+P61 impl.        & medium & 3  & 0,44\,M & 90\,\% & 2\,k  & 0,980 & perguntou\\
+P62 impl.        & medium & 18 & 4,30\,M & 97\,\% & 17\,k & 6,242 & to-review\\
+P62 revisão      & xhigh  & 13 & 2,00\,M & 95\,\% & 13\,k & 3,556 & reaberto\\
+P62 impl.\ 2     & medium & 6  & 1,10\,M & 95\,\% & 5\,k  & 1,904 & to-review\\
+P62 revisão 2    & xhigh  & 8  & 1,60\,M & 95\,\% & 8\,k  & 2,846 & mergeado\\
+P63 impl.        & medium & 13 & 1,80\,M & 96\,\% & 12\,k & 3,159 & to-review\\
+P63 revisão      & xhigh  & 8  & 1,50\,M & 90\,\% & 8\,k  & 3,245 & mergeado\\
+P64 impl.        & medium & 25 & 5,20\,M & 97\,\% & 25\,k & 7,735 & to-review\\
+P64 revisão      & xhigh  & 8  & 2,20\,M & 96\,\% & 7\,k  & 3,375 & mergeado\\
+P65 impl.        & medium & 11 & 1,90\,M & 96\,\% & 11\,k & 3,218 & to-review\\
+P65 revisão      & xhigh  & 7  & 1,50\,M & 96\,\% & 7\,k  & 2,502 & mergeado\\
+P66 impl.        & medium & 8  & 1,00\,M & 94\,\% & 7\,k  & 1,947 & to-review\\
+P66 revisão      & xhigh  & 8  & 1,30\,M & 94\,\% & 8\,k  & 2,484 & mergeado\\
+P60 impl.\ 2     & medium & 5  & 0,73\,M & 94\,\% & 3\,k  & 1,270 & perguntou\\
+P61 impl.\ 2     & medium & 7  & 1,30\,M & 93\,\% & 6\,k  & 2,434 & to-review\\
+P61 revisão      & xhigh  & 6  & 1,40\,M & 95\,\% & 6\,k  & 2,316 & mergeado\\
+P60 impl.\ 3     & medium & 5  & 0,67\,M & 93\,\% & 3\,k  & 1,210 & to-review\\
+P60 revisão      & xhigh  & 6  & 1,10\,M & 94\,\% & 6\,k  & 2,036 & mergeado\\
+\midrule
+\multicolumn{2}{@{}l}{Total} & 202 & 37,60\,M & 95,2\,\% & 181\,k & 63,368 & 23 de 23 com preço\\
+\multicolumn{2}{@{}l}{Implementação} & 126 & 22,94\,M & & & 37,131 & 13 estágios\\
+\multicolumn{2}{@{}l}{Revisão} & 76 & 14,66\,M & & & 26,237 & 10 estágios\\
+\multicolumn{2}{@{}l}{Retrabalho} & 14 & 2,70\,M & & & 4,750 & PHY-62, impl.\ 2 e revisão 2\\
+\multicolumn{2}{@{}l}{Perguntas} & 16 & 2,17\,M & & & 4,261 & 3 estágios que pararam\\
+\multicolumn{2}{@{}l}{Perdido} & 0 & --- & & --- & 0 & nenhuma linha \texttt{?}\\
+\bottomrule
+\end{tabularx}}
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked, bar width=16pt, width=\linewidth, height=6.5cm,
+  ylabel={Tokens de entrada (M)}, ymin=0,
+  symbolic x coords={PHY-58,PHY-59,PHY-60,PHY-61,PHY-62,PHY-63,PHY-64,PHY-65,PHY-66},
+  xtick=data, x tick label style={font=\small},
+  legend style={at={(0.02,0.97)},anchor=north west,draw=none,font=\small},
+  axis lines*=left, ymajorgrids, grid style={gray!25}]
+\addplot[fill=impl,draw=none] coordinates
+  {(PHY-58,1.30) (PHY-59,2.20) (PHY-60,2.40) (PHY-61,1.74) (PHY-62,5.40) (PHY-63,1.80) (PHY-64,5.20) (PHY-65,1.90) (PHY-66,1.00)};
+\addplot[fill=rev,draw=none] coordinates
+  {(PHY-58,1.10) (PHY-59,0.96) (PHY-60,1.10) (PHY-61,1.40) (PHY-62,3.60) (PHY-63,1.50) (PHY-64,2.20) (PHY-65,1.50) (PHY-66,1.30)};
+\legend{implementação, revisão}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Onde foi o custo.} Por ticket: PHY-62 \$14,55 (45 min, com a
+reabertura), PHY-64 \$11,11 (33 min), PHY-60 \$6,53 (24 min, três passes),
+PHY-63 \$6,40, PHY-61 \$5,73, PHY-65 \$5,72, PHY-59 \$5,02, PHY-66 \$4,43,
+PHY-58 \$3,88. Os dois hard somaram \$25,66, 40\,\% do run. A implementação
+levou 59\,\% do custo e 61\,\% da entrada; ao contrário do run do Opus
+xhigh, a revisão ficou mais barata que a implementação em 7 de 9 tickets.
+
+\paragraph{O que se perdeu.} Nenhuma linha \texttt{?}. As três perguntas
+custaram \$4,26 e 16 min, mas só a primeira do PHY-61 (\$0,98) não deixou nada:
+as duas do PHY-60 deixaram código e testes que o passe seguinte retomou. A
+reabertura do PHY-62 custou \$4,75 de retrabalho. Em relógio, o run ficou parado
+de 22:23 a 00:26 por causa do \texttt{STOP} e perdeu 3 min no relançamento que
+não rodou nada (03:10--03:13).
+
+\section{Comparação}
+
+Os runs anteriores do PhysiSyst com preço, mais este.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r@{}}
+\toprule
+& 01/10 & 02/10 noite & 02/10 dia & 02/10 tarde & Este run\\
+\midrule
+Implementador & sonnet high & sol + sonnet xh & opus + sonnet & sol high & astra medium\\
+Revisor & sol max & sol max & fable + opus xh & sol max & astra xhigh\\
+Estágios registrados & 21 & 13 & 12 & 5 & 23\\
+Tickets mergeados & 7 & 5 & 6 & 2 & 9\\
+Reaberturas & 1 & 1 & 0 & 0 & 1\\
+Impl.: falhou ou perguntou & 0 de 8 & 0 de 6 & 0 de 6 & 1 de 3 & 3 de 13\\
+Mediana da implementação & 6 min & 8,5 min & 6,5 min & 7 min & 8 min\\
+Custo médio por impl. & \$1,74 & \$1,89 & \$2,07 & \$0,60 & \$2,86\\
+Mediana da revisão & 12,5 min & 10,5 min & 8 min & 9,5 min & 7,5 min\\
+Custo médio por revisão & \$0,65 & \$0,67 & \$3,17 & \$0,58 & \$2,62\\
+Estágios perdidos (\texttt{?}) & 5 & 1 & 0 & 0 & 0\\
+Custo registrado & \$19,13 & \$15,32 & \$31,40 & \$2,96 & \$63,37\\
+Custo por ticket mergeado & \$2,73 & \$3,06 & \$5,23 & \$1,48 & \$7,04\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+O custo por ticket é o mais alto do PhysiSyst. Não foi por mais tokens:
+a entrada média por estágio (1,6\,M) é menor que a do run do Opus xhigh (4,1\,M).
+Foi pelo preço da tabela: o driver cobra o Astra a \$10 por milhão de entrada
+e \$50 por milhão de saída, cinco vezes o Sol. Com os preços do Sol, os mesmos
+tokens dariam cerca de \$12,70, perto de \$1,41 por ticket. Os tickets também eram
+maiores: dois hard e três de player de tempo, com 16 critérios no PHY-64.
+
+\section{Atribuição das reaberturas}
+
+Uma rodada \texttt{reopened} neste run. O revisor foi \texttt{gpt-6-astra
+xhigh}, não o modelo do foreman, então o foreman rotulou. A linha foi para
+\path{.scratch/reopen-attribution.md}.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}l c l X@{}}
+\toprule
+Ticket & Rodada & Rótulo & Achado e porquê\\
+\midrule
+PHY-62 & 1 & S2-explícito/código ? & Digitar \texttt{9.810} sobre
+  \texttt{9.81} criava a cópia do preset sem mudar o doc: \texttt{editDoc}
+  comparava só identidade antes de \texttt{copyOpenPreset}
+  (\texttt{afa2ebd}). O critério 3 fala da ``primeira mudança no doc'', e o
+  proxy do stage 1 já tinha dito que edição é o que muda o conteúdo. Fica
+  ``?'' porque o caso do valor equivalente não estava escrito.\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Totais: 1 S2-explícito/código (limítrofe), nenhum S1, S2-implícito ou S3.
+Nenhum caso de \emph{drip-feeding} nem de \emph{churn}: a revisão 2 conferiu o
+conserto e não trouxe achado novo.
+
+\paragraph{Consertos da própria revisão (rodada 0).} Nenhum. As revisões que
+mergearam fizeram cinco commits de conserto, todos de documentação: ordem
+cronológica dos comentários no ticket (PHY-63, PHY-66), comentários de código
+reescritos (PHY-64, PHY-65) e uma linha do \texttt{CONTEXT.md} (PHY-60). Nenhum
+acrescentou teste, critério ou vermelho, então nenhum ganhou linha.
+
+\section{Scoreboard}
+
+Saída de \path{sweatshop/scripts/scoreboard.ps1} sobre PhysiSyst, SIGAA-ME e
+slip. \textbf{O SynchroNice ficou de fora} por pedido do Bruno para este run (não
+tocar nem interagir com ele), então os números não comparam linha a linha com o
+relatório anterior, que somava os quatro repositórios.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
+\midrule
+sonnet & 83 & 55 & 21 & 7 & 6m & ?\\
+opus-5.5 & 35 & 31 & 4 & 0 & 6m & \$0.72 (1/35)\\
+gpt-6.1-sol high & 27 & 22 & 0 & 5 & 7m & \$14.31 (27/27)\\
+sonnet-5.5 high & 11 & 11 & 0 & 0 & 6m & \$20.42 (11/11)\\
+sonnet-5.5 xhigh & 3 & 3 & 0 & 0 & 10m & \$12.44 (3/3)\\
+opus-5.5 high & 2 & 2 & 0 & 0 & 9m & \$2.31 (2/2)\\
+gpt-6-astra medium & 13 & 10 & 0 & 3 & 11m & \$37.13 (13/13)\\
+fable & 4 & 4 & 0 & 0 & 3m & ?\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r r@{}}
+\toprule
+Implementador & Revisor & Reviews & Reab. & Taxa & Por S2 & Taxa S2 & Sem rót. & Cons.\ S2\\
+\midrule
+sonnet & opus & 48 & 14 & 29\,\% & 0 & $\geq$0\,\% & 14 & 0\\
+? & opus & 2 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+opus-5.5 & fable-5.1 & 30 & 1 & 3\,\% & 0 & $\geq$0\,\% & 1 & 0\\
+gpt-6.1-sol high & gpt-6.1-sol max & 22 & 4 & 18\,\% & 3 & 14\,\% & 0 & 0\\
+sonnet-5.5 high & gpt-6.1-sol max & 8 & 1 & 12\,\% & 1 & 12\,\% & 0 & 0\\
+sonnet-5.5 xhigh & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0 & 0\\
+opus-5.5 high & fable-5.1 high & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+opus-5.5 high & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+sonnet-5.5 high & opus-5.5 xhigh & 3 & 0 & 0\,\% & 0 & 0\,\% & 0 & 3\\
+sonnet-5.5 xhigh & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+gpt-6-astra medium & gpt-6-astra xhigh & 10 & 1 & 10\,\% & 1 & 10\,\% & 0 & 0\\
+sonnet & fable & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+fable & fable & 3 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2 implícito & S1 & S3 ruído\\
+\midrule
+gpt-6.1-sol high $\to$ gpt-6.1-sol max & 4 & 0 & 0 & 4 & 1 & 0\\
+sonnet-5.5 high $\to$ gpt-6.1-sol max & 1 & 0 & 0 & 2 & 3 & 0\\
+sonnet-5.5 xhigh $\to$ gpt-6.1-sol max & 1 & 1 & 0 & 1 & 2 & 0\\
+sonnet-5.5 high $\to$ opus-5.5 xhigh & 3 & 1 & 2 & 0 & 0 & 0\\
+gpt-6-astra medium $\to$ gpt-6-astra xhigh & 1 & 1 & 0 & 0 & 0 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\paragraph{O que mudou desde o relatório anterior.}
+\begin{itemize}
+  \item \textbf{Linhas novas, todas deste run:} \texttt{gpt-6-astra medium}
+        como implementador (13 estágios, 3 perguntas, \$37,13) e o par
+        \texttt{gpt-6-astra medium} $\to$ \texttt{gpt-6-astra xhigh} (10
+        revisões, 1 reaberta, taxa S2 10\,\%, nenhuma sem rótulo).
+  \item \textbf{Linhas que encolheram ou sumiram só pelo SynchroNice fora:}
+        \texttt{sonnet} (121 $\to$ 83 estágios), \texttt{gpt-6.1-sol high}
+        (35 $\to$ 27; o par com o Sol max de 30 $\to$ 22 revisões e de
+        $\geq$20\,\% $\to$ 14\,\% de taxa S2), \texttt{sonnet} $\to$
+        \texttt{opus} (68 $\to$ 48), e as linhas \texttt{gpt-6-luna},
+        \texttt{gpt-6-sol}, \texttt{gpt-5.6-sol}, \texttt{gpt-6-astra} sem
+        esforço, \texttt{sonnet-5 xhigh}, \texttt{gpt-6-astra low} e
+        \texttt{gpt-6.1-sol max}. Nada disso veio deste run.
+  \item As linhas do PhysiSyst de 02/10 (Sonnet 5.5, Opus 5.5, Fable 5.1) não
+        mudaram.
+\end{itemize}
+
+\paragraph{Como ler.}
+\begin{itemize}
+  \item \textbf{O par do Astra tem exatamente 10 revisões}, o mínimo da regra
+        para sair de anedota. Taxa S2 de 10\,\%, ao lado de 14\,\% do
+        \texttt{gpt-6.1-sol high} $\to$ \texttt{gpt-6.1-sol max} (22). Não se
+        compara implementador com revisor diferente; a diferença também é
+        pequena demais para 10 revisões.
+  \item \textbf{O Astra xhigh não consertou no lugar de reabrir:} 0 na coluna de
+        consertos, ao contrário do Opus 5.5 xhigh (3 em 3). O 10\,\% não esconde
+        consertos.
+  \item \textbf{As três perguntas do Astra medium} aparecem na coluna
+        \emph{Perguntou} (3 de 13). Nenhuma foi falha de código: todas eram uma
+        lacuna dos \texttt{Primary files}, que o stage 1 deixou (seção 6).
+\end{itemize}
+
+\section{Observações sobre os modelos}
+
+\subsection*{GPT-6 Astra (medium), implementação}
+\begin{itemize}
+  \item \textbf{10 de 13 em \texttt{to-review}, 9 de 9 tickets mergeados.} 3 a
+        25 min, \$0,98 a \$7,74. Os dois hard: PHY-62 em 18 min (\$6,24, uma
+        reabertura) e PHY-64 em 25 min (\$7,74, nenhuma), sem modelo hard.
+  \item \textbf{Mutação registrada em todos os tickets}, inclusive as tabelas de
+        costura de DOM que o \texttt{AGENTS.md} pede (PHY-59: 4 testes, 4
+        vermelhos sob o mutante).
+  \item \textbf{Para na fronteira dos \texttt{Primary files} em vez de
+        perguntar ao proxy.} As três perguntas foram ``posso tocar este arquivo
+        também?''. No PHY-60 ele escreveu que o proxy estava indisponível no
+        runtime: o Codex não tem o agente \texttt{proxy}.
+  \item \textbf{Mexeu em testes antigos só por seletor.} PHY-62:
+        \texttt{0a9c697} e \texttt{7cdd005} trocaram 4 linhas de seletor sem
+        tocar asserção. PHY-64: \texttt{2f3d7eb} corrigiu \texttt{?} corrompido
+        para \texttt{²} em asserções escritas por ele mesmo. O foreman conferiu os
+        três diffs.
+\end{itemize}
+
+\subsection*{GPT-6 Astra (xhigh), revisão}
+\begin{itemize}
+  \item \textbf{9 mergeados, 1 reaberto, 6 a 13 min, \$1,92 a \$3,56.}
+        Reproduziu vermelho e mutação e rodou o gate antes de cada merge.
+  \item \textbf{Um achado real}, o \texttt{9.810} do PHY-62: lido no código
+        (\texttt{NumField} $\to$ \texttt{updateG} $\to$ \texttt{editDoc}), com a
+        decisão do proxy citada. Devolveu em vez de consertar.
+  \item \textbf{Rápido nos tickets grandes:} PHY-64, 16 critérios e 493 linhas
+        acrescentadas, aprovado em 8 min sem achado. O log mostra as mutações
+        rodando. O ticket é \texttt{Review: human}, e é onde o olho do Bruno
+        mais rende.
+  \item \textbf{Consertos só de documentação} (seção 4) e notas não bloqueantes
+        de padrão: commits sem corpo, um helper duplicado em \texttt{App.tsx}.
+\end{itemize}
+
+\section{Driver e runtime}
+\begin{itemize}
+  \item \textbf{Branch guardado casa com a busca do próprio driver.} Quem
+        pergunta tem o branch renomeado para
+        \texttt{<branch>-asked-<quando>}; \texttt{Ticket()} procura
+        \texttt{refs/heads/*/PHY-60-*}, acha esse nome e, como o
+        \texttt{Stage} da sessão já não é \texttt{blocked}, lê o do branch
+        guardado. Resultado: depois da resposta do proxy, o ticket continua
+        \texttt{blocked} e o relançamento não roda nada. Contornado renomeando
+        para \texttt{asked/phy60-...} e \texttt{asked/phy61-...}; o PHY-60
+        precisou de novo depois da segunda pergunta. Os branches
+        \texttt{asked/*} são locais.
+  \item \textbf{PR de sessão sem \texttt{--draft}.} O \texttt{gh pr create} do
+        driver abre PR pronto para revisão. O foreman abriu o \#15 como draft
+        antes; o driver acha o PR aberto e só reescreve o corpo, e ele ficou
+        draft nos cinco lançamentos.
+  \item \textbf{\texttt{STOP} de origem desconhecida} às 22:22. Funcionou como
+        prometido (parou entre estágios, publicou, voltou à \texttt{main}),
+        mas ninguém nesta sessão o criou.
+  \item \textbf{Stage 2 no Codex não alcança o proxy.} Toda pergunta vira
+        \texttt{blocked} e espera o foreman. Com o foreman acordado custou
+        minutos; sem ele, a noite inteira.
+  \item \textbf{\texttt{-DryRun} lê a árvore da base}, não da sessão: mostra
+        PHY-58 a PHY-66 em \texttt{to-review} ou \texttt{reviewing}, quando na
+        sessão estão \texttt{done}. Serviu só para conferir o PHY-60 e o
+        PHY-61.
+  \item \textbf{Aviso de bundle acima de 500\,kB} citado em todos os
+        \texttt{.final}. É conhecido, não falha o gate.
+\end{itemize}
+
+\section{Recomendações}
+\begin{enumerate}
+  \item \textbf{Corrigir o nome do branch guardado no driver}, para que a busca
+        \texttt{*/<ID>-*} não o encontre (por exemplo
+        \texttt{asked/<id>-<quando>}), ou fazer a busca ignorar
+        \texttt{-asked-}. Sem isso, toda resposta do proxy a um stage 2 que
+        perguntou exige renomear à mão.
+  \item \textbf{Uma opção de PR draft no driver} (\texttt{-Draft}, ou draft
+        sempre), para não depender do foreman abrir antes.
+  \item \textbf{Stage 1: \texttt{Primary files} incluem os dublês e os
+        consumidores.} As três perguntas foram de arquivo fora da lista:
+        dublês de canvas em \texttt{App.test.ts} (PHY-60) e o único consumidor
+        de \texttt{vectorLabels} em \texttt{App.tsx} (PHY-61). Uma regra no
+        \texttt{ticket-flow} para consertar harness de teste fora da lista,
+        sem tocar asserção, teria evitado duas das três.
+  \item \textbf{Proxy para o stage 2 no Codex:} o driver poderia chamar o proxy
+        quando um estágio termina em pergunta, antes de marcar
+        \texttt{blocked}.
+  \item \textbf{Não tornar o Astra padrão por custo.} \$7,04 por ticket contra
+        \$1,48 do Sol high/max à tarde, e taxa S2 de 10\,\% (Astra medium $\to$
+        Astra xhigh, 10 revisões) contra 14\,\% (Sol high $\to$ Sol max, 22).
+        Pares com revisores diferentes, e o do Astra no limite de 10: não
+        sustenta troca de qualidade.
+  \item \textbf{Revisão humana do PHY-64} em primeiro lugar no PR \#15: o maior
+        ticket do run aprovado em 8 min sem achado.
+\end{enumerate}
+
+Do relatório anterior: as recomendações 1--3 entraram no Agent-Skills\#3 e foram
+usadas aqui (o log mesclado sem perder linhas, a coluna de consertos lida
+como 0). CLEAN-28 e CLEAN-29 foram mergeados no run da tarde.
+
+\section{Decisões do proxy}
+
+As 28 linhas \texttt{Proxy decided} dos tickets deste run. 25 são do stage 1
+(02/10), uma delas já sobrescrita pelo Bruno (PHY-64), e 3 deste run, do stage
+2: duas no PHY-60 e uma no PHY-61. Nenhuma linha
+\texttt{Proxy escalated}. PHY-58 e PHY-59 não têm nenhuma. Ficam em
+\texttt{\#\# Comments} de cada ticket; aqui, citadas na íntegra.
+
+{\small\sloppy
+\subsection*{PHY-60 (2)}
+\begin{enumerate}
+  \item \textbf{(stage 2, 03/10)} sim, \texttt{src/App.test.ts} entra, restrito aos dois \texttt{getContext} falsos (gravador do PHY-59 \textasciitilde{}l.270 e \texttt{recordCanvas} \textasciitilde{}l.2325), só para \texttt{measureText} devolver \texttt{\{ width: <número> \}}; nenhuma asserção, cenário ou expectativa muda; commit test-only próprio; o stage 2 retoma do branch \texttt{phy/PHY-60-rotulo-massa-asked-20261003-0051} (0426c42, 9ece33d) sem refazer nada --- as sete falhas são um \texttt{TypeError} de harness (proxy devolve \texttt{undefined} para \texttt{measureText}), não regressão: as asserções desses testes filtram por cor de vetor ou por \texttt{lineTo}, e o critério 2 exige \texttt{measureText}; corrigir isso em \texttt{draw.ts} com \texttt{?.width ?? 0} seria dobrar produção a um double, não cabe.
+  \item \textbf{(stage 2, 03/10)} sim, os quatro doubles novos também entram --- a regra passa a ser por tipo, não por contagem: todo contexto falso passado a \texttt{getContext} em \texttt{src/App.test.ts} (hoje seis, \textasciitilde{}l.279, \textasciitilde{}2331, \textasciitilde{}2752, \textasciitilde{}2857, \textasciitilde{}3075, \textasciitilde{}3102, e qualquer outro que a sessão acrescente) pode ganhar \texttt{measureText} devolvendo \texttt{\{ width: <número> \}}, e nada mais nesse arquivo muda; o \texttt{beforeEach} com \texttt{getContext: () => null} fica como está --- os quatro são o mesmo \texttt{TypeError} de harness do primeiro pedido (o Proxy cai em \texttt{target[key] ?? (() => \{\})}, \texttt{measureText} devolve \texttt{undefined}, \texttt{.width} quebra em draw.ts:247), as asserções deles leem \texttt{translate}/\texttt{stroke}, não texto, e a contagem "dois" descrevia o arquivo antes de PHY-64..66 serem mergeados, não uma escolha de design. O próximo stage 2 retoma de \texttt{c01e01a} (\texttt{676ad3f} teste em draw.test.ts, \texttt{33084dc} test-only nos dois primeiros doubles, \texttt{c01e01a} só \texttt{draw.ts} + ticket) sem refazer nada: cria \texttt{phy/PHY-60-rotulo-de-massa-com-subscrito} a partir da sessão, traz as mudanças em \texttt{src/} desses três commits, acrescenta um commit test-only com os quatro doubles restantes, roda o gate e vai a \texttt{to-review}.
+\end{enumerate}
+\subsection*{PHY-61 (1)}
+\begin{enumerate}
+  \item \textbf{(stage 2, 03/10)} sim --- incluir \texttt{src/App.tsx} nos Primary files, só o bloco de overlay de vetores em \texttt{paint} (chamada de \texttt{vectorLabels} e os três lookups \texttt{labels.get(a.key)}, \textasciitilde{}l.246--257); nada mais nesse arquivo. \texttt{vectorLabels} deixa de devolver \texttt{Map<string,string>} e passa a devolver um lookup por seta (ex.: \texttt{(a: OverlayArrow) => string}) que resolve por \texttt{kind}/\texttt{key} + \texttt{factor}, nunca por identidade do objeto --- o ramo de seleção (l.254/257) regenera as setas de \texttt{selView} e consulta os rótulos da cena inteira. Com a mudança de tipo, um consumidor que continue com \texttt{labels.get(a.key)} quebra no typecheck; é esse o pino do seam, não um teste em \texttt{src/App.test.ts}, que fica fora do escopo. Próximo stage 2 começa limpo da branch da sessão; a branch \texttt{-asked-20261003-0054} só tem o commit do bloqueio e pode ser descartada. --- O contrato prende a numeração à chave da corda, então o fator só pode entrar no lookup por seta, e o único consumidor desse lookup está em App.tsx.
+\end{enumerate}
+\subsection*{PHY-62 (10)}
+\begin{enumerate}
+  \item edição = qualquer mudança no doc, inclusive g/F ao vivo; play, passo, reset e velocidade não --- é o que muda o conteúdo que o preset protege.
+  \item criar a cópia durante o play não reseta nem limpa o undo --- reset no meio de uma edição ao vivo apagaria o que o aluno estava olhando.
+  \item seletor com opção desabilitada "Preset: <nome> (só leitura)" + dica; Excluir desabilitado, Duplicar = cópia, Exportar = doc do preset --- mostra o estado sem inventar um controle novo.
+  \item recarregar volta ao preset via \texttt{CURRENT\_SCENE\_KEY = preset:<id>}, id desconhecido cai no comportamento de hoje --- recarregar não deve criar cena.
+  \item undo depois da primeira edição fica na cópia --- apagar a cópia por undo perderia dados sem aviso.
+  \item galeria aberta ao trocar de preset e ao criar a cópia; primeiro clique chama \texttt{ackGallery} --- alternar rápido é o pedido do Bruno.
+  \item cópia com o nome do preset no idioma atual, " (2)" em colisão, id \texttt{cena-N} --- reaproveita o esquema de ids que já existe.
+  \item "Cena em branco" e a primeira abertura não mudam --- fora do pedido.
+  \item clique no card do preset já aberto não faz nada --- reset já tem botão.
+  \item clique num card faz flush e abre pausado em t = 0, como troca de cena --- nenhuma edição se perde.
+\end{enumerate}
+\subsection*{PHY-63 (4)}
+\begin{enumerate}
+  \item tamanho persistido globalmente em \texttt{physics-sim:canvasSize}, inválido $\to$ automático --- é preferência de tela, não da cena.
+  \item mínimo 402 $\times$ 268, largura = máx(MIN, mín(usuário, auto)); o piso de 600 px e o empilhamento só valem para o automático --- o piso existe pelo layout lado a lado, não pela legibilidade.
+  \item alinhamento como hoje, espaço que sobra vazio --- sem pedido de mudar.
+  \item alça no canto inferior direito, \texttt{nwse-resize}, largura manda em 3:2, sem botão "auto" --- convenção da plataforma; arrastar ao máximo já é o automático.
+\end{enumerate}
+\subsection*{PHY-64 (9)}
+\begin{enumerate}
+  \item tudo acompanha o slider, inclusive o painel; a aceleração é a gravada daquele passo --- uma diferença sobre um salto do slider seria um número sem sentido físico.
+  \item tempo como "t = 1,23 s", contador de passos continua --- duas casas bastam a 1/60 s.
+  \item reset e troca de cena apagam a gravação, levar o slider a t = 0 não --- voltar a t = 0 é navegar, não descartar.
+  \item \texttt{<input type="range">} nativo, um passo = um registro, na barra de transporte à direita dos botões --- o nativo já resolve teclado e acessibilidade, e é onde um player de vídeo põe o slider.
+  \item arrastar o slider pausa e continua pausado --- retomar sozinho começaria um replay que ninguém pediu.
+  \item registro 0 é sempre o estado inicial --- sem ele o slider não chega a t = 0.
+  \item o bloqueio desabilita g, F e também undo/redo --- undo/redo seriam outro caminho para uma edição ao vivo.
+  \item atalhos de teclado fora do PHY-64; $\to$ continua passo único --- voltar um passo é o PHY-66.
+  \item \textbf{(rodada 2, sobrescrita pelo Bruno)} limite de 18 000 registros. O Bruno trocou por 10 s (600), porque a maioria das simulações dura até 5 s.
+\end{enumerate}
+\subsection*{PHY-65 (1)}
+\begin{enumerate}
+  \item passo único com o slider para trás avança um passo seguindo a regra do play; a velocidade continua sendo só a taxa do play --- o passo é a menor unidade da mesma regra.
+\end{enumerate}
+\subsection*{PHY-66 (1)}
+\begin{enumerate}
+  \item atalhos fora do PHY-64, $\to$ continua passo único, $\leftarrow$ e o botão de voltar viram este ticket --- mantém o PHY-64 no tamanho de um ticket.
+\end{enumerate}
+}
+
+\section{Débito humano}
+
+Nenhuma linha \texttt{Débito humano:} nos nove tickets, e nenhum
+\texttt{Proxy escalated}. O PR
+\href{https://github.com/Laginho/PhysiSyst/pull/15}{\#15} é draft e lista PHY-62,
+PHY-63, PHY-64 e PHY-65 como \texttt{Review: human} --- Approve, no topo; as
+outras cinco como \texttt{Review: agent} --- Approve.
+
+\end{document}
