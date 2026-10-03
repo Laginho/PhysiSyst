@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -66,3 +66,9 @@ O rótulo de massa sai literal, com o sublinhado (`m_a`, `m_b`), centrado no cor
 - Initial sandbox suite: 1009 passed / 15 failed, all failures from Chromium DevTools connection/disconnection. The full suite passed with normal Chromium permissions.
 - Build retains the existing chunk-size warning. Final diff and whitespace checked: only authorized source files and ticket changed; production commit does not touch tests.
 - Stage 2 complete; ready for the separate stage-3 review.
+
+#### Stage 3 documentation correction (2026-10-03)
+
+- Standards review found one stale description in `CONTEXT.md`: mass labels were described as always inside the body. Updated it to include external placement when the measured label does not fit. This is the documentation-only exception allowed by ticket-flow; no production code or test changed.
+- Independent Spec review found all four numbered criteria satisfied and no introduced regression or scope creep. Both recorded Proxy decisions were checked: the initial two canvas doubles and the subsequent authorization for every fake canvas context in `src/App.test.ts`; all six edits only supply `measureText` widths.
+- Review gate: 31 test files passed, 1024 tests passed; lint, typecheck and build passed. The existing build chunk-size warning remains.
