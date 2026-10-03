@@ -86,3 +86,92 @@ describe('canvas nunca sobrepõe o inspetor nem vaza do viewport (PHY-20)', () =
     expect(canvas.left).toBeGreaterThanOrEqual(0)
   }, 30000)
 })
+
+describe('preferred canvas size (PHY-63)', () => {
+  type Session = import('./test/browser').BrowserSession
+  const settle = (session: Session) => session.evaluate<void>(`new Promise(resolve => {
+    let frames = 0; const tick = () => ++frames === 20 ? resolve() : requestAnimationFrame(tick); tick();
+  })`)
+  const dragHandle = async (session: Session, delta: number) => {
+    const rect = await session.rect()
+    const handle = await session.evaluate<{ x: number; y: number }>(`(() => {
+      const el = document.querySelector('[title="Redimensionar canvas"]');
+      if (!el) throw new Error('missing resize handle');
+      const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`)
+    const scale = (rect.width - 2) / 12
+    const from = { x: (handle.x - rect.left) / scale, y: 8 - (handle.y - rect.top) / scale }
+    await session.drag(from, { x: from.x + delta / scale, y: from.y })
+    await settle(session)
+  }
+  const geometry = (session: Session) => session.evaluate<{ width: number; height: number; logicalWidth: number; logicalHeight: number }>(`(() => {
+    const c = document.querySelector('canvas'), r = c.getBoundingClientRect();
+    return { width: r.width - 2, height: r.height - 2, logicalWidth: c.width / devicePixelRatio, logicalHeight: c.height / devicePixelRatio };
+  })()`)
+
+  it('drags the real corner handle with matching logical geometry and clamps both extremes', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      const auto = await geometry(session)
+      await dragHandle(session, -180)
+      const smaller = await geometry(session)
+      expect(smaller.width).toBe(auto.width - 180)
+      expect(smaller.width / smaller.height).toBe(1.5)
+      expect(smaller.logicalWidth).toBe(smaller.width)
+      expect(smaller.logicalHeight).toBe(smaller.height)
+      await dragHandle(session, -3000)
+      expect(await geometry(session)).toEqual({ width: 402, height: 268, logicalWidth: 402, logicalHeight: 268 })
+      await dragHandle(session, 3000)
+      expect(await geometry(session)).toEqual(auto)
+    })
+  }, 30000)
+
+  it('keeps bodies, selection and undo unchanged and exposes a translated resize cursor', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await session.select(9, 3)
+      const position = await session.readBoxPosition()
+      const selection = await session.selectedLegends()
+      const readUndo = () => session.evaluate<boolean>('document.querySelector(\'[title="desfazer (Ctrl+Z)"]\').disabled')
+      expect(await readUndo()).toBe(true)
+      await dragHandle(session, -180)
+      expect(await session.readBoxPosition()).toEqual(position)
+      expect(await session.selectedLegends()).toEqual(selection)
+      expect(await readUndo()).toBe(true)
+      expect(await session.evaluate<string>('getComputedStyle(document.querySelector(\'[title="Redimensionar canvas"]\')).cursor')).toBe('nwse-resize')
+      await session.evaluate(`document.querySelector('select:has(option[value="en"])').value = 'en'; document.querySelector('select:has(option[value="en"])').dispatchEvent(new Event('change', { bubbles: true }))`)
+      await settle(session)
+      expect(await session.evaluate<boolean>('Boolean(document.querySelector(\'[title="Resize canvas"]\'))')).toBe(true)
+    })
+  }, 30000)
+
+  it('loads a dragged preference in a fresh page and restores it after its viewport shrinks', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      const auto = await geometry(session)
+      await dragHandle(session, 900 - auto.width)
+      expect((await geometry(session)).width).toBe(900)
+      // A fresh same-origin page reads the saved choice. Its iframe gives this
+      // app a real resizable window without changing the shared CDP harness.
+      await session.evaluate(`new Promise(resolve => {
+        const f = document.createElement('iframe'); f.id = 'resized-page';
+        f.style.cssText = 'width:1920px;height:1080px;border:0';
+        f.onload = () => resolve(); f.src = location.href; document.body.append(f);
+      })`)
+      const frameWidth = () => session.evaluate<number>(`document.querySelector('#resized-page').contentDocument.querySelector('canvas').getBoundingClientRect().width - 2`)
+      await settle(session)
+      expect(await frameWidth()).toBe(900)
+      await session.evaluate(`document.querySelector('#resized-page').style.width = '1000px'`)
+      await settle(session)
+      expect(await frameWidth()).toBeLessThan(900)
+      await session.evaluate(`document.querySelector('#resized-page').style.width = '1920px'`)
+      await settle(session)
+      expect(await frameWidth()).toBe(900)
+      await session.evaluate(`new Promise(resolve => {
+        const f = document.querySelector('#resized-page'); f.onload = () => resolve(); f.contentWindow.location.reload();
+      })`)
+      await settle(session)
+      expect(await frameWidth()).toBe(900)
+    })
+  }, 30000)
+})
