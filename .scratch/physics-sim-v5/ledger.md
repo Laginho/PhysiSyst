@@ -7,3 +7,4 @@ Uma linha por ticket fechado, escrita no mesmo commit que marca `Stage: done`.
 | 2026-10-02 | PHY-58 | 077d50b |
 | 2026-10-03 | PHY-59 | ac62e6f |
 | 2026-10-03 | PHY-62 | bae10db |
+| 2026-10-03 | PHY-63 | 0b3caef |
