@@ -3,16 +3,16 @@
  * slider and the single-frame step button.
  *
  * This module is deliberately React-free and side-effect-free: it decides HOW
- * MANY fixed TIMESTEPs the simulator must execute, and nothing else. The rAF
- * wiring in App stays a thin adapter (read state -> advance() -> run that many
- * sim.step() calls -> paint), which is what makes playback testable at all in a
- * project that bars automated UI tests.
+ * MANY fixed TIMESTEPs the simulator must execute and which record to show. The rAF
+ * wiring in App stays a thin adapter (read state -> advance() -> show the record
+ * or run sim.step() calls -> paint), with the transport rules testable directly.
  *
  * Core invariant (spec, ADR-0001): the speed multiplier scales STEPS PER FRAME,
  * never the timestep. `acc += speed` per animation frame, then whole steps are
  * withdrawn and the remainder carries to the next frame. So 0.5x steps on every
- * other frame with the SAME dt as 1x, and after N frames the world has advanced
- * exactly floor(N * speed) timesteps.
+ * other frame with the SAME dt as 1x. From zero credit, N frames at a fixed speed
+ * consume exactly floor(N * speed) recorded or live timesteps; only credit left
+ * after replay advances the live world and increments stepsTaken.
  */
 
 /** Slider bounds from the spec (story 17). */
@@ -46,10 +46,10 @@ export type PlaybackAction =
   /** Discard the running world and rebuild it from the document. */
   | { readonly type: 'reset' }
   | { readonly type: 'setSpeed'; readonly speed: number }
-  /** One animation frame elapsed. */
-  | { readonly type: 'frame' }
-  /** Single-frame step button: exactly one TIMESTEP, whatever the speed. */
-  | { readonly type: 'stepOnce' }
+  /** One animation frame elapsed. Length is needed when replaying a record. */
+  | { readonly type: 'frame'; readonly length?: number }
+  /** Advance one recorded or live TIMESTEP; length is needed for replay. */
+  | { readonly type: 'stepOnce'; readonly length?: number }
 
 export interface PlaybackTransition {
   readonly state: PlaybackState
@@ -76,6 +76,15 @@ export function initialPlayback(speed: number = DEFAULT_SPEED): PlaybackState {
 
 const NO_OP = { steps: 0, rebuild: false } as const
 
+/** Spend whole-step credit on recorded frames before advancing the live world. */
+function advanceCursor(state: PlaybackState, credit: number, length: number): PlaybackTransition {
+  const next = state.cursor === null ? null : state.cursor + credit
+  const last = Math.max(0, length - 1)
+  const cursor = next !== null && next < last ? next : null
+  const steps = next === null ? credit : Math.max(0, next - last)
+  return { state: { ...state, cursor, stepsTaken: state.stepsTaken + steps }, steps, rebuild: false }
+}
+
 export function advance(state: PlaybackState, action: PlaybackAction): PlaybackTransition {
   switch (action.type) {
     case 'seek': {
@@ -88,7 +97,7 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
       // Idempotent, and the accumulator starts clean: stale sub-step credit
       // from before a pause would make the first resumed frame non-reproducible.
       if (state.status === 'playing') return { state, ...NO_OP }
-      return { state: { ...state, status: 'playing', acc: 0, cursor: null }, ...NO_OP }
+      return { state: { ...state, status: 'playing', acc: 0 }, ...NO_OP }
 
     case 'pause':
       if (state.status === 'paused') return { state, ...NO_OP }
@@ -110,16 +119,12 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
       if (state.status !== 'playing') return { state, ...NO_OP }
       const credit = state.acc + state.speed
       const steps = Math.floor(credit)
-      return {
-        state: { ...state, acc: credit - steps, stepsTaken: state.stepsTaken + steps },
-        steps,
-        rebuild: false,
-      }
+      return advanceCursor({ ...state, acc: credit - steps }, steps, action.length ?? 1)
     }
 
     case 'stepOnce':
-      // Exactly one TIMESTEP, at any speed and in either status, and it resets
+      // Exactly one recorded or live TIMESTEP, in either status, and it resets
       // no live-world state: fractional credit and status ride through untouched.
-      return { state: { ...state, cursor: null, stepsTaken: state.stepsTaken + 1 }, steps: 1, rebuild: false }
+      return advanceCursor(state, 1, action.length ?? 1)
   }
 }

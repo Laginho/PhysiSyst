@@ -683,10 +683,10 @@ export default function App() {
   const lastSavedRef = useRef<Map<string, string>>(new Map([[currentId, JSON.stringify(serialize(doc))]]))
   /**
    * Transport mirror for the controls. The AUTHORITATIVE transport state lives
-   * in `playbackRef`: animation frames advance it without touching React state,
-   * because re-rendering the whole editor 60x/second to move an accumulator
-   * would be pure waste. Only discrete actions (play/pause/reset/speed/step)
-   * go through `dispatch`, which keeps this mirror in sync.
+   * in `playbackRef`: live animation frames keep accumulator updates out of
+   * React state. Discrete actions go through `dispatch`; replay frames also
+   * update this mirror when the cursor changes, keeping controls and edit locks
+   * aligned with the displayed record.
    */
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
@@ -1220,8 +1220,8 @@ export default function App() {
     return () => clearInterval(id)
   }, [bootState])
 
-  // The playback loop. Deliberately thin: the scheduler decides how many
-  // TIMESTEPs this frame is worth, this only executes them.
+  // The playback loop displays the scheduler's chosen record, then executes
+  // any remaining live TIMESTEPs.
   useEffect(() => {
     if (playback.status !== 'playing') return
     let live = true
@@ -1229,8 +1229,16 @@ export default function App() {
     const tick = () => {
       if (!live) return
       if (syncWorld()) {
-        const t = advance(playbackRef.current, { type: 'frame' })
+        const previousCursor = playbackRef.current.cursor
+        const t = advance(playbackRef.current, { type: 'frame', length: recordingRef.current!.length })
         playbackRef.current = t.state
+        if (previousCursor !== t.state.cursor) {
+          // Restore the live snapshot before surplus steps so acceleration uses
+          // the actual preceding live step, not the previously displayed record.
+          showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+          setPlayback(t.state)
+          repaint()
+        }
         runSteps(t.steps)
       }
       if (live) handle = requestAnimationFrame(tick)
@@ -1240,7 +1248,7 @@ export default function App() {
       live = false
       cancelAnimationFrame(handle)
     }
-  }, [playback.status, runSteps, syncWorld])
+  }, [playback.status, runSteps, syncWorld, showFrame, repaint])
 
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
@@ -1322,7 +1330,7 @@ export default function App() {
 
   function stepOnce() {
     void ensureSim().then((sim) => {
-      if (sim) dispatch({ type: 'stepOnce' })
+      if (sim) dispatch({ type: 'stepOnce', length: recordingRef.current!.length })
     })
   }
 
