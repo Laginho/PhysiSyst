@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -72,3 +72,14 @@ O rótulo de massa sai literal, com o sublinhado (`m_a`, `m_b`), centrado no cor
 - Standards review found one stale description in `CONTEXT.md`: mass labels were described as always inside the body. Updated it to include external placement when the measured label does not fit. This is the documentation-only exception allowed by ticket-flow; no production code or test changed.
 - Independent Spec review found all four numbered criteria satisfied and no introduced regression or scope creep. Both recorded Proxy decisions were checked: the initial two canvas doubles and the subsequent authorization for every fake canvas context in `src/App.test.ts`; all six edits only supply `measureText` widths.
 - Review gate: 31 test files passed, 1024 tests passed; lint, typecheck and build passed. The existing build chunk-size warning remains.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+- Standards: one stale domain-description finding, corrected in `90a805e`; no remaining findings. `CONTEXT.md` now describes labels inside or beside the body. The review checked the entire diff and commit separation: `5f9f9c2` contains regression tests, `fbf6828` and `9458cd7` only repair canvas doubles, and production commit `8117855` changes no tests. No unrelated refactoring or source changes.
+- Spec: zero findings. Criteria 1-4 are satisfied: base/subscript runs and smaller lowered suffix; combined measured-width centering; upright placement above/right of rotated screen bounds when the label plus margin does not fit; preserved bare symbols for fitting bodies. Mass and vector labels use the same first-underscore splitter. Both `Proxy decided` entries were reviewed: the original two-double authorization and the expansion to all canvas doubles; the resulting six `App.test.ts` edits only provide numeric text metrics.
+- Files: `src/render/draw.ts`, `src/render/draw.test.ts`, `src/App.test.ts`, plus the stale-documentation correction in `CONTEXT.md` and ticket/ledger bookkeeping.
+- Red-green proof: stage 2 recorded 6 failed / 21 passed before implementation and 27 / 27 focused tests green afterward. All eight added cases have mutation failures recorded above. Review confirmed that `draw.ts` and `draw.test.ts` are unchanged from `c01e01a` / `9ece33d`, so the recovered evidence still targets identical production and test code; mutations were not rerun in stage 3.
+- Gate rerun during review: `npm test` passed 31 files and 1024 tests (45.25 s); `npm run lint`, `npm run typecheck`, and `npm run build` all exited 0. The existing >500 kB chunk-size warning remains. Final whitespace and scope checks passed. Only documentation changed after the gate.
+- Rebase onto `sweatshop/2026-10-02-2210` was already up to date; merged locally without squash as `dce6726`. No conflicts or source changes occurred during integration. Ticket closed with its ledger entry in this commit; no PR or push in the session-branch flow.
