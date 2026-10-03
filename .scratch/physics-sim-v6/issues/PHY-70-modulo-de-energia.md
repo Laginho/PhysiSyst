@@ -1,5 +1,5 @@
 # PHY-70: Módulo de energia e momento
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -125,3 +125,29 @@ No missing, partial or incorrectly implemented functional criteria; no behaviora
 - No production or test files changed during this resumption. The prior red and mutation evidence remains applicable to the identical implementation.
 - Re-ran the full gate: 32 test files / 1069 tests passed; lint, typecheck and build all exited 0. Build still reports the existing chunk-size warning. Final diff check passed. Returned to to-review for an independent stage-3 session; no merge or ledger entry.
 - Proxy decided: aprovada a edição de compatibilidade `readPulleys: () => []` no `makeFakeSimulator` de `src/App.test.ts` (commit c5ea165) e a permanência de `src/App.test.ts` em Primary files — `readPulleys()` é método obrigatório da interface `Simulator`, o fake tipado é o único outro implementador e o typecheck quebra sem a linha; critério 8 já antecipava o arquivo, é um buraco do spec e não expansão de escopo; sem seam, teste ou comportamento novo.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+- Stage-3 re-review of the sole prior ❌ item and `8ef615a..51cc9de`, with independent Standards and Spec agents. That delta changes only the ticket; no production or test file changed after the first review. Rebased without conflicts onto session base `233fb02`; the rebased source is identical to the previously reviewed source. Test-only commit is now `1747184`, production commit `b2ad449`, and approved branch tip `f86e802`.
+
+##### Standards
+
+- ✅ The prior Primary-files approval item is resolved: the recorded proxy decision approves exactly `readPulleys: () => []` in the App fake and its narrowly scoped Primary-files entry. The actual App-test diff is that single line. The earlier implementation-authored scope judgment is not the approval; the later proxy record supplies it.
+- ✅ Test-first separation remains intact after rebase: `1747184` changes tests plus the ticket; `b2ad449` changes production plus the ticket and no tests; later ticket-branch commits are documentation only. No additional seam or source change was introduced by this review.
+- Two nonblocking commit-message shortcomings remain: the original test commit has no explanatory body, and the proxy-approval commit has only a coauthor trailer. The previously noted optional `rotation` → `rotationalEnergy` naming judgment remains optional. No new code finding or prior-pass miss.
+
+##### Spec
+
+- ✅ Criteria 1–8 retain their previous passing verdicts for the identical implementation: centroidal inertia and transformed CM, body energy/momentum and particle mode, fixed-body exclusion, spring/chain/disk totals, massive-pulley snapshots, optional chain kinetic readout, and captured frame pulleys. No missing, partial or incorrect criterion, behavioral scope creep or regression was found in the re-review scope.
+- Both proxy records were examined: the original decision covers massive pulleys only, fixed-body exclusion, disk spin retained in particle mode and potential at the world CM using scene gravity; the later decision approves the exact App fake compatibility line and its Primary-files entry. Both match the implementation.
+- Files delivered: `src/sim/energy.ts`, `src/sim/energy.test.ts`, `src/sim/simulator.ts`, `src/sim/simulator.test.ts`, `src/App.tsx` and the one-line compatibility edit in `src/App.test.ts`. Source and tests were not altered during re-review.
+
+##### Validation and integration
+
+- Red-green proof remains the committed stage-2 evidence: the missing energy module, missing `readPulleys` and absent `chainKinetic` fail before production; the implemented focused suite passes 45/45. All eight production mutations and their red output were independently repeated and recorded in the first review above. No mutation was repeated in this documentation-only re-review.
+- Fresh gate after rebase: `npm test && npm run lint && npm run typecheck && npm run build` — 32 test files / 1069 tests passed; every command exited 0. `git diff --check` passed, and test-only/production separation was checked again on the rebased commits. Build retains the existing large-chunk warning.
+- Merged locally without squash into `sweatshop/2026-10-03-1618` as `e344daf`. The merge tree exactly matches the validated ticket-branch tree. Resolution, ledger line and `Stage: done` are committed together on the session; no PR or push is part of this session-stage handoff.
+- Limits remain documented: internal chain strain and moving-axle mass energy are outside the numbered contract; UI consumption is PHY-71. No standalone manual UI session was performed in this re-review.
+- Axis totals: Standards has zero reopening findings, two nonblocking commit-message notes and one existing optional naming heuristic; Spec has zero findings.
