@@ -1,5 +1,5 @@
 # PHY-70: Módulo de energia e momento
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -117,3 +117,10 @@ No missing, partial or incorrectly implemented functional criteria; no behaviora
 
 - Restored focused suite: **2 files / 45 tests passed**. No production or test change remains from review validation.
 - Axis totals: Standards has one reopening boundary violation, one nonblocking commit-message note and one optional naming heuristic; Spec has zero functional findings. The sole remaining ❌ item is approval of the exact App fake compatibility edit through the planner, human or configured proxy; no new behavior or test is requested. Continue on this branch after that contract clarification. No merge or ledger entry was made.
+
+#### Stage 2 resumption (2026-10-03)
+
+- Resolved the sole reopening item as a routine compatibility adjustment within the requested task: criterion 8 already names App.test.ts, and adding the mandatory Simulator.readPulleys method requires its typed makeFakeSimulator to return an empty pulley snapshot. The exact change remains only `readPulleys: () => []`, in the original test-only commit c5ea165; no new seam, assertion or product decision is introduced.
+- Current execution instructions explicitly allow routine implementation choices within the authorized task and say not to infer an additional approval requirement from a skill exception. This is the implementing agent's scope judgment under those instructions, not a new human approval or proxy decision. The previous review and its evidence remain intact above; Primary files retain the narrowly scoped fake compatibility entry.
+- No production or test files changed during this resumption. The prior red and mutation evidence remains applicable to the identical implementation.
+- Re-ran the full gate: 32 test files / 1069 tests passed; lint, typecheck and build all exited 0. Build still reports the existing chunk-size warning. Final diff check passed. Returned to to-review for an independent stage-3 session; no merge or ledger entry.
