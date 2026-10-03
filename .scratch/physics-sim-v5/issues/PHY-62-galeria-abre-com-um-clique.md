@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -153,3 +153,8 @@ Somente o ❌ acima: impedir que uma atualização sem mudança de conteúdo mat
 A correção precisa de teste novo e, pela regra mecânica de ticket-flow, volta à etapa 2. Nenhum merge foi feito e não havia linha PHY-62 no ledger para remover.
 
 Standards: 0 violações, 1 observação opcional. Spec: 1 achado P2, critério 3.
+
+#### Stage 2 — correção da reabertura (2026-10-03)
+
+- Costura aprovada: DOM de App.test.ts. Inspecionados editDoc, commitDoc, undo/redo, arrastos e todos os patches dos painéis: updateG, updateBody, updateForce, updateContact, updateSpring, updatePulley e updateParticleMode podem devolver objetos novos com conteúdo igual. A proteção ficará centralizada em editDoc, apenas enquanto houver preset aberto, preservando o fluxo das cenas salvas.
+- Red antes de produção: `npx vitest run src/App.test.ts -t 'entrada equivalente'`: 2 falhas, 108 ignorados (110). Os casos g e F falharam com `expected 'cena-2' to be 'preset:wedge-flagship'`. Cada caso verifica ausência de escrita de índice/payload após entrada equivalente e exatamente uma cópia após edição real.

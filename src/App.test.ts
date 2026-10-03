@@ -2420,6 +2420,40 @@ describe('galeria de um clique (PHY-62)', () => {
   const sceneWrites = (calls: string[][]) => calls.filter(([key]) => key === INDEX_KEY || key!.startsWith(SCENE_KEY_PREFIX))
   const flush = () => act(() => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS))
 
+  it.each(['g', 'F'])('entrada equivalente de %s preserva o preset até uma edição real', async (quantity) => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'wedge-flagship').click())
+    if (quantity === 'F') click(host.querySelector('canvas')!, { x: 12, y: 0.5 })
+    const field = quantity === 'g' ? inputForLabel(host, ptBR['panel.gLabel'])
+      : inputForLabel(panel(host, ptBR['forces.title'].replace('{id}', 'cunha'))!, ptBR['forces.magnitude'])
+    const indexBefore = storage().getItem(INDEX_KEY)
+    const savedBefore = storage().getItem(`${SCENE_KEY_PREFIX}cena-1`)
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      act(() => field.focus())
+      const equivalent = `${Number(field.value).toFixed(3)}0`
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, equivalent)
+        field.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      flush()
+      expect(sceneSelect(host).value).toBe('preset:wedge-flagship')
+      expect(host.textContent).toContain(t('preset.readOnlyHint'))
+      expect(sceneWrites(writes.mock.calls)).toEqual([])
+      expect(storage().getItem(INDEX_KEY)).toBe(indexBefore)
+      expect(storage().getItem(`${SCENE_KEY_PREFIX}cena-1`)).toBe(savedBefore)
+      expect(loadIndex(storage())).toHaveLength(1)
+      act(() => setNativeInputValue(field, 6))
+      flush()
+      expect(sceneSelect(host).value).toBe('cena-2')
+      expect(loadIndex(storage())).toHaveLength(2)
+      const copy = loadScene(storage(), 'cena-2')!
+      expect(quantity === 'g' ? copy.constants.g : copy.forces[0]!.magnitude).toBe(6)
+    } finally { writes.mockRestore() }
+  })
+
   it('abre cada card em t=0 sem salvar cenas; transporte não cria cópia', async () => {
     vi.useFakeTimers()
     const replaceScene = vi.fn()
