@@ -293,11 +293,15 @@ function NumField({
   label,
   value,
   step,
+  disabled,
+  title,
   onChange,
 }: {
   label: string
   value: number
   step?: number
+  disabled?: boolean
+  title?: string
   onChange: (v: number) => boolean | void
 }) {
   const [draft, setDraft] = useState<{ value: number; text: string } | null>(null)
@@ -307,6 +311,8 @@ function NumField({
       {label}
       <input
         type="number"
+        disabled={disabled}
+        title={title}
         step={step ?? 'any'}
         value={draft?.text ?? value}
         style={{ width: 80 }}
@@ -418,6 +424,7 @@ function ForcesPanel({
   bodyId,
   forces,
   structuralLocked,
+  liveLocked,
   onAdd,
   onPatch,
   onRemove,
@@ -425,6 +432,7 @@ function ForcesPanel({
   bodyId: string
   forces: AppliedForce[]
   structuralLocked: boolean
+  liveLocked: boolean
   onAdd: () => string | null
   onPatch: (id: string, patch: Partial<Omit<AppliedForce, 'id' | 'bodyId'>>) => void
   onRemove: (id: string) => void
@@ -440,10 +448,10 @@ function ForcesPanel({
             <span>{f.id}</span>
             <button disabled={structuralLocked} onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
           </div>
-          <NumField label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
-          <NumField label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
-          <NumField label={t('forces.anchorX')} value={f.anchor.x} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, x: v } })} />
-          <NumField label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.anchorX')} value={f.anchor.x} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, x: v } })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
         </div>
       ))}
       <button disabled={structuralLocked} style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
@@ -730,6 +738,7 @@ export default function App() {
   /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
+  const resetOnEditRef = useRef(false)
   // Mirrors so the imperative rAF loop reads the latest document without
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
@@ -754,9 +763,13 @@ export default function App() {
       else setSceneIndex(loadIndex(storage))
     })
   }
-  const structuralLocked = playback.stepsTaken > 0 || stepsTick > 0
-  const canEditDoc = useCallback((next: Scene) =>
-    playbackRef.current.stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live', [])
+  const liveLocked = playback.cursor !== null && playback.cursor > 0
+  const structuralLocked = playback.cursor !== 0 && (playback.stepsTaken > 0 || stepsTick > 0)
+  const canEditDoc = useCallback((next: Scene) => {
+    const { cursor, stepsTaken } = playbackRef.current
+    if (cursor !== null) return cursor === 0
+    return stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live'
+  }, [])
 
   /** Rebind identity without replacing the running world or clearing its undo history. */
   const copyOpenPreset = useCallback((): boolean => {
@@ -785,10 +798,11 @@ export default function App() {
     // Materialize a preset only when its persisted content actually changes.
     if (openPresetRef.current && JSON.stringify(resolved) === JSON.stringify(prev)) return true
     if (!canEditDoc(resolved)) {
-      setToolError('editor.resetToEdit')
+      setToolError(playbackRef.current.cursor !== null ? 'playback.scrubbedEditHint' : 'editor.resetToEdit')
       return false
     }
     if (!copyOpenPreset()) return false
+    if (playbackRef.current.cursor === 0) resetOnEditRef.current = true
     if (recordHistory) setHistory((h) => pushHistory(h, prev))
     docRef.current = resolved
     setDoc(resolved)
@@ -1064,6 +1078,10 @@ export default function App() {
   useEffect(() => {
     docRef.current = doc
     showGlobalRef.current = showGlobal
+    if (resetOnEditRef.current) {
+      resetOnEditRef.current = false
+      dispatch({ type: 'reset' })
+    }
     if (simRef.current && builtDocRef.current !== doc) {
       // Live edits mutate the running world; structural edits rebuild at t = 0 (PHY-39).
       const route = routeDocChange(builtDocRef.current, doc)
@@ -1726,10 +1744,10 @@ export default function App() {
             <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
               {t('playback.reset')}
             </button>
-            <button onClick={undo} disabled={!canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
+            <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
               ↶
             </button>
-            <button onClick={redo} disabled={!canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
+            <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
               ↷
             </button>
             <span style={{ position: 'relative' }}>
@@ -2069,7 +2087,7 @@ export default function App() {
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
@@ -2085,6 +2103,7 @@ export default function App() {
               <ForcesPanel
                 bodyId={selected.id}
                 structuralLocked={structuralLocked}
+                liveLocked={liveLocked}
                 forces={doc.forces.filter((f) => f.bodyId === selected.id)}
                 onAdd={() => {
                   const res = addForce(doc, { bodyId: selected.id, anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 })
