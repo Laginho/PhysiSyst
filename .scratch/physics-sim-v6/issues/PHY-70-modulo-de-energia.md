@@ -55,3 +55,5 @@ Simulador:
 - 2026-10-03 Stage 1 (planner, grilling com proxy). Bruno decidiu: módulo puro `src/sim/energy.ts` lendo o `RecordedFrame`, I analítico; simulador expõe `readPulleys()` com `{id, angvel}` e `SpringState.chainKinetic?`.
 - Proxy decided: `readPulleys()` só para polias com massa; sistema exclui corpos fixos; termo do disco mantido no modo partícula; E_pg no CM com g de `scene.constants.g`.
 - Planner: independente de PHY-67…69; toca `App.tsx` em uma linha de tipo e uma de captura.
+
+- 2026-10-03 Attempt 1 failed: exit 0. Log tail: A PHY-70 ficou bloqueada pelo ambiente: o terminal falhou ao iniciar (`CreateProcessWithLogonW failed: 1909`), e a alternativa de leitura via Node também falhou. /  / Não consegui ler a skill `ticket-flow` nem identificar o `Stage:` do ticket. Nenhum arquivo foi alterado e nenhuma validação foi executada. /  / Restaure o acesso ao terminal nesta sessão para eu continuar a PHY-70.
