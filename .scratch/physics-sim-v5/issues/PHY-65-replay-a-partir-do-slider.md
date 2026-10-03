@@ -1,5 +1,5 @@
 # PHY-65: Play e passo único a partir de um ponto anterior
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: human
@@ -47,3 +47,6 @@ Isso substitui o critério 3 e o 15 do PHY-64 (play e passo com o cursor num reg
 - Bruno decidiu: play depois de voltar toca o gravado e depois continua ao vivo.
 - Proxy decided: passo único com o slider para trás avança um passo seguindo a regra do play; a velocidade continua sendo só a taxa do play — o passo é a menor unidade da mesma regra.
 - Planner: o excesso de passos além do fim da gravação roda no mundo vivo; com a gravação cheia isso é um salto para o mundo vivo, aceito porque só acontece depois de 10 s.
+
+- Stage 2 (2026-10-03): PHY-64 está done na base sweatshop/2026-10-02-2210. Consumidores de advance: App (dispatch/frame/fail), testes de integração, overlay e accelerationTracker. Os consumidores ao vivo existentes omitem length; preservar essa compatibilidade. Casos de fronteira: cursor zero, crédito fracionário sem passo, igualdade no último registro, excesso a 2x, gravação inicial/vazia no transporte ao vivo e limite de 600 registros.
+- Red antes de produção: `npx vitest run src/playback/scheduler.test.ts src/App.test.ts --reporter=dot`: 15 failed, 170 passed (185). As falhas são do contrato antigo: play perde cursor, stepOnce executa física em vez de história, frame ignora cursor. No DOM: replay 1x/0.5x recebeu slider 4 em vez de 0; single-step recebeu 4 em vez de 2; excesso 2x deu 6 passos em vez de 5; limite play/step recebeu 599 em vez de 598; teste atualizado da PHY-64 recebeu passos 203 em vez de 11.
