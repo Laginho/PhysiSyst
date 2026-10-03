@@ -321,6 +321,51 @@ describe('acceptance: wedge equilibrium (flagship)', () => {
   })
 })
 
+describe('acceptance: restitution (PHY-68)', () => {
+  it.each([
+    { e: 1, va: 0, vb: 3 },
+    { e: 0.5, va: 0.75, vb: 2.25 },
+    { e: 0, va: 1.5, vb: 1.5 },
+  ])('head-on spheres conserve momentum with e=$e', async ({ e, va, vb }) => {
+    const sim = await createSimulator({
+      version: 1, constants: { g: 0 }, forces: [],
+      bodies: [
+        { id: 'a', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: -2, y: 0 }, rotation: 0, vx: 3 },
+        { id: 'b', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+      ],
+      contacts: [{ a: 'a', b: 'b', muS: 0, muK: 0, e }],
+    })
+    for (let i = 0; i < 120; i++) sim.step()
+    const states = sim.readStates()
+    // Zero target uses 3% of the incident speed as its absolute tolerance.
+    expect(Math.abs(states.get('a')!.linvel.x - va)).toBeLessThanOrEqual(0.03 * (va || 3))
+    expect(Math.abs(states.get('b')!.linvel.x - vb)).toBeLessThanOrEqual(0.03 * vb)
+    expect(Math.abs(states.get('a')!.linvel.x + states.get('b')!.linvel.x - 3)).toBeLessThanOrEqual(0.09)
+  })
+
+  it('does not bounce on undeclared ground despite an elastic pair elsewhere', async () => {
+    const sim = await createSimulator({
+      version: 1, constants: { g: 9.81 }, forces: [],
+      bodies: [
+        { id: 'a', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 0, y: 2.5 }, rotation: 0 },
+        { id: 'b', shape: 'circle', radius: 0.5, fixed: true, mass: 1, position: { x: 100, y: 2.5 }, rotation: 0 },
+        { id: 'ground', shape: 'rectangle', width: 20, height: 1, fixed: true, mass: 0, position: { x: 0, y: -0.5 }, rotation: 0 },
+      ],
+      contacts: [{ a: 'a', b: 'b', muS: 0, muK: 0, e: 1 }],
+    })
+    let arrivalSpeed = 0
+    let impacted = false
+    for (let i = 0; i < 120; i++) {
+      sim.step()
+      const vy = sim.readStates().get('a')!.linvel.y
+      if (!impacted && arrivalSpeed > 5 && vy > -arrivalSpeed / 2) impacted = true
+      if (impacted) expect(Math.abs(vy)).toBeLessThanOrEqual(0.05 * arrivalSpeed)
+      else arrivalSpeed = Math.max(arrivalSpeed, -vy)
+    }
+    expect(impacted).toBe(true)
+  })
+})
+
 describe('acceptance: perfectly-inelastic 1D collision', () => {
   it('head-on circles stick: v_post = momentum-conserving, dKE = 1/2 m_red v_rel^2', async () => {
     // Closed forms (written before running): with restitution 0 (engine
