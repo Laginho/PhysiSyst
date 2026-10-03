@@ -138,6 +138,32 @@ async function settleSimImport(): Promise<void> {
   })
 }
 
+describe('recording graph panel (PHY-72)', () => {
+  it('toggles an accessible panel, defaults to energy and follows selection', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    const toggle = findButton(host, 'gráfico')
+    expect(toggle).toBeDefined()
+    expect(toggle!.getAttribute('aria-pressed')).toBe('false')
+    const id = toggle!.getAttribute('aria-controls')!
+    expect(host.querySelector(`#${id}`)).toBeNull()
+    act(() => toggle!.click())
+    expect(toggle!.getAttribute('aria-pressed')).toBe('true')
+    const panel = host.querySelector(`#${id}`)!
+    const select = panel.querySelector('select')!
+    expect(select.value).toBe('energy')
+    expect(panel.querySelector('canvas[role="img"]')!.getAttribute('aria-label')).toContain(t('readout.system'))
+    click(host.querySelector('canvas')!, { x: 9, y: 3 })
+    expect(panel.querySelector('canvas')!.getAttribute('aria-label')).toContain('caixa')
+    act(() => setSelectValue(select, 'velocity'))
+    expect(select.value).toBe('velocity')
+    click(host.querySelector('canvas')!, { x: 0, y: 8 })
+    expect(select.value).toBe('energy')
+    act(() => toggle!.click())
+    expect(host.querySelector(`#${id}`)).toBeNull()
+  })
+})
+
 function inputForLabel(panel: Element, labelText: string): HTMLInputElement {
   const label = [...panel.querySelectorAll('label')].find((candidate) => candidate.textContent?.trim() === labelText)
   const input = label?.querySelector('input')

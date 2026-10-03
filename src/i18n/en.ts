@@ -1,4 +1,12 @@
 export const en = {
+  'graph.toggle': 'graph',
+  'graph.kindLabel': 'Graph quantity',
+  'graph.kind.position': 'position',
+  'graph.kind.velocity': 'velocity',
+  'graph.kind.acceleration': 'acceleration',
+  'graph.kind.energy': 'energy',
+  'graph.kind.momentum': 'momentum',
+  'graph.aria': '{kind} graph — {id}',
   'canvas.resize': 'Resize canvas',
   'app.title': 'physics-sim',
   'playback.play': '▶ play',
