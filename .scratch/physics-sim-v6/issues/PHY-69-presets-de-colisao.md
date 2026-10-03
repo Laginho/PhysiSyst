@@ -1,5 +1,5 @@
 # PHY-69: Presets de colisão elástica e inelástica
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-68
 Review: agent
@@ -38,6 +38,9 @@ Nomes: 'Colisão elástica' / 'Elastic collision', 'Colisão inelástica' / 'Ine
 - `src/i18n/i18n.test.ts`: critério 6 já é coberto pela paridade existente.
 
 ## Comments
+
+- 2026-10-03 Retomada stage 2: integrada a base da sessão, preservando os commits `ebbcdfe` e `7debab0` e a autorização do planner. Atualizada somente a linha autorizada da expectativa da galeria.
+- Mutate-verify da expectativa DOM `agrupa por nó na ordem do livro, com os presets na ordem declarada, e só nós com preset aparecem`: substituído temporariamente `src/presets/index.ts` pela versão da base `sweatshop/2026-10-03-1618` (sem os presets de colisão). `npm test -- src/App.test.ts -t 'agrupa por nó na ordem do livro'`: **1 failed / 130 skipped (131)**, `AssertionError` em `src/App.test.ts:1851`, grupo esperado `Mecânica / Dinâmica / Colisões` com `Colisão elástica` e `Colisão inelástica` ausente do recebido. Produção restaurada integralmente após o vermelho.
 
 - 2026-10-03 Stage 2: PHY-68 está `done` na base `sweatshop/2026-10-03-1618`. Costura: catálogo público de presets → codec → simulador real. Consumidores examinados: `galleryGroups`, `presetById`, `createPresetScene` e seus usos em `App.tsx`; nenhum muda de assinatura. Casos de fronteira: e = 1, e = 0,5, esfera inicialmente parada e chão sem par declarado. Testes existentes preservam os presets anteriores, persistência e traduções.
 - Red antes de produção: `npm test -- src/presets/presets.test.ts`: 5 failed / 23 passed (28). Catálogo esperava 14 e recebeu 12; tópico `colisoes` ausente; `missing preset collision-elastic` e `missing preset collision-inelastic`.
