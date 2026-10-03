@@ -1,3 +1,4 @@
+import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
 import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
@@ -711,9 +712,10 @@ export default function App() {
     states: Map<string, BodyState> | null
     contacts: ContactPoint[]
     constraints: ConstraintState[]
+    pulleys: PulleyState[]
     acceleration: ReturnType<typeof initialTracker>
   }
-  const liveFrameRef = useRef<RecordedFrame>({ scene: doc, states: null, contacts: [], constraints: [], acceleration: initialTracker() })
+  const liveFrameRef = useRef<RecordedFrame>({ scene: doc, states: null, contacts: [], constraints: [], pulleys: [], acceleration: initialTracker() })
   const recordingRef = useRef<Recording<RecordedFrame> | null>(null)
   if (!recordingRef.current) recordingRef.current = new Recording(liveFrameRef.current)
   const [recordingLength, setRecordingLength] = useState(1)
@@ -725,6 +727,7 @@ export default function App() {
     states: statesRef.current ?? simRef.current?.readStates() ?? null,
     contacts: contactsRef.current,
     constraints: constraintsRef.current,
+    pulleys: simRef.current?.readPulleys() ?? [],
     acceleration: accelRef.current,
   }), [])
   const showFrame = useCallback((frame: RecordedFrame) => {

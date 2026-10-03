@@ -1,5 +1,5 @@
 # PHY-70: Módulo de energia e momento
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -60,3 +60,11 @@ Simulador:
 - 2026-10-03 Attempt 1 failed: exit 0. Log tail: A PHY-70 ficou bloqueada pelo ambiente: o terminal falhou ao iniciar (`CreateProcessWithLogonW failed: 1909`), e a alternativa de leitura via Node também falhou. /  / Não consegui ler a skill `ticket-flow` nem identificar o `Stage:` do ticket. Nenhum arquivo foi alterado e nenhuma validação foi executada. /  / Restaure o acesso ao terminal nesta sessão para eu continuar a PHY-70.
 - 2026-10-03 Stage 2: retomada após falha ambiental; terminal disponível fora do sandbox. Leitura dos consumidores: readSpring só por readConstraints; readConstraints consumido por App e testes; Simulator implementado pelo simulador real e pelo makeFakeSimulator de App.test.ts. Adaptação mínima deste fake incluída em Primary files, sem novo seam. App.tsx também precisa inicializar pulleys: [] no frame inicial; tipo PulleyState será importado diretamente do módulo para preservar o escopo.
 - Red antes de produção: `npx vitest run src/sim/energy.test.ts src/sim/simulator.test.ts`: 2 arquivos falharam, 2 testes falharam / 34 passaram. energy.test.ts: Cannot find module './energy'; simulator.test.ts: sim.readPulleys is not a function; chainKinetic esperado 0, recebido undefined. Casos adicionais: cenas vazias, momento em dois eixos, gravidade negativa, compressão, ordem por id/documento, snapshots e replaceScene.
+
+#### Stage 2 implementation (2026-10-03)
+
+- Implemented pure momentOfInertia, centerOfMass, bodyEnergy and systemEnergy; readSpring now exposes node kinetic energy, readPulleys snapshots massive disks in document order, and RecordedFrame captures pulleys (including the empty initial frame). No solver dynamics changed. App fake adapted in the test-only commit c5ea165.
+- Criteria 1-5: 9 direct energy tests; criteria 6-7: 2 simulator readout tests; criterion 8: typecheck plus existing App suite (the fake is not inspected by recorded frame, so no new App test). Focused green: 45/45.
+- Mutate-verify, production restored after each run: triangular inertia divisor 18 -> 12: 1 failed / 8 passed, expected 0.1111111111111111, received 0.16666666666666666. Triangle centroid x offset halved: 1 failed / 8 passed, expected y=3, received 2. Particle rotation enabled: 1 failed / 8 passed, expected Ec=1, received 1.1066666666666667. Fixed-body exclusion removed: 1 failed / 8 passed, expected Ec=8.606666666666667, received 561.94. Spring elastic contribution zeroed: 2 failed / 7 passed, expected 1.5, received 0. Disk energy zeroed: 2 failed / 7 passed, expected 2.3, received 0.3. Disk readout angvel forced to zero: 1 failed / 35 passed, expected >0.01, received 0. Chain readout energy forced to zero: 1 failed / 35 passed, expected >0, received 0. Restored focused tests: 45/45; isolated inertia recheck restored: 9/9.
+- Gate: npm test (32 files, 1069 tests passed); npm run lint; npm run typecheck; npm run build — all exit 0. git diff --check clean. Test-only and production commits kept separate.
+- Limits match the written contract: energy sums body contributions, endpoint spring strain, node kinetic energy and disk spin; it is not a complete conservation diagnostic for massive springs or moving pulley axles. This is documented on systemEnergy. UI consumption remains PHY-71.
