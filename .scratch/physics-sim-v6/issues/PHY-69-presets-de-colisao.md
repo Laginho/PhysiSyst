@@ -1,5 +1,5 @@
 # PHY-69: Presets de colisão elástica e inelástica
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-68
 Review: agent
@@ -58,3 +58,29 @@ Nomes: 'Colisão elástica' / 'Elastic collision', 'Colisão inelástica' / 'Ine
 - Validações restantes: `npm run lint`, `npm run typecheck` e `npm run build` passaram (exit 0). Build emitiu apenas aviso de chunks maiores que 500 kB. Diff revisado, limitado aos Primary files e ao registro deste ticket; testes seguem somente no commit vermelho `ebbcdfe`.
 - 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-69-presets-de-colisao-asked-20261003-1743`): PHY-69 implementado e commitado, mas marcado `blocked`. /  / - Presets elástico/inelástico e traduções adicionados. / - Testes novos verificados por mutação. / - Gate: 1060 passaram; 1 falhou por expectativa antiga da galeria. Lint, typecheck e build passaram. / - Commits: `ebbcdfe`, `7debab0`. /  / Autoriza atualizar essa expectativa em [src/App.test.ts](/D:/Desktop/Projects/PhysiSyst/src/App.test.ts:1850)? /  / A [ticket-flow](/C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige “the implementer may touch those files and nothing else”; esse arquivo está fora dos `Primary files`, e o proxy configurado está indisponível.
 - Proxy decided: sim, atualizar a expectativa fixada da galeria em src/App.test.ts, só inserindo a entrada 'Mecânica / Dinâmica / Colisões' na ordem do livro, em commit test-only próprio (vermelho contra a base da sessão); retomar da branch `asked/phy69-presets-colisao-20261003-1743` (`ebbcdfe`, `7debab0`) — o teste enumera todos os nós com preset, então o critério 1 o quebra por construção; é consequência do contrato, não defeito dele, e a edição é de uma linha e reversível.
+
+#### Stage 3 review (2026-10-03)
+
+Verdict: Approve
+
+- Base fixada: `2009208` (`sweatshop/2026-10-03-1618`); implementação revisada em `42aa1f8`. `git rebase --rebase-merges sweatshop/2026-10-03-1618` concluído sem conflitos e sem alteração do diff. Revisões Standards e Spec realizadas por agentes separados, em paralelo; gate executado pelo revisor principal.
+
+##### Standards
+
+- Um achado documental corrigido: `README.md` ainda anunciava doze cenas. A linha agora anuncia quatorze e inclui os presets de colisão elástica/inelástica. Correção permitida pela regra do ticket-flow para documentação tornada obsoleta pelo ticket, sem mudança de comportamento ou necessidade de novo teste.
+- Nenhuma outra violação documentada ou smell identificado. Diff de produção e testes limitado aos Primary files. `ebbcdfe` é o commit de testes vermelho, anterior à produção de `7debab0`; esse commit de produção não toca testes. `77c3b01` contém exclusivamente a expectativa DOM autorizada e histórico do ticket; `f65b776` integra a base da sessão sem ampliar o escopo.
+
+##### Spec
+
+1. ✅ Nó `mecanica/dinamica/colisoes`, posições 1/2 e ordem da galeria corretos.
+2. ✅ Preset elástico simulado até 3 s, com |vx₁| ≤ 0,09 e vx₂ = 3 ± 3%.
+3. ✅ Preset inelástico simulado até 3 s, com vx₁ = 0,75 ± 3% e vx₂ = 2,25 ± 3%.
+4. ✅ Ambos conservam momento horizontal 3 ± 3% e mantêm |vy| ≤ 0,05 para cada esfera.
+5. ✅ Ambos fazem round-trip pelo codec; o helper `load` simula a cena decodificada. Os 14 presets também passam na verificação existente de round-trip, simulação e ausência de avisos inesperados.
+6. ✅ Cinco chaves novas presentes em pt-BR/en; paridade e presença de chaves derivadas do catálogo passaram no gate.
+
+- Builder único `collision(e)` coincide com a cena aprovada: chão padrão, esferas de 1 kg e raio 0,5 em x = 3/8 e y = 0,5, vx inicial 3/0, g = 9,81, forças vazias e somente o Contact entre esferas. Nenhum requisito ausente, implementação incorreta ou ampliação de escopo.
+- Consumidores examinados: `galleryGroups`, `nodeLabelKeys`, `presetById`, `createPresetScene`, renderização/abertura/restauração/materialização dos presets em `App.tsx`, codec e construção dos colisores no simulador. Caminhos de falha examinados: ID de preset ausente, referências inválidas/avisos do codec e falha/rollback de persistência. Interações examinadas: idiomas, ordenação, cenas persistidas, velocidade inicial, atrito zero e restituição Multiply com fator zero no chão. Fronteiras e = 1/e = 0,5 e esfera inicialmente parada cobertas pelos testes reais. Nenhum E2E adicional específico de abrir/copiar/editar os dois presets foi executado; os fluxos reutilizam consumidores existentes, revisados por leitura e cobertos pela suíte geral.
+- Decisões do planner examinadas: `Proxy decided` sobre a família física, tolerâncias e tópico, coerente com o builder e ADR-0005; `Proxy decided` autorizando somente a linha da expectativa DOM, incorporada aos Primary files e aplicada em commit test-only separado. Nenhuma decisão pendente.
+- Provas vermelho/verde de stage 2 examinadas: catálogo sem os presets → 5 failed / 23 passed (28); mutações de posição e restituição → 3 failed / 25 skipped (28), com falhas específicas registradas acima; retirada dos presets na costura DOM → 1 failed / 130 skipped (131), grupo Colisões ausente. Os testes exercitam produção e simulador reais, sem cópia da lógica. Não houve novo teste nem alteração de produção em stage 3.
+- Gate independente de stage 3, após rebase, fora do sandbox para os testes com Chromium: **1072 passed (1072), 32 arquivos passed (32)**; `npm run lint`, `npm run typecheck` e `npm run build` com exit 0. Build mantém somente o aviso existente de chunks maiores que 500 kB. `git diff --check` passou.
