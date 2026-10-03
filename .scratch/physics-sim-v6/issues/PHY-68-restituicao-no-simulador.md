@@ -1,5 +1,5 @@
 # PHY-68: Restituição no simulador por fatores por corpo
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-67
 Review: human
@@ -43,6 +43,11 @@ ADR-0005, curto, no formato dos anteriores: contexto (Rapier sem restituição p
 - `src/sim/acceptance.test.ts`: critérios 5 e 6 com cenas inline no molde do teste de esferas frontais (velocidade por força de lançamento ou `vx` direto); vermelhos hoje porque todo colisor tem restituição 0. Chamam o simulador direto; não é costura de DOM.
 
 ## Comments
+
+#### Stage 2 — R1 retry (2026-10-03)
+
+- Existing approved seam: `createSimulator`/`step`/`readStates` in `acceptance.test.ts`. Callers checked: restitution factors reach `colliderDescFor` through `buildWorld`, shared by construction and `replaceScene`; warnings propagate through both. The guard must check Rapier's f32 range, including positive values rounding to zero, while leaving ordinary factors unchanged.
+- Red regression: `npx vitest run src/sim/acceptance.test.ts -t 'overflows Rapier f32'`: 1 failed, 230 skipped. With the review's A-B `1e-40`, B-C `1` scene, momentum error was 3, exceeding 0.09. No production changes in this test commit.
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy). Bruno decidiu: fatores por corpo com Multiply, `r = 0` sem par declarado, exato quando solúvel, fallback + aviso.
 - Proxy decided: solve em espaço log; fallback = máx por corpo com regra Min (mantém pares não declarados em 0 e acerta o preset de colisão mesmo sem o solve); ADR-0005 referenciando a 0003; aviso em inglês cru como os existentes.

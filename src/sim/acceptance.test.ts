@@ -322,6 +322,34 @@ describe('acceptance: wedge equilibrium (flagship)', () => {
 })
 
 describe('acceptance: restitution (PHY-68)', () => {
+  it('preserves collision momentum when a solved restitution factor overflows Rapier f32', async () => {
+    const sim = await createSimulator({
+      version: 1,
+      constants: { g: 0 },
+      bodies: [
+        { id: 'a', shape: 'circle', radius: 0.5, fixed: true, mass: 1, position: { x: 100, y: 100 }, rotation: 0 },
+        { id: 'b', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: -2, y: 0 }, rotation: 0, vx: 3 },
+        { id: 'c', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 0, y: 0 }, rotation: 0 },
+      ],
+      forces: [],
+      contacts: [
+        { a: 'a', b: 'b', muS: 0, muK: 0, e: 1e-40 },
+        { a: 'b', b: 'c', muS: 0, muK: 0, e: 1 },
+      ],
+    })
+    for (let i = 0; i < 120; i++) sim.step()
+    const states = sim.readStates()
+    const vb = states.get('b')!.linvel.x
+    const vc = states.get('c')!.linvel.x
+    expect(Math.abs(vb + vc - 3)).toBeLessThanOrEqual(0.09)
+    // The per-body maximum fallback preserves the elastic B-C pair.
+    expect(Math.abs(vb)).toBeLessThanOrEqual(0.09)
+    expect(Math.abs(vc - 3)).toBeLessThanOrEqual(0.09)
+    expect(sim.warnings).toEqual([
+      'contact e-graph has inconsistent constraints; restitution degraded to per-body max with Min rule',
+    ])
+  })
+
   it.each([
     { e: 1, va: 0, vb: 3 },
     { e: 0.5, va: 0.75, vb: 2.25 },
