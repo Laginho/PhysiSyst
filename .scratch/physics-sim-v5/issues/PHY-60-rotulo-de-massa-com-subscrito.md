@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
