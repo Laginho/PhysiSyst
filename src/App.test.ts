@@ -2441,7 +2441,7 @@ describe('galeria de um clique (PHY-62)', () => {
         expect(panel(host, ptBR['gallery.title'])).toBeDefined()
         await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
         act(() => findButton(host, ptBR['playback.reset'])!.click())
-        const speed = inputForLabel(host, ptBR['playback.speedLabel'])
+        const speed = host.querySelector<HTMLInputElement>('input[type="range"]')!
         act(() => setNativeInputValue(speed, 2))
         await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
         flush()
