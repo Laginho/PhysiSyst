@@ -2680,7 +2680,7 @@ describe('galeria de um clique (PHY-62)', () => {
 
 
 describe('recorded time player (PHY-64)', () => {
-  async function setupRecording() {
+  async function setupRecording(kind?: 'spring' | 'rope') {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let frame!: FrameRequestCallback
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
@@ -2695,11 +2695,20 @@ describe('recorded time player (PHY-64)', () => {
       ],
     }
     let count = 0
+    if (kind) {
+      const ends = { a: { bodyId: 'wall', anchor: { x: 0, y: 0 } }, b: { bodyId: 'ball', anchor: { x: 0, y: 0 } } }
+      scene.constraints = kind === 'spring'
+        ? [{ id: 'link', kind, ...ends, k: 10, x0: 4, c: 0 }]
+        : [{ id: 'link', kind, ...ends, via: [] }]
+    }
     let current = scene
     const step = vi.fn(() => { count++ })
     const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })
     vi.mocked(createSimulator).mockResolvedValue({
       ...makeFakeSimulator(), step, replaceScene,
+      readConstraints: () => kind === 'spring'
+        ? [{ id: 'link', kind, dx: count / 100, force: { a: count, b: count } }]
+        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: false, segments: [count] }] : [],
       readStates: () => new Map(current.bodies.map((b) => [b.id, {
         position: { x: b.position.x + (b.fixed ? 0 : count / 100), y: b.position.y },
         rotation: b.rotation, linvel: { x: b.fixed ? 0 : count * count / 60, y: 0 }, angvel: 0,
@@ -2786,5 +2795,88 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.readout()).toContain('(12.10, 4.00) m')
     expect(p.readout()).toContain('passos: 610')
     expect(p.step).toHaveBeenCalledTimes(610)
+  })
+
+  it('blocks live fields, history and force anchor drags while inspecting an old step', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    const gravity = () => inputForLabel(p.host, ptBR['panel.gLabel'])
+    act(() => setNativeInputValue(gravity(), 12))
+    act(() => setNativeInputValue(gravity(), 15))
+    act(() => findButton(p.host, '↶')!.click())
+    await p.steps(3)
+    p.seek(1)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    for (const input of [gravity(), inputForLabel(forces, ptBR['forces.magnitude']), inputForLabel(forces, ptBR['forces.direction'])]) {
+      expect(input.disabled).toBe(true)
+      expect(input.title).toBe('Volte ao fim da gravação para editar')
+    }
+    expect(findButton(p.host, '↶')!.disabled).toBe(true)
+    expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    pressKey('z', { ctrlKey: true })
+    pressKey('y', { ctrlKey: true })
+    expect(gravity().value).toBe('12')
+    dragTo(p.canvas, { x: 6.01, y: 4 }, { x: 6.4, y: 4.3 })
+    expect(inputForLabel(forces, ptBR['forces.anchorX']).value).toBe('0')
+    expect(inputForLabel(forces, ptBR['forces.anchorY']).value).toBe('0')
+    p.seek(3)
+    expect(gravity().disabled).toBe(false)
+    act(() => setNativeInputValue(gravity(), 20))
+    expect(gravity().value).toBe('20')
+    expect(p.slider().max).toBe('3')
+  })
+
+  it.each(['structure', 'gravity'] as const)('editing %s at cursor zero replaces the initial record and resets physics', async (edit) => {
+    const p = await setupRecording()
+    await p.steps(3)
+    p.seek(0)
+    expect(findButton(p.host, ptBR['palette.circle'])!.disabled).toBe(false)
+    if (edit === 'structure') act(() => findButton(p.host, ptBR['palette.circle'])!.click())
+    else act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 20))
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.slider().value).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(p.replaceScene).toHaveBeenCalled()
+    const edited = p.replaceScene.mock.calls.at(-1)![0]
+    if (edit === 'structure') expect(edited.bodies).toHaveLength(3)
+    else expect(edited.constants.g).toBe(20)
+    await p.steps(2)
+    p.seek(0)
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(p.slider().max).toBe('2')
+  })
+
+  it('refreshes record zero after a pre-step structural edit and clears history on reset and scene switch', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    dragTo(p.canvas, { x: 6.2, y: 4.2 }, { x: 7.2, y: 4.2 })
+    await p.steps(2)
+    p.seek(0)
+    expect(p.readout()).toContain('(7.00, 4.00) m')
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    await p.steps(2)
+    p.seek(1)
+    act(() => findButton(p.host, ptBR['scenes.duplicate'])!.click())
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(findButton(p.host, ptBR['palette.circle'])!.disabled).toBe(false)
+  })
+
+  it.each(['spring', 'rope'] as const)('reads the recorded %s instead of the live constraint', async (kind) => {
+    const p = await setupRecording(kind)
+    await p.steps(4)
+    p.seek(1)
+    click(p.canvas, { x: 4, y: 4 })
+    p.poll()
+    const reading = () => panel(p.host, t('readout.title', { id: 'link' }))?.textContent ?? ''
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 1.00 N' : 'T: 1.00 N')
+    if (kind === 'spring') expect(reading()).toContain('Δx: 0.010 m')
+    p.seek(4)
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 4.00 N' : 'T: 4.00 N')
   })
 })
