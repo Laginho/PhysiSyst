@@ -38,6 +38,7 @@ function makeFakeSimulator(): Simulator {
     readStates: () => new Map(),
     readContacts: () => [],
     readConstraints: () => [],
+    readPulleys: () => [],
     setForceMagnitude: () => {},
     setGravity: () => {},
     setForceDirection: () => {},

@@ -1,11 +1,12 @@
 # PHY-70: Módulo de energia e momento
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
 Difficulty: normal
 
 - Primary files:
+  - src/App.test.ts (compatibilidade do makeFakeSimulator com readPulleys; sem novo seam)
   - src/sim/energy.ts (novo, puro: sem React, sem Rapier)
   - src/sim/energy.test.ts (novo)
   - src/sim/simulator.ts (`Simulator` :54-71, `SpringState` :39-50, `readSpring` ~:371-374, `Chain` :111-121, discos de polia ~:901-931 e mapa `disks` :814, `readConstraints` :1378)
@@ -57,3 +58,5 @@ Simulador:
 - Planner: independente de PHY-67…69; toca `App.tsx` em uma linha de tipo e uma de captura.
 
 - 2026-10-03 Attempt 1 failed: exit 0. Log tail: A PHY-70 ficou bloqueada pelo ambiente: o terminal falhou ao iniciar (`CreateProcessWithLogonW failed: 1909`), e a alternativa de leitura via Node também falhou. /  / Não consegui ler a skill `ticket-flow` nem identificar o `Stage:` do ticket. Nenhum arquivo foi alterado e nenhuma validação foi executada. /  / Restaure o acesso ao terminal nesta sessão para eu continuar a PHY-70.
+- 2026-10-03 Stage 2: retomada após falha ambiental; terminal disponível fora do sandbox. Leitura dos consumidores: readSpring só por readConstraints; readConstraints consumido por App e testes; Simulator implementado pelo simulador real e pelo makeFakeSimulator de App.test.ts. Adaptação mínima deste fake incluída em Primary files, sem novo seam. App.tsx também precisa inicializar pulleys: [] no frame inicial; tipo PulleyState será importado diretamente do módulo para preservar o escopo.
+- Red antes de produção: `npx vitest run src/sim/energy.test.ts src/sim/simulator.test.ts`: 2 arquivos falharam, 2 testes falharam / 34 passaram. energy.test.ts: Cannot find module './energy'; simulator.test.ts: sim.readPulleys is not a function; chainKinetic esperado 0, recebido undefined. Casos adicionais: cenas vazias, momento em dois eixos, gravidade negativa, compressão, ordem por id/documento, snapshots e replaceScene.
