@@ -96,12 +96,30 @@ export function initialVelocityArrows(view: Scene, pixelsPerMeter: number): Over
 }
 
 export function normalArrows(contacts: readonly ContactPoint[]): OverlayArrow[] {
-  return contacts.map((c) => ({
-    from: { x: c.point.x, y: c.point.y },
-    vec: { x: c.normal.x * NORMAL_LEN, y: c.normal.y * NORMAL_LEN },
-    kind: 'normal',
-    // The pair, not the point: every point of one Contact carries the same N.
-    key: `normal:${c.aId < c.bId ? `${c.aId}|${c.bId}` : `${c.bId}|${c.aId}`}`,
+  const pairs = new Map<string, { arrow: OverlayArrow; count: number }>()
+  for (const c of contacts) {
+    const key = `normal:${c.aId < c.bId ? `${c.aId}|${c.bId}` : `${c.bId}|${c.aId}`}`
+    const pair = pairs.get(key)
+    if (pair) {
+      pair.arrow.from.x += c.point.x
+      pair.arrow.from.y += c.point.y
+      pair.count++
+    } else {
+      pairs.set(key, {
+        arrow: {
+          from: { x: c.point.x, y: c.point.y },
+          vec: { x: c.normal.x * NORMAL_LEN, y: c.normal.y * NORMAL_LEN },
+          kind: 'normal',
+          key,
+        },
+        count: 1,
+      })
+    }
+  }
+  // One N per Contact, at its mean point, in first appearance order.
+  return Array.from(pairs.values(), ({ arrow, count }) => ({
+    ...arrow,
+    from: { x: arrow.from.x / count, y: arrow.from.y / count },
   }))
 }
 

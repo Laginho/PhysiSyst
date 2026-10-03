@@ -1,5 +1,5 @@
 # PHY-58: Uma normal por contato
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -32,3 +32,12 @@ Um bloco apoiado na mesa mostra duas setas N, uma em cada quina (preset "Bloco n
 ## Comments
 
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 1, print do bloco na mesa com duas N).
+
+#### Stage 2 (2026-10-02)
+
+- Implementado agrupamento pela chave canônica do par, origem na média dos pontos, normal do primeiro ponto e ordem da primeira ocorrência. Entradas vazias e pares com um ponto preservados.
+- Callers inspecionados: `App.tsx` (camada global de normais) e testes de `vectorLabels`; ajustada a expectativa de rótulos para uma seta por par.
+- Commit de testes vermelho: `ff9a98b`; 4 falhas e 39 passes em 43 testes, pela emissão de setas duplicadas. Após implementação: 43/43.
+- Mutate-verify: acrescentar `pairs.size` à chave interna de busca/inserção desativou o agrupamento. Os três novos testes de `normalArrows` falharam (2 em vez de 1, 2 em vez de 1 e 4 em vez de 2 setas); o teste atualizado de rótulos recebeu `[N_1, N_1, N_2]` em vez de `[N_1, N_2]`. Mutação revertida.
+- Gate completo aprovado: 30 arquivos, 944 testes; lint, typecheck e build com exit 0. A primeira execução sob sandbox teve 12 falhas `Chromium disconnected`; a execução fora dele passou integralmente.
+- Diff revisado: apenas os dois Primary files e este registro de fluxo; nenhum teste alterado no commit de implementação.
