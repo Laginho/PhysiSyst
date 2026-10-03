@@ -43,7 +43,7 @@ The interface between two touching bodies, carrying that pair's friction coeffic
 _Avoid_: surface settings, material
 
 **Collision**:
-The impact event between two bodies, governed by restitution — distinct from an ongoing contact. Its restitution is the `e` of the pair's Contact; pairs without a Contact collide with e = 0. The editor and scene codec store `e` (absent = 0); simulator integration follows in PHY-68.
+The impact event between two bodies, governed by restitution — distinct from an ongoing contact. Its restitution is specified by the `e` of the pair's Contact (absent = 0). The simulator maps declared coefficients through per-body factors, with an approximate fallback and a warning when needed ([ADR-0005](docs/adr/0005-restitution-on-contact-pairs.md)). An undeclared pair is inelastic when either body has factor zero; two positive factors can give it nonzero restitution.
 _Avoid_: crash, bounce setting
 
 **Anchor snap**:

@@ -1,6 +1,57 @@
 import { describe, expect, it } from 'vitest'
-import { createSimulator } from './simulator'
+import { assignPairRestitutions, createSimulator } from './simulator'
 import type { Scene } from '../scene'
+
+describe('assignPairRestitutions', () => {
+  function solve(pairs: Array<[string, string, number | undefined]>) {
+    return assignPairRestitutions({
+      version: 1, constants: { g: 0 }, forces: [],
+      bodies: ['a', 'b', 'c', 'd', 'isolated'].map((id) => ({
+        id, shape: 'circle', radius: 0.5, mass: 1, fixed: false,
+        position: { x: 0, y: 0 }, rotation: 0,
+      })),
+      contacts: pairs.map(([a, b, e]) => ({ a, b, e, muS: 0, muK: 0 })),
+    })
+  }
+
+  it.each([
+    [['a', 'b', 0.5]],
+    [['a', 'b', 0.5], ['a', 'c', 1]],
+    [['a', 'b', 0.5], ['b', 'c', 0.25], ['a', 'c', 0.5]],
+    [['a', 'b', 0.5], ['b', 'c', 0.25], ['c', 'd', 0.5], ['d', 'a', 1]],
+  ] as Array<Array<[string, string, number]>>)('solves positive pair graph %#', (...pairs) => {
+    const result = solve(pairs)
+    for (const [a, b, e] of pairs) {
+      expect(result.factor.get(a)! * result.factor.get(b)!).toBeCloseTo(e, 9)
+    }
+    expect(result.factor.get('isolated')).toBe(0)
+    expect(result.useMinFallback).toBe(false)
+    expect(result.warnings).toEqual([])
+  })
+
+  it.each([0, undefined])('falls back when a zero pair conflicts with positive factors (%s)', (e) => {
+    const result = solve([['a', 'b', 1], ['b', 'c', 1], ['a', 'c', e]])
+    expect([...result.factor.values()]).toEqual([1, 1, 1, 0, 0])
+    expect(result.useMinFallback).toBe(true)
+    expect(result.warnings).toEqual(['contact e-graph has inconsistent constraints; restitution degraded to per-body max with Min rule'])
+  })
+
+  it('falls back for an inconsistent even cycle', () => {
+    const result = solve([['a', 'b', 1], ['b', 'c', 1], ['c', 'd', 1], ['d', 'a', 0.5]])
+    expect([...result.factor.values()]).toEqual([1, 1, 1, 1, 0])
+    expect(result.useMinFallback).toBe(true)
+    expect(result.warnings).toHaveLength(1)
+  })
+
+  it.each([[], [['a', 'b', undefined]], [['a', 'b', 0]]] as Array<Array<[string, string, number | undefined]>>)(
+    'keeps bodies inelastic without positive edges %#', (...pairs) => {
+      const result = solve(pairs)
+      expect([...result.factor.values()]).toEqual([0, 0, 0, 0, 0])
+      expect(result.useMinFallback).toBe(false)
+      expect(result.warnings).toEqual([])
+    },
+  )
+})
 
 describe('readContacts', () => {
   it('reports a resting contact with direction-accurate normal and point', async () => {
