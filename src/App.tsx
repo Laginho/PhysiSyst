@@ -746,6 +746,9 @@ export default function App() {
     const prev = docRef.current
     const resolved = typeof next === 'function' ? next(prev) : next
     if (resolved === prev) return true
+    // Immutable patches can preserve every value (for example g: 9.810).
+    // Materialize a preset only when its persisted content actually changes.
+    if (openPresetRef.current && JSON.stringify(resolved) === JSON.stringify(prev)) return true
     if (!canEditDoc(resolved)) {
       setToolError('editor.resetToEdit')
       return false

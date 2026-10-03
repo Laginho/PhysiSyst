@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -159,3 +159,7 @@ Standards: 0 violações, 1 observação opcional. Spec: 1 achado P2, critério 
 - Costura aprovada: DOM de App.test.ts. Inspecionados editDoc, commitDoc, undo/redo, arrastos e todos os patches dos painéis: updateG, updateBody, updateForce, updateContact, updateSpring, updatePulley e updateParticleMode podem devolver objetos novos com conteúdo igual. A proteção ficará centralizada em editDoc, apenas enquanto houver preset aberto, preservando o fluxo das cenas salvas.
 - Red antes de produção: `npx vitest run src/App.test.ts -t 'entrada equivalente'`: 2 falhas, 108 ignorados (110). Os casos g e F falharam com `expected 'cena-2' to be 'preset:wedge-flagship'`. Cada caso verifica ausência de escrita de índice/payload após entrada equivalente e exatamente uma cópia após edição real.
 - Ajuste do harness em commit separado: `toFixed(3)` arredondava a força do preset, produzindo mudança real. Agora a entrada apenas acrescenta zero ao texto original. Mutate-verify dos dois casos corrigidos: removida isoladamente a guarda de conteúdo equivalente em editDoc; g e F falharam com `expected 'cena-2' to be 'preset:wedge-flagship'` (2 falhas, 108 ignorados). Produção restaurada em finally: 2 verdes, 108 ignorados. Nenhuma alteração do contrato.
+
+- Correção: antes de materializar o preset, editDoc compara o conteúdo JSON de prev/resolved; patches equivalentes retornam sem cópia, histórico ou atualização do doc. A comparação só ocorre com preset aberto. Os patches existentes preservam a ordem das propriedades e Scene contém dados JSON; serialize já usa esse formato. Não foram alterados helpers de edição, transições ou cenas salvas.
+- Gate final: npm test && npm run lint && npm run typecheck && npm run build passou fora do sandbox: **30 arquivos, 961 testes verdes**, lint, typecheck e build sem erros. A primeira tentativa restrita teve 12 falhas de conexão Chromium e 949 testes verdes, junto de erro Windows CreateProcessWithLogonW 1909. Permanece apenas o aviso conhecido de bundle acima de 500 kB.
+- Diff final conferido: somente App.tsx, App.test.ts e este ticket; git diff --check passou. Testes nos commits fa82ff5/37e5180, produção em commit separado. Critério 3 corrigido; etapa 2 encerrada, aguardando nova revisão.
