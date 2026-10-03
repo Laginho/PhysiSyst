@@ -1,5 +1,5 @@
 # PHY-72: Painel de gráficos da gravação
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-71
 Review: human
@@ -80,3 +80,53 @@ Módulo puro `src/render/graph.ts`:
 - Focused unmutated validation: 3 files passed; 7 tests passed, 149 unrelated tests skipped by the PHY-72 filter. Typecheck passed. Chromium initially disconnected inside the sandbox; rerunning with external execution permission produced the expected red and green results.
 - Final gate: standard command first stopped on Vitest worker startup timeout (948 tests passed, 1 unhandled worker error). Full retry with `npm test -- --maxWorkers=2` followed by lint, typecheck and build passed: **33 test files, 1085 tests**, no skipped tests or failures. Lint/typecheck exit 0; Vite built 52 modules. Worker limit is command-only, no project configuration changed.
 - Final diff checked for scope and whitespace; only Primary files plus this ticket changed. Ready for independent stage-3 review; no merge performed in stage 2.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+Os oito critérios escritos passam. Merge local sem squash `0d4a242` na sessão `sweatshop/2026-10-03-1618`; a árvore do merge é idêntica à implementação validada `9e07b70`. Este fechamento registra `Stage: done`, resolução e ledger juntos. `Review: human` permanece para destacar este ticket no PR da sessão, conforme o fluxo; esta revisão não fez push nem abriu PR.
+
+##### Standards
+
+Nenhuma violação acionável de padrão de código ou regressão identificada. Todas as alterações de produção estão nos Primary files; `ab6f2ba` antecede o módulo e `bcdb8a6` antecede a integração no App. Nenhum commit de produção altera testes. O ticket registra a mutação e a saída vermelha de cada teste novo de DOM/browser, conforme o mutate-verify do AGENTS.md.
+
+Dois achados não bloqueantes, preservados da revisão independente:
+
+- Possível **Duplicated Code** (heurística): `src/App.tsx:732` e `:867` repetem a normalização `bodyId === null && kind !== 'energy' && kind !== 'momentum' ? 'energy' : kind`, nas variantes de estado e ref. O comportamento atual é coerente; compartilhar essa regra é uma sugestão opcional, sem fundamento para reabrir.
+- **Omissão de processo nas mensagens de commit**: `ab6f2ba`, `7ac3443`, `7f3a89b` e `bcdb8a6` não têm corpo explicando o motivo, solicitado pela seção Commits and closing da skill ticket-flow. Os títulos seguem Conventional Commits em inglês e citam PHY-72. A omissão não é uma das causas de reopen definidas pelo fluxo; nenhum histórico foi reescrito.
+
+Standards: **0 violações acionáveis de código, 1 sugestão heurística e 1 observação de processo não bloqueante**. Nenhuma correção permanente de produção ou teste foi necessária nesta revisão.
+
+##### Spec
+
+Revisão independente sem achados: **0 critérios reprovados, 0 expansões de escopo, 0 regressões identificadas**.
+
+1. ✅ `graphLayout`: três marcas delimitadas, tempo nas bordas do plot e y decrescente em pixels.
+2. ✅ Marcas incluem zero em séries que cruzam; séries constantes e vazias têm escala finita e extensão não nula.
+3. ✅ Corpo: três séries e `E_mec = E_c + E_pg`, mesmo com mola. Sistema: três séries sem mola, quatro com mola; funções de energia recebem os estados, vínculos e polias do próprio registro.
+4. ✅ Velocidade: componentes gravadas e magnitude por `Math.hypot`, com amostras em `i·TIMESTEP`.
+5. ✅ Painel ausente inicialmente; botão na barra controla montagem, `aria-pressed` e `aria-controls`; select inicia em energy e canvas tem role img.
+6. ✅ Largura CSS segue `size.width`, altura de 180 px; teste em Chromium arrasta a alça real e mede ambas as larguras antes/depois.
+7. ✅ Nome acessível usa o id do corpo selecionado ou a tradução de sistema.
+8. ✅ Oito chaves graph.* presentes nos dois catálogos; paridade verde.
+
+##### Inspeção e verificação independente
+
+- Ponto fixo: `8c7bfea249138c958f6e74516915d046f5d40463`. Foram lidos todos os hunks e commits, os consumidores de splitLabel, o transporte e os caminhos de repaint: seleção, idioma, resize, edição, passo, seek, replay e reset. Examinados também troca de cena, boot/rebuild com falha, limite da gravação, séries vazias/constantes, corpo ausente, estados iniciais nulos, aceleração gravada, molas e polias. As interações e opções disabled do PHY-73 continuam no ticket próprio.
+- Conferidas as duas linhas **Proxy decided** deste ticket: (1) painel de 180 px fechado por padrão, estado React, select nativo, paleta, legenda, Canvas 2D, eixos/formatador, acessibilidade e ausência de cache; (2) três energias por corpo sem E_el, energia elástica apenas no sistema, sem alterar bodyEnergy, e teste de browser nos Primary files. Nenhuma decisão foi acrescentada ou alterada pela revisão.
+- Gate completo independente: `npm test -- --maxWorkers=2`, seguido por lint, typecheck e build, todos com exit 0: **33 arquivos / 1085 testes passed**, sem skips. O limite de workers segue a mitigação do timeout registrada no stage 2 e não altera configuração. Vite compilou 52 módulos; permanece o aviso existente de chunk maior que 500 kB.
+- Rebase sobre a sessão retornou up to date. `git diff --exit-code 9e07b70 HEAD` após o merge confirmou árvore idêntica; nenhuma mudança de produção ocorreu desde o gate.
+- Reexecutadas as mutações temporárias abaixo na produção real em uma rodada: **7 failed / 149 skipped (156)**. Os dois arquivos foram restaurados byte a byte em finally; o foco restaurado passou com **7 passed / 149 skipped**, e `git diff --check` passou.
+
+| Teste novo | Mutação de produção reexecutada | Saída vermelha independente |
+| --- | --- | --- |
+| maps time edges and decreasing y with two or three ticks | deslocar mapT por 1 px | expected 65 to be 64 |
+| includes zero when crossing and handles constant or empty data | substituir ticksY por [1, 2] | expected [ 1, 2 ] to include +0 |
+| separates body and system energy with spring=false | zerar valores das amostras | expected [0, 0, 0] to deeply equal [25, 60, 85] |
+| separates body and system energy with spring=true | zerar valores das amostras | expected [0, 0, 0] to deeply equal [25, 60, 85] |
+| reads recorded vectors, time, and system momentum | zerar valores das amostras | received values 0, 0, 0; expected 3, 4, 5 at t = 1/60 |
+| toggles an accessible panel, defaults to energy and follows selection | forçar sistema no aria-label mesmo com corpo selecionado | expected 'gráfico de energia — sistema' to contain 'caixa' |
+| resizes the recording graph with the scene canvas (PHY-72) | fixar largura CSS do gráfico em 500 | expected 500 to be 1161 |
+
+- Limites de verificação: não houve passe visual manual nem perfil de desempenho. A geometria real e as regressões de layout/transportes foram verificadas pela suíte em Chromium. O histórico foi preservado, sem squash, e o fechamento muda somente este ticket e o ledger.
