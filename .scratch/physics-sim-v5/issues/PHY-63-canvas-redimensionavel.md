@@ -45,6 +45,8 @@ Regra do tamanho: largura = máx(402, mín(escolha do usuário, ajuste automáti
 
 ## Comments
 
+- 2026-10-03 Correção do harness em commit só de teste: o helper inicial assumia câmera de 12 m; usa agora a transformação pública de 15 m já usada pelo harness. Red comprovado desativando temporariamente `resizeDragRef` no movimento: teste `drags the real corner...` recebeu 1440 em vez de 1260; `loads a dragged preference...` recebeu 1440 em vez de 900. Green anterior à mutação: 3 passed / 10 skipped. O teste `keeps bodies...` tem mutação própria registrada abaixo.
+
 - 2026-10-03 Stage 2: callers examinados: `App` inicializa e recalcula `fitCanvas` no ResizeObserver; o piso automático também controla o empilhamento. Cobertos: escolha abaixo do mínimo, acima do automático, fracionária, contêiner menor que o piso e armazenamento inválido. Primeiro red: 3 failed / 52 passed (55); largura 1200 em vez de 750 e funções de persistência ausentes.
 
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 3; confirmado que "preview" é o canvas da cena).

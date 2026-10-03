@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { withBrowserSession } from './test/browser'
+import { makeTransform, pixelsPerMeterForWidth, screenToWorld } from './render/transform'
 
 describe('selection keeps the canvas stationary (PHY-18)', () => {
   it.each([1280, 1920])('keeps the same 3:2 rectangle through all selections in Chromium at viewport width %i', async (width) => {
@@ -99,8 +100,9 @@ describe('preferred canvas size (PHY-63)', () => {
       if (!el) throw new Error('missing resize handle');
       const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     })()`)
-    const scale = (rect.width - 2) / 12
-    const from = { x: (handle.x - rect.left) / scale, y: 8 - (handle.y - rect.top) / scale }
+    const scale = pixelsPerMeterForWidth(rect.width - 2)
+    const transform = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: scale }, rect.width - 2, rect.height - 2)
+    const from = screenToWorld(transform, handle.x - rect.left, handle.y - rect.top)
     await session.drag(from, { x: from.x + delta / scale, y: from.y })
     await settle(session)
   }
