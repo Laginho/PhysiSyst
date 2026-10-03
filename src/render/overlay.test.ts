@@ -324,6 +324,32 @@ describe('shared sizing rule across arrow kinds', () => {
 })
 
 describe('normalArrows', () => {
+  it('draws one normal at the mean of a pair’s contact points', () => {
+    expect(normalArrows([
+      { aId: 'a', bId: 'b', point: { x: 0, y: 0 }, normal: { x: 0, y: 1 } },
+      { aId: 'a', bId: 'b', point: { x: 1, y: 0 }, normal: { x: 0, y: 1 } },
+    ])).toEqual([{ from: { x: 0.5, y: 0 }, vec: { x: 0, y: NORMAL_LEN }, kind: 'normal', key: 'normal:a|b' }])
+  })
+
+  it('groups reversed pairs and keeps the first point’s normal', () => {
+    expect(normalArrows([
+      { aId: 'b', bId: 'a', point: { x: 0, y: 2 }, normal: { x: 1, y: 0 } },
+      { aId: 'a', bId: 'b', point: { x: 2, y: 4 }, normal: { x: -1, y: 0 } },
+    ])).toEqual([{ from: { x: 1, y: 3 }, vec: { x: NORMAL_LEN, y: 0 }, kind: 'normal', key: 'normal:a|b' }])
+  })
+
+  it('keeps distinct pairs in first appearance order across interleaved points', () => {
+    expect(normalArrows([
+      { aId: 'z', bId: 'b', point: { x: 0, y: 0 }, normal: { x: 0, y: 1 } },
+      { aId: 'a', bId: 'b', point: { x: 8, y: 4 }, normal: { x: 1, y: 0 } },
+      { aId: 'b', bId: 'z', point: { x: 3, y: 3 }, normal: { x: 0, y: 1 } },
+      { aId: 'z', bId: 'b', point: { x: 6, y: 0 }, normal: { x: 0, y: 1 } },
+    ])).toEqual([
+      { from: { x: 3, y: 1 }, vec: { x: 0, y: NORMAL_LEN }, kind: 'normal', key: 'normal:b|z' },
+      { from: { x: 8, y: 4 }, vec: { x: NORMAL_LEN, y: 0 }, kind: 'normal', key: 'normal:a|b' },
+    ])
+  })
+
   it('fixed length in normal direction', () => {
     const contacts: ContactPoint[] = [{ aId: 'a', bId: 'b', point: { x: 1, y: 2 }, normal: { x: 0, y: 1 } }]
     const arrows = normalArrows(contacts)
@@ -570,14 +596,14 @@ describe('vectorLabels', () => {
     expect(labelsOf(tensionArrows(scene, [ropeState('r1', [0]), ropeState('r2', [3])], PPM))).toEqual(['T', 'T'])
   })
 
-  it('the same Contact pair carries the same N at every point', () => {
+  it('each Contact pair carries one N at its mean point', () => {
     const contacts: ContactPoint[] = [
       { aId: 'a', bId: 'chao', point: { x: -0.2, y: 0 }, normal: { x: 0, y: 1 } },
       { aId: 'a', bId: 'chao', point: { x: 0.2, y: 0 }, normal: { x: 0, y: 1 } },
       { aId: 'chao', bId: 'b', point: { x: 3, y: 0 }, normal: { x: 0, y: 1 } },
     ]
-    expect(labelsOf(normalArrows(contacts))).toEqual(['N_1', 'N_1', 'N_2'])
-    expect(labelsOf(normalArrows(contacts.slice(0, 2)))).toEqual(['N', 'N'])
+    expect(labelsOf(normalArrows(contacts))).toEqual(['N_1', 'N_2'])
+    expect(labelsOf(normalArrows(contacts.slice(0, 2)))).toEqual(['N'])
   })
 })
 

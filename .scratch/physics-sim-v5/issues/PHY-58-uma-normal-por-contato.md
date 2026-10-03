@@ -1,5 +1,5 @@
 # PHY-58: Uma normal por contato
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
