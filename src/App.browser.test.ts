@@ -111,6 +111,31 @@ describe('preferred canvas size (PHY-63)', () => {
     return { width: r.width - 2, height: r.height - 2, logicalWidth: c.width / devicePixelRatio, logicalHeight: c.height / devicePixelRatio };
   })()`)
 
+  it('resizes the recording graph with the scene canvas (PHY-72)', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await session.evaluate(`(() => {
+        const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'gráfico');
+        if (!button) throw new Error('missing graph toggle'); button.click();
+      })()`)
+      await settle(session)
+      const measure = () => session.evaluate<{ width: number; height: number; sceneWidth: number }>(`(() => {
+        const graph = document.querySelector('canvas[role="img"]');
+        const scene = document.querySelector('canvas');
+        const r = graph.getBoundingClientRect();
+        return { width: r.width, height: r.height, sceneWidth: parseFloat(getComputedStyle(scene).width) };
+      })()`)
+      const before = await measure()
+      expect(before.width).toBe(before.sceneWidth)
+      expect(before.height).toBe(180)
+      await dragHandle(session, -180)
+      const after = await measure()
+      expect(after.width).toBe(after.sceneWidth)
+      expect(after.width).toBe(before.width - 180)
+      expect(after.height).toBe(180)
+    })
+  }, 30000)
+
   it('drags the real corner handle with matching logical geometry and clamps both extremes', async () => {
     await withBrowserSession(1920, 25000, async session => {
       await session.reset()
