@@ -184,6 +184,7 @@ function paint(
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: {
     showGlobal: boolean
+    stepsTaken: number
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
     lang?: Lang
@@ -233,9 +234,10 @@ function paint(
   // reads the same letter it has in global mode.
   const ppm = camera.pixelsPerMeter
   const constraints = opts?.constraints ?? []
+  const showInitialVelocity = (opts?.stepsTaken ?? 0) === 0
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
     { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
-    { arrows: initialVelocityArrows(view, ppm), style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
+    { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
     { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
     { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
     { arrows: tensionArrows(view, ropeReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
@@ -248,7 +250,9 @@ function paint(
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels.get(a.key))
+      if (showInitialVelocity) {
+        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels.get(a.key))
+      }
       for (const a of appliedArrows(selView, ppm)) {
         drawArrow(ctx, a.from, a.vec, transform, undefined, labels.get(a.key))
         // The application point is draggable (PHY-27): a ring marks the grip.
@@ -762,6 +766,7 @@ export default function App() {
     if (ctx)
       paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
+        stepsTaken: playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
         lang: langRef.current,
