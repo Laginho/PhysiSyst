@@ -12,6 +12,7 @@ Difficulty: normal
   - src/persistence/persistence.test.ts
   - src/App.tsx (o `ResizeObserver` do `canvasBoxRef` em ~773, a caixa do canvas em ~1492)
   - src/App.browser.test.ts
+  - src/App.test.ts (helper `loadingOverlay`, na costura DOM já indicada em Tests stage 2 writes)
   - src/i18n/pt-BR.ts, src/i18n/en.ts (só o título da alça)
 
 #### What to build
@@ -44,6 +45,8 @@ Regra do tamanho: largura = máx(402, mín(escolha do usuário, ajuste automáti
 - `src/App.test.ts` ou `src/App.browser.test.ts`: critérios 7 e 8.
 
 ## Comments
+
+- 2026-10-03 Gate inicial: 22 failed / 945 passed (967), todos os 22 causados pelo helper `loadingOverlay`, que classificava qualquer irmão do canvas como overlay. Correção restrita ao harness `App.test.ts`, já nomeado na seção Tests stage 2 writes; listado também em Primary files para explicitar essa manutenção. O helper agora seleciona o DIV do overlay e não o botão da alça. Mutação em produção `pointerEvents: 'none'` → `'auto'` derrubou `shows the loading overlay while booting...`: `expected 'auto' to be 'none'` (1 failed / 109 skipped), comprovando que a correção preserva a sensibilidade do teste.
 
 - 2026-10-03 Correção do harness em commit só de teste: o helper inicial assumia câmera de 12 m; usa agora a transformação pública de 15 m já usada pelo harness. Red comprovado desativando temporariamente `resizeDragRef` no movimento: teste `drags the real corner...` recebeu 1440 em vez de 1260; `loads a dragged preference...` recebeu 1440 em vez de 900. Green anterior à mutação: 3 passed / 10 skipped. O teste `keeps bodies...` tem mutação própria registrada abaixo.
 

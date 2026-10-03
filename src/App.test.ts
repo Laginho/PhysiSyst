@@ -250,7 +250,7 @@ function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasEle
 function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
   const canvas = host.querySelector('canvas')
   const box = canvas?.parentElement
-  return [...(box?.children ?? [])].find((el) => el !== canvas) as HTMLElement | undefined
+  return [...(box?.children ?? [])].find((el) => el !== canvas && el.tagName === 'DIV') as HTMLElement | undefined
 }
 
 describe('initial velocity overlay (PHY-59)', () => {
