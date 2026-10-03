@@ -1,5 +1,5 @@
 # PHY-64: Gravação e slider de tempo com a simulação pausada
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -102,3 +102,5 @@ DOM/canvas mutation evidence (every new App test; sources restored after each ru
 - Focused green: 10 recorded-time DOM/canvas cases. Initial full gate in the restricted environment exposed Chromium DevTools disconnects; the unrestricted rerun passed Chromium and all other tests. Build emits the existing large Rapier chunk warning.
 
 - Final gate (2026-10-03): npm test && npm run lint && npm run typecheck && npm run build exited 0. Tests: 31 files passed, 987 tests passed (43.48 s). ESLint and TypeScript passed; Vite build passed. Only the existing large-chunk warning remains. Final diff is restricted to Primary files plus this ticket; test and production changes are in separate commits.
+
+- 2026-10-03 Stage 3 small documentation fix: corrected the stale acceleration-tracker comment to distinguish its batch API from App's per-step sampling (n = 1). No behavior or tests changed; documentation made stale by this ticket is permitted outside Primary files by ticket-flow.
