@@ -1,4 +1,5 @@
 export const ptBR = {
+  'canvas.resize': 'Redimensionar canvas',
   'app.title': 'physics-sim',
   'playback.play': '▶ reproduzir',
   'playback.pause': '⏸ pausar',

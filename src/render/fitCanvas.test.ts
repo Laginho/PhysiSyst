@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { fitCanvas } from './fitCanvas'
 
 describe('fitCanvas', () => {
+  it('preserves automatic sizing and clamps a saved choice independently of the automatic floor (PHY-63)', () => {
+    for (const [w, h] of [[2000, 600], [900, 2000], [300, 300], [700.33, 675.5]]) {
+      expect(fitCanvas(w, h, null)).toEqual(fitCanvas(w, h))
+    }
+    expect(fitCanvas(1200, 800, 750)).toEqual({ width: 750, height: 500 })
+    expect(fitCanvas(1200, 800, 100)).toEqual({ width: 402, height: 268 })
+    expect(fitCanvas(300, 300, 450)).toEqual({ width: 450, height: 300 })
+    expect(fitCanvas(900, 600, 2000)).toEqual({ width: 900, height: 600 })
+    expect(fitCanvas(1200, 800, 701)).toEqual({ width: 702, height: 468 })
+  })
   it('fills a wide container: height is the limiting axis', () => {
     // 2000x600 container: 3:2 at full height (600) needs width 900, which fits.
     expect(fitCanvas(2000, 600)).toEqual({ width: 900, height: 600 })

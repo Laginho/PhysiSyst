@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   AUTOSAVE_DELAY_MS,
+  loadCanvasSize,
+  saveCanvasSize,
   CURRENT_SCENE_KEY,
   DebouncedSaver,
   blankScene,
@@ -47,6 +49,28 @@ function quotaStorage(): Storage {
     removeItem: () => {},
   }
 }
+
+describe('canvas size preference (PHY-63)', () => {
+  it('round-trips numbers without clamping and clears automatic mode', () => {
+    const storage = memStorage()
+    for (const width of [750, 100, -1, 700.5]) {
+      saveCanvasSize(storage, width)
+      expect(storage.getItem('physics-sim:canvasSize')).toBe(String(width))
+      expect(loadCanvasSize(storage)).toBe(width)
+    }
+    saveCanvasSize(storage, null)
+    expect(loadCanvasSize(storage)).toBeNull()
+  })
+  it('treats missing, nonnumeric and nonfinite values as automatic', () => {
+    const storage = memStorage()
+    expect(loadCanvasSize(storage)).toBeNull()
+    for (const raw of ['', ' ', 'null', 'true', '"750"', 'oops', 'NaN', 'Infinity', '-Infinity']) {
+      storage.setItem('physics-sim:canvasSize', raw)
+      expect(loadCanvasSize(storage)).toBeNull()
+    }
+    expect(() => saveCanvasSize(quotaStorage(), 750)).not.toThrow()
+  })
+})
 
 describe('ticket 03: blank scene starts grounded', () => {
   it('contains the fixed hatched ground (same recipe as presets), parses clean with zero warnings', () => {
