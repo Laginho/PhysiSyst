@@ -249,16 +249,16 @@ function paint(
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
-    for (const { arrows, style } of layers) for (const a of arrows) drawArrow(ctx, a.from, a.vec, transform, style, labels.get(a.key))
+    for (const { arrows, style } of layers) for (const a of arrows) drawArrow(ctx, a.from, a.vec, transform, style, labels(a))
   } else {
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
       if (showInitialVelocity) {
-        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels.get(a.key))
+        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
       }
       for (const a of appliedArrows(selView, ppm)) {
-        drawArrow(ctx, a.from, a.vec, transform, undefined, labels.get(a.key))
+        drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
         // The application point is draggable (PHY-27): a ring marks the grip.
         screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
       }
