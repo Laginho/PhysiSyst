@@ -1,5 +1,5 @@
 # PHY-71: Leituras de energia e momento no painel
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-70
 Review: agent
@@ -46,3 +46,5 @@ Chaves novas: `readout.system`, `readout.kinetic` ('E_c'), `readout.potential` (
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy).
 - Proxy decided: linhas do corpo no "ver mais" e bloco "sistema" sempre visível com E_mec em negrito (220 px obrigam a divisão); `fmtNum` substitui também os `toFixed` existentes — um painel, uma convenção; símbolos em texto plano como F_el.
+
+- Stage 2: inspected the polling readout, recorded/live frame selection, RopePanel and all toFixed consumers. Tests use the approved fmtNum and App DOM seams; edge cases include frame zero, no selection, empty and fixed-only scenes. Existing decimal expectations migrate with the tests. Initial focused red: fmtNum is not a function; body position received (6.10, 4.00), expected (6,10, 4,00); system fieldset absent; spring system reading empty.
