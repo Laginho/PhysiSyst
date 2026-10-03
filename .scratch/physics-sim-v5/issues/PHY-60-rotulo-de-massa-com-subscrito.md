@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -46,3 +46,23 @@ O rótulo de massa sai literal, com o sublinhado (`m_a`, `m_b`), centrado no cor
 - 2026-10-03 Proxy decided: sim, os quatro doubles novos também entram — a regra passa a ser por tipo, não por contagem: todo contexto falso passado a `getContext` em `src/App.test.ts` (hoje seis, ~l.279, ~2331, ~2752, ~2857, ~3075, ~3102, e qualquer outro que a sessão acrescente) pode ganhar `measureText` devolvendo `{ width: <número> }`, e nada mais nesse arquivo muda; o `beforeEach` com `getContext: () => null` fica como está — os quatro são o mesmo `TypeError` de harness do primeiro pedido (o Proxy cai em `target[key] ?? (() => {})`, `measureText` devolve `undefined`, `.width` quebra em draw.ts:247), as asserções deles leem `translate`/`stroke`, não texto, e a contagem "dois" descrevia o arquivo antes de PHY-64..66 serem mergeados, não uma escolha de design. O próximo stage 2 retoma de `c01e01a` (`676ad3f` teste em draw.test.ts, `33084dc` test-only nos dois primeiros doubles, `c01e01a` só `draw.ts` + ticket) sem refazer nada: cria `phy/PHY-60-rotulo-de-massa-com-subscrito` a partir da sessão, traz as mudanças em `src/` desses três commits, acrescenta um commit test-only com os quatro doubles restantes, roda o gate e vai a `to-review`.
 
 - 2026-10-03 Foreman: os commits da tentativa 2 (`676ad3f`, `33084dc`, `c01e01a`) estão no branch `asked/phy60-rotulo-massa-20261003-0318` (renomeado pelo mesmo motivo do anterior).
+
+#### Stage 2 continuation (2026-10-03, completed)
+
+- Resumed on the ticket branch from session `sweatshop/2026-10-02-2210`, restoring only source patches from `676ad3f`, `33084dc`, and `c01e01a`; retained the expanded contract from the session.
+- Callers checked: App.tsx paint invokes drawScene for editor/playback and drawArrow for vector overlays. Existing recovered coverage includes empty/fixed bodies, bare symbols, measured-width boundaries, rotated rectangles, circles, and triangles.
+- Red reverified before production changes: draw.test.ts had 6 failed / 21 passed (literal m_a/m_b instead of separate glyph runs; measured overflow expected false to be true). Tests committed as `5f9f9c2`.
+- Canvas harness corrections committed separately as `fbf6828` (original two doubles) and `9458cd7` (remaining four). Only measureText return values changed; no assertions or scenarios changed.
+- Identical implementation and regression tests recovered; mutation evidence below is preserved from `c01e01a` / `9ece33d`, not rerun in this continuation.
+- Mutation evidence (all restored):
+  - Centered base/subscript test: forcing `junction = 0` failed with `expected 444 to be close to 450` (1 failed / 26 skipped).
+  - External rectangle (0 rad): `outside = false` failed with `expected 441 to be greater than 456`.
+  - External rectangle (pi/4): same mutation failed with `expected 440.70710678118655 to be greater than 458.485281`.
+  - External circle (0.7 rad): same mutation failed with `expected 440.7648421872845 to be greater than 456`.
+  - External triangle (pi/2): same mutation failed with `expected 448 to be greater than 450`.
+  - Measured-width/margin test: same mutation failed with `expected false to be true` (combined run: 5 failed / 3 passed / 19 skipped).
+  - Bare rectangle and triangle tests: changing mass font to 18 px failed both with `expected 'italic 18px system-ui, sans-serif' to be 'italic 16px system-ui, sans-serif'` (3 failed / 5 passed / 19 skipped, including centered-label test).
+- Green: all 27 focused rendering tests passed. Full gate: 31 files passed, 1024 tests passed; lint, typecheck, and build passed.
+- Initial sandbox suite: 1009 passed / 15 failed, all failures from Chromium DevTools connection/disconnection. The full suite passed with normal Chromium permissions.
+- Build retains the existing chunk-size warning. Final diff and whitespace checked: only authorized source files and ticket changed; production commit does not touch tests.
+- Stage 2 complete; ready for the separate stage-3 review.

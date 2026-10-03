@@ -22,6 +22,14 @@ const DEFAULT_STYLE: DrawStyle = {
 }
 
 const LABEL_FONT = 'italic 16px system-ui, sans-serif'
+const MASS_SUB_FONT = 'italic 11px system-ui, sans-serif'
+const MASS_LABEL_MARGIN = 4
+
+/** Everything after the first underscore belongs to the subscript. */
+function splitLabel(label: string): [string, string] {
+  const separator = label.indexOf('_')
+  return separator < 0 ? [label, ''] : [label.slice(0, separator), label.slice(separator + 1)]
+}
 
 /** What the editor has selected: one body, one constraint (spring or rope), one pulley, or nothing. */
 export type Selection = { kind: 'body' | 'constraint' | 'pulley'; id: string } | null
@@ -234,13 +242,44 @@ export function drawScene(
       ay = triangleHeight(body) / 3
     }
     ctx.save()
-    ctx.translate(s.x + ax * camera.pixelsPerMeter, s.y - ay * camera.pixelsPerMeter)
-    ctx.rotate(-body.rotation)
+    const [base, sub] = splitLabel(label)
     ctx.font = LABEL_FONT
-    ctx.textAlign = 'center'
+    const baseWidth = ctx.measureText(base).width
+    ctx.font = MASS_SUB_FONT
+    const subWidth = sub ? ctx.measureText(sub).width : 0
+    const labelWidth = baseWidth + subWidth
+    // Circles have exact bounds; polygon bounds include the body's rotation.
+    const points = body.shape === 'circle'
+      ? [
+          { x: s.x - body.radius * camera.pixelsPerMeter, y: s.y - body.radius * camera.pixelsPerMeter },
+          { x: s.x + body.radius * camera.pixelsPerMeter, y: s.y + body.radius * camera.pixelsPerMeter },
+        ]
+      : localVertices(body).map((vertex) => {
+          const world = bodyPointToWorld(body, vertex)
+          return worldToScreen(t, world.x, world.y)
+        })
+    const left = Math.min(...points.map((p) => p.x))
+    const right = Math.max(...points.map((p) => p.x))
+    const top = Math.min(...points.map((p) => p.y))
+    const outside = labelWidth + 2 * MASS_LABEL_MARGIN > right - left
+    if (outside) {
+      // Center the whole label beyond the right edge, with both glyph runs above it.
+      ctx.translate(right + MASS_LABEL_MARGIN + labelWidth / 2, top - MASS_LABEL_MARGIN - 10)
+    } else {
+      ctx.translate(s.x + ax * camera.pixelsPerMeter, s.y - ay * camera.pixelsPerMeter)
+      ctx.rotate(-body.rotation)
+    }
+    ctx.font = LABEL_FONT
+    ctx.textAlign = sub ? 'right' : 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = style.dynamicStroke
-    ctx.fillText(label, 0, 0)
+    const junction = sub ? (baseWidth - subWidth) / 2 : 0
+    ctx.fillText(base, junction, 0)
+    if (sub) {
+      ctx.font = MASS_SUB_FONT
+      ctx.textAlign = 'left'
+      ctx.fillText(sub, junction, 4)
+    }
     ctx.restore()
   }
   drawConstraints(ctx, scene, t, camera.pixelsPerMeter, style, selection, opts?.readings ?? [])
@@ -404,13 +443,13 @@ export function drawArrow(
   if (label) {
     // Base right-aligned and subscript left-aligned on one junction point, so
     // no text measuring is needed to butt them together.
-    const [base, sub] = label.split(/_(.*)/s)
+    const [base, sub] = splitLabel(label)
     const x = to.x - VECTOR_LABEL_GAP_PX * Math.sin(angle)
     const y = to.y + VECTOR_LABEL_GAP_PX * Math.cos(angle)
     ctx.textBaseline = 'middle'
     ctx.font = VECTOR_LABEL_FONT
     ctx.textAlign = sub ? 'right' : 'center'
-    ctx.fillText(base!, x, y)
+    ctx.fillText(base, x, y)
     if (sub) {
       ctx.font = VECTOR_SUB_FONT
       ctx.textAlign = 'left'
