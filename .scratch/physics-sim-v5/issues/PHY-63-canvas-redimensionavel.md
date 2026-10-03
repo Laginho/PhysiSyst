@@ -1,5 +1,5 @@
 # PHY-63: Canvas da cena redimensionável
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -44,6 +44,8 @@ Regra do tamanho: largura = máx(402, mín(escolha do usuário, ajuste automáti
 - `src/App.test.ts` ou `src/App.browser.test.ts`: critérios 7 e 8.
 
 ## Comments
+
+- 2026-10-03 Stage 2: callers examinados: `App` inicializa e recalcula `fitCanvas` no ResizeObserver; o piso automático também controla o empilhamento. Cobertos: escolha abaixo do mínimo, acima do automático, fracionária, contêiner menor que o piso e armazenamento inválido. Primeiro red: 3 failed / 52 passed (55); largura 1200 em vez de 750 e funções de persistência ausentes.
 
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 3; confirmado que "preview" é o canvas da cena).
 - 2026-10-02 Stage 1 (planner, grilling com proxy). Bruno decidiu: alça de arrastar; redimensionar muda o zoom; `fitCanvas` recebe a largura do usuário e aplica mínimo e máximo, alça e persistência no `App`; um ticket só.
