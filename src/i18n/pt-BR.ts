@@ -82,6 +82,7 @@ export const ptBR = {
   'contacts.empty': 'nenhum (sem atrito)',
   'contacts.muS': 'μs — atrito estático',
   'contacts.muK': 'μk — atrito cinético',
+  'contacts.e': 'e — restituição',
   'contacts.add': 'adicionar contato',
   'contacts.removeTitle': 'remover contato',
   'scenes.title': 'cenas',

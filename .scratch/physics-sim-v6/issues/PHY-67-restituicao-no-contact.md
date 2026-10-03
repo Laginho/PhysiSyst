@@ -1,5 +1,5 @@
 # PHY-67: Coeficiente de restituição no Contact e no editor
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -51,3 +51,13 @@ O simulador não muda neste ticket: `e` é lido e escrito, mas ainda não chega 
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy). Bruno decidiu: `e` no `Contact` existente, padrão 0, versão 1 mantida; CONTEXT.md atualizado.
 - Proxy decided: `NumField` sem clamp + aviso suave fora de [0,1], espelhando os campos de μ; `e` serializado só quando definido mantém a v5 byte a byte.
+
+#### Stage 2 — 2026-10-03
+
+- Costuras e chamadores inspecionados: `parse`/`serialize` usados por persistência, importação/exportação, presets e inicialização do simulador; `collectWarnings` pelo App; `addContact` pelo painel e pelo snap no pointer-up; `updateContact` pelo `ContactsPanel`. Casos cobertos: campo ausente, zero explícito, limites 0/1, valores não finitos/não numéricos, fora da faixa, par invertido, preservação do atrito, dos outros pares e do documento original. O override explícito de μ em `addContact` mantém o comportamento anterior.
+- Testes separados da implementação em commits: codec `57757f7` (12 falhas esperadas, 119 passaram), documento `88f7ef0` (1 falha esperada, 50 passaram), DOM `32e5f2c` (1 falha esperada, 130 não selecionados). O teste DOM usa `src/App.test.ts`, expressamente previsto em “Tests stage 2 writes”.
+- Verificação verde focada: codec 131/131, documento 51/51, DOM 1/1 (130 não selecionados).
+- Mutate-verify direto: substituir leitura/validação de `e` por zero e alargar os limites dos avisos fez falhar os testes de parse, ausência e avisos; mudar o default para 1 e descartar `patch.e` fez falhar os dois testes do documento. Resultado conjunto: 24 falhas, 158 passaram. Somar 1 ao `e` lido e inverter a condição de aviso verificou também os casos zero e sem aviso: 8 falhas, 8 passaram, 115 não selecionados. Todas as mutações foram restauradas.
+- Mutate-verify DOM, teste `shows restitution after kinetic friction for each pair and persists edits without clamping`: em `ContactsPanel`, trocar `onPatch(c.a, c.b, { e: v })` por `onPatch(c.a, c.b, { muK: v })`. Saída vermelha: `1 failed | 130 skipped`; esperado `{ e: 0.8, muK: 0.25 }`, recebido `{ e: 0.5, muK: 0.8 }`, em `src/App.test.ts:278`. Mutação restaurada. O vermelho original detectou também a ausência do campo: esperava 6 inputs para dois pares, recebeu 4.
+- `serialize` já omite propriedades indefinidas via JSON; não exigiu alteração. `SCENE_VERSION` continua 1. Integração de restituição no simulador permanece para PHY-68, como previsto.
+- Gate final: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. 31 arquivos de teste, 1043 testes aprovados; lint, typecheck e build aprovados. Vite avisou sobre chunk acima de 500 kB (simulador). `git diff --check` limpo; diff revisado, sem alterações no simulador nem artefatos gerados versionados.

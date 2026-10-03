@@ -39,11 +39,11 @@ The editing behavior that places a dragged body in direct contact with the neigh
 _Avoid_: grid snap, magnetic snap, magnet mode
 
 **Contact**:
-The interface between two touching bodies, carrying that pair's friction coefficients. Contacts are frictionless unless the scene states otherwise.
+The interface between two touching bodies, carrying that pair's friction coefficients and the coefficient of restitution of their collisions. Contacts are frictionless unless the scene states otherwise.
 _Avoid_: surface settings, material
 
 **Collision**:
-The impact event between two bodies, governed by restitution — distinct from an ongoing contact.
+The impact event between two bodies, governed by restitution — distinct from an ongoing contact. Its restitution is the `e` of the pair's Contact; pairs without a Contact collide with e = 0. The editor and scene codec store `e` (absent = 0); simulator integration follows in PHY-68.
 _Avoid_: crash, bounce setting
 
 **Anchor snap**:

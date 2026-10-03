@@ -82,6 +82,7 @@ export const en = {
   'contacts.empty': 'none (frictionless)',
   'contacts.muS': 'μs — static friction',
   'contacts.muK': 'μk — kinetic friction',
+  'contacts.e': 'e — restitution',
   'contacts.add': 'add contact',
   'contacts.removeTitle': 'remove contact',
   'scenes.title': 'scenes',
