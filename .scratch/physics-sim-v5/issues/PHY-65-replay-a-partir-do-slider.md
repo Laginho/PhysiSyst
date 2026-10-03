@@ -1,5 +1,5 @@
 # PHY-65: Play e passo único a partir de um ponto anterior
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: human
@@ -85,3 +85,14 @@ Implementação: play preserva cursor; frame/stepOnce consomem crédito em regis
 - Separação de commits confirmada: `12988b2` contém testes e ticket; `f90b54a` contém produção e ticket, sem testes. As seis novas instâncias de teste DOM têm mutação e saída vermelha registradas acima.
 - Red reproduzido com os dois arquivos de produção temporariamente em `abd9606` e os testes atuais: `npx vitest run src/playback/scheduler.test.ts src/App.test.ts -t 'recorded replay|recorded time player' --reporter=dot` → **15 failed, 13 passed, 157 skipped (185)**, pelas expectativas de cursor, passos físicos e leituras. Arquivos restaurados byte a byte em `finally`.
 - A primeira reprodução sem filtro confirmou as mesmas 15 falhas e duas desconexões do Chromium nos testes preexistentes PHY-44 (**17 failed, 168 passed**); a verificação focada acima isolou o contrato. O gate completo será executado com acesso ao navegador fora do sandbox.
+
+#### Resolution (2026-10-03)
+Verdict: Approve
+
+- Standards: um achado documental, corrigido em `1d839b1`; zero violações pendentes e nenhum smell que justifique alteração. Spec: zero achados; critérios 1–10 atendidos, sem regressão identificada. Revisões dos dois eixos realizadas em subagentes independentes.
+- Arquivos revisados: `src/playback/scheduler.ts`, `src/playback/scheduler.test.ts`, `src/App.tsx` e `src/App.test.ts`. A revisão corrigiu somente comentários do scheduler e do App; nenhum teste ou comportamento foi alterado.
+- `Proxy decided` conferido: passo único percorre um registro independentemente da velocidade; não houve nova decisão por proxy nesta revisão.
+- Red/green: produção da base `abd9606` com testes atuais → **15 failed, 13 passed, 157 skipped (185)** no foco de gravação/replay. Produção restaurada → gate completo **31 files passed, 1003 tests passed**, 42.38 s; `npm run lint`, `npm run typecheck` e `npm run build` **exit 0**. A execução fora do sandbox também passou nos dois testes Chromium que haviam desconectado na primeira tentativa.
+- Evidência por teste DOM, mutações M1–M4 e separação de commits red/produção verificadas. `git diff --check` passou; diff limitado aos Primary files e registros do ticket, sem artefatos gerados ou alterações alheias.
+- Branch já atualizada sobre `sweatshop/2026-10-02-2210`, integrada sem squash em `5318fa4`. `Stage: done` e ledger registrados juntos neste commit de fechamento. `Review: human` segue para a revisão do PR da sessão, conforme o fluxo de sessão; nenhum push ou PR individual nesta etapa.
+- Limitação: build mantém o aviso de chunk de simulação acima de 500 kB; nenhuma falha de validação pendente.
