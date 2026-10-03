@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -163,3 +163,28 @@ Standards: 0 violações, 1 observação opcional. Spec: 1 achado P2, critério 
 - Correção: antes de materializar o preset, editDoc compara o conteúdo JSON de prev/resolved; patches equivalentes retornam sem cópia, histórico ou atualização do doc. A comparação só ocorre com preset aberto. Os patches existentes preservam a ordem das propriedades e Scene contém dados JSON; serialize já usa esse formato. Não foram alterados helpers de edição, transições ou cenas salvas.
 - Gate final: npm test && npm run lint && npm run typecheck && npm run build passou fora do sandbox: **30 arquivos, 961 testes verdes**, lint, typecheck e build sem erros. A primeira tentativa restrita teve 12 falhas de conexão Chromium e 949 testes verdes, junto de erro Windows CreateProcessWithLogonW 1909. Permanece apenas o aviso conhecido de bundle acima de 500 kB.
 - Diff final conferido: somente App.tsx, App.test.ts e este ticket; git diff --check passou. Testes nos commits fa82ff5/37e5180, produção em commit separado. Critério 3 corrigido; etapa 2 encerrada, aguardando nova revisão.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+Revisão da reabertura: ponto fixo `afa2ebd`, HEAD `bfbb67a`, base da sessão `sweatshop/2026-10-02-2210` (`3ecf4f6`). Conferidos o único item ❌ da revisão anterior e todo o diff posterior, com Standards e Spec em agentes separados. O critério 3 está atendido: entradas numericamente equivalentes preservam o preset; a primeira edição real continua criando exatamente uma cópia. Nenhuma correção de produção foi necessária nesta etapa.
+
+##### Standards
+
+- Zero violações no código e nenhum smell novo. Escopo restrito a `src/App.tsx` (`editDoc`), `src/App.test.ts` e este ticket; Primary files e critérios preservados. `fa82ff5` e `37e5180` contêm apenas testes/documentação; `bfbb67a` contém produção/documentação, sem testes. A evidência DOM registra a mutação e o vermelho de cada novo caso.
+- Um desvio documental: os três commits têm assunto Conventional Commits em inglês e PHY-62, mas não têm corpo explicando o motivo, como pede ticket-flow em "Commits and closing". Isso não infringe critério, Primary files ou separação teste/produção e não sustenta reabertura pela regra mecânica da skill. O histórico foi preservado.
+- A observação opcional de duplicação da primeira revisão fica fora deste diff; nenhuma refatoração adicional foi exigida.
+
+##### Spec
+
+- Zero achados: não há requisito ausente/parcial, escopo excedido ou implementação incorreta identificada no diff da reabertura. A guarda em `editDoc` precede cópia, histórico e atualização do doc; aplica-se somente ao preset aberto. Os patches existentes preservam a ordem de propriedades, e `serialize` usa a mesma representação JSON.
+- As dez decisões `Proxy decided` existentes foram conferidas: (1) edição é mudança de conteúdo, agora atendida também para g/F equivalentes; (2) cópia preserva playback/histórico; (3) opção/dica e ações; (4) reload/fallback; (5) undo permanece na cópia; (6) galeria aberta e ACK; (7) nome localizado e sufixos; (8) demo/cena em branco; (9) clique repetido sem efeito; (10) flush e abertura pausada em t=0. A correção não altera as decisões 2–10. Nenhuma decisão nova de proxy ou omissão da revisão anterior foi identificada.
+
+##### Validação independente e integração
+
+- Mutate-verify repetido: removida isoladamente a guarda `if (openPresetRef.current && JSON.stringify(resolved) === JSON.stringify(prev)) return true`. Tanto `entrada equivalente de g preserva o preset até uma edição real` quanto `entrada equivalente de F preserva o preset até uma edição real` falharam em `App.test.ts:2442` com `expected 'cena-2' to be 'preset:wedge-flagship'`: **2 falhas, 108 ignorados (110)**. `App.tsx` foi restaurado byte a byte em `finally`; `git diff --exit-code -- src/App.tsx` confirmou a restauração.
+- Gate com a produção restaurada: `npm test && npm run lint && npm run typecheck && npm run build` — **30 arquivos, 961 testes verdes**, incluindo os dois casos acima; lint, typecheck e build passaram. Executado fora do sandbox após falha de inicialização Windows `CreateProcessWithLogonW 1909`. Permanece o aviso conhecido do bundle do simulador acima de 500 kB. `git diff --check` passou.
+- Rebase na sessão sem alterações: HEAD continuou `bfbb67a`, exatamente o código validado. Merge local sem squash em `bae10db`; `git diff bfbb67a HEAD --exit-code` confirmou árvore idêntica após o merge. `Stage: done`, esta resolução e a linha do ledger são registrados juntos no commit de fechamento. Conforme o fluxo de sessão, `Review: human` será destacado pelo driver no PR da sessão; esta etapa não faz push nem abre PR.
+
+Standards: 0 violações de código, 1 desvio documental não bloqueante. Spec: 0 achados. Critério 3 aprovado.
