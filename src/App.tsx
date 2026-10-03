@@ -6,6 +6,7 @@ import {
   applyLiveOps,
   applyStates,
   initialPlayback,
+  Recording,
   routeDocChange,
   SPEED_MAX,
   SPEED_MIN,
@@ -13,6 +14,7 @@ import {
   type PlaybackAction,
   type PlaybackState,
 } from './playback'
+import { TIMESTEP } from './sim/timestep'
 import { DEMO_SCENE } from './scene/demo'
 import { createPresetScene, galleryGroups, nodeLabelKeys, presetById, type Preset } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
@@ -291,11 +293,15 @@ function NumField({
   label,
   value,
   step,
+  disabled,
+  title,
   onChange,
 }: {
   label: string
   value: number
   step?: number
+  disabled?: boolean
+  title?: string
   onChange: (v: number) => boolean | void
 }) {
   const [draft, setDraft] = useState<{ value: number; text: string } | null>(null)
@@ -305,6 +311,8 @@ function NumField({
       {label}
       <input
         type="number"
+        disabled={disabled}
+        title={title}
         step={step ?? 'any'}
         value={draft?.text ?? value}
         style={{ width: 80 }}
@@ -416,6 +424,7 @@ function ForcesPanel({
   bodyId,
   forces,
   structuralLocked,
+  liveLocked,
   onAdd,
   onPatch,
   onRemove,
@@ -423,6 +432,7 @@ function ForcesPanel({
   bodyId: string
   forces: AppliedForce[]
   structuralLocked: boolean
+  liveLocked: boolean
   onAdd: () => string | null
   onPatch: (id: string, patch: Partial<Omit<AppliedForce, 'id' | 'bodyId'>>) => void
   onRemove: (id: string) => void
@@ -438,10 +448,10 @@ function ForcesPanel({
             <span>{f.id}</span>
             <button disabled={structuralLocked} onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
           </div>
-          <NumField label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
-          <NumField label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
-          <NumField label={t('forces.anchorX')} value={f.anchor.x} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, x: v } })} />
-          <NumField label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.anchorX')} value={f.anchor.x} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, x: v } })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
         </div>
       ))}
       <button disabled={structuralLocked} style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
@@ -694,12 +704,43 @@ export default function App() {
   /** Last simulator readback; `null` means "nothing simulated, show the doc". */
   const statesRef = useRef<Map<string, BodyState> | null>(null)
   const accelRef = useRef(initialTracker())
+  // Display refs may point into history; the live frame always stays at the tip.
+  type RecordedFrame = {
+    scene: Scene
+    states: Map<string, BodyState> | null
+    contacts: ContactPoint[]
+    constraints: ConstraintState[]
+    acceleration: ReturnType<typeof initialTracker>
+  }
+  const liveFrameRef = useRef<RecordedFrame>({ scene: doc, states: null, contacts: [], constraints: [], acceleration: initialTracker() })
+  const recordingRef = useRef<Recording<RecordedFrame> | null>(null)
+  if (!recordingRef.current) recordingRef.current = new Recording(liveFrameRef.current)
+  const [recordingLength, setRecordingLength] = useState(1)
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
+  const captureFrame = useCallback((): RecordedFrame => ({
+    scene: docRef.current,
+    states: statesRef.current ?? simRef.current?.readStates() ?? null,
+    contacts: contactsRef.current,
+    constraints: constraintsRef.current,
+    acceleration: accelRef.current,
+  }), [])
+  const showFrame = useCallback((frame: RecordedFrame) => {
+    statesRef.current = playbackRef.current.cursor === 0 ? null : frame.states
+    contactsRef.current = frame.contacts
+    constraintsRef.current = frame.constraints
+    accelRef.current = frame.acceleration
+  }, [])
+  const resetRecording = useCallback(() => {
+    liveFrameRef.current = captureFrame()
+    recordingRef.current!.reset(liveFrameRef.current)
+    setRecordingLength(1)
+  }, [captureFrame])
   /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
+  const resetOnEditRef = useRef(false)
   // Mirrors so the imperative rAF loop reads the latest document without
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
@@ -724,9 +765,13 @@ export default function App() {
       else setSceneIndex(loadIndex(storage))
     })
   }
-  const structuralLocked = playback.stepsTaken > 0 || stepsTick > 0
-  const canEditDoc = useCallback((next: Scene) =>
-    playbackRef.current.stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live', [])
+  const liveLocked = playback.cursor !== null && playback.cursor > 0
+  const structuralLocked = playback.cursor !== 0 && (playback.stepsTaken > 0 || stepsTick > 0)
+  const canEditDoc = useCallback((next: Scene) => {
+    const { cursor, stepsTaken } = playbackRef.current
+    if (cursor !== null) return cursor === 0
+    return stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live'
+  }, [])
 
   /** Rebind identity without replacing the running world or clearing its undo history. */
   const copyOpenPreset = useCallback((): boolean => {
@@ -755,10 +800,11 @@ export default function App() {
     // Materialize a preset only when its persisted content actually changes.
     if (openPresetRef.current && JSON.stringify(resolved) === JSON.stringify(prev)) return true
     if (!canEditDoc(resolved)) {
-      setToolError('editor.resetToEdit')
+      setToolError(playbackRef.current.cursor !== null ? 'playback.scrubbedEditHint' : 'editor.resetToEdit')
       return false
     }
     if (!copyOpenPreset()) return false
+    if (playbackRef.current.cursor === 0) resetOnEditRef.current = true
     if (recordHistory) setHistory((h) => pushHistory(h, prev))
     docRef.current = resolved
     setDoc(resolved)
@@ -787,6 +833,11 @@ export default function App() {
     | null
   >(null)
 
+  const displayedScene = useCallback((): Scene => {
+    const cursor = playbackRef.current.cursor
+    return cursor === null ? docRef.current : recordingRef.current!.at(cursor)!.scene
+  }, [])
+
   const repaint = useCallback(() => {
     // The simulator mutates its warning array; publish a snapshot only when its content changes.
     const nextWarnings = simRef.current?.warnings ?? []
@@ -797,16 +848,16 @@ export default function App() {
     )
     const ctx = ctxRef.current
     if (ctx)
-      paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
+      paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
-        stepsTaken: playbackRef.current.stepsTaken,
+        stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
         lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
       })
-  }, [size.width, size.height])
+  }, [size.width, size.height, displayedScene])
 
   // The container's own size drives the canvas — measured on mount and on
   // every resize (window resize/maximize, layout changes during playback).
@@ -902,12 +953,12 @@ export default function App() {
   // Low-frequency readout: polls refs without 60Hz React churn.
   useEffect(() => {
     const id = setInterval(() => {
-      setStepsTick(playbackRef.current.stepsTaken)
+      setStepsTick(playbackRef.current.cursor ?? playbackRef.current.stepsTaken)
+      setRecordingLength(recordingRef.current!.length)
       const constraintSel = selectedOf(selectionRef.current, 'constraint')
       if (constraintSel) {
         // A world awaiting its rebuild still holds the old constraints: no reading.
-        const sim = pendingRebuildRef.current ? null : simRef.current
-        setConstraintReadout(sim?.readConstraints().find((c) => c.id === constraintSel) ?? null)
+        setConstraintReadout(pendingRebuildRef.current ? null : constraintsRef.current.find((c) => c.id === constraintSel) ?? null)
       } else {
         setConstraintReadout(null)
       }
@@ -916,25 +967,26 @@ export default function App() {
         setReadout(null)
         return
       }
+      const scene = displayedScene()
       const curr = statesRef.current
       const s = curr?.get(sel)
       if (!s) {
         // Not yet simulated — use the document pose, initial velocity, and
         // analytic acceleration until a measured simulator sample exists.
-        const docBody = docRef.current.bodies.find((b) => b.id === sel)
+        const docBody = scene.bodies.find((b) => b.id === sel)
         if (!docBody) {
           setReadout(null)
           return
         }
-        const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+        const acc = getAcceleration(accelRef.current, scene, sel, playbackRef.current.status === 'paused')
         setReadout({ x: docBody.position.x, y: docBody.position.y, vx: docBody.vx ?? 0, vy: docBody.vy ?? 0, ax: acc.x, ay: acc.y, approximate: acc.approximate })
         return
       }
-      const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+      const acc = getAcceleration(accelRef.current, scene, sel, playbackRef.current.status === 'paused')
       setReadout({ x: s.position.x, y: s.position.y, vx: s.linvel.x, vy: s.linvel.y, ax: acc.x, ay: acc.y, approximate: acc.approximate })
     }, 100)
     return () => clearInterval(id)
-  }, [])
+  }, [displayedScene])
 
   /**
    * Applies pending document edits by rebuilding from the document at a frame boundary.
@@ -953,6 +1005,7 @@ export default function App() {
       contactsRef.current = sim.readContacts()
       constraintsRef.current = sim.readConstraints()
       pendingRebuildRef.current = false
+      resetRecording()
       setSimError(null)
       return true
     } catch (e) {
@@ -960,7 +1013,7 @@ export default function App() {
       pendingRebuildRef.current = true
       return false
     }
-  }, [fail])
+  }, [fail, resetRecording])
 
   /** Runs `n` fixed TIMESTEPs on the running world, then repaints once. */
   const runSteps = useCallback(
@@ -969,13 +1022,17 @@ export default function App() {
       if (!sim || n <= 0) return
       if (!syncWorld()) return
       try {
-        for (let i = 0; i < n; i++) sim.step()
-        const prev = statesRef.current
-        const next = sim.readStates()
-        accelRef.current = onSteps(accelRef.current, n, prev, next)
-        statesRef.current = next
-        contactsRef.current = sim.readContacts()
-        constraintsRef.current = sim.readConstraints()
+        for (let i = 0; i < n; i++) {
+          const prev = statesRef.current ?? sim.readStates()
+          sim.step()
+          const next = sim.readStates()
+          accelRef.current = onSteps(accelRef.current, 1, prev, next)
+          statesRef.current = next
+          contactsRef.current = sim.readContacts()
+          constraintsRef.current = sim.readConstraints()
+          liveFrameRef.current = captureFrame()
+          recordingRef.current!.push(liveFrameRef.current)
+        }
       } catch (e) {
         fail(e)
         return
@@ -985,16 +1042,20 @@ export default function App() {
       // making React follow every later animation frame.
       if (playbackRef.current.stepsTaken === n) setStepsTick(playbackRef.current.stepsTaken)
     },
-    [fail, repaint, syncWorld],
+    [fail, repaint, syncWorld, captureFrame],
   )
 
   /** Discrete transport actions: pure decision in `advance`, effects here. */
   const dispatch = useCallback(
     (action: PlaybackAction) => {
+      const previousCursor = playbackRef.current.cursor
       const t = advance(playbackRef.current, action)
       playbackRef.current = t.state
       setPlayback(t.state)
-      setStepsTick(t.state.stepsTaken)
+      setStepsTick(t.state.cursor ?? t.state.stepsTaken)
+      if (action.type === 'seek' || previousCursor !== t.state.cursor) {
+        showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+      }
       if (t.rebuild) {
         setToolError(null)
         // Clear readings before rebuilding: a failed reset must still show the document.
@@ -1015,16 +1076,22 @@ export default function App() {
           setSimError(messageOf(e))
           pendingRebuildRef.current = true
         }
-        repaint()
+        resetRecording()
       }
+      repaint()
       if (t.steps > 0) runSteps(t.steps)
+      setRecordingLength(recordingRef.current!.length)
     },
-    [repaint, runSteps],
+    [repaint, runSteps, showFrame, resetRecording],
   )
 
   useEffect(() => {
     docRef.current = doc
     showGlobalRef.current = showGlobal
+    if (resetOnEditRef.current) {
+      resetOnEditRef.current = false
+      dispatch({ type: 'reset' })
+    }
     if (simRef.current && builtDocRef.current !== doc) {
       // Live edits mutate the running world; structural edits rebuild at t = 0 (PHY-39).
       const route = routeDocChange(builtDocRef.current, doc)
@@ -1035,6 +1102,7 @@ export default function App() {
         try {
           applyLiveOps(simRef.current, route.ops)
           builtDocRef.current = doc
+          if (playbackRef.current.stepsTaken === 0) resetRecording()
         } catch (e) {
           dispatch({ type: 'reset' })
           setSimError(messageOf(e))
@@ -1042,7 +1110,7 @@ export default function App() {
       }
     }
     repaint()
-  }, [doc, showGlobal, repaint, dispatch])
+  }, [doc, showGlobal, repaint, dispatch, resetRecording])
 
   const switchToScene = useCallback(
     (id: string) => {
@@ -1111,6 +1179,7 @@ export default function App() {
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
+          resetRecording()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc
           setSimError(null)
@@ -1128,7 +1197,7 @@ export default function App() {
       )
     }
     return simBootRef.current
-  }, [])
+  }, [resetRecording])
 
   /** Retries a failed boot, restarting the joke rotation from the top. */
   const retryBoot = useCallback(() => {
@@ -1685,10 +1754,10 @@ export default function App() {
             <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
               {t('playback.reset')}
             </button>
-            <button onClick={undo} disabled={!canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
+            <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
               ↶
             </button>
-            <button onClick={redo} disabled={!canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
+            <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
               ↷
             </button>
             <span style={{ position: 'relative' }}>
@@ -1744,6 +1813,16 @@ export default function App() {
               />
               <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
                 {playback.speed.toFixed(2)}×
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {t('playback.timeLabel')}
+              <input type="range" min={0} max={recordingLength - 1} step={1}
+                value={playback.cursor ?? recordingLength - 1}
+                onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
+              />
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
               </span>
             </label>
           </div>
@@ -2018,7 +2097,7 @@ export default function App() {
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
@@ -2034,6 +2113,7 @@ export default function App() {
               <ForcesPanel
                 bodyId={selected.id}
                 structuralLocked={structuralLocked}
+                liveLocked={liveLocked}
                 forces={doc.forces.filter((f) => f.bodyId === selected.id)}
                 onAdd={() => {
                   const res = addForce(doc, { bodyId: selected.id, anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 })

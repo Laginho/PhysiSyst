@@ -7,6 +7,8 @@ export const ptBR = {
   'playback.stepTitle': 'avança exatamente um passo (1/60 s), em qualquer velocidade',
   'playback.reset': '⟲ reiniciar',
   'playback.resetTitle': 'volta ao estado inicial do documento',
+  'playback.timeLabel': 'Tempo',
+  'playback.scrubbedEditHint': 'Volte ao fim da gravação para editar',
   'playback.speedLabel': 'velocidade',
   'playback.undoTitle': 'desfazer (Ctrl+Z)',
   'playback.redoTitle': 'refazer (Ctrl+Shift+Z ou Ctrl+Y)',

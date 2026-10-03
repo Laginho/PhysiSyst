@@ -2677,3 +2677,259 @@ describe('galeria de um clique (PHY-62)', () => {
     expect(loadIndex(storage())).toHaveLength(2)
   })
 })
+
+
+describe('recorded time player (PHY-64)', () => {
+  async function setupRecording(kind?: 'spring' | 'rope') {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const scene: Scene = {
+      version: 1, constants: { g: 10 }, contacts: [], forces: [
+        { id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 },
+      ],
+      bodies: [
+        { id: 'wall', shape: 'circle', radius: 0.2, mass: 0, fixed: true, position: { x: 2, y: 4 }, rotation: 0 },
+        { id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0 },
+      ],
+    }
+    let count = 0
+    if (kind) {
+      const ends = { a: { bodyId: 'wall', anchor: { x: 0, y: 0 } }, b: { bodyId: 'ball', anchor: { x: 0, y: 0 } } }
+      scene.constraints = kind === 'spring'
+        ? [{ id: 'link', kind, ...ends, k: 10, x0: 4, c: 0 }]
+        : [{ id: 'link', kind, ...ends, via: [] }]
+    }
+    let current = scene
+    const step = vi.fn(() => { count++ })
+    const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(), step, replaceScene,
+      readConstraints: () => kind === 'spring'
+        ? [{ id: 'link', kind, dx: count / 100, force: { a: count, b: count } }]
+        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: false, segments: [count] }] : [],
+      readStates: () => new Map(current.bodies.map((b) => [b.id, {
+        position: { x: b.position.x + (b.fixed ? 0 : count / 100), y: b.position.y },
+        rotation: b.rotation, linvel: { x: b.fixed ? 0 : count * count / 60, y: 0 }, angvel: 0,
+      }])),
+    })
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'recorded', name: 'Recorded', updatedAt: 1 }])
+      saveScene(storage, 'recorded', scene)
+      saveCurrentSceneId(storage, 'recorded')
+    })
+    await settleSimImport()
+    const slider = () => {
+      const input = host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')
+      expect(input, 'time slider').not.toBeNull()
+      return input!
+    }
+    const poll = () => act(() => { vi.advanceTimersByTime(100) })
+    const seek = (index: number) => { act(() => setNativeInputValue(slider(), index)); poll() }
+    const play = async () => { await act(async () => { findButton(host, ptBR['playback.play'])!.click() }) }
+    const steps = async (n: number) => {
+      for (let i = 0; i < n; i++) await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+      poll()
+    }
+    return { host, canvas, slider, poll, seek, play, steps, step, replaceScene,
+      frame: () => act(() => frame(16)),
+      readout: () => panel(host, t('readout.title', { id: 'ball' }))?.textContent ?? '',
+    }
+  }
+
+  it('records each 2x step and seeks poses, velocities and per-step acceleration without rewinding physics', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    expect(p.slider().max).toBe('0')
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, 2))
+    await p.play()
+    for (let i = 0; i < 101; i++) p.frame()
+    p.poll()
+    expect(p.slider().max).toBe('202')
+    p.seek(10)
+    expect(p.readout()).toContain('passos: 10')
+    expect(p.readout()).toContain('(6.10, 4.00) m')
+    expect(p.readout()).toContain('(1.67, 0.00) m/s')
+    expect(p.readout()).toContain('(19.00, 0.00) m/s²')
+    p.seek(200)
+    expect(p.readout()).toContain('(8.00, 4.00) m')
+    expect(p.readout()).toContain('(399.00, 0.00) m/s²')
+    expect(p.host.textContent).toContain('t = 3,33 s')
+    // Hit-testing uses the same projected bodies as paint; the historical pose is selectable.
+    click(p.canvas, { x: 11, y: 7 })
+    click(p.canvas, { x: 8, y: 4 })
+    expect(panel(p.host, 'ball')).toBeDefined()
+    p.frame()
+    expect(p.step).toHaveBeenCalledTimes(202)
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    p.seek(0)
+    p.seek(202)
+    expect(p.readout()).toContain('(8.02, 4.00) m')
+    expect(p.slider().max).toBe('202')
+    expect(p.replaceScene).not.toHaveBeenCalled()
+    p.seek(10)
+    await p.steps(1)
+    expect(p.readout()).toContain('passos: 203')
+    expect(p.slider().value).toBe('203')
+    p.seek(10)
+    await p.play()
+    p.frame()
+    p.poll()
+    expect(p.step).toHaveBeenCalledTimes(205)
+    expect(p.slider().value).toBe('205')
+  })
+
+  it('keeps running past the cap and the last slider position is the live world', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.play()
+    for (let i = 0; i < 610; i++) p.frame()
+    p.poll()
+    expect(p.slider().max).toBe('599')
+    expect(p.readout()).toContain('passos: 610')
+    p.seek(10)
+    expect(p.readout()).toContain('(6.10, 4.00) m')
+    p.seek(599)
+    expect(p.readout()).toContain('(12.10, 4.00) m')
+    expect(p.readout()).toContain('passos: 610')
+    expect(p.step).toHaveBeenCalledTimes(610)
+  })
+
+  it('blocks live fields, history and force anchor drags while inspecting an old step', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    const gravity = () => inputForLabel(p.host, ptBR['panel.gLabel'])
+    act(() => setNativeInputValue(gravity(), 12))
+    act(() => setNativeInputValue(gravity(), 15))
+    act(() => findButton(p.host, '↶')!.click())
+    await p.steps(3)
+    p.seek(1)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    for (const input of [gravity(), inputForLabel(forces, ptBR['forces.magnitude']), inputForLabel(forces, ptBR['forces.direction'])]) {
+      expect(input.disabled).toBe(true)
+      expect(input.title).toBe('Volte ao fim da gravação para editar')
+    }
+    expect(findButton(p.host, '↶')!.disabled).toBe(true)
+    expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    pressKey('z', { ctrlKey: true })
+    pressKey('y', { ctrlKey: true })
+    expect(gravity().value).toBe('12')
+    dragTo(p.canvas, { x: 6.01, y: 4 }, { x: 6.4, y: 4.3 })
+    expect(inputForLabel(forces, ptBR['forces.anchorX']).value).toBe('0')
+    expect(inputForLabel(forces, ptBR['forces.anchorY']).value).toBe('0')
+    p.seek(3)
+    expect(gravity().disabled).toBe(false)
+    act(() => setNativeInputValue(gravity(), 20))
+    expect(gravity().value).toBe('20')
+    expect(p.slider().max).toBe('3')
+  })
+
+  it.each(['structure', 'gravity'] as const)('editing %s at cursor zero replaces the initial record and resets physics', async (edit) => {
+    const p = await setupRecording()
+    await p.steps(3)
+    p.seek(0)
+    expect(findButton(p.host, ptBR['palette.circle'])!.disabled).toBe(false)
+    if (edit === 'structure') act(() => findButton(p.host, ptBR['palette.circle'])!.click())
+    else act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 20))
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.slider().value).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(p.replaceScene).toHaveBeenCalled()
+    const edited = p.replaceScene.mock.calls.at(-1)![0]
+    if (edit === 'structure') expect(edited.bodies).toHaveLength(3)
+    else expect(edited.constants.g).toBe(20)
+    await p.steps(2)
+    p.seek(0)
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(p.slider().max).toBe('2')
+  })
+
+  it('refreshes record zero after a pre-step structural edit and clears history on reset and scene switch', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    dragTo(p.canvas, { x: 6.2, y: 4.2 }, { x: 7.2, y: 4.2 })
+    await p.steps(2)
+    p.seek(0)
+    expect(p.readout()).toContain('(7.00, 4.00) m')
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    await p.steps(2)
+    p.seek(1)
+    act(() => findButton(p.host, ptBR['scenes.duplicate'])!.click())
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(findButton(p.host, ptBR['palette.circle'])!.disabled).toBe(false)
+  })
+
+  it.each(['spring', 'rope'] as const)('reads the recorded %s instead of the live constraint', async (kind) => {
+    const p = await setupRecording(kind)
+    await p.steps(4)
+    p.seek(1)
+    click(p.canvas, { x: 4, y: 4 })
+    p.poll()
+    const reading = () => panel(p.host, t('readout.title', { id: 'link' }))?.textContent ?? ''
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 1.00 N' : 'T: 1.00 N')
+    if (kind === 'spring') expect(reading()).toContain('Δx: 0.010 m')
+    p.seek(4)
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 4.00 N' : 'T: 4.00 N')
+  })
+
+  it('paints the historical body pose and localizes the time label', async () => {
+    const translations: Array<[number, number]> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { translations.length = 0 }
+        if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    await p.steps(5)
+    p.seek(1)
+    expect(translations).toContainEqual([expect.closeTo(450.6, 8), 300])
+    expect(translations).not.toContainEqual([453, 300])
+    expect(p.host.textContent).toContain('t = 0,02 s')
+    const language = [...p.host.querySelectorAll('select')].find((select) => select.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, 'en'))
+    expect(p.host.textContent).toContain('t = 0.02 s')
+  })
+
+
+  it('keeps recorded force vectors when gravity and force change later at the live tip', async () => {
+    let path: number[][] = []
+    const arrows: Array<{ color: unknown; path: number[][] }> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { arrows.length = 0 }
+        if (key === 'beginPath') return () => { path = [] }
+        if (key === 'moveTo' || key === 'lineTo') return (...point: number[]) => { path.push(point) }
+        if (key === 'stroke') return () => {
+          if (target.strokeStyle === '#d97742' || target.strokeStyle === '#2e7d32') arrows.push({ color: target.strokeStyle, path })
+        }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(1)
+    const recorded = structuredClone(arrows)
+    expect(recorded).toHaveLength(2)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.magnitude']), 30))
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    await p.steps(1)
+    expect(arrows).not.toEqual(recorded)
+    p.seek(1)
+    expect(arrows).toEqual(recorded)
+  })
+
+})

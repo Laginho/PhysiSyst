@@ -11,8 +11,9 @@ export interface AccelerationReadout {
 
 /**
  * Elapsed-carry bookkeeping for the acceleration readout.
- * The readout is Δv/elapsed where elapsed = n·TIMESTEP for the last batch
- * (n steps per frame at the current speed). Rebuild/reset reset the history.
+ * The readout is Δv/elapsed where elapsed = n·TIMESTEP for the supplied batch.
+ * App supplies each step separately (n = 1) so recordings retain that step's
+ * acceleration even when a frame runs multiple steps. Rebuild/reset reset the history.
  * Pure — App holds one instance in a ref and drives it from runSteps/syncWorld.
  */
 export interface AccelTracker {

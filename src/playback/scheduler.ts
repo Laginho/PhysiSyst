@@ -35,9 +35,12 @@ export interface PlaybackState {
   readonly acc: number
   /** TIMESTEPs executed since the last reset (monotonic; UI/test observable). */
   readonly stepsTaken: number
+  /** Displayed record, or null for the live world at the tip. */
+  readonly cursor: number | null
 }
 
 export type PlaybackAction =
+  | { readonly type: 'seek'; readonly index: number; readonly length: number }
   | { readonly type: 'play' }
   | { readonly type: 'pause' }
   /** Discard the running world and rebuild it from the document. */
@@ -68,18 +71,24 @@ export function clampSpeed(speed: number): number {
 }
 
 export function initialPlayback(speed: number = DEFAULT_SPEED): PlaybackState {
-  return { status: 'paused', speed: clampSpeed(speed), acc: 0, stepsTaken: 0 }
+  return { status: 'paused', speed: clampSpeed(speed), acc: 0, stepsTaken: 0, cursor: null }
 }
 
 const NO_OP = { steps: 0, rebuild: false } as const
 
 export function advance(state: PlaybackState, action: PlaybackAction): PlaybackTransition {
   switch (action.type) {
+    case 'seek': {
+      const last = Math.max(0, action.length - 1)
+      const index = Math.min(last, Math.max(0, Math.trunc(action.index) || 0))
+      return { state: { ...state, status: 'paused', acc: 0, cursor: index === last ? null : index }, ...NO_OP }
+    }
+
     case 'play':
       // Idempotent, and the accumulator starts clean: stale sub-step credit
       // from before a pause would make the first resumed frame non-reproducible.
       if (state.status === 'playing') return { state, ...NO_OP }
-      return { state: { ...state, status: 'playing', acc: 0 }, ...NO_OP }
+      return { state: { ...state, status: 'playing', acc: 0, cursor: null }, ...NO_OP }
 
     case 'pause':
       if (state.status === 'paused') return { state, ...NO_OP }
@@ -89,7 +98,7 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
       // Pauses on purpose: a reset that kept running would immediately walk
       // away from the doc-initial state the user asked to look at. Speed
       // survives — it is a view preference, not world state.
-      return { state: { ...state, status: 'paused', acc: 0, stepsTaken: 0 }, steps: 0, rebuild: true }
+      return { state: { ...state, status: 'paused', acc: 0, stepsTaken: 0, cursor: null }, steps: 0, rebuild: true }
 
     case 'setSpeed':
       // `acc` is deliberately preserved: a slider drag fires many change events
@@ -110,7 +119,7 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
 
     case 'stepOnce':
       // Exactly one TIMESTEP, at any speed and in either status, and it resets
-      // nothing — the fractional credit and the status ride through untouched.
-      return { state: { ...state, stepsTaken: state.stepsTaken + 1 }, steps: 1, rebuild: false }
+      // no live-world state: fractional credit and status ride through untouched.
+      return { state: { ...state, cursor: null, stepsTaken: state.stepsTaken + 1 }, steps: 1, rebuild: false }
   }
 }

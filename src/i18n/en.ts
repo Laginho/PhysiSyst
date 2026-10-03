@@ -7,6 +7,8 @@ export const en = {
   'playback.stepTitle': 'advance exactly one step (1/60 s), at any speed',
   'playback.reset': '⟲ reset',
   'playback.resetTitle': 'return to initial document state',
+  'playback.timeLabel': 'Time',
+  'playback.scrubbedEditHint': 'Return to the end of the recording to edit',
   'playback.speedLabel': 'speed',
   'playback.undoTitle': 'undo (Ctrl+Z)',
   'playback.redoTitle': 'redo (Ctrl+Shift+Z or Ctrl+Y)',
