@@ -272,6 +272,7 @@ describe('initial velocity overlay (PHY-59)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { strokes.length = 0; labels.length = 0 }
         if (key === 'stroke') return () => { strokes.push(target.strokeStyle) }
+        if (key === 'measureText') return () => ({ width: 10 })
         if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
         return target[key] ?? (() => {})
       },
@@ -2325,6 +2326,7 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
     const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
       get: (_t, name) => (...args: unknown[]) => {
         if (name === 'lineTo') lineTos.push([args[0] as number, args[1] as number])
+        if (name === 'measureText') return { width: 10 }
       },
       set: () => true,
     })
@@ -2746,6 +2748,7 @@ describe('recorded time player (PHY-64)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { translations.length = 0 }
         if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
@@ -2851,6 +2854,7 @@ describe('recorded time player (PHY-64)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { translations.length = 0 }
         if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
@@ -3069,6 +3073,7 @@ describe('recorded time player (PHY-64)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { translations.length = 0 }
         if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
@@ -3096,6 +3101,7 @@ describe('recorded time player (PHY-64)', () => {
         if (key === 'stroke') return () => {
           if (target.strokeStyle === '#d97742' || target.strokeStyle === '#2e7d32') arrows.push({ color: target.strokeStyle, path })
         }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })

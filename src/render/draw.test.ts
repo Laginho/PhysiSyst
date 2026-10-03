@@ -63,12 +63,13 @@ describe('massLabels (derived from the Scene on every render, never stored)', ()
 type LogEntry = { kind: 'call' | 'set'; name: string; args?: unknown[]; value?: unknown }
 
 /** Records every method call and property assignment without needing a real canvas. */
-function recordingCtx(): { ctx: CanvasRenderingContext2D; log: LogEntry[] } {
+function recordingCtx(widths: Record<string, number> = {}): { ctx: CanvasRenderingContext2D; log: LogEntry[] } {
   const log: LogEntry[] = []
   const proxy = new Proxy({} as Record<PropertyKey, unknown>, {
     get(_t, name) {
       return (...args: unknown[]) => {
         log.push({ kind: 'call', name: String(name), args })
+        if (name === 'measureText') return { width: widths[String(args[0])] ?? 10 }
       }
     },
     set(_t, name, value) {
@@ -255,6 +256,96 @@ function textsWithFont(log: LogEntry[]): Array<{ text: unknown; x: number; y: nu
 }
 
 const fontPx = (font: unknown) => Number(/(\d+(?:\.\d+)?)px/.exec(String(font))![1])
+
+/** Replay the canvas text state and rigid transforms to inspect screen positions. */
+function screenTexts(log: LogEntry[]) {
+  let state = { x: 0, y: 0, angle: 0, font: '', align: 'start' }
+  const stack: typeof state[] = []
+  const texts: Array<typeof state & { text: string }> = []
+  for (const e of log) {
+    if (e.kind === 'set') {
+      if (e.name === 'font') state.font = String(e.value)
+      if (e.name === 'textAlign') state.align = String(e.value)
+      continue
+    }
+    const args = e.args!
+    if (e.name === 'save') stack.push({ ...state })
+    if (e.name === 'restore') state = stack.pop()!
+    if (e.name === 'rotate') state.angle += Number(args[0])
+    if (e.name === 'translate' || e.name === 'fillText') {
+      const offset = e.name === 'fillText' ? 1 : 0
+      const x = Number(args[offset]), y = Number(args[offset + 1])
+      const point = {
+        ...state,
+        x: state.x + x * Math.cos(state.angle) - y * Math.sin(state.angle),
+        y: state.y + x * Math.sin(state.angle) + y * Math.cos(state.angle),
+      }
+      if (e.name === 'translate') state = point
+      else texts.push({ ...point, text: String(args[0]) })
+    }
+  }
+  return texts
+}
+
+describe('mass label layout (PHY-60)', () => {
+  it('centers the measured base and smaller, lowered subscript together', () => {
+    const { ctx, log } = recordingCtx({ m: 20, a: 8, b: 8 })
+    drawScene(ctx, sceneWith([makeBody('a', 'rectangle'), makeBody('b', 'rectangle')]), CAMERA, 900, 600)
+    const texts = screenTexts(log)
+    expect(texts.map((t) => t.text)).toEqual(['m', 'a', 'm', 'b'])
+    const [base, sub] = texts.slice(2)
+    expect(fontPx(base!.font)).toBe(16)
+    expect(fontPx(sub!.font)).toBeLessThan(16)
+    const left = base!.x - (base!.align === 'right' ? 20 : base!.align === 'center' ? 10 : 0)
+    const right = sub!.x + (sub!.align === 'left' ? 8 : sub!.align === 'center' ? 4 : 0)
+    expect((left + right) / 2).toBeCloseTo(450)
+    expect(base!.y).toBe(300)
+    expect(sub!.y).toBeGreaterThan(base!.y)
+    expect(scaledAtFillText(log)).toBe(false)
+  })
+
+  it.each([
+    { shape: 'rectangle', rotation: 0, right: 456, top: 294 },
+    { shape: 'rectangle', rotation: Math.PI / 4, right: 458.485281, top: 291.514719 },
+    { shape: 'circle', rotation: 0.7, right: 456, top: 294 },
+    { shape: 'triangle', rotation: Math.PI / 2, right: 450, top: 288 },
+  ] as const)('places an overflowing $shape at rotation $rotation above and right, upright', ({ shape, rotation, right, top }) => {
+    const common = { ...makeBody('small', shape), rotation }
+    const small: Body = shape === 'rectangle' ? { ...common, shape, width: 0.2, height: 0.2 }
+      : shape === 'circle' ? { ...common, shape, radius: 0.1 }
+        : { ...common, shape, base: 0.2, alpha: 45 }
+    const { ctx, log } = recordingCtx({ m: 10, M: 10, a: 8, b: 8 })
+    drawScene(ctx, sceneWith([makeBody('large', shape), small]), CAMERA, 900, 600)
+    const texts = screenTexts(log).slice(-2)
+    expect(texts.map((t) => t.text)).toEqual([shape === 'triangle' ? 'M' : 'm', 'b'])
+    for (const text of texts) {
+      const left = text.x - (text.align === 'right' ? 10 : text.align === 'center' ? 5 : 0)
+      expect(left).toBeGreaterThan(right)
+      expect(text.y + fontPx(text.font) / 2).toBeLessThan(top)
+      expect(text.angle).toBe(0)
+    }
+  })
+
+  it('uses measured width and a margin when deciding whether a label fits', () => {
+    for (const [baseWidth, outside] of [[70, false], [81, true], [100, true]] as const) {
+      const { ctx, log } = recordingCtx({ m: baseWidth, a: 8, b: 8 })
+      drawScene(ctx, sceneWith([makeBody('a', 'rectangle'), makeBody('b', 'rectangle')]), CAMERA, 900, 600)
+      const base = screenTexts(log).filter((t) => t.text === 'm' || t.text === 'm_b').at(-1)!
+      expect(base.y < 270).toBe(outside)
+      if (!outside) expect(base.y).toBe(300)
+    }
+  })
+
+  it.each(['rectangle', 'triangle'] as const)('preserves the bare symbol and font for a roomy %s', (shape) => {
+    const { ctx, log } = recordingCtx()
+    drawScene(ctx, sceneWith([makeBody('only', shape)]), CAMERA, 900, 600)
+    const texts = screenTexts(log)
+    expect(texts).toHaveLength(1)
+    expect(texts[0]!.text).toBe(shape === 'triangle' ? 'M' : 'm')
+    expect(texts[0]!.font).toBe('italic 16px system-ui, sans-serif')
+    expect(texts[0]!.align).toBe('center')
+  })
+})
 
 describe('vector label beside its arrow (drawArrow)', () => {
   const t = makeTransform(CAMERA, 900, 600)
