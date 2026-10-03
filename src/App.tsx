@@ -1,3 +1,4 @@
+import { bodyEnergy, systemEnergy, type BodyEnergy, type SystemEnergy } from './sim/energy'
 import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
@@ -87,7 +88,7 @@ import {
 } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
-import { getLang, setLang as persistLang, t, type Lang } from './i18n'
+import { fmtNum, getLang, setLang as persistLang, t, type Lang } from './i18n'
 import {
   AUTOSAVE_DELAY_MS,
   DebouncedSaver,
@@ -567,14 +568,14 @@ function PulleyPanel({ pulley, disabled, onPatch, onDelete }: { pulley: Pulley; 
 }
 
 /** Inspector for the selected rope (PHY-28): its path and L, both read-only — L is derived, never stored. */
-function RopePanel({ rope, length, disabled, onDelete }: { rope: Rope; length: number | null; disabled: boolean; onDelete: () => void }) {
+function RopePanel({ rope, length, lang, disabled, onDelete }: { rope: Rope; lang: Lang; length: number | null; disabled: boolean; onDelete: () => void }) {
   return (
     <fieldset disabled={disabled} style={{ width: 220 }}>
       <legend>{rope.id}</legend>
       <div style={{ fontSize: 12 }}>
         {t('rope.path')}: {[rope.a.bodyId, ...rope.via, rope.b.bodyId].join(' → ')}
       </div>
-      {length !== null && <div style={{ fontSize: 12 }}>L: {length.toFixed(3)} m</div>}
+      {length !== null && <div style={{ fontSize: 12 }}>L: {fmtNum(length, 3, lang)} m</div>}
       <button style={{ marginTop: 6 }} onClick={onDelete}>{t('panel.delete')}</button>
     </fieldset>
   )
@@ -694,6 +695,9 @@ export default function App() {
   const [simError, setSimError] = useState<string | null>(null)
   const [simWarnings, setSimWarnings] = useState<readonly string[]>([])
   const [readout, setReadout] = useState<{ x: number; y: number; vx: number; vy: number; ax: number; ay: number; approximate: boolean } | null>(null)
+  const [energyReadout, setEnergyReadout] = useState<{
+    body: BodyEnergy | null; system: SystemEnergy | null; hasSpring: boolean
+  }>({ body: null, system: null, hasSpring: false })
   const [constraintReadout, setConstraintReadout] = useState<ConstraintState | null>(null)
   const [stepsTick, setStepsTick] = useState(0)
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting')
@@ -967,11 +971,21 @@ export default function App() {
         setConstraintReadout(null)
       }
       const sel = selectedOf(selectionRef.current, 'body')
+      const scene = displayedScene()
+      const cursor = playbackRef.current.cursor
+      const frame = cursor === null ? liveFrameRef.current : recordingRef.current!.at(cursor)!
+      const body = scene.bodies.find(b => b.id === sel)
+      const state = body && frame.states?.get(body.id)
+      setEnergyReadout({
+        body: body && state ? bodyEnergy(scene, body, state) : null,
+        system: frame.states && scene.bodies.some(b => !b.fixed)
+          ? systemEnergy(scene, frame.states, frame.constraints, frame.pulleys) : null,
+        hasSpring: (scene.constraints ?? []).some(c => c.kind === 'spring'),
+      })
       if (!sel) {
         setReadout(null)
         return
       }
-      const scene = displayedScene()
       const curr = statesRef.current
       const s = curr?.get(sel)
       if (!s) {
@@ -1837,7 +1851,7 @@ export default function App() {
                 onChange={(e) => dispatch({ type: 'setSpeed', speed: e.target.valueAsNumber })}
               />
               <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
-                {playback.speed.toFixed(2)}×
+                {fmtNum(playback.speed, 2, lang)}×
               </span>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
@@ -2063,26 +2077,31 @@ export default function App() {
             </legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               <div>{t('readout.steps')}: {stepsTick}</div>
-              <div>{t('readout.speed')}: {playback.speed.toFixed(2)}×</div>
+              <div>{t('readout.speed')}: {fmtNum(playback.speed, 2, lang)}×</div>
               {selected && readout && (
                 <>
                   <div>
-                    {t('readout.position')}: ({readout.x.toFixed(2)}, {readout.y.toFixed(2)}) m
+                    {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.velocityMagnitude')}: {Math.hypot(readout.vx, readout.vy).toFixed(2)} m/s
+                    {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{Math.hypot(readout.ax, readout.ay).toFixed(2)} m/s²
+                    {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
                   </div>
                   <details>
                     <summary>{t('readout.more')}</summary>
                     <div>
-                      {t('readout.velocity')}: ({readout.vx.toFixed(2)}, {readout.vy.toFixed(2)}) m/s
+                      {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
                     </div>
                     <div>
-                      {t('readout.acceleration')}: ({readout.ax.toFixed(2)}, {readout.ay.toFixed(2)}) m/s²
+                      {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
                     </div>
+                    {energyReadout.body && <>
+                      <div>{t('readout.kinetic')}: {fmtNum(energyReadout.body.Ec, 2, lang)} J</div>
+                      <div>{t('readout.potential')}: {fmtNum(energyReadout.body.Epg, 2, lang)} J</div>
+                      <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s</div>
+                    </>}
                   </details>
                 </>
               )}
@@ -2093,16 +2112,16 @@ export default function App() {
                   {(selectedSpring.mass ?? 0) > 0 ? (
                     [constraintReadout.force.a, constraintReadout.force.b].map((F, i) => (
                       <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
-                        {numberedSymbol(t('readout.springForce'), i + 1)}: {F.toFixed(2)} N
+                        {numberedSymbol(t('readout.springForce'), i + 1)}: {fmtNum(F, 2, lang)} N
                       </div>
                     ))
                   ) : (
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {t('readout.springForce')}: {constraintReadout.force.a.toFixed(2)} N
+                      {t('readout.springForce')}: {fmtNum(constraintReadout.force.a, 2, lang)} N
                     </div>
                   )}
                   <div>
-                    {t('readout.springDx')}: {constraintReadout.dx.toFixed(3)} m
+                    {t('readout.springDx')}: {fmtNum(constraintReadout.dx, 3, lang)} m
                   </div>
                 </>
               )}
@@ -2110,7 +2129,7 @@ export default function App() {
                 <>
                   {(ropePerLeg ? constraintReadout.segments : [constraintReadout.tension]).map((T, i) => (
                     <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
-                      {t('readout.ropeTension')}{ropePerLeg ? subscript(i + 1) : ''}: {T.toFixed(2)} N
+                      {t('readout.ropeTension')}{ropePerLeg ? subscript(i + 1) : ''}: {fmtNum(T, 2, lang)} N
                     </div>
                   ))}
                   {constraintReadout.slack && <div>{t('readout.ropeSlack')}</div>}
@@ -2120,6 +2139,23 @@ export default function App() {
                 <div style={{ color: '#777' }}>{t('readout.noData')}</div>
               )}
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
+            </div>
+          </fieldset>
+          <fieldset style={{ width: 220 }}>
+            <legend>{t('readout.system')}</legend>
+            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+              {energyReadout.system ? <>
+                <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
+                <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
+                {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
+                <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
+                <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
+                <details>
+                  <summary>{t('readout.more')}</summary>
+                  <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
+                  <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
+                </details>
+              </> : <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
             </div>
           </fieldset>
           <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
@@ -2160,7 +2196,7 @@ export default function App() {
               onDelete={deleteSelected}
             />
           )}
-          {selectedRope && <RopePanel rope={selectedRope} disabled={structuralLocked} length={scenePath(doc, selectedRope)?.length ?? null} onDelete={deleteSelected} />}
+          {selectedRope && <RopePanel lang={lang} rope={selectedRope} disabled={structuralLocked} length={scenePath(doc, selectedRope)?.length ?? null} onDelete={deleteSelected} />}
           {selectedPulley && (
             <PulleyPanel pulley={selectedPulley} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
           )}

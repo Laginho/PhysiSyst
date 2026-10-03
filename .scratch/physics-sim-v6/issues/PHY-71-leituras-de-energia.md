@@ -1,5 +1,5 @@
 # PHY-71: Leituras de energia e momento no painel
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-70
 Review: agent
@@ -50,3 +50,28 @@ Chaves novas: `readout.system`, `readout.kinetic` ('E_c'), `readout.potential` (
 - Stage 2: inspected the polling readout, recorded/live frame selection, RopePanel and all toFixed consumers. Tests use the approved fmtNum and App DOM seams; edge cases include frame zero, no selection, empty and fixed-only scenes. Existing decimal expectations migrate with the tests. Initial focused red: fmtNum is not a function; body position received (6.10, 4.00), expected (6,10, 4,00); system fieldset absent; spring system reading empty.
 
 - Test harness correction: the fixed/empty parameter was declared but its fixture conversion was missing after a CRLF-sensitive edit. Added the conversion in a separate test-only commit. Proved red by removing the production non-fixed-body guard: both cases fail, expected sem leitura, received E_mec: 0,00 J (2 failed / 4 passed in the PHY-71 focus). Restored production passes both.
+
+
+#### Stage 2 implementation (2026-10-03)
+
+- Added fmtNum and eight matching catalog keys; migrated all App readout toFixed calls, including rope length and both speed labels. Selected-body energy stays inside the existing details; the system fieldset is independent of selection, conditionally includes spring energy, emphasizes mechanical energy, and puts momentum components in details.
+- The existing 100 ms poll calls the PHY-70 functions with the displayed scene and the selected recorded/live frame's states, constraints and pulleys. It uses the actual recorded state at cursor zero, even though drawing uses the document pose there. No energy formulas were duplicated in App; the magnitude of momentum is derived from the returned vector.
+- Final focused green: 2 files, 6 passed / 160 skipped. Initial red before implementation: 6 failed / 160 skipped. Existing tests for spring force, extension, rope tensions, rope length, playback, scene replacement and historical readouts retain their assertions with localized decimals.
+
+##### DOM mutate-verify evidence
+
+All mutations were applied to production, run against the new PHY-71 tests, and restored before further work:
+
+| New test | Production mutation | Red output |
+| --- | --- | --- |
+| localizes body, component and speed readings | fmtNum returns toFixed instead of toLocaleString | Expected (6,10, 4,00) m; received (6.10, 4.00) m. Focus: 4 failed / 2 passed (also fails direct fmtNum and energy formatting). |
+| shows body energy inside more and system energy without selection | selected body energy forced to null | Expected E_c: 1,39 J inside details; received only velocity/acceleration. 1 failed / 5 passed. |
+| uses recorded body and spring energy while paused, including frame zero | always use liveFrameRef instead of the cursor's record | Expected E_c: 0,04 J at frame 4; received E_c: 1,39 J from frame 10. 1 failed / 5 passed. |
+| same historical-energy test | pass [] instead of the frame constraints to systemEnergy | Expected E_el: 0,05 J; received E_el: 0,00 J. 1 failed / 5 passed. |
+| shows no data for a fixed system | remove scene.bodies.some(b => !b.fixed) guard | Expected sem leitura; received E_mec: 0,00 J. Both edge cases fail (2 failed / 4 passed). |
+| shows no data for an empty system | same non-fixed-body guard removal | Expected sem leitura; received E_mec: 0,00 J. Both edge cases fail (2 failed / 4 passed). |
+
+- Direct fmtNum mutation: toFixed returns 1.50 instead of expected 1,50. The original missing-export red is in the test-only commit.
+- Sandbox gate: 1063 passed / 15 failed, all 15 failures are Chromium DevTools connection/disconnection errors. Retried the complete gate outside the sandbox.
+
+- Final gate outside the sandbox: 32 test files / 1078 tests passed; lint, typecheck and build all exit 0. Existing Vite large-chunk warning remains. Final diff review and git diff --check passed; only Primary files and this ticket changed. Tests remain in separate commits (034cb48, dc7bf42), with no tests in the production commit. No manual visual session was performed; the existing Chromium layout suite passed. Ready for independent stage 3; no merge or push in stage 2.
