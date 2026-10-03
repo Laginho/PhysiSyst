@@ -791,11 +791,11 @@ export function assignPairRestitutions(scene: Scene): {
   const factor = new Map(scene.bodies.map((body) => [body.id, 0]))
   const adjacency = new Map<string, Array<{ to: string; logE: number }>>()
   for (const contact of scene.contacts) {
-    if (!(contact.e! > 0)) continue
-    for (const [from, to] of [[contact.a, contact.b], [contact.b, contact.a]]) {
-      const edges = adjacency.get(from!) ?? []
-      edges.push({ to: to!, logE: Math.log(contact.e!) })
-      adjacency.set(from!, edges)
+    if (contact.e === undefined || contact.e <= 0) continue
+    for (const [from, to] of [[contact.a, contact.b], [contact.b, contact.a]] as const) {
+      const edges = adjacency.get(from) ?? []
+      edges.push({ to, logE: Math.log(contact.e) })
+      adjacency.set(from, edges)
     }
   }
   const visited = new Set<string>()
@@ -856,7 +856,10 @@ export function assignPairRestitutions(scene: Scene): {
   return { factor, useMinFallback, warnings }
 }
 
-function colliderDescFor(body: Scene['bodies'][number], friction: number, useMaxFallback: boolean): RAPIER.ColliderDesc {
+function colliderDescFor(
+  body: Scene['bodies'][number], friction: number, useMaxFallback: boolean,
+  restitution: number, useMinFallback: boolean,
+): RAPIER.ColliderDesc {
   let desc: RAPIER.ColliderDesc
   switch (body.shape) {
     case 'rectangle':
@@ -872,7 +875,8 @@ function colliderDescFor(body: Scene['bodies'][number], friction: number, useMax
       break
     }
   }
-  desc.setRestitution(0)
+  desc.setRestitution(restitution)
+  desc.setRestitutionCombineRule(useMinFallback ? RAPIER.CoefficientCombineRule.Min : RAPIER.CoefficientCombineRule.Multiply)
   desc.setFriction(friction)
   desc.setFrictionCombineRule(useMaxFallback ? RAPIER.CoefficientCombineRule.Max : RAPIER.CoefficientCombineRule.Average)
   return desc
@@ -932,7 +936,8 @@ class RapierSimulator implements Simulator {
     let warnings: string[] = []
     try {
       const solved = assignPairFrictions(scene)
-      warnings = solved.warnings
+      const restitution = assignPairRestitutions(scene)
+      warnings = [...solved.warnings, ...restitution.warnings]
 
       for (const body of scene.bodies) {
         const desc = body.fixed ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic()
@@ -948,7 +953,10 @@ class RapierSimulator implements Simulator {
         if (!body.fixed && (body.vx !== undefined || body.vy !== undefined)) {
           rigid.setLinvel({ x: body.vx ?? 0, y: body.vy ?? 0 }, true)
         }
-        const colliderDesc = colliderDescFor(body, solved.friction.get(body.id) ?? 0, solved.useMaxFallback)
+        const colliderDesc = colliderDescFor(
+          body, solved.friction.get(body.id) ?? 0, solved.useMaxFallback,
+          restitution.factor.get(body.id) ?? 0, restitution.useMinFallback,
+        )
         if (!body.fixed) colliderDesc.setMass(body.mass)
         colliders.set(body.id, world.createCollider(colliderDesc, rigid))
         bodies.set(body.id, rigid)

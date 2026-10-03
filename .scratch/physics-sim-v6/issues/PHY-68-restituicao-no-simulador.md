@@ -1,5 +1,5 @@
 # PHY-68: Restituição no simulador por fatores por corpo
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-67
 Review: human
@@ -47,3 +47,14 @@ ADR-0005, curto, no formato dos anteriores: contexto (Rapier sem restituição p
 - 2026-10-03 Stage 1 (planner, grilling com proxy). Bruno decidiu: fatores por corpo com Multiply, `r = 0` sem par declarado, exato quando solúvel, fallback + aviso.
 - Proxy decided: solve em espaço log; fallback = máx por corpo com regra Min (mantém pares não declarados em 0 e acerta o preset de colisão mesmo sem o solve); ADR-0005 referenciando a 0003; aviso em inglês cru como os existentes.
 - Planner: Rapier 0.20 não tem limiar de velocidade para restituição; bola com `e = 1` quica para sempre. Aceito, vai para o FINAL_REPORT no PHY-74.
+
+#### Stage 2 — 2026-10-03
+
+- Costuras: `assignPairRestitutions` direto e `createSimulator`/`step`/`readStates`, conforme o contrato. Chamadores examinados: `colliderDescFor` é usado por `buildWorld`; construtor e `replaceScene` usam esse mesmo build e propagam seus avisos. O App apresenta os avisos do simulador. Atrito permanece independente; os avisos das duas soluções são concatenados. Aros de polia mantêm restituição zero e Min.
+- Casos cobertos: par isolado, corpo sem aresta positiva, componente bipartida, ciclos par e ímpar solúveis, ciclo par inconsistente, zero explícito e `e` ausente em conflito, grafo vazio, colisões frontais com 0/0,5/1 e chão não declarado. O teste frontal anterior está intacto. ADR-0005 registra mecanismo, fallback e desvio residual aceito.
+- Testes de fatores em `c293613`: vermelho por função inexistente, 10 falhas e 2 aprovados. Implementação em `a4efdef`: 12/12 aprovados. Testes físicos em `f4817a9`: 2 falhas (`e = 1` e `e = 0.5`), 2 aprovados, 226 não selecionados antes da integração. Verde após integração: 242/242 nos dois arquivos.
+- Mutate-verify dos fatores: somar 1 a cada fator devolvido fez falhar os 10 testes novos (2 anteriores passaram). Log: `%TEMP%/phy68-mutate-factors.log`.
+- Mutate-verify físico por teste: trocar `desc.setRestitution(restitution)` por `desc.setRestitution(0)` fez falhar os casos `e = 1` (erro 1,49999988 > 0,09) e `e = 0.5` (erro 0,74999988 > 0,0225): 2 falhas, 2 aprovados, 226 não selecionados. Log: `%TEMP%/phy68-mutate-inelastic.log`.
+- Trocar a mesma chamada por `desc.setRestitution(1)` fez falhar `e = 0.5` (erro 0,75 > 0,0225), `e = 0` (erro 1,5 > 0,045) e o chão não declarado (velocidade 6,212995 > 0,310650): 3 falhas, 1 aprovado, 226 não selecionados. Log: `%TEMP%/phy68-mutate-elastic.log`. Todas as mutações foram restauradas antes do gate.
+- Primeira tentativa do gate no sandbox: 1042 aprovados e 15 falhas de conexão/desconexão do Chromium DevTools em testes preexistentes. Log: `%TEMP%/phy68-gate.log`. Reexecução fora do sandbox para validar o gate completo.
+- Gate final fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; 31 arquivos, 1057 testes aprovados, lint/typecheck/build aprovados. Log: `%TEMP%/phy68-gate-unsandboxed.log`. Diff revisado e `git diff --check` limpo; nenhum artefato gerado incluído. Limitação prevista: pares não declarados entre dois corpos com fatores positivos podem herdar restituição; fallback é aproximado, conforme ADR-0005. Stage 2 encerrado; revisão independente pendente.
