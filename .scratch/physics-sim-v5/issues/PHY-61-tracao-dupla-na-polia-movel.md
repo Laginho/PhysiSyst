@@ -1,5 +1,5 @@
 # PHY-61: Trechos paralelos numa polia viram uma seta 2T
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -51,3 +51,14 @@ O fator vai num campo opcional `factor` de `OverlayArrow` (ausente = 1). `vector
 - Mutate-verify on production overlay.ts: disabling fusion caused 6 failures; ignoring the angle caused 2 failures (6/180 degrees); ignoring perSegment caused 2 failures (mass on movable/fixed pulley); dropping factor prefixes caused 2 failures (2T/T and numbered regenerated arrows); using unnormalized leg lengths caused 2 failures (4/5 degrees). Every mutation was restored.
 - Gate: 31 test files, 1016 tests passed; lint, typecheck and production build passed. The sandbox attempt had 15 Chromium startup/disconnection failures (GPU permissions); the complete gate passed outside the sandbox. Build retains the large-chunk warning.
 - Final diff inspected: only the three Primary files plus this ticket; no test changes in the implementation commit. Stage 3 remains pending; no merge performed.
+
+#### Resolution (2026-10-03)
+Verdict: Approve
+
+- Standards: zero findings in the independent review. Changes stay within the three Primary files and ticket metadata; no actionable code smells. Test-only commit `ca7bb29` precedes implementation `4ee372d`, whose diff does not touch tests.
+- Spec: zero findings in the independent review. Criteria 1–4 met: the ideal movable pulley combines parallel legs into one upward arrow sized at 2T; labels distinguish 2T/T; angles above 5 degrees and per-segment tensions keep separate arrows. Unequal leg lengths use normalized mean directions; slack, missing readings, loose wraps and zero-length legs preserve existing behavior.
+- Proxy decision reviewed: include only the three label lookups in `App.paint` and replace the Map with a callable lookup by kind/key plus factor, preserving regenerated selection arrows and rope numbering. All three consumers migrated; the approved seam uses typecheck rather than a new App test.
+- Files: `src/render/overlay.ts`, `src/render/overlay.test.ts`, `src/App.tsx`; stage 3 changed only this ticket and the ledger.
+- Red proof independently reproduced with `npm test -- src/render/overlay.test.ts --reporter=dot`: temporarily replacing production `overlay.ts` with the session-base version caused 13 failures / 39 passes (52 tests). The movable-pulley preset expected 2 arrows but received 3; the new callable label contract failed against the old Map. Production was restored byte for byte, with no remaining source diff.
+- Green proof: the restored overlay's 52 tests passed within the independent full gate. `npm test && npm run lint && npm run typecheck && npm run build` passed: 31 test files, 1016 tests; lint, typecheck and production build successful. Existing Vite large-chunk warning remains. Commands ran outside the unavailable Windows sandbox (process creation error 1909).
+- Rebase onto `sweatshop/2026-10-02-2210` was already up to date. Merged locally without squash as `2f3f0b6`; the validated source/test tree is unchanged. Ticket closure and ledger entry committed together on the session branch. No push or PR in this session flow.
