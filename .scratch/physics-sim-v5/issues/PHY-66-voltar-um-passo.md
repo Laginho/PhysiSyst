@@ -1,5 +1,5 @@
 # PHY-66: Voltar um passo
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: agent
@@ -42,3 +42,10 @@ O espelho do passo único: um botão "voltar um passo" ao lado do "Passo" e a se
 
 - 2026-10-02 Aberto no stage 1 dos tickets do feedback da v4. O proxy propôs separar "voltar um passo" do PHY-64 e o Bruno aceitou no fatiamento (PHY-64, PHY-65, PHY-66).
 - Proxy decided: atalhos fora do PHY-64, → continua passo único, ← e o botão de voltar viram este ticket — mantém o PHY-64 no tamanho de um ticket.
+
+- 2026-10-03 Implementation: back button and ArrowLeft seek the preceding recorded frame, pause through existing seek, and leave cursor zero unchanged. Added Portuguese/English labels, title and shortcut-table entry. No simulator step or rebuild.
+- Mutation evidence, `PHY-66 button seeks backward from live and recorded play, stopping at zero`: changed production seek target from `index - 1` to `index`; failed at App.test.ts:2771, `expected '4' to be '3'`.
+- Mutation evidence, `PHY-66 keyboard seeks backward from live and recorded play, stopping at zero`: same production mutation; failed at App.test.ts:2771, `expected '4' to be '3'`.
+- Mutation evidence, `PHY-66 lists the left-arrow shortcut with localized text`: changed production table translation to `shortcuts.stepOnce`; failed at App.test.ts:2803, `expected 'avançar um passo' to be 'voltar um passo'`. Combined DOM mutation run: 3 failed / 126 skipped. All mutations restored.
+- Shortcut mutation: replaced production `return 'stepBack'` with `return null`; test failed with `expected null to be 'stepBack'`. Restored afterward.
+- Green: focused new tests 4 passed / 143 skipped. Full gate: 31 files, 1007 tests passed; lint, typecheck and build passed. Initial sandbox run had 15 Chromium connection failures (992 passed); rerun outside sandbox passed all 1007. Build retains large-chunk warning. Final diff reviewed: only Primary files and this ticket; code commit does not modify tests.

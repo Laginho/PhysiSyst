@@ -1297,6 +1297,9 @@ export default function App() {
         case 'stepOnce':
           stepOnce()
           break
+        case 'stepBack':
+          stepBack()
+          break
         case 'reset':
           dispatch({ type: 'reset' })
           break
@@ -1326,6 +1329,12 @@ export default function App() {
     void ensureSim().then((sim) => {
       if (sim) dispatch({ type: 'play' })
     })
+  }
+
+  function stepBack() {
+    const length = recordingRef.current!.length
+    const index = playbackRef.current.cursor ?? length - 1
+    if (index > 0) dispatch({ type: 'seek', index: index - 1, length })
   }
 
   function stepOnce() {
@@ -1756,6 +1765,9 @@ export default function App() {
             <button onClick={togglePlay} style={{ minWidth: 110 }}>
               {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
             </button>
+            <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
+              {t('playback.stepBack')}
+            </button>
             <button onClick={stepOnce} title={t('playback.stepTitle')}>
               {t('playback.step')}
             </button>
@@ -1800,6 +1812,7 @@ export default function App() {
                         <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>←</td><td>{t('shortcuts.stepBack')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
