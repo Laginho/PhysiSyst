@@ -1,5 +1,5 @@
 # PHY-68: Restituição no simulador por fatores por corpo
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-67
 Review: human
@@ -43,14 +43,6 @@ ADR-0005, curto, no formato dos anteriores: contexto (Rapier sem restituição p
 - `src/sim/acceptance.test.ts`: critérios 5 e 6 com cenas inline no molde do teste de esferas frontais (velocidade por força de lançamento ou `vx` direto); vermelhos hoje porque todo colisor tem restituição 0. Chamam o simulador direto; não é costura de DOM.
 
 ## Comments
-
-#### Stage 2 — R1 retry (2026-10-03)
-
-- Existing approved seam: `createSimulator`/`step`/`readStates` in `acceptance.test.ts`. Callers checked: restitution factors reach `colliderDescFor` through `buildWorld`, shared by construction and `replaceScene`; warnings propagate through both. The guard must check Rapier's f32 range, including positive values rounding to zero, while leaving ordinary factors unchanged.
-- Red regression: `npx vitest run src/sim/acceptance.test.ts -t 'overflows Rapier f32'`: 1 failed, 230 skipped. With the review's A-B `1e-40`, B-C `1` scene, momentum error was 3, exceeding 0.09. No production changes in this test commit.
-- Fix: test representability with `Math.fround` before accepting solved factors; overflow or rounding to zero uses the existing whole-scene Min fallback and warning. ADR-0005 now names the f32 boundary. Ordinary factor values and the existing fallback mapping remain unchanged.
-- Mutate-verify for `preserves collision momentum when a solved restitution factor overflows Rapier f32`: replaced `Math.fround(value)` with `value` in production; the focused command above failed with `AssertionError: expected 3 to be less than or equal to 0.09` at the momentum assertion (1 failed, 230 skipped). Mutation restored. The two focused files passed 243/243 tests with the fix.
-- Final gate: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0 outside the sandbox; 31 files and 1058 tests passed; lint, typecheck and build passed. Build retains its large-chunk warning. Final diff checked: only the approved test, solver, ADR and ticket; original frontal test unchanged, no generated artifacts. R1 is ready for independent stage-3 review; the documented approximate fallback remains a limitation.
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy). Bruno decidiu: fatores por corpo com Multiply, `r = 0` sem par declarado, exato quando solúvel, fallback + aviso.
 - Proxy decided: solve em espaço log; fallback = máx por corpo com regra Min (mantém pares não declarados em 0 e acerta o preset de colisão mesmo sem o solve); ADR-0005 referenciando a 0003; aviso em inglês cru como os existentes.
@@ -113,3 +105,15 @@ O agente principal repetiu a comparação com o simulador da base carregado por 
 - Gate de revisão fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; **31 arquivos e 1057 testes aprovados**, lint/typecheck/build aprovados. Log: `%TEMP%/phy68-review-gate.log`. O probe adicional demonstra R1 apesar desse verde. `git diff --check` limpo; nenhum artefato gerado incluído.
 - Pendente para a etapa 2: escrever teste de regressão na costura pública existente e corrigir R1, garantindo que os fatores transferidos ao Rapier sejam representáveis ou que a degradação use o fallback com aviso. Precisa de teste novo, portanto não é correção pequena permitida ao revisor. Critérios e Primary files não foram reescritos.
 - Totais por eixo: Standards — 2 achados (documentação corrigida e metadados históricos não bloqueantes), nenhum smell acionável; Spec — 1 regressão P2 pendente. `Stage: to-implement`, sem merge e sem linha PHY-68 no ledger; a retomada continua nesta mesma branch e trata R1.
+
+#### Stage 2 — R1 retry (2026-10-03)
+
+- Existing approved seam: `createSimulator`/`step`/`readStates` in `acceptance.test.ts`. Callers checked: restitution factors reach `colliderDescFor` through `buildWorld`, shared by construction and `replaceScene`; warnings propagate through both. The guard must check Rapier's f32 range, including positive values rounding to zero, while leaving ordinary factors unchanged.
+- Red regression: `npx vitest run src/sim/acceptance.test.ts -t 'overflows Rapier f32'`: 1 failed, 230 skipped. With the review's A-B `1e-40`, B-C `1` scene, momentum error was 3, exceeding 0.09. No production changes in this test commit.
+- Fix: test representability with `Math.fround` before accepting solved factors; overflow or rounding to zero uses the existing whole-scene Min fallback and warning. ADR-0005 now names the f32 boundary. Ordinary factor values and the existing fallback mapping remain unchanged.
+- Mutate-verify for `preserves collision momentum when a solved restitution factor overflows Rapier f32`: replaced `Math.fround(value)` with `value` in production; the focused command above failed with `AssertionError: expected 3 to be less than or equal to 0.09` at the momentum assertion (1 failed, 230 skipped). Mutation restored. The two focused files passed 243/243 tests with the fix.
+- Final gate: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0 outside the sandbox; 31 files and 1058 tests passed; lint, typecheck and build passed. Build retains its large-chunk warning. Final diff checked: only the approved test, solver, ADR and ticket; original frontal test unchanged, no generated artifacts. R1 is ready for independent stage-3 review; the documented approximate fallback remains a limitation.
+
+#### Stage 3 — correção documental da re-revisão (2026-10-03)
+
+- Movido o bloco de retomada R1 para depois da revisão que o originou, preservando o conteúdo e a ordem de anexação do histórico exigida por `docs/agents/issue-tracker.md`. Nenhum código ou teste alterado.
