@@ -1,5 +1,5 @@
 # PHY-66: Voltar um passo
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: agent
@@ -37,11 +37,11 @@ O espelho do passo único: um botão "voltar um passo" ao lado do "Passo" e a se
 
 ## Comments
 
-- 2026-10-03 Stage 2: inspected keyboard mapping/listener, transport buttons, seek dispatch and recorded-player harness. New action uses existing seek; no physics stepping or simulator initialization. Boundary: initial single record and cursor zero must remain a no-op, even during play. Dependency PHY-64 is done on the session base.
-- Red: `npx vitest run src/editor/shortcuts.test.ts src/App.test.ts -t 'ArrowLeft|PHY-66'`: 4 failed, 143 skipped. ArrowLeft returned null; both DOM transport cases found no back button; shortcut table had no left-arrow row.
-
 - 2026-10-02 Aberto no stage 1 dos tickets do feedback da v4. O proxy propôs separar "voltar um passo" do PHY-64 e o Bruno aceitou no fatiamento (PHY-64, PHY-65, PHY-66).
 - Proxy decided: atalhos fora do PHY-64, → continua passo único, ← e o botão de voltar viram este ticket — mantém o PHY-64 no tamanho de um ticket.
+
+- 2026-10-03 Stage 2: inspected keyboard mapping/listener, transport buttons, seek dispatch and recorded-player harness. New action uses existing seek; no physics stepping or simulator initialization. Boundary: initial single record and cursor zero must remain a no-op, even during play. Dependency PHY-64 is done on the session base.
+- Red: `npx vitest run src/editor/shortcuts.test.ts src/App.test.ts -t 'ArrowLeft|PHY-66'`: 4 failed, 143 skipped. ArrowLeft returned null; both DOM transport cases found no back button; shortcut table had no left-arrow row.
 
 - 2026-10-03 Implementation: back button and ArrowLeft seek the preceding recorded frame, pause through existing seek, and leave cursor zero unchanged. Added Portuguese/English labels, title and shortcut-table entry. No simulator step or rebuild.
 - Mutation evidence, `PHY-66 button seeks backward from live and recorded play, stopping at zero`: changed production seek target from `index - 1` to `index`; failed at App.test.ts:2771, `expected '4' to be '3'`.
@@ -49,3 +49,5 @@ O espelho do passo único: um botão "voltar um passo" ao lado do "Passo" e a se
 - Mutation evidence, `PHY-66 lists the left-arrow shortcut with localized text`: changed production table translation to `shortcuts.stepOnce`; failed at App.test.ts:2803, `expected 'avançar um passo' to be 'voltar um passo'`. Combined DOM mutation run: 3 failed / 126 skipped. All mutations restored.
 - Shortcut mutation: replaced production `return 'stepBack'` with `return null`; test failed with `expected null to be 'stepBack'`. Restored afterward.
 - Green: focused new tests 4 passed / 143 skipped. Full gate: 31 files, 1007 tests passed; lint, typecheck and build passed. Initial sandbox run had 15 Chromium connection failures (992 passed); rerun outside sandbox passed all 1007. Build retains large-chunk warning. Final diff reviewed: only Primary files and this ticket; code commit does not modify tests.
+
+- 2026-10-03 Stage 3: corrected comment chronology to retain the original planning entries before the appended Stage 2 evidence, as required by docs/agents/issue-tracker.md. No production or test changes.
