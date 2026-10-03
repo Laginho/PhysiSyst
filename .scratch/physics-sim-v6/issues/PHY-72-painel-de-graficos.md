@@ -1,5 +1,5 @@
 # PHY-72: Painel de gráficos da gravação
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: PHY-71
 Review: human
@@ -61,3 +61,5 @@ Módulo puro `src/render/graph.ts`:
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy). Bruno decidiu: painel recolhível sob a barra de transporte, largura da coluna do canvas, botão na barra.
 - Proxy decided: 180 px fixos, estado só em React, fechado por padrão; `<select>` nativo com padrão energia; paleta de 4 cores própria; legenda no canto; Canvas 2D sem lib; y auto-escala, t até 10 s, 2–3 marcas, `fmtNum`; `graphLayout` puro com testes unitários; a11y com `role="img"`, `aria-label`, `aria-pressed`, `aria-controls`; sem cache.
+
+- 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-72-painel-de-graficos-asked-20261003-2023`): PHY-72 ficou `blocked`, registrado no commit `5e80601`. /  / Falta definir `E_el` para um corpo selecionado. Recomendo reservar energia elástica ao sistema e mostrar, por corpo, `E_c`, `E_pg` e `E_mec = E_c + E_pg`. /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige “`Stage: blocked` with the question under `## Comments`” nessa situação, sem proxy disponível. /  / Nenhuma alteração de código; testes não executados. Árvore limpa.
