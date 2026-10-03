@@ -252,6 +252,74 @@ function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
   return [...(box?.children ?? [])].find((el) => el !== canvas) as HTMLElement | undefined
 }
 
+describe('initial velocity overlay (PHY-59)', () => {
+  it.each([
+    ['global', 'step'],
+    ['selected', 'step'],
+    ['global', 'play'],
+    ['selected', 'play'],
+  ] as const)('shows v0 only before stepping and after reset: %s / %s', async (mode, transport) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const strokes: unknown[] = []
+    const labels: Array<{ color: unknown; text: string }> = []
+    // Record the current canvas frame at the browser boundary; all overlay
+    // producers and drawing functions remain real.
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { strokes.length = 0; labels.length = 0 }
+        if (key === 'stroke') return () => { strokes.push(target.strokeStyle) }
+        if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const scene = blankScene()
+    scene.bodies = [{ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0, vx: 2 }]
+    scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 }]
+    const step = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), step })
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'velocity', name: 'Velocity', updatedAt: 1 }])
+      saveScene(storage, 'velocity', scene)
+      saveCurrentSceneId(storage, 'velocity')
+    })
+    await settleSimImport()
+    if (mode === 'global') {
+      const label = [...host.querySelectorAll('label')].find((el) => el.textContent?.trim() === ptBR['panel.showVectors'])!
+      act(() => label.querySelector('input')!.click())
+    } else {
+      click(canvas, { x: 6, y: 4 })
+    }
+    const expectOverlay = (visible: boolean) => {
+      expect(strokes.includes('#43a047')).toBe(visible)
+      expect(labels.filter((label) => label.color === '#43a047').map((label) => label.text)).toEqual(visible ? ['v₀'] : [])
+      expect(strokes).toContain('#d97742')
+      expect(labels.filter((label) => label.color === '#d97742').map((label) => label.text)).toEqual(['F'])
+    }
+    expectOverlay(true)
+    if (transport === 'step') {
+      await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    } else {
+      await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+      expectOverlay(true)
+      act(() => frame(16))
+      act(() => frame(32))
+    }
+    expect(step).toHaveBeenCalled()
+    expectOverlay(false)
+    if (transport === 'play') {
+      act(() => findButton(host, ptBR['playback.pause'])!.click())
+      expectOverlay(false)
+    }
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    expectOverlay(true)
+  })
+})
+
 describe('smoke', () => {
   it('loads the app module and exports a component', () => {
     expect(typeof App).toBe('function')

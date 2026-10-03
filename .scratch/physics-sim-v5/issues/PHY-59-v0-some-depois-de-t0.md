@@ -1,5 +1,5 @@
 # PHY-59: A seta v₀ só aparece em t = 0
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -30,5 +30,8 @@ A seta de velocidade inicial (`initialVelocityArrows`) é desenhada a partir do 
 - `src/App.test.ts`: critérios 1 a 3, observando as chamadas de desenho do canvas com a cor da camada v₀ (`#43a047`) ou o rótulo `v_0`. O 2 é vermelho hoje. É uma costura de DOM: o ticket registra, por teste novo, a mutação aplicada no `App.tsx` e a saída vermelha (AGENTS.md, Mutate-verify).
 
 ## Comments
+
+- 2026-10-03 Stage 2: `paint` has one caller, `repaint`, shared by transport, selection, document/language changes and resize. The boundary is zero steps (including play before its first frame and reset); empty arrow layers are already supported by `vectorLabels`. No other vector producer changes.
+- Red: `npm test -- src/App.test.ts -t PHY-59`: 4 failed, 95 skipped (99 total). Each global/selected × step/play case fails after advancing: `AssertionError: expected true to be false` at the canvas stroke check for `#43a047`. The initial-frame assertions pass, including the unchanged applied force. Tests use the real drawing path and record the current canvas frame.
 
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 6, print do pêndulo com v₀ durante o movimento).
