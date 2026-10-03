@@ -1,5 +1,5 @@
 # PHY-67: Coeficiente de restituição no Contact e no editor
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -61,3 +61,23 @@ O simulador não muda neste ticket: `e` é lido e escrito, mas ainda não chega 
 - Mutate-verify DOM, teste `shows restitution after kinetic friction for each pair and persists edits without clamping`: em `ContactsPanel`, trocar `onPatch(c.a, c.b, { e: v })` por `onPatch(c.a, c.b, { muK: v })`. Saída vermelha: `1 failed | 130 skipped`; esperado `{ e: 0.8, muK: 0.25 }`, recebido `{ e: 0.5, muK: 0.8 }`, em `src/App.test.ts:278`. Mutação restaurada. O vermelho original detectou também a ausência do campo: esperava 6 inputs para dois pares, recebeu 4.
 - `serialize` já omite propriedades indefinidas via JSON; não exigiu alteração. `SCENE_VERSION` continua 1. Integração de restituição no simulador permanece para PHY-68, como previsto.
 - Gate final: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. 31 arquivos de teste, 1043 testes aprovados; lint, typecheck e build aprovados. Vite avisou sobre chunk acima de 500 kB (simulador). `git diff --check` limpo; diff revisado, sem alterações no simulador nem artefatos gerados versionados.
+
+#### Stage 3 — Review (2026-10-03)
+
+**Standards:** um achado de documentação, corrigido: o comentário da política SOFT em `src/scene/index.ts` omitia o aviso para restituição fora de [0, 1]. Correção pequena autorizada pela regra de documentação desatualizada de `ticket-flow`, sem mudança de comportamento nem teste novo. Nenhum achado de código ou de separação entre commits de teste e implementação. `src/App.test.ts` está expressamente autorizado em “Tests stage 2 writes”.
+
+**Spec:** nenhum achado. Critérios:
+
+1. ✅ `e` finito é preservado; campo ausente continua ausente.
+2. ✅ `e` não numérico ou não finito é rejeitado com erro em `contacts[i]`.
+3. ✅ Cenas v5 mantêm os bytes canônicos sem `e`; campo definido faz round-trip; versão 1 preservada.
+4. ✅ Avisos para valores fora de [0, 1], nenhum para 0, 1 ou ausência.
+5. ✅ Adição padrão com `e: 0`; patch ordenado preserva atrito, outros pares e documento original.
+6. ✅ Campo traduzido depois de μk, step 0,05, ausência exibida como 0, callback `{ e }`, sem clamp e com o bloqueio de edição existente.
+7. ✅ `contacts.e` nos dois catálogos e testes de paridade verdes.
+
+- Chamadores, falhas e interações examinados: persistência/hidratação, importação/exportação, comparação de bytes para dirty e autosave, cópia de presets, histórico e bloqueios de playback, adição pelo painel e pelo snap, guards de par duplicado/invertido/auto/dangling, override explícito de μ, patch imutável, `NumField`, renderização dos avisos e consumo de atrito pelo simulador. Nenhuma alteração de runtime fora do contrato. Passe manual de navegador não realizado nesta revisão; os testes Chromium do gate passaram.
+- A linha `Proxy decided` sobre campo sem clamp, aviso suave e serialização opcional foi examinada e corresponde ao código e aos testes. A restituição no Rapier continua reservada ao PHY-68.
+- Gate independente da revisão: 31 arquivos, 1043 testes aprovados; lint, typecheck e build aprovados, exit 0. A primeira execução no sandbox teve 15 falhas de conexão/desconexão do Chromium DevTools (1028 passaram); a execução completa fora do sandbox passou. Logs em `%TEMP%/phys67-review-gate-20261003.log` e `%TEMP%/phys67-review-gate-unsandboxed-20261003.log`.
+- Mutate-verify repetido com as mutações do Stage 2: leitura/validação de `e` substituída por zero, limites de aviso alargados, default 1 e descarte de `patch.e`: 24 falhas, 158 passaram. Leitura de `e` acrescida de 1 e condição inteira do aviso invertida: 8 falhas, 8 passaram, 115 não selecionados. Logs em `%TEMP%/phys67-review-mutate-direct-20261003.log` e `%TEMP%/phys67-review-mutate-boundaries-20261003.log`.
+- Mutate-verify DOM repetido, teste `shows restitution after kinetic friction for each pair and persists edits without clamping`: callback `onPatch(c.a, c.b, { e: v })` trocado por `{ muK: v }`; `1 failed | 130 skipped`, em `src/App.test.ts:278`, esperado `{ e: 0.8, muK: 0.25 }`, recebido `{ e: 0.5, muK: 0.8 }`. Log em `%TEMP%/phys67-review-mutate-dom-20261003.log`. Todos os arquivos mutados foram restaurados byte a byte e o diff de produção ficou vazio. Verde após restauração: codec/documento 182/182, DOM 1/1 (130 não selecionados).
