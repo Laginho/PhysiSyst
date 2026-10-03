@@ -471,7 +471,7 @@ function ContactsPanel({
   doc: Scene
   disabled: boolean
   onAdd: (a: string, b: string) => string | null
-  onPatch: (a: string, b: string, patch: { muS?: number; muK?: number }) => void
+  onPatch: (a: string, b: string, patch: { muS?: number; muK?: number; e?: number }) => void
   onRemove: (a: string, b: string) => void
 }) {
   const [newA, setNewA] = useState(doc.bodies[0]?.id ?? '')
@@ -489,6 +489,7 @@ function ContactsPanel({
           </div>
           <NumField label={t('contacts.muS')} value={c.muS} step={0.05} onChange={(v) => onPatch(c.a, c.b, { muS: v })} />
           <NumField label={t('contacts.muK')} value={c.muK} step={0.05} onChange={(v) => onPatch(c.a, c.b, { muK: v })} />
+          <NumField label={t('contacts.e')} value={c.e ?? 0} step={0.05} onChange={(v) => onPatch(c.a, c.b, { e: v })} />
         </div>
       ))}
       <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>

@@ -245,6 +245,43 @@ function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasEle
   return { host, canvas }
 }
 
+describe('Contact restitution editor (PHY-67)', () => {
+  it('shows restitution after kinetic friction for each pair and persists edits without clamping', () => {
+    vi.useFakeTimers()
+    const storage = window.localStorage as unknown as PersistStorage
+    const scene: Scene = {
+      ...DEMO_SCENE,
+      contacts: [
+        { ...DEMO_SCENE.contacts[0], e: 0.5 },
+        { a: 'rampa', b: 'chao', muS: 0, muK: 0 },
+      ],
+    }
+    expect(scene.contacts.length).toBeGreaterThan(1)
+    const { host } = setupWith(() => {
+      saveIndex(storage, [{ id: 'restitution', name: 'Restitution', updatedAt: 1 }])
+      saveScene(storage, 'restitution', scene)
+      saveCurrentSceneId(storage, 'restitution')
+    })
+    const contacts = panel(host, ptBR['contacts.title'])!
+    const fields = [...contacts.querySelectorAll('input')]
+    expect(fields).toHaveLength(scene.contacts.length * 3)
+    for (let i = 0; i < scene.contacts.length; i++) {
+      const labels = fields.slice(i * 3, i * 3 + 3).map((input) => input.closest('label')?.textContent?.trim())
+      expect(labels).toEqual([ptBR['contacts.muS'], ptBR['contacts.muK'], 'e — restituição'])
+      expect(fields[i * 3 + 2].value).toBe(i === 0 ? '0.5' : '0')
+      expect(fields[i * 3 + 2].step).toBe('0.05')
+    }
+    for (const e of [0.8, -0.1, 1.5]) {
+      act(() => setNativeInputValue(fields[2], e))
+      act(() => { window.dispatchEvent(new Event('pagehide')) })
+      const saved = loadScene(storage, 'restitution')!
+      expect(saved.contacts[0]).toEqual({ ...scene.contacts[0], e })
+      expect(saved.contacts.slice(1)).toEqual(scene.contacts.slice(1))
+      expect(fields[2].value).toBe(String(e))
+    }
+  })
+})
+
 // The loading overlay is the canvas's only sibling in its box — whatever it
 // renders (joke badge or error panel) sits right next to <canvas> in the DOM.
 function loadingOverlay(host: HTMLElement): HTMLElement | undefined {

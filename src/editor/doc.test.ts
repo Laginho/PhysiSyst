@@ -270,7 +270,7 @@ describe('addContact guards + edit/remove', () => {
   it('adds with the idealized default (muS = muK = 0) when no mu is given (ADR-0002)', () => {
     const { doc, error } = addContact({ ...DOC, contacts: [] }, 'a', 'b')
     expect(error).toBeNull()
-    expect(doc.contacts.at(-1)).toEqual({ a: 'a', b: 'b', muS: 0, muK: 0 })
+    expect(doc.contacts.at(-1)).toEqual({ a: 'a', b: 'b', muS: 0, muK: 0, e: 0 })
   })
 
   it('accepts an optional mu override instead of the default', () => {
@@ -293,6 +293,14 @@ describe('addContact guards + edit/remove', () => {
     const next = updateContact(DOC, 'a', 'b', { muS: 0.6 })
     expect(next.contacts[0]).toEqual({ a: 'a', b: 'b', muS: 0.6, muK: 0.2 })
     expect(updateContact(DOC, 'b', 'a', { muS: 0.9 }).contacts[0].muS).toBe(0.3) // reversed != stored
+  })
+
+  it('patches restitution without changing friction, other contacts, or the original document (PHY-67)', () => {
+    const next = updateContact(DOC, 'a', 'b', { e: 0.8 })
+    expect(next.contacts[0]).toEqual({ a: 'a', b: 'b', muS: 0.3, muK: 0.2, e: 0.8 })
+    expect(next.contacts[1]).toBe(DOC.contacts[1])
+    expect(DOC.contacts[0]).not.toHaveProperty('e')
+    expect(updateContact(DOC, 'b', 'a', { e: 0.8 })).toBe(DOC)
   })
 
   it('removeContact matches the ordered pair exactly', () => {
