@@ -1,5 +1,5 @@
 # PHY-61: Trechos paralelos numa polia viram uma seta 2T
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -40,3 +40,5 @@ O fator vai num campo opcional `factor` de `OverlayArrow` (ausente = 1). `vector
 - 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-61-tracao-dupla-na-polia-movel-asked-20261003-0054`): PHY-61 marcado `blocked` no commit `15d227f`. /  / O consumidor em `src/App.tsx:248` consulta rótulos pela chave da corda; assim, não consegue distinguir `2T` da carga e `T` do contrapeso. /  / Posso incluir esse consumidor nos `Primary files`? A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “the implementer may touch those files and nothing else”. /  / Nenhum código alterado; testes não executados.
 
 - 2026-10-03 Proxy decided: sim — incluir `src/App.tsx` nos Primary files, só o bloco de overlay de vetores em `paint` (chamada de `vectorLabels` e os três lookups `labels.get(a.key)`, ~l.246–257); nada mais nesse arquivo. `vectorLabels` deixa de devolver `Map<string,string>` e passa a devolver um lookup por seta (ex.: `(a: OverlayArrow) => string`) que resolve por `kind`/`key` + `factor`, nunca por identidade do objeto — o ramo de seleção (l.254/257) regenera as setas de `selView` e consulta os rótulos da cena inteira. Com a mudança de tipo, um consumidor que continue com `labels.get(a.key)` quebra no typecheck; é esse o pino do seam, não um teste em `src/App.test.ts`, que fica fora do escopo. Próximo stage 2 começa limpo da branch da sessão; a branch `-asked-20261003-0054` só tem o commit do bloqueio e pode ser descartada. — O contrato prende a numeração à chave da corda, então o fator só pode entrar no lookup por seta, e o único consumidor desse lookup está em App.tsx.
+
+- 2026-10-03 Stage 2: callers inspected: App.paint and overlay.test.ts for tensionArrows/vectorLabels. Tests cover the preset, 0/4/5/6/180-degree reading paths, unequal leg lengths, degenerate legs, slack/missing readings, mass on either pulley, regenerated arrows and rope numbering. Red: overlay.test.ts 13 failed / 39 passed (52); old producer emits 3 arrows instead of 2 in the preset, and old Map is not the required callable lookup.

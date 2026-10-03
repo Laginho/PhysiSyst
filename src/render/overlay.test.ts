@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RopePath, Scene } from '../scene'
 import { applyStates } from '../playback/view'
+import { presetById } from '../presets'
 import {
   ARROW_MAX_PX,
   ARROW_MIN_PX,
@@ -425,7 +426,7 @@ describe('tensionArrows', () => {
     expectArrow(arrows[1], { x: 3, y: 4 }, { x: -0.6 * len, y: -0.8 * len })
   })
 
-  it('movable pulley: one arrow per adjacent segment at the pulley center; fixed ends get none', () => {
+  it('movable pulley: parallel segments merge at the pulley center; fixed ends get none', () => {
     // Pulley (0, 2) r 0.5 on the dynamic block, rope from the ceiling at x = -0.5
     // under the pulley and back up to x = +0.5: both legs vertical.
     const scene: Scene = {
@@ -434,10 +435,63 @@ describe('tensionArrows', () => {
       constraints: [rope('r', 'esq', 'dir', ['m'])],
     }
     const arrows = tensionArrows(scene, [ropeState('r', [7, 7])], PPM)
-    const len = vectorArrowLengthPx(7) / PPM
-    expect(arrows).toHaveLength(2)
+    const len = vectorArrowLengthPx(14) / PPM
+    expect(arrows).toHaveLength(1)
     expectArrow(arrows[0], { x: 0, y: 2 }, { x: 0, y: len })
-    expectArrow(arrows[1], { x: 0, y: 2 }, { x: 0, y: len })
+  })
+
+  it('movable-pulley preset: the load carries 2T and the counterweight T', () => {
+    const scene = presetById('movable-pulley')!.buildScene()
+    const arrows = tensionArrows(scene, [ropeState('corda', [7, 7, 7])], PPM)
+    expect(arrows).toHaveLength(2)
+    expectArrow(arrows[0], { x: 6, y: 2.5 }, { x: 0, y: vectorArrowLengthPx(14) / PPM })
+    expectArrow(arrows[1], { x: 6.75, y: 1.5 }, { x: 0, y: vectorArrowLengthPx(7) / PPM })
+    expect(arrows.map(vectorLabels(arrows, 'pt-BR'))).toEqual(['2T', 'T'])
+    expect(tensionArrows(scene, [ropeState('corda', [0, 0, 0])], PPM)).toEqual([])
+    expect(tensionArrows(scene, [], PPM)).toEqual([])
+  })
+
+  it.each([0, 4, 5, 6, 180])('reading directions %s degrees apart merge only through 5 degrees', (degrees) => {
+    const scene: Scene = {
+      ...sceneWithBodies([block('a', 0, 4, true), block('b', 1, 4, true), block('load', 0, 0)]),
+      pulleys: [{ id: 'p', bodyId: 'load', anchor: { x: 0, y: 0 }, radius: 0.5 }],
+      constraints: [rope('r', 'a', 'b', ['p'])],
+    }
+    const rad = degrees * Math.PI / 180
+    const path: RopePath = {
+      segments: [
+        { from: { x: 0, y: 2 }, to: { x: 0, y: 0 } },
+        { from: { x: 0, y: 0 }, to: { x: 9 * Math.sin(rad), y: 9 * Math.cos(rad) } },
+      ],
+      arcs: [{ center: { x: 0, y: 0 }, radius: 0.5, start: 0, sweep: 1, direction: 1 }],
+      length: 12,
+    }
+    const reading = { ...ropeState('r', [7, 7]), path }
+    const arrows = tensionArrows(scene, [reading], PPM)
+    expect(arrows).toHaveLength(degrees <= 5 ? 1 : 2)
+    if (degrees <= 5) {
+      const len = vectorArrowLengthPx(14) / PPM
+      expectArrow(arrows[0], { x: 0, y: 0 }, { x: len * Math.sin(rad / 2), y: len * Math.cos(rad / 2) })
+    } else {
+      const len = vectorArrowLengthPx(7) / PPM
+      expectArrow(arrows[0], { x: 0, y: 0 }, { x: 0, y: len })
+      expectArrow(arrows[1], { x: 0, y: 0 }, { x: len * Math.sin(rad), y: len * Math.cos(rad) })
+    }
+    // A zero-length leg supplies no direction and must not swallow the valid leg.
+    path.segments[0]!.from = { x: 0, y: 0 }
+    const degenerate = tensionArrows(scene, [reading], PPM)
+    expect(degenerate).toHaveLength(1)
+    expect(Math.hypot(degenerate[0]!.vec.x, degenerate[0]!.vec.y)).toBeCloseTo(vectorArrowLengthPx(7) / PPM, 9)
+  })
+
+  it.each(['movel', 'fixa'])('mass on %s preserves separate segment arrows on the movable mount', (id) => {
+    const scene = presetById('movable-pulley')!.buildScene()
+    scene.pulleys!.find((p) => p.id === id)!.mass = 2
+    const arrows = tensionArrows(scene, [ropeState('corda', [10, 6, 4])], PPM)
+    expect(arrows).toHaveLength(3)
+    expectArrow(arrows[0], { x: 6, y: 2.5 }, { x: 0, y: vectorArrowLengthPx(10) / PPM })
+    expectArrow(arrows[1], { x: 6, y: 2.5 }, { x: 0, y: vectorArrowLengthPx(6) / PPM })
+    expectArrow(arrows[2], { x: 6.75, y: 1.5 }, { x: 0, y: vectorArrowLengthPx(4) / PPM })
   })
 
   it('pulley with mass: each end sized by its own segment tension', () => {
@@ -535,8 +589,21 @@ describe('numberedSymbol (CLEAN-11)', () => {
 describe('vectorLabels', () => {
   const labelsOf = (arrows: OverlayArrow[], lang: 'pt-BR' | 'en' = 'pt-BR') => {
     const labels = vectorLabels(arrows, lang)
-    return arrows.map((a) => labels.get(a.key))
+    return arrows.map(labels)
   }
+
+  it('factors preserve rope numbering and resolve regenerated arrows by kind, key and factor', () => {
+    const scene = presetById('movable-pulley')!.buildScene()
+    const arrows = tensionArrows(scene, [ropeState('corda', [7, 7, 7])], PPM)
+    const other = tensionArrows(atwood(), [ropeState('r', [3, 3])], PPM)
+    const labels = vectorLabels([...arrows, ...other], 'pt-BR')
+    expect([...arrows, ...other].map((a) => labels({ ...a, from: { x: 99, y: 99 } }))).toEqual(['2T_1', 'T_1', 'T_2', 'T_2'])
+    const force: OverlayArrow = { from: { x: 0, y: 0 }, vec: { x: 1, y: 0 }, kind: 'applied', key: arrows[0]!.key }
+    const mixed = vectorLabels([...arrows, force], 'pt-BR')
+    expect(mixed({ ...force })).toBe('F')
+    expect(mixed({ ...arrows[0]! })).toBe('2T')
+    expect(vectorLabels([], 'pt-BR')(force)).toBeUndefined()
+  })
 
   it('one of each kind: the bare symbol from the table, per language', () => {
     const scene: Scene = {
