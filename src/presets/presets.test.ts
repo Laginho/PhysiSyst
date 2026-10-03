@@ -311,6 +311,8 @@ describe('PHY-31: presets em árvore', () => {
       'incline-block': { ...DYN, topic: 'atrito' },
       projectile: { ...DYN, topic: 'campo-uniforme' },
       'free-fall': { ...DYN, topic: 'campo-uniforme' },
+      'collision-elastic': { ...DYN, topic: 'colisoes' },
+      'collision-inelastic': { ...DYN, topic: 'colisoes' },
       atwood: { ...DYN, topic: 'principios' },
       'table-hanging': { ...DYN, topic: 'principios' },
       'movable-pulley': { ...DYN, topic: 'principios' },
@@ -348,8 +350,8 @@ describe('PHY-31: presets em árvore', () => {
     }
   })
 
-  it('the 12 presets parse, round-trip and simulate 2 s without an unexpected warning (5)', async () => {
-    expect(PRESETS).toHaveLength(12)
+  it('the 14 presets parse, round-trip and simulate 2 s without an unexpected warning (5)', async () => {
+    expect(PRESETS).toHaveLength(14)
     for (const p of PRESETS) {
       const scene = p.buildScene()
       expect(parse(serialize(scene)), p.id).toStrictEqual(scene)
@@ -371,6 +373,33 @@ describe('PHY-31: presets em árvore', () => {
     } finally {
       setLang('pt-BR')
     }
+  })
+
+  describe('PHY-69: collision presets', () => {
+    it('lists elastic then inelastic collisions under mechanics / dynamics', () => {
+      const node = { area: 'mecanica', part: 'dinamica', topic: 'colisoes' }
+      expect(TREE).toContainEqual(node)
+      expect(byId('collision-elastic')).toMatchObject({ ...node, position: 1 })
+      expect(byId('collision-inelastic')).toMatchObject({ ...node, position: 2 })
+    })
+
+    it.each([
+      ['collision-elastic', 0, 3],
+      ['collision-inelastic', 0.75, 2.25],
+    ] as const)('%s round-trips and preserves momentum without ground bounce at 3 s', async (id, vx1, vx2) => {
+      const scene = byId(id).buildScene()
+      expect(parse(serialize(scene))).toStrictEqual(scene)
+      const sim = await load(scene)
+      run(sim, Math.round(3 / TIMESTEP), () => sim.readStates().get('esfera-1')!.linvel.x)
+      const first = sim.readStates().get('esfera-1')!.linvel
+      const second = sim.readStates().get('esfera-2')!.linvel
+      expect(Math.abs(first.x - vx1)).toBeLessThanOrEqual(vx1 === 0 ? 0.09 : 0.03 * vx1)
+      expect(Math.abs(second.x - vx2)).toBeLessThanOrEqual(0.03 * vx2)
+      const momentum = body(scene, 'esfera-1').mass * first.x + body(scene, 'esfera-2').mass * second.x
+      expect(Math.abs(momentum - 3)).toBeLessThanOrEqual(0.09)
+      expect(Math.abs(first.y)).toBeLessThanOrEqual(0.05)
+      expect(Math.abs(second.y)).toBeLessThanOrEqual(0.05)
+    })
   })
 
   describe('each new preset reproduces its family (6)', () => {

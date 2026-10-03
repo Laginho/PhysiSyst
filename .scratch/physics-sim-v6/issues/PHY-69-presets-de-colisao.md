@@ -1,5 +1,5 @@
 # PHY-69: Presets de colisão elástica e inelástica
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-68
 Review: agent
@@ -37,6 +37,9 @@ Nomes: 'Colisão elástica' / 'Elastic collision', 'Colisão inelástica' / 'Ine
 - `src/i18n/i18n.test.ts`: critério 6 já é coberto pela paridade existente.
 
 ## Comments
+
+- 2026-10-03 Stage 2: PHY-68 está `done` na base `sweatshop/2026-10-03-1618`. Costura: catálogo público de presets → codec → simulador real. Consumidores examinados: `galleryGroups`, `presetById`, `createPresetScene` e seus usos em `App.tsx`; nenhum muda de assinatura. Casos de fronteira: e = 1, e = 0,5, esfera inicialmente parada e chão sem par declarado. Testes existentes preservam os presets anteriores, persistência e traduções.
+- Red antes de produção: `npm test -- src/presets/presets.test.ts`: 5 failed / 23 passed (28). Catálogo esperava 14 e recebeu 12; tópico `colisoes` ausente; `missing preset collision-elastic` e `missing preset collision-inelastic`.
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy).
 - Proxy decided: uma família de dois presets (e = 1 e e = 0,5), esferas iguais de 1 kg, uma parada; sem par com o chão; forma fechada e = 1 → 0 e 3, e = 0,5 → 0,75 e 2,25; tolerância 3% como o teste frontal existente; tópico 'colisoes' em dinâmica.
