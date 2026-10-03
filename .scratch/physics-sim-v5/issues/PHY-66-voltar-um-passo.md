@@ -1,5 +1,5 @@
 # PHY-66: Voltar um passo
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: agent
@@ -36,6 +36,9 @@ O espelho do passo único: um botão "voltar um passo" ao lado do "Passo" e a se
 - `src/App.test.ts`, com o simulador falso e o `requestAnimationFrame` controlado: critérios 2 a 7; vermelhos hoje. Costura de DOM: registrar no ticket, por teste novo, a mutação aplicada e a saída vermelha.
 
 ## Comments
+
+- 2026-10-03 Stage 2: inspected keyboard mapping/listener, transport buttons, seek dispatch and recorded-player harness. New action uses existing seek; no physics stepping or simulator initialization. Boundary: initial single record and cursor zero must remain a no-op, even during play. Dependency PHY-64 is done on the session base.
+- Red: `npx vitest run src/editor/shortcuts.test.ts src/App.test.ts -t 'ArrowLeft|PHY-66'`: 4 failed, 143 skipped. ArrowLeft returned null; both DOM transport cases found no back button; shortcut table had no left-arrow row.
 
 - 2026-10-02 Aberto no stage 1 dos tickets do feedback da v4. O proxy propôs separar "voltar um passo" do PHY-64 e o Bruno aceitou no fatiamento (PHY-64, PHY-65, PHY-66).
 - Proxy decided: atalhos fora do PHY-64, → continua passo único, ← e o botão de voltar viram este ticket — mantém o PHY-64 no tamanho de um ticket.

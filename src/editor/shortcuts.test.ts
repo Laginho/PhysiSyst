@@ -50,6 +50,13 @@ describe('actionForKey', () => {
     expect(key({ key: 'ArrowRight' })).toBe('stepOnce')
   })
 
+  it('ArrowLeft steps back only outside text fields and without Ctrl/Cmd', () => {
+    expect(key({ key: 'ArrowLeft' })).toBe('stepBack')
+    expect(key({ key: 'ArrowLeft', inTextField: true })).toBeNull()
+    expect(key({ key: 'ArrowLeft', ctrlKey: true })).toBeNull()
+    expect(key({ key: 'ArrowLeft', metaKey: true })).toBeNull()
+  })
+
   it('R resets', () => {
     expect(key({ key: 'r' })).toBe('reset')
   })

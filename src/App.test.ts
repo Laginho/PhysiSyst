@@ -2740,6 +2740,69 @@ describe('recorded time player (PHY-64)', () => {
     }
   }
 
+  it.each(['button', 'keyboard'] as const)('PHY-66 %s seeks backward from live and recorded play, stopping at zero', async (mode) => {
+    const translations: Array<[number, number]> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { translations.length = 0 }
+        if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    const backButton = () => findButton(p.host, '⏮ voltar um passo')!
+    const back = () => {
+      if (mode === 'button') act(() => backButton().click())
+      else pressKey('ArrowLeft')
+      p.poll()
+    }
+    expect(backButton()).toBeDefined()
+    expect(backButton().title).toBe('voltar um registro da gravação (←)')
+    expect(backButton().nextElementSibling).toBe(findButton(p.host, ptBR['playback.step']))
+    expect(backButton().disabled).toBe(true)
+    back()
+    expect(p.slider().value).toBe('0')
+    expect(p.step).not.toHaveBeenCalled()
+    await p.steps(4)
+    await p.play()
+    back()
+    expect(p.slider().value).toBe('3')
+    expect(p.host.textContent).toContain('t = 0,05 s')
+    expect(p.readout()).toContain('(6.03, 4.00) m')
+    expect(p.readout()).toContain('passos: 3')
+    p.frame()
+    expect(translations).toContainEqual([expect.closeTo(451.8, 8), 300])
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    expect(p.step).toHaveBeenCalledTimes(4)
+    await p.play()
+    back()
+    expect(p.slider().value).toBe('2')
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    back()
+    expect(p.slider().value).toBe('1')
+    back()
+    expect(p.slider().value).toBe('0')
+    expect(backButton().disabled).toBe(true)
+    await p.play()
+    back()
+    expect(p.slider().value).toBe('0')
+    expect(findButton(p.host, ptBR['playback.pause'])).toBeDefined()
+    p.frame()
+    p.poll()
+    expect(p.slider().value).toBe('1')
+    expect(p.step).toHaveBeenCalledTimes(4)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it('PHY-66 lists the left-arrow shortcut with localized text', async () => {
+    const p = await setupRecording()
+    pressKey('?')
+    const row = Array.from(p.host.querySelectorAll('tr')).find((r) => r.cells[0]?.textContent === '←')
+    expect(row?.cells[1]?.textContent).toBe('voltar um passo')
+  })
+
   it('records each 2x step and seeks poses, velocities and per-step acceleration without rewinding physics', async () => {
     const p = await setupRecording()
     click(p.canvas, { x: 6, y: 4 })
