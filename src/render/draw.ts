@@ -26,7 +26,7 @@ const MASS_SUB_FONT = 'italic 11px system-ui, sans-serif'
 const MASS_LABEL_MARGIN = 4
 
 /** Everything after the first underscore belongs to the subscript. */
-function splitLabel(label: string): [string, string] {
+export function splitLabel(label: string): [string, string] {
   const separator = label.indexOf('_')
   return separator < 0 ? [label, ''] : [label.slice(0, separator), label.slice(separator + 1)]
 }
