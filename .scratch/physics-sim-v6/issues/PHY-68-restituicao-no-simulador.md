@@ -1,5 +1,5 @@
 # PHY-68: Restituição no simulador por fatores por corpo
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-67
 Review: human
@@ -117,3 +117,33 @@ O agente principal repetiu a comparação com o simulador da base carregado por 
 #### Stage 3 — correção documental da re-revisão (2026-10-03)
 
 - Movido o bloco de retomada R1 para depois da revisão que o originou, preservando o conteúdo e a ordem de anexação do histórico exigida por `docs/agents/issue-tracker.md`. Nenhum código ou teste alterado.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+Re-revisão de R1 e do delta `5cd4de3..c911516`, com o diff completo contra a base da sessão `cf261da` como contexto. Standards e Spec executados em sub-agentes independentes. Os oito critérios continuam aprovados; R1 está resolvido.
+
+##### Standards
+
+- Um achado documental corrigido em `69b3fcc`: o bloco de retomada R1 precedia o histórico existente, contrariando `docs/agents/issue-tracker.md` ("Comments and conversation history append to the bottom"). Foi movido sem alterar o conteúdo, o código ou os testes.
+- Observação histórica não bloqueante preservada: os quatro commits originais têm corpos vazios. Observação nova não bloqueante: `23ed641` e `c911516` explicam o motivo no corpo, mas citam PHY-68 somente no assunto; a seção Commits and closing de `ticket-flow` pede motivo e ID no corpo. Histórico preservado; isso não viola Primary files ou test-first nem demonstra regressão.
+- Separação test-first correta: `23ed641` altera teste e ticket; `c911516` altera solver, ADR e ticket, sem testes. Delta dentro dos Primary files; teste frontal anterior intacto. ADR-0005 documenta a fronteira f32. Nenhum smell acionável ou novo achado em código anteriormente revisado.
+
+##### Spec
+
+- Zero achados atuais; R1 resolvido. `Math.fround(value)` verifica o fator antes da transferência ao Rapier e aciona o fallback existente com um aviso quando ele transborda ou arredonda para zero.
+- Probe independente do simulador real, carregando TypeScript apenas em memória: `5cd4de3` produz `vB = vC = 0`, momento total 0 e nenhum aviso; `c911516` produz `vB = 0`, `vC = 3`, momento total 3 e exatamente o aviso previsto. Reprodução repetida pelo agente principal e pelo eixo Spec.
+- Limites conferidos pelo eixo Spec: fator subnormal `1.401298464324826e-45` e fator próximo do máximo f32 `3.4028234663852844e38` permanecem aceitos; `3.402823600000016e38`, `2^-151` e `Number.MIN_VALUE` acionam fallback com um aviso. Grafos comuns, ciclos ímpares, cenas legadas e conflito com zero permanecem idênticos à versão anterior. `replaceScene` publica o aviso de R1 e o limpa ao receber cena normal.
+- Critérios 1–8 continuam atendidos, sem requisito parcial ou ampliação de escopo. A linha `Proxy decided` foi novamente conferida: solve em log, máximo por corpo com Min, aviso cru em inglês e ADR referenciando 0003. Herança de restituição entre pares não declarados, fallback aproximado e quique indefinido com `e = 1` permanecem decisões aceitas.
+
+##### Prova, gate e integração
+
+- Arquivos: solver e integração de restituição em `src/sim/simulator.ts`, testes em `src/sim/contacts.test.ts` e `src/sim/acceptance.test.ts`, ADR-0005, atualização do glossário em `CONTEXT.md` e histórico deste ticket. Nesta re-revisão só foi corrigida a ordem documental do histórico.
+- Prova red-green conferida: teste de R1 em commit próprio, anterior à correção; vermelho com erro de momento `3 > 0.09`, 1 falha e 230 não selecionados. O ticket registra a mesma falha sob a mutação de produção `Math.fround(value)` para `value`, restaurada antes do gate. O teste usa `createSimulator`/`step`/`readStates`, sem mocks. Verde com a correção: 243/243 nos dois arquivos focados na etapa 2 e 1058/1058 no gate independente desta revisão.
+- Gate independente: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0 fora do sandbox; **31 arquivos e 1058 testes aprovados**, lint/typecheck/build aprovados. Permanece o aviso conhecido de chunk grande do Vite. Depois do gate, apenas metadados do ticket foram alterados; o tree integrado foi comparado à branch revisada e é idêntico. `git diff --check` limpo; nenhum artefato gerado incluído.
+- Chamadores e interações reexaminados: fator → `colliderDescFor` → `buildWorld`, construção e `replaceScene`, propagação e limpeza de avisos, fatores ordinários, subnormais e transbordamento. O alcance da primeira revisão está registrado acima. Passe manual de navegador e colisões elásticas com cordas/molas ativas não foram repetidos além do gate.
+- Integração: `69b3fcc` integrado sem squash em `sweatshop/2026-10-03-1618`, merge `7da3bfc`; `Review: human` fica para a PR da sessão conforme o fluxo. `Stage: done` e ledger registrados juntos no fechamento local.
+- Limitação prevista: fallback é aproximado e pode alterar pares declarados com zero; pares não declarados entre dois fatores positivos podem herdar restituição, conforme ADR-0005.
+
+Totais por eixo: Standards — 1 achado documental corrigido, 2 observações de metadados não bloqueantes, 0 smells acionáveis; Spec — 0 achados atuais, R1 resolvido.
