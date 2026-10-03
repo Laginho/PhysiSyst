@@ -14,7 +14,7 @@ import {
   type PlaybackState,
 } from './playback'
 import { DEMO_SCENE } from './scene/demo'
-import { createPresetScene, galleryGroups, nodeLabelKeys, PRESETS } from './presets'
+import { createPresetScene, galleryGroups, nodeLabelKeys, presetById, type Preset } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
 import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
@@ -628,9 +628,16 @@ export default function App() {
       return 'cena-1'
     }
     if (res.kind === 'corrupt') return 'cena-1'
-    return loadCurrentSceneId(storage, res.index) ?? res.index[0]?.id ?? 'cena-1'
+    const saved = loadCurrentSceneId(storage, res.index)
+    if (saved?.startsWith('preset:')) {
+      return presetById(saved.slice(7)) ? saved : res.index[0]?.id ?? 'cena-1'
+    }
+    return saved ?? res.index[0]?.id ?? 'cena-1'
   })
+  const openPreset = currentId.startsWith('preset:') ? presetById(currentId.slice(7)) : undefined
+  const openPresetRef = useRef(openPreset)
   const [doc, setDoc] = useState<Scene>(() => {
+    if (openPreset) return openPreset.buildScene()
     const res = loadIndexResult(storage)
     if (res.kind === 'missing') {
       return loadIndex(storage).length > 0 ? DEMO_SCENE : blankScene()
@@ -657,7 +664,6 @@ export default function App() {
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [showGallery, setShowGallery] = useState(() => shouldShowGallery(storage))
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(galleryGroups()[0]?.presets[0]?.id ?? null)
   const [lang, setLangState] = useState<Lang>(() => getLang(storage))
   const lastSavedRef = useRef<Map<string, string>>(new Map([[currentId, JSON.stringify(serialize(doc))]]))
   /**
@@ -845,9 +851,9 @@ export default function App() {
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
   useEffect(() => {
-    saverRef.current?.schedule(currentId, doc)
+    if (!openPreset) saverRef.current?.schedule(currentId, doc)
     return () => saverRef.current?.cancel()
-  }, [doc, currentId])
+  }, [doc, currentId, openPreset])
 
   // Leaving the page (F5, tab close, CLEAN-01's chunk reload) must not drop the edit still inside the debounce.
   useEffect(() => {
@@ -860,6 +866,7 @@ export default function App() {
   useEffect(() => {
     const idxRes = loadIndexResult(storage)
     if (idxRes.kind === 'corrupt') setCorruptWarningKey('error.indiceCorrompido')
+    if (openPreset) return
     const { warning } = loadSceneOrBlank(storage, currentId)
     if (warning) setStorageWarning((prev) => (prev?.includes(warning) ? prev : prev ? `${prev} | ${warning}` : warning))
   }, [])
@@ -1016,6 +1023,7 @@ export default function App() {
       if (warning) setStorageWarning(warning)
       lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
       setSceneIndex(loadIndex(storage))
+      openPresetRef.current = undefined
       setCurrentId(id)
       saveCurrentSceneId(storage, id)
       setDoc(scene)
@@ -1032,6 +1040,25 @@ export default function App() {
     },
     [storage, dispatch],
   )
+
+  const openGalleryPreset = useCallback((preset: Preset) => {
+    if (openPresetRef.current?.id === preset.id) return
+    saverRef.current?.flush()
+    const scene = preset.buildScene()
+    const id = `preset:${preset.id}`
+    openPresetRef.current = preset
+    setCurrentId(id)
+    saveCurrentSceneId(storage, id)
+    ackGallery(storage)
+    setDoc(scene)
+    setSelection(null)
+    setTool(null)
+    setToolError(null)
+    setImportError(null)
+    setHistory(clearHistory())
+    docRef.current = scene
+    dispatch({ type: 'reset' })
+  }, [storage, dispatch])
 
   /**
    * Boots the WASM world on first use; concurrent callers share one boot.
@@ -1576,6 +1603,7 @@ export default function App() {
             )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
             <button onClick={togglePlay} style={{ minWidth: 110 }}>
               {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
             </button>
@@ -1693,6 +1721,7 @@ export default function App() {
               }}
               style={{ width: '100%', marginBottom: 4 }}
             >
+              {openPreset && <option value={currentId} disabled>{t('scenes.presetOption', { name: t(`preset.${openPreset.id}.name`) })}</option>}
               {sceneIndex.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name}
@@ -1725,6 +1754,7 @@ export default function App() {
                 {t('scenes.duplicate')}
               </button>
               <button
+                disabled={!!openPreset}
                 onClick={() => {
                   if (saverRef.current?.getPendingId() === currentId) saverRef.current?.flush()
                   else saverRef.current?.cancel()
@@ -1818,34 +1848,18 @@ export default function App() {
                     <div key={keys[keys.length - 1]} role="group" aria-label={path} style={{ display: 'grid', gap: 6 }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{path}</div>
                       {presets.map((p) => (
-                        <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
-                          <input type="radio" name="preset" checked={selectedPreset === p.id} onChange={() => setSelectedPreset(p.id)} />
+                        <button type="button" key={p.id} onClick={() => openGalleryPreset(p)} aria-pressed={openPreset?.id === p.id}
+                          style={{ display: 'flex', textAlign: 'left', gap: 6, border: openPreset?.id === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
                           <span style={{ fontSize: 12 }}>
                             <strong>{t(`preset.${p.id}.name`)}</strong>
                             <br />
                             <span style={{ color: '#555' }}>{t(`preset.${p.id}.description`)}</span>
                           </span>
-                        </label>
+                        </button>
                       ))}
                     </div>
                   )
                 })}
-                <button
-                  onClick={() => {
-                    const preset = PRESETS.find((x) => x.id === selectedPreset)
-                    if (!preset) return
-                    const res = createPresetScene(storage, preset)
-                    if ('reason' in res) {
-                      setStorageWarning(res.reason)
-                      return
-                    }
-                    ackGallery(storage)
-                    switchToScene(res.entry.id)
-                    setShowGallery(false)
-                  }}
-                >
-                  {t('gallery.useSelected')}
-                </button>
                 <button
                   onClick={() => {
                     const res = createNewScene(storage)
