@@ -1,5 +1,5 @@
 # PHY-63: Canvas da cena redimensionável
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -46,6 +46,13 @@ Regra do tamanho: largura = máx(402, mín(escolha do usuário, ajuste automáti
 
 ## Comments
 
+- 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 3; confirmado que "preview" é o canvas da cena).
+- 2026-10-02 Stage 1 (planner, grilling com proxy). Bruno decidiu: alça de arrastar; redimensionar muda o zoom; `fitCanvas` recebe a largura do usuário e aplica mínimo e máximo, alça e persistência no `App`; um ticket só.
+- Proxy decided: tamanho persistido globalmente em `physics-sim:canvasSize`, inválido → automático — é preferência de tela, não da cena.
+- Proxy decided: mínimo 402 × 268, largura = máx(MIN, mín(usuário, auto)); o piso de 600 px e o empilhamento só valem para o automático — o piso existe pelo layout lado a lado, não pela legibilidade.
+- Proxy decided: alinhamento como hoje, espaço que sobra vazio — sem pedido de mudar.
+- Proxy decided: alça no canto inferior direito, `nwse-resize`, largura manda em 3:2, sem botão "auto" — convenção da plataforma; arrastar ao máximo já é o automático.
+
 #### Stage 2 — evidência mutate-verify (2026-10-03)
 
 Implementado na branch `phy/PHY-63-canvas-redimensionavel`, a partir de `sweatshop/2026-10-02-2210`. Gate final: **30 arquivos / 967 testes passaram**, incluindo 13 testes Chromium deste arquivo; lint, typecheck e build passaram. Permanece apenas o aviso conhecido do chunk do simulador acima de 500 kB. `git diff --check` sem erros. Testes e correções de harness em commits próprios, separados dos commits de produção. Pronto para stage 3; sem merge nesta etapa.
@@ -70,9 +77,4 @@ O teste de viewport carrega o app real em iframe da mesma origem, redimensiona a
 
 - 2026-10-03 Stage 2: callers examinados: `App` inicializa e recalcula `fitCanvas` no ResizeObserver; o piso automático também controla o empilhamento. Cobertos: escolha abaixo do mínimo, acima do automático, fracionária, contêiner menor que o piso e armazenamento inválido. Primeiro red: 3 failed / 52 passed (55); largura 1200 em vez de 750 e funções de persistência ausentes.
 
-- 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 3; confirmado que "preview" é o canvas da cena).
-- 2026-10-02 Stage 1 (planner, grilling com proxy). Bruno decidiu: alça de arrastar; redimensionar muda o zoom; `fitCanvas` recebe a largura do usuário e aplica mínimo e máximo, alça e persistência no `App`; um ticket só.
-- Proxy decided: tamanho persistido globalmente em `physics-sim:canvasSize`, inválido → automático — é preferência de tela, não da cena.
-- Proxy decided: mínimo 402 × 268, largura = máx(MIN, mín(usuário, auto)); o piso de 600 px e o empilhamento só valem para o automático — o piso existe pelo layout lado a lado, não pela legibilidade.
-- Proxy decided: alinhamento como hoje, espaço que sobra vazio — sem pedido de mudar.
-- Proxy decided: alça no canto inferior direito, `nwse-resize`, largura manda em 3:2, sem botão "auto" — convenção da plataforma; arrastar ao máximo já é o automático.
+- 2026-10-03 Stage 3: comentários da etapa 2 movidos para depois do histórico existente, conforme docs/agents/issue-tracker.md. Texto do contrato, produção e testes preservados.
