@@ -1,5 +1,5 @@
 # PHY-64: Gravação e slider de tempo com a simulação pausada
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
