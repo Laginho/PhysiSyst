@@ -1,5 +1,5 @@
 # PHY-72: Painel de gráficos da gravação
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-71
 Review: human
