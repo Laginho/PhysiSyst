@@ -70,7 +70,7 @@ export function seriesFor(kind: GraphKind, frames: readonly GraphFrame[], bodyId
     if (kind === 'energy' || kind === 'momentum') {
       const e = body && state ? bodyEnergy(doc, body, state) : systemEnergy(doc, states, frame.constraints, frame.pulleys)
       values = kind === 'momentum' ? [e.p.x, e.p.y, Math.hypot(e.p.x, e.p.y)]
-        : [e.Ec, e.Epg, 'Emec' in e ? e.Emec : e.Ec + e.Epg, 'Eel' in e ? e.Eel : 0]
+        : [e.Ec, e.Epg, 'Emec' in e && typeof e.Emec === 'number' ? e.Emec : e.Ec + e.Epg, 'Eel' in e && typeof e.Eel === 'number' ? e.Eel : 0]
     } else {
       const v = kind === 'position' ? state!.position : kind === 'velocity' ? state!.linvel : getAcceleration(frame.acceleration, doc, bodyId!, true)
       values = [v.x, v.y, Math.hypot(v.x, v.y)]
