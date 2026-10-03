@@ -174,7 +174,7 @@ export function deleteScene(storage: Storage, id: string): SceneIndexEntry[] | {
 }
 
 /**
- * Id no longer in the index (deleted scene, storage from another machine,
+ * Preset references are validated by App against its catalog. A scene id no longer in the index (deleted scene, storage from another machine,
  * corrupted value) falls back to null — callers open the first of the index.
  *
  * Takes the index instead of loading it, unlike its neighbours here: the only
@@ -184,7 +184,7 @@ export function deleteScene(storage: Storage, id: string): SceneIndexEntry[] | {
 export function loadCurrentSceneId(storage: Storage, index: readonly SceneIndexEntry[]): string | null {
   const raw = storage.getItem(CURRENT_SCENE_KEY)
   if (typeof raw !== 'string') return null
-  return index.some((e) => e.id === raw) ? raw : null
+  return raw.startsWith('preset:') || index.some((e) => e.id === raw) ? raw : null
 }
 
 export function saveCurrentSceneId(storage: Storage, id: string): void {
