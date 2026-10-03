@@ -2901,4 +2901,34 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.host.textContent).toContain('t = 0.02 s')
   })
 
+
+  it('keeps recorded force vectors when gravity and force change later at the live tip', async () => {
+    let path: number[][] = []
+    const arrows: Array<{ color: unknown; path: number[][] }> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { arrows.length = 0 }
+        if (key === 'beginPath') return () => { path = [] }
+        if (key === 'moveTo' || key === 'lineTo') return (...point: number[]) => { path.push(point) }
+        if (key === 'stroke') return () => {
+          if (target.strokeStyle === '#d97742' || target.strokeStyle === '#2e7d32') arrows.push({ color: target.strokeStyle, path })
+        }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(1)
+    const recorded = structuredClone(arrows)
+    expect(recorded).toHaveLength(2)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.magnitude']), 30))
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    await p.steps(1)
+    expect(arrows).not.toEqual(recorded)
+    p.seek(1)
+    expect(arrows).toEqual(recorded)
+  })
+
 })
