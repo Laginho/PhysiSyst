@@ -677,8 +677,8 @@ function tautTensions(K: readonly (readonly number[])[], b: readonly number[], b
  *
  * muK (not muS) drives the single solver coefficient because kinetic
  * deceleration is what the acceptance suite checks numerically; static
- * holding relies on the solver + restitution 0. Scenes may set muS = muK when
- * static fidelity matters.
+ * holding relies on the solver (restitution defaults to 0). Scenes may set
+ * muS = muK when static fidelity matters.
  */
 export function assignPairFrictions(scene: Scene): {
   friction: Map<string, number>

@@ -1,5 +1,5 @@
 # PHY-68: Restituição no simulador por fatores por corpo
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-67
 Review: human
@@ -58,3 +58,7 @@ ADR-0005, curto, no formato dos anteriores: contexto (Rapier sem restituição p
 - Trocar a mesma chamada por `desc.setRestitution(1)` fez falhar `e = 0.5` (erro 0,75 > 0,0225), `e = 0` (erro 1,5 > 0,045) e o chão não declarado (velocidade 6,212995 > 0,310650): 3 falhas, 1 aprovado, 226 não selecionados. Log: `%TEMP%/phy68-mutate-elastic.log`. Todas as mutações foram restauradas antes do gate.
 - Primeira tentativa do gate no sandbox: 1042 aprovados e 15 falhas de conexão/desconexão do Chromium DevTools em testes preexistentes. Log: `%TEMP%/phy68-gate.log`. Reexecução fora do sandbox para validar o gate completo.
 - Gate final fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; 31 arquivos, 1057 testes aprovados, lint/typecheck/build aprovados. Log: `%TEMP%/phy68-gate-unsandboxed.log`. Diff revisado e `git diff --check` limpo; nenhum artefato gerado incluído. Limitação prevista: pares não declarados entre dois corpos com fatores positivos podem herdar restituição; fallback é aproximado, conforme ADR-0005. Stage 2 encerrado; revisão independente pendente.
+
+#### Stage 3 — correção documental (2026-10-03)
+
+- Corrigida a entrada Collision em `CONTEXT.md`, que ainda dizia que a integração estava pendente e prometia restituição zero para todo par não declarado. Agora referencia ADR-0005 e registra a herança aceita entre dois fatores positivos. O comentário de `assignPairFrictions` também passa a qualificar restituição zero como padrão. Nenhum comportamento ou teste alterado; documentação tornada obsoleta pela implementação é uma correção pequena permitida pelo fluxo.
