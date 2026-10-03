@@ -832,7 +832,10 @@ export function assignPairRestitutions(scene: Scene): {
     if (useMinFallback) break
     for (const [id, { sign, bias }] of potentials) {
       const value = Math.exp(sign * (pinned ?? 0) + bias)
-      if (!Number.isFinite(value) || value === 0) useMinFallback = true
+      // Rapier stores coefficients as f32: finite JS factors can overflow
+      // to Infinity or underflow to zero at the WASM boundary.
+      const rapierValue = Math.fround(value)
+      if (!Number.isFinite(rapierValue) || rapierValue === 0) useMinFallback = true
       factor.set(id, value)
     }
     if (useMinFallback) break

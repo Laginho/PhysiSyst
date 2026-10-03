@@ -16,7 +16,8 @@ outside positive edges have factor zero. A declared zero (including absent
 `e`) conflicts when both endpoints have positive factors.
 
 Inconsistent constraints or factors that cannot be represented as finite,
-positive numbers fall back for the whole scene to each body's maximum declared
+positive f32 numbers in Rapier (including overflow or rounding to zero at the
+WASM boundary) fall back for the whole scene to each body's maximum declared
 `e` (zero without positive declarations), with the Min rule and one warning:
 `contact e-graph has inconsistent constraints; restitution degraded to per-body max with Min rule`.
 Friction and restitution solve independently and retain both sets of warnings.
