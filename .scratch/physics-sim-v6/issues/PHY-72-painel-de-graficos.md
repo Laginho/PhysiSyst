@@ -1,5 +1,5 @@
 # PHY-72: Painel de gráficos da gravação
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: PHY-71
 Review: human
@@ -65,3 +65,5 @@ Módulo puro `src/render/graph.ts`:
 
 - 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-72-painel-de-graficos-asked-20261003-2023`): PHY-72 ficou `blocked`, registrado no commit `5e80601`. /  / Falta definir `E_el` para um corpo selecionado. Recomendo reservar energia elástica ao sistema e mostrar, por corpo, `E_c`, `E_pg` e `E_mec = E_c + E_pg`. /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige “`Stage: blocked` with the question under `## Comments`” nessa situação, sem proxy disponível. /  / Nenhuma alteração de código; testes não executados. Árvore limpa.
 - Proxy decided: com corpo selecionado o gráfico de energia mostra `E_c`, `E_pg` e `E_mec = E_c + E_pg` (3 curvas, sem `E_el` mesmo com molas), somado em `graph.ts` sem mexer em `bodyEnergy`; `E_el` e a 4ª curva ficam só no escopo sistema, com `E_mec` de `systemEnergy`; `src/App.browser.test.ts` entra em Primary files — a spec (§Energia, leitura do corpo) e o PHY-71 já dão ao corpo só E_c/E_pg e ao sistema E_el; a energia da mola não tem atribuição por corpo definida e inventar uma seria convenção física nova, enquanto E_c+E_pg é a energia mecânica de um corpo do livro; o teste de browser já era costura nomeada. Retomar da branch `asked/phy72-painel-graficos-20261003-2023` (só o commit de docs `5e80601`, sem código).
+
+- 2026-10-03 Attempt 1 stopped to ask: PHY-72 está `blocked` na branch `asked/phy72-painel-graficos-20261003-2023`. /  / A decisão que resolve o bloqueio já está na branch de sessão (`221000f`), mas ainda não foi incorporada à branch do ticket. /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige parar quando a etapa registrada é `blocked`. Nenhum código alterado; testes não executados.
