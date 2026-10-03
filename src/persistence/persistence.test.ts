@@ -150,6 +150,11 @@ describe('index + scene CRUD', () => {
 })
 
 describe('cena atual persiste entre reloads (PHY-19)', () => {
+  it('preserva referências de preset sem exigir entrada no índice (PHY-62)', () => {
+    const s = memStorage()
+    saveCurrentSceneId(s, 'preset:atwood')
+    expect(loadCurrentSceneId(s, [])).toBe('preset:atwood')
+  })
   it('grava e lê o id da cena atual', () => {
     const s = memStorage()
     const index: SceneIndexEntry[] = [

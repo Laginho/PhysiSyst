@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -62,3 +62,6 @@ A decisão de design (Bruno): o `App` guarda qual preset está aberto; a cena ab
 - Proxy decided: "Cena em branco" e a primeira abertura não mudam — fora do pedido.
 - Proxy decided: clique no card do preset já aberto não faz nada — reset já tem botão.
 - Proxy decided: clique num card faz flush e abre pausado em t = 0, como troca de cena — nenhuma edição se perde.
+
+- Stage 2: chamadores inspecionados: editDoc centraliza commitDoc, undo/redo e arrastos; switchToScene atende seletor, criar, duplicar, excluir e importar; createPresetScene atende a galeria e testes; loadCurrentSceneId atende a inicialização do App. Bordas: preset desconhecido, índice vazio, nome repetido, falha de quota, edição pendente e edição ao vivo.
+- Red inicial: testes diretos PHY-62 (persistência + presets): 2 falhas, 69 ignorados. loadCurrentSceneId retornou null em vez de preset:atwood; a segunda cópia manteve Máquina de Atwood em vez de Máquina de Atwood (2).
