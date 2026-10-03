@@ -272,6 +272,7 @@ describe('initial velocity overlay (PHY-59)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { strokes.length = 0; labels.length = 0 }
         if (key === 'stroke') return () => { strokes.push(target.strokeStyle) }
+        if (key === 'measureText') return () => ({ width: 10 })
         if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
         return target[key] ?? (() => {})
       },
@@ -2325,6 +2326,7 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
     const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
       get: (_t, name) => (...args: unknown[]) => {
         if (name === 'lineTo') lineTos.push([args[0] as number, args[1] as number])
+        if (name === 'measureText') return { width: 10 }
       },
       set: () => true,
     })
