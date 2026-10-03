@@ -1738,8 +1738,8 @@ describe('rascunho numérico no Chromium (PHY-44)', () => {
     vi.stubGlobal('WebSocket', createRequire(import.meta.url)('ws'))
     await withBrowserSession(1280, 25000, async (session) => {
       await session.reset()
-      await session.evaluate(`[...document.querySelectorAll('label')].find(el => el.querySelector('strong')?.textContent === 'Massa-mola horizontal').querySelector('input').click()`)
-      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent === 'usar cena selecionada').click()`)
+      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.querySelector('strong')?.textContent === 'Massa-mola horizontal').click()`)
+      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent === 'duplicar cena').click()`)
       await session.select(5, 0.2)
       await session.evaluate(`window.numericField = [...document.querySelectorAll('fieldset')]
         .find(el => el.querySelector('legend')?.textContent === 'mola');
@@ -2572,7 +2572,7 @@ describe('galeria de um clique (PHY-62)', () => {
     const host = renderApp()
     await settleSimImport()
     act(() => card(host, 'atwood').click())
-    const createObjectURL = vi.fn((_blob: Blob) => 'blob:preset')
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:preset')
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
     const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     try {
