@@ -2748,6 +2748,7 @@ describe('recorded time player (PHY-64)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { translations.length = 0 }
         if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
@@ -2853,6 +2854,7 @@ describe('recorded time player (PHY-64)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { translations.length = 0 }
         if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
@@ -3071,6 +3073,7 @@ describe('recorded time player (PHY-64)', () => {
       get(target, key) {
         if (key === 'clearRect') return () => { translations.length = 0 }
         if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
@@ -3098,6 +3101,7 @@ describe('recorded time player (PHY-64)', () => {
         if (key === 'stroke') return () => {
           if (target.strokeStyle === '#d97742' || target.strokeStyle === '#2e7d32') arrows.push({ color: target.strokeStyle, path })
         }
+        if (key === 'measureText') return () => ({ width: 10 })
         return target[key] ?? (() => {})
       },
     })
