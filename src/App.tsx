@@ -723,6 +723,24 @@ export default function App() {
   const canEditDoc = useCallback((next: Scene) =>
     playbackRef.current.stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live', [])
 
+  /** Rebind identity without replacing the running world or clearing its undo history. */
+  const copyOpenPreset = useCallback((): boolean => {
+    const preset = openPresetRef.current
+    if (!preset) return true
+    const result = createPresetScene(storage, preset)
+    if ('reason' in result) {
+      setStorageWarning(result.reason)
+      return false
+    }
+    const { entry, scene } = result
+    lastSavedRef.current.set(entry.id, JSON.stringify(serialize(scene)))
+    openPresetRef.current = undefined
+    setCurrentId(entry.id)
+    saveCurrentSceneId(storage, entry.id)
+    setSceneIndex(loadIndex(storage))
+    return true
+  }, [storage])
+
   /** All edits share this guard; scene transitions reset playback separately. */
   const editDoc = useCallback((next: Scene | ((d: Scene) => Scene), recordHistory = false): boolean => {
     const prev = docRef.current
@@ -732,12 +750,13 @@ export default function App() {
       setToolError('editor.resetToEdit')
       return false
     }
+    if (!copyOpenPreset()) return false
     if (recordHistory) setHistory((h) => pushHistory(h, prev))
     docRef.current = resolved
     setDoc(resolved)
     setToolError(null)
     return true
-  }, [canEditDoc])
+  }, [canEditDoc, copyOpenPreset])
 
   // Discrete edits push once here; drags push their initial doc on pointer-up.
   const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
@@ -1743,6 +1762,10 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
+                  if (openPresetRef.current) {
+                    copyOpenPreset()
+                    return
+                  }
                   const res = duplicatePersistedScene(storage, currentId, doc)
                   if ('reason' in res) {
                     setStorageWarning(res.reason)

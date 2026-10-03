@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -65,3 +65,56 @@ A decisão de design (Bruno): o `App` guarda qual preset está aberto; a cena ab
 
 - Stage 2: chamadores inspecionados: editDoc centraliza commitDoc, undo/redo e arrastos; switchToScene atende seletor, criar, duplicar, excluir e importar; createPresetScene atende a galeria e testes; loadCurrentSceneId atende a inicialização do App. Bordas: preset desconhecido, índice vazio, nome repetido, falha de quota, edição pendente e edição ao vivo.
 - Red inicial: testes diretos PHY-62 (persistência + presets): 2 falhas, 69 ignorados. loadCurrentSceneId retornou null em vez de preset:atwood; a segunda cópia manteve Máquina de Atwood em vez de Máquina de Atwood (2).
+
+#### Stage 2 — evidência DOM e ajustes do harness (2026-10-03)
+
+- Red de navegação (f46556c): 3 falhas por ausência de card clicável (missing preset card: wedge-flagship/atwood).
+- Red de cópia (1a62d1c): 6 falhas, 4 verdes, 98 ignorados: id permaneceu preset:..., nome da duplicação foi Cena 2, e falha de quota não protegia o documento.
+- Ajustes de harness em commits só de testes: localizar o range pelo tipo (o label inclui o valor), preservar o caractere Unicode de undo, disparar blur para abandonar o rascunho numérico rejeitado, ler Blob com timers reais e comparar a primeira cena com DEMO_SCENE. Os testes Chromium existentes passaram a abrir o card e duplicar antes de testar números; as asserções originais foram mantidas.
+- Mutate-verify: cada mutação abaixo foi aplicada isoladamente em src/App.tsx, os 10 testes DOM PHY-62 foram executados e o arquivo foi restaurado em finally. Todos os mutantes falharam; trechos reais da saída vermelha por teste:
+
+**autosave-preset** — substituir `if (!openPreset) saverRef.current?.schedule(currentId, doc)` por `saverRef.current?.schedule(currentId, doc)`.
+
+- `abre cada card em t=0 sem salvar cenas; transporte não cria cópia`: `AssertionError: expected [ [ …(2) ], …(23) ] to deeply equal []`.
+
+**reload-preset** — substituir `if (openPreset) return openPreset.buildScene()` por `if (openPreset) return blankScene()`.
+
+- `reabre o preset após reload; desconhecido volta à cena salva`: `AssertionError: expected last "vi.fn()" call to have been called with [ { version: 1, …(6) } ]`.
+
+**same-card-reset** — substituir `if (openPresetRef.current?.id === preset.id) return` por `// mutant: allow repeated open`.
+
+- `clique no preset já aberto preserva playback e mundo`: `AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times`.
+
+**no-copy** — substituir `if (!copyOpenPreset()) return false` por `// mutant: edit without copy`.
+
+- `primeira edição cria uma cópia; undo mantém o id e reabrir preserva o original`: `AssertionError: expected 'preset:atwood' to be 'cena-2' // Object.is equality`.
+- `primeira edição de g durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected 'preset:wedge-flagship' to be 'cena-2' // Object.is equality`.
+- `primeira edição de F durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected 'preset:wedge-flagship' to be 'cena-2' // Object.is equality`.
+- `falha ao salvar cópia mantém preset intacto; repetir edição cria só uma cópia`: `AssertionError: expected '5' to be '9.81' // Object.is equality`.
+
+**copy-rebuild** — substituir `const { entry, scene } = result` por `simRef.current?.replaceScene(docRef.current)     const { entry, scene } = result`.
+
+- `primeira edição de g durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times`.
+- `primeira edição de F durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times`.
+
+**duplicate-generic** — substituir `if (openPresetRef.current) {` por `if (false) {`.
+
+- `duplicar um preset cria a cena no idioma atual (PHY-62)`: `AssertionError: expected 'Cena 2' to be 'Atwood machine' // Object.is equality`.
+- `exporta o doc do preset e duplicar cria cópias com nomes distintos`: `AssertionError: expected 'Cena 2' to be 'Máquina de Atwood' // Object.is equality`.
+
+**skip-flush** — substituir `saverRef.current?.flush()     const scene = preset.buildScene()` por `saverRef.current?.cancel()     const scene = preset.buildScene()`.
+
+- `flush da cena salva precede abertura; cena em branco continua criando uma cena`: `AssertionError: expected 9.81 to be 3 // Object.is equality`.
+
+**ignore-copy-failure** — substituir `setStorageWarning(result.reason)       return false` por `setStorageWarning(result.reason)       return true`.
+
+- `falha ao salvar cópia mantém preset intacto; repetir edição cria só uma cópia`: `AssertionError: expected '5' to be '9.81' // Object.is equality`.
+
+**export-blank** — substituir `const txt = exportScene(doc)` por `const txt = exportScene(blankScene())`.
+
+- `exporta o doc do preset e duplicar cria cópias com nomes distintos`: `AssertionError: expected { version: 1, …(4) } to deeply equal { version: 1, …(6) }`.
+
+- Testes diretos também mutados: retirar o reconhecimento de preset: produziu expected null to be 'preset:atwood'; salvar sempre baseName produziu Expected Máquina de Atwood (2), Received Máquina de Atwood. Restaurados: 12 testes PHY-62 verdes, 167 ignorados (179 nos três arquivos).
+- As decisões Proxy decided já presentes foram seguidas; esta etapa não acrescentou decisão de proxy nem alterou critérios ou escopo. Abrir só grava as chaves de seleção/ack previstas nos critérios 8 e 10, nunca índice ou payload de cena. A cópia reaproveita createPresetScene (payload antes do índice, rollback de órfão) e só troca a identidade após sucesso.
+- Gate final: npm test && npm run lint && npm run typecheck && npm run build — 30 arquivos, 959 testes verdes; lint e typecheck sem erros; Vite build concluído. Aviso de bundle maior que 500 kB no simulador permanece.
+- Diff revisado: apenas Primary files e este ticket; sem artefatos gerados ou alteração de critérios. Commits de código não alteram testes. Entrega da etapa 2; revisão da etapa 3 pendente.
