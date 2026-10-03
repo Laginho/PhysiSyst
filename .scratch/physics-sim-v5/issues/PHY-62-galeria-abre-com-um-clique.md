@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -118,3 +118,38 @@ A decisão de design (Bruno): o `App` guarda qual preset está aberto; a cena ab
 - As decisões Proxy decided já presentes foram seguidas; esta etapa não acrescentou decisão de proxy nem alterou critérios ou escopo. Abrir só grava as chaves de seleção/ack previstas nos critérios 8 e 10, nunca índice ou payload de cena. A cópia reaproveita createPresetScene (payload antes do índice, rollback de órfão) e só troca a identidade após sucesso.
 - Gate final: npm test && npm run lint && npm run typecheck && npm run build — 30 arquivos, 959 testes verdes; lint e typecheck sem erros; Vite build concluído. Aviso de bundle maior que 500 kB no simulador permanece.
 - Diff revisado: apenas Primary files e este ticket; sem artefatos gerados ou alteração de critérios. Commits de código não alteram testes. Entrega da etapa 2; revisão da etapa 3 pendente.
+
+#### Stage 3 review (2026-10-03)
+
+Verdict: Reopen — critério 3: entrada numérica equivalente cria cópia antes de mudar o conteúdo do doc.
+
+Base: `sweatshop/2026-10-02-2210` (`3ecf4f6`); HEAD revisado: `b16fba9`. Diff inteiro e chamadores revisados; Standards e Spec executados em agentes separados. Primeira revisão da PHY-62.
+
+##### Standards
+
+Nenhuma violação das normas documentadas. Os arquivos estão nos Primary files, além deste ticket. Commits de produção não alteram testes; os testes precedem suas implementações, e ajustes posteriores do harness estão em commits exclusivos. Há evidência de mutação para os dez testes DOM PHY-62. Terminologia e traduções seguem CONTEXT.md e as convenções existentes.
+
+Observação opcional, sem reprovação: possível Duplicated Code em `src/App.tsx:1072–1079`. A sequência `setDoc(scene); setSelection(null); ... setHistory(clearHistory()); docRef.current = scene; dispatch({ type: 'reset' })` repete a limpeza de `switchToScene:1048–1058`. Um helper poderia prevenir divergência futura. É julgamento de manutenção, não falha de contrato; nenhuma refatoração é exigida nesta reabertura. `copyOpenPreset` deve permanecer fora do caminho de reset.
+
+##### Spec
+
+- **❌ Critério 3 — P2:** o gatilho aprovado é a primeira **mudança no doc**. Abrir Atwood e acrescentar `0` ao campo `g = 9.81`, produzindo `9.810`, preserva o valor e conteúdo, mas cria `cena-2` e sai do modo preset. `NumField` (`src/App.tsx:309–312`) encaminha o número finito; `updateG` (`src/editor/doc.ts:204–205`) devolve um objeto equivalente; `editDoc` (`src/App.tsx:748–753`) compara apenas identidade antes de `copyOpenPreset`. Isso também contraria a definição já registrada pelo proxy: edição é o que muda o conteúdo protegido.
+- Reprodução DOM temporária usando App e harness existentes, restaurada em `finally`: renderizar, abrir Atwood, focar g, chamar o setter nativo de `HTMLInputElement.value` com `'9.810'` e disparar `input` com `bubbles: true`. A asserção `expect(loadScene(storage, 'cena-2')).toEqual(presetById('atwood')!.buildScene())` passou. Saída: `selected=cena-2`, `count=2`, `g=9.810`, `savedG=9.81`.
+- Vermelho: `expected 'cena-2' to be 'preset:atwood'` e `expected [...] to have a length of 1 but got 2`; **1 teste falhou, 108 ignorados (109)**. A suíte atual não cobre esse caso. A reprodução não foi incluída no commit.
+- Critérios 1, 2 e 4–13 atendidos nos caminhos revisados. Nenhuma mudança de produção alheia ao pedido. Escritas de seleção e ACK são previstas nos critérios 8/10 e não violam a proteção do índice/payload no critério 1.
+
+As dez decisões `Proxy decided` foram conferidas: (1) edição = mudança de conteúdo, com a falha acima; (2) cópia preserva playback/histórico; (3) opção/dica e Excluir/Duplicar/Exportar; (4) reload/fallback; (5) undo fica na cópia; (6) galeria aberta e ACK; (7) nome localizado e sufixos; (8) demo inicial e cena em branco; (9) clique no preset atual sem efeito; (10) flush e abertura pausada em t=0. Decisões 2–10 atendidas. Nenhuma decisão nova foi atribuída ao proxy.
+
+##### Validação independente
+
+- Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` — **30 arquivos, 959 testes passaram**; lint, typecheck e build passaram. A tentativa inicial no sandbox teve 12 falhas de conexão Chromium (947 passaram), junto de erro Windows `CreateProcessWithLogonW 1909`; fora do sandbox o gate completo passou. Permanece o aviso conhecido de bundle acima de 500 kB.
+- As **11 mutações registradas pela etapa 2** foram repetidas isoladamente, restaurando cada arquivo em `finally`. Falhas por mutante: `autosave-preset` 1; `reload-preset` 1; `same-card-reset` 1; `no-copy` 4; `copy-rebuild` 2; `duplicate-generic` 2; `skip-flush` 1; `ignore-copy-failure` 1; `export-blank` 1; `preset-reference` 1; `copy-name` 1. Os testes e motivos vermelhos coincidiram com a evidência já registrada acima. Nenhum mutante sobreviveu.
+- Restaurados os três arquivos, filtro `PHY-62`: **12 testes verdes, 167 ignorados (179)**. A reprodução adicional acima foi executada depois e removida; produção e testes permanecem idênticos a `b16fba9`. `git diff --check` passou.
+
+##### Trabalho restante para a etapa 2
+
+Somente o ❌ acima: impedir que uma atualização sem mudança de conteúdo materialize o preset. Acrescentar primeiro, em commit só de testes, a regressão DOM da entrada numérica equivalente, verificando que o preset permanece aberto e o índice/payload não mudam; uma edição real posterior ainda deve criar exatamente uma cópia. Inspecionar os demais chamadores de `editDoc` que podem devolver um objeto equivalente. Corrigir dentro dos Primary files, registrar mutate-verify e executar novamente o gate. Não reescrever critérios nem refatorar transições nesta correção.
+
+A correção precisa de teste novo e, pela regra mecânica de ticket-flow, volta à etapa 2. Nenhum merge foi feito e não havia linha PHY-62 no ledger para remover.
+
+Standards: 0 violações, 1 observação opcional. Spec: 1 achado P2, critério 3.
