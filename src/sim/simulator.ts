@@ -47,9 +47,17 @@ export interface SpringState {
    * over the last step, which differs while the spring accelerates.
    */
   force: { a: number; b: number }
+  /** Kinetic energy of the massive spring nodes, J; absent for an ideal spring. */
+  chainKinetic?: number
 }
 
 export type ConstraintState = RopeState | SpringState
+
+export interface PulleyState {
+  id: string
+  /** Angular velocity of the massive disk, rad/s. */
+  angvel: number
+}
 
 export interface Simulator {
   readonly warnings: readonly string[]
@@ -58,6 +66,8 @@ export interface Simulator {
   readContacts(): ContactPoint[]
   /** One entry per document constraint, in document order (PHY-23). */
   readConstraints(): ConstraintState[]
+  /** One entry per pulley with mass, in document order. */
+  readPulleys(): PulleyState[]
   setForceMagnitude(forceId: string, magnitude: number): void
   /** Live gravity edit (T7/M2): affects integration from the next step on, no rebuild. */
   setGravity(g: number): void
@@ -370,7 +380,10 @@ function springAt(s: SpringBinding, lead = 0) {
 
 function readSpring(s: SpringBinding): SpringState {
   const { dx, force } = springAt(s)
-  return { id: s.id, kind: 'spring', dx, force: s.chain?.force ?? { a: force, b: force } }
+  return {
+    id: s.id, kind: 'spring', dx, force: s.chain?.force ?? { a: force, b: force },
+    ...(s.chain ? { chainKinetic: s.chain.mass * s.chain.w.reduce((sum, w) => sum + w * w, 0) / (2 * s.chain.w.length) } : {}),
+  }
 }
 
 function dot(p: Vec2, q: Vec2): number {
@@ -1470,6 +1483,10 @@ class RapierSimulator implements Simulator {
       ...this.springs.map((s): [number, ConstraintState] => [s.index, readSpring(s)]),
     ]
     return read.sort(([i], [j]) => i - j).map(([, state]) => state)
+  }
+
+  readPulleys(): PulleyState[] {
+    return [...this.disks].map(([id, disk]) => ({ id, angvel: disk.angvel() }))
   }
 
   readStates(): Map<string, BodyState> {
