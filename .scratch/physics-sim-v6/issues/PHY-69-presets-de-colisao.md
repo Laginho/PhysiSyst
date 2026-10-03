@@ -1,5 +1,5 @@
 # PHY-69: Presets de colisão elástica e inelástica
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-68
 Review: agent
@@ -84,3 +84,13 @@ Verdict: Approve
 - Decisões do planner examinadas: `Proxy decided` sobre a família física, tolerâncias e tópico, coerente com o builder e ADR-0005; `Proxy decided` autorizando somente a linha da expectativa DOM, incorporada aos Primary files e aplicada em commit test-only separado. Nenhuma decisão pendente.
 - Provas vermelho/verde de stage 2 examinadas: catálogo sem os presets → 5 failed / 23 passed (28); mutações de posição e restituição → 3 failed / 25 skipped (28), com falhas específicas registradas acima; retirada dos presets na costura DOM → 1 failed / 130 skipped (131), grupo Colisões ausente. Os testes exercitam produção e simulador reais, sem cópia da lógica. Não houve novo teste nem alteração de produção em stage 3.
 - Gate independente de stage 3, após rebase, fora do sandbox para os testes com Chromium: **1072 passed (1072), 32 arquivos passed (32)**; `npm run lint`, `npm run typecheck` e `npm run build` com exit 0. Build mantém somente o aviso existente de chunks maiores que 500 kB. `git diff --check` passou.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+- Critérios 1–6 atendidos. Presets de colisão elástica e inelástica integrados à sessão `sweatshop/2026-10-03-1618` pelo merge sem squash `94a9fe3`. Ticket fechado e ledger atualizado no mesmo commit de encerramento.
+- Arquivos: `src/presets/index.ts`, `src/presets/presets.test.ts`, `src/i18n/pt-BR.ts`, `src/i18n/en.ts` e a linha autorizada de `src/App.test.ts`. Única correção da revisão: contagem/exemplos da galeria no `README.md`, commit documental `72603d7`.
+- Prova vermelho/verde preservada: `ebbcdfe` (5 failed / 23 passed antes da produção), `7debab0` (implementação), `77c3b01` (expectativa DOM em commit separado). Mutações de posição/restituição e retirada dos presets no DOM falharam com as saídas específicas registradas em Comments; produção restaurada e todos os testes verdes no gate independente de stage 3.
+- Gate: **32 arquivos passed (32), 1072 testes passed (1072)**; lint, typecheck e build com exit 0. Merge sem conflitos, preservando a árvore validada. Nenhuma mudança de produção ou teste feita pela revisão.
+- Ressalva: aviso existente de chunk de build maior que 500 kB; não bloqueia o gate. Limites da inspeção e decisões do planner registrados no review acima.
