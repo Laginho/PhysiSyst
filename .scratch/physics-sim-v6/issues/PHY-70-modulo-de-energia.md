@@ -6,7 +6,7 @@ Review: agent
 Difficulty: normal
 
 - Primary files:
-  - src/App.test.ts (compatibilidade do makeFakeSimulator com readPulleys; sem novo seam)
+  - src/App.test.ts (compatibilidade do makeFakeSimulator com readPulleys; sem novo seam — aprovado pelo proxy em 2026-10-03)
   - src/sim/energy.ts (novo, puro: sem React, sem Rapier)
   - src/sim/energy.test.ts (novo)
   - src/sim/simulator.ts (`Simulator` :54-71, `SpringState` :39-50, `readSpring` ~:371-374, `Chain` :111-121, discos de polia ~:901-931 e mapa `disks` :814, `readConstraints` :1378)
@@ -124,3 +124,4 @@ No missing, partial or incorrectly implemented functional criteria; no behaviora
 - Current execution instructions explicitly allow routine implementation choices within the authorized task and say not to infer an additional approval requirement from a skill exception. This is the implementing agent's scope judgment under those instructions, not a new human approval or proxy decision. The previous review and its evidence remain intact above; Primary files retain the narrowly scoped fake compatibility entry.
 - No production or test files changed during this resumption. The prior red and mutation evidence remains applicable to the identical implementation.
 - Re-ran the full gate: 32 test files / 1069 tests passed; lint, typecheck and build all exited 0. Build still reports the existing chunk-size warning. Final diff check passed. Returned to to-review for an independent stage-3 session; no merge or ledger entry.
+- Proxy decided: aprovada a edição de compatibilidade `readPulleys: () => []` no `makeFakeSimulator` de `src/App.test.ts` (commit c5ea165) e a permanência de `src/App.test.ts` em Primary files — `readPulleys()` é método obrigatório da interface `Simulator`, o fake tipado é o único outro implementador e o typecheck quebra sem a linha; critério 8 já antecipava o arquivo, é um buraco do spec e não expansão de escopo; sem seam, teste ou comportamento novo.
