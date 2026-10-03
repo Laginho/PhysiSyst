@@ -2742,6 +2742,21 @@ describe('recorded time player (PHY-64)', () => {
     }
   }
 
+  it('dragging a historical force handle at cursor zero edits the anchor and resets the recording', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(3)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.anchorX']), 0.4))
+    p.seek(0)
+    dragTo(p.canvas, { x: 6, y: 4 }, { x: 6, y: 4.5 })
+    p.poll()
+    const edited = p.replaceScene.mock.calls.at(-1)![0]
+    expect(edited.bodies.find(b => b.id === 'ball')!.position).toEqual({ x: 6, y: 4 })
+    expect(edited.forces[0]!.anchor).toEqual({ x: 0, y: 0.5 })
+    expect(p.slider().max).toBe('0')
+  })
+
   it.each(['button', 'keyboard'] as const)('PHY-66 %s seeks backward from live and recorded play, stopping at zero', async (mode) => {
     const translations: Array<[number, number]> = []
     const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
