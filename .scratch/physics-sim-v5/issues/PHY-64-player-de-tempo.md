@@ -117,3 +117,21 @@ Verdict: Approve
 - Gate: `npm test && npm run lint && npm run typecheck && npm run build` completed successfully (test duration 44.58 s; ESLint, TypeScript, Vite exit 0). The restricted run first had 972 passes and 15 Chromium DevTools connection/disconnection failures; the approved unrestricted rerun passed all 987. Existing Rapier chunk-size warning only. The subsequent change was documentation only; rebase was already up to date, merge had no conflicts, and final diff checks passed.
 - Proxy decisions reviewed by name: every displayed value follows the slider; acceleration belongs to the recorded step; localized two-decimal time with step counter; reset/scene-switch clears recording while seek-zero preserves it; native range in transport; seek pauses and stays paused; record zero is initial state; historical g/F and undo/redo are locked; keyboard shortcuts remain unchanged. The proxy's earlier 18,000-record proposal was explicitly superseded by Bruno's 600-record cap, which the implementation uses.
 - Remaining limitation: replay and backward-step controls remain assigned to PHY-65/PHY-66; the current play/step behavior returns to live as required.
+
+#### PR #15 corrections (2026-10-03)
+
+- Corrected force-anchor hit-testing to use the displayed recorded scene, matching the painted handle. Editing at cursor zero still updates the current document and resets playback normally (criterion 11).
+- New DOM regression: `dragging a historical force handle at cursor zero edits the anchor and resets the recording`. After three steps and a live anchor-X edit to 0.4, seeking zero and dragging the historical handle from (6, 4) to (6, 4.5) leaves the body at (6, 4), updates the anchor to (0, 0.5), and clears the recording.
+- Mutation proof: temporarily changed `displayedScene().forces.find` back to `docRef.current.forces.find`. Exact red output: `AssertionError: expected { x: 6, y: 4.5 } to deeply equal { x: 6, y: 4 }`; 1 failed, 129 skipped, exit 1. Restored production source: all 20 recorded-player cases passed, exit 0. Logs: `C:/Users/bruno/AppData/Local/Temp/physyst-pr15-fixes/force-handle-mutation-red.log` and `recorded-player-restored-green.log` in the same directory; initial red and first green are also retained there.
+- Timeline wrapper now grows with a 260px flex basis; its range fills the wrapper and its time readout stays on one line. Real Chromium measurements through the existing browser harness (temporary measurement file removed afterward):
+
+| Viewport width (px) | Slider before (px) | Slider after (px) | Transport height before/after (px) |
+| --- | --- | --- | --- |
+| 1920 | 129 | 685.36 | 23 / 23 |
+| 1280 | 129 | 821.59 | 52 / 52 |
+| 950 | 129 | 228.17 | 52 / 52 |
+| 700 | 129 | 260.17 | 52 / 52 |
+| 360 | 129 | 183.59 | 111 / 111 |
+
+- The timeline reaches the transport's right edge at every measured width. Transport button positions, widths, wrapping, and page scroll widths are unchanged. Raw before/after geometry, browser-run logs, and the measurement harness are retained in `C:/Users/bruno/AppData/Local/Temp/physyst-pr15-fixes/` (`timeline-before.jsonl`, `timeline-after.jsonl`, `timeline-before.log`, `timeline-after.log`, `timeline-measurement-harness.ts`).
+- Final gate for these corrections ran once in the foreground: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. All 31 test files and 1025 tests passed (29.12 s); ESLint, TypeScript, and Vite build passed. Full output with exit code: `C:/Users/bruno/AppData/Local/Temp/physyst-pr15-fixes/gate.log`. Only the existing large Rapier chunk warning remains.

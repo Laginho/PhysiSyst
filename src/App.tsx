@@ -1437,7 +1437,7 @@ export default function App() {
         return
       }
       // Then the application points of its forces, which drag with Anchor snap.
-      const grabbed = docRef.current.forces.find((f) => {
+      const grabbed = displayedScene().forces.find((f) => {
         if (f.bodyId !== selected.id) return false
         const p = bodyPointToWorld(selected, f.anchor)
         const s = worldToScreen(transform, p.x, p.y)
@@ -1836,13 +1836,13 @@ export default function App() {
                 {playback.speed.toFixed(2)}×
               </span>
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
               {t('playback.timeLabel')}
-              <input type="range" min={0} max={recordingLength - 1} step={1}
+              <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
                 value={playback.cursor ?? recordingLength - 1}
                 onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
               />
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                 t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
               </span>
             </label>
