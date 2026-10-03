@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: blocked
+Stage: to-implement
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -7,7 +7,7 @@ Difficulty: normal
 - Primary files:
   - src/render/draw.ts (o `fillText(label)` dos rótulos de massa em ~243 e o rótulo em `drawArrow`)
   - src/render/draw.test.ts
-  - src/App.test.ts (só os dois `getContext` falsos: `measureText` devolve `{ width }`; nenhuma asserção muda)
+  - src/App.test.ts (só os contextos falsos passados a `getContext`, todos os presentes e os que a sessão vier a acrescentar: `measureText` devolve `{ width: <número> }`; nenhuma asserção, cenário ou expectativa muda)
 
 #### What to build
 
@@ -42,3 +42,7 @@ O rótulo de massa sai literal, com o sublinhado (`m_a`, `m_b`), centrado no cor
 - 2026-10-03 Foreman: o branch `phy/PHY-60-rotulo-massa-asked-20261003-0051` foi renomeado para `asked/phy60-rotulo-massa-20261003-0051` (mesmos commits `0426c42`, `9ece33d`), porque o driver procura o branch do ticket por `*/PHY-60-*`, achava o nome antigo e lia o `Stage: blocked` dele. Para retomar como o proxy decidiu: criar o branch do ticket `phy/PHY-60-rotulo-de-massa-com-subscrito` a partir da sessão e trazer dele as mudanças em `src/` de `0426c42` (teste) e `9ece33d` (código), com o ticket vindo da sessão; não trabalhar direto no branch `asked/`.
 
 - 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-60-rotulo-de-massa-com-subscrito-asked-20261003-0318`): PHY-60 preservado no commit `c01e01a`, com `Stage: blocked`. /  / Subscritos e posicionamento externo funcionam: 27 testes focados passam. Gate: 1009 passam, 6 falham por outros quatro canvases falsos sem `measureText`. Lint, typecheck e build passam. /  / Posso corrigir esses quatro doubles, sem alterar asserções? /  / O ticket autoriza apenas dois; a [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “the implementer may touch those files and nothing else”. O proxy configurado está indisponível neste runtime.
+
+- 2026-10-03 Proxy decided: sim, os quatro doubles novos também entram — a regra passa a ser por tipo, não por contagem: todo contexto falso passado a `getContext` em `src/App.test.ts` (hoje seis, ~l.279, ~2331, ~2752, ~2857, ~3075, ~3102, e qualquer outro que a sessão acrescente) pode ganhar `measureText` devolvendo `{ width: <número> }`, e nada mais nesse arquivo muda; o `beforeEach` com `getContext: () => null` fica como está — os quatro são o mesmo `TypeError` de harness do primeiro pedido (o Proxy cai em `target[key] ?? (() => {})`, `measureText` devolve `undefined`, `.width` quebra em draw.ts:247), as asserções deles leem `translate`/`stroke`, não texto, e a contagem "dois" descrevia o arquivo antes de PHY-64..66 serem mergeados, não uma escolha de design. O próximo stage 2 retoma de `c01e01a` (`676ad3f` teste em draw.test.ts, `33084dc` test-only nos dois primeiros doubles, `c01e01a` só `draw.ts` + ticket) sem refazer nada: cria `phy/PHY-60-rotulo-de-massa-com-subscrito` a partir da sessão, traz as mudanças em `src/` desses três commits, acrescenta um commit test-only com os quatro doubles restantes, roda o gate e vai a `to-review`.
+
+- 2026-10-03 Foreman: os commits da tentativa 2 (`676ad3f`, `33084dc`, `c01e01a`) estão no branch `asked/phy60-rotulo-massa-20261003-0318` (renomeado pelo mesmo motivo do anterior).
