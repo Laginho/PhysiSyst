@@ -781,6 +781,81 @@ export function assignPairFrictions(scene: Scene): {
   return { friction, useMaxFallback, warnings }
 }
 
+/** Solve log(r_a) + log(r_b) = log(e) on positive contact edges (ADR-0005). */
+export function assignPairRestitutions(scene: Scene): {
+  factor: Map<string, number>
+  useMinFallback: boolean
+  warnings: string[]
+} {
+  const EPS = 1e-9
+  const factor = new Map(scene.bodies.map((body) => [body.id, 0]))
+  const adjacency = new Map<string, Array<{ to: string; logE: number }>>()
+  for (const contact of scene.contacts) {
+    if (!(contact.e! > 0)) continue
+    for (const [from, to] of [[contact.a, contact.b], [contact.b, contact.a]]) {
+      const edges = adjacency.get(from!) ?? []
+      edges.push({ to: to!, logE: Math.log(contact.e!) })
+      adjacency.set(from!, edges)
+    }
+  }
+  const visited = new Set<string>()
+  let useMinFallback = false
+  for (const body of scene.bodies) {
+    if (visited.has(body.id) || !adjacency.has(body.id)) continue
+    // Every log-factor is sign*t + bias. Odd cycles pin t; even cycles
+    // must agree independently of t. A free component uses t = 0.
+    const potentials = new Map([[body.id, { sign: 1, bias: 0 }]])
+    const order = [body.id]
+    let pinned: number | undefined
+    for (let i = 0; i < order.length && !useMinFallback; i++) {
+      const id = order[i]!
+      visited.add(id)
+      const current = potentials.get(id)!
+      for (const { to, logE } of adjacency.get(id)!) {
+        const other = potentials.get(to)
+        if (!other) {
+          potentials.set(to, { sign: -current.sign, bias: logE - current.bias })
+          order.push(to)
+          continue
+        }
+        const sum = current.sign + other.sign
+        const residual = logE - current.bias - other.bias
+        if (sum === 0) {
+          if (Math.abs(residual) > EPS) useMinFallback = true
+        } else {
+          const t = residual / sum
+          if (pinned !== undefined && Math.abs(t - pinned) > EPS) useMinFallback = true
+          pinned = t
+        }
+      }
+    }
+    if (useMinFallback) break
+    for (const [id, { sign, bias }] of potentials) {
+      const value = Math.exp(sign * (pinned ?? 0) + bias)
+      if (!Number.isFinite(value) || value === 0) useMinFallback = true
+      factor.set(id, value)
+    }
+    if (useMinFallback) break
+  }
+  // Absent e means zero too: declared inelastic interfaces must remain so.
+  for (const contact of scene.contacts) {
+    if ((contact.e ?? 0) === 0 && factor.get(contact.a)! > 0 && factor.get(contact.b)! > 0) {
+      useMinFallback = true
+    }
+  }
+  const warnings: string[] = []
+  if (useMinFallback) {
+    for (const body of scene.bodies) factor.set(body.id, 0)
+    for (const contact of scene.contacts) {
+      for (const id of [contact.a, contact.b]) {
+        factor.set(id, Math.max(factor.get(id) ?? 0, contact.e ?? 0))
+      }
+    }
+    warnings.push('contact e-graph has inconsistent constraints; restitution degraded to per-body max with Min rule')
+  }
+  return { factor, useMinFallback, warnings }
+}
+
 function colliderDescFor(body: Scene['bodies'][number], friction: number, useMaxFallback: boolean): RAPIER.ColliderDesc {
   let desc: RAPIER.ColliderDesc
   switch (body.shape) {
