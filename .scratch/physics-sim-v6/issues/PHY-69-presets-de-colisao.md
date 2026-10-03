@@ -1,5 +1,5 @@
 # PHY-69: Presets de colisão elástica e inelástica
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: PHY-68
 Review: agent
@@ -40,3 +40,5 @@ Nomes: 'Colisão elástica' / 'Elastic collision', 'Colisão inelástica' / 'Ine
 
 - 2026-10-03 Stage 1 (planner, grilling com proxy).
 - Proxy decided: uma família de dois presets (e = 1 e e = 0,5), esferas iguais de 1 kg, uma parada; sem par com o chão; forma fechada e = 1 → 0 e 3, e = 0,5 → 0,75 e 2,25; tolerância 3% como o teste frontal existente; tópico 'colisoes' em dinâmica.
+
+- 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-69-presets-de-colisao-asked-20261003-1743`): PHY-69 implementado e commitado, mas marcado `blocked`. /  / - Presets elástico/inelástico e traduções adicionados. / - Testes novos verificados por mutação. / - Gate: 1060 passaram; 1 falhou por expectativa antiga da galeria. Lint, typecheck e build passaram. / - Commits: `ebbcdfe`, `7debab0`. /  / Autoriza atualizar essa expectativa em [src/App.test.ts](/D:/Desktop/Projects/PhysiSyst/src/App.test.ts:1850)? /  / A [ticket-flow](/C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige “the implementer may touch those files and nothing else”; esse arquivo está fora dos `Primary files`, e o proxy configurado está indisponível.
