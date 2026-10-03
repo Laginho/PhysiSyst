@@ -1,0 +1,16 @@
+# CLEAN-30: Energia e momento antigos enquanto o mundo aguarda reconstrução
+Stage: blocked
+Status: needs-triage
+Blocked by: none
+Review: agent
+Difficulty: normal
+
+## Comments
+
+- 2026-10-03 Aberto na revisão do PHY-71 (merge `e484370`). Motivo de blocked: stage 1 precisa definir o comportamento das energias quando não há estado válido para o documento exibido, e então publicar Primary files, critérios numerados e testes. Os critérios 3/4 do PHY-71 cobrem quadros com estado válido; a revisão não acrescentou uma política de fallback.
+- Problema confirmado em `src/App.tsx:976-982`: o poll combina `displayedScene()` com `liveFrameRef.current.states` mesmo quando `pendingRebuildRef.current` é true. Edições estruturais em t0 limpam `statesRef`, mas mantêm o quadro vivo antigo. Em reset/troca que falha, `captureFrame` pode ler o mundo anterior, pois `replaceScene` é transacional.
+- Reprodução DOM, sem alterar a produção: fixture `setupRecording` de `src/App.test.ts`, corpo ball de 1 kg, g=10, y=4. Selecionar o corpo, editar `properties.posY` para 5 e avançar o poll em 100 ms. Recebido: `posição: (6,00, 5,00) m` junto de `E_pg: 40,00 J`; a leitura permanece na altura anterior até reconstruir.
+- Segunda reprodução: fixture existente CLEAN-16, teste `uma troca de cena cujo replaceScene falha não mostra poses ou velocidades da cena anterior, nem após o retry`. Após um passo, a cena antiga tem vx=5. Trocar para a cena com vx=2 e fazer `replaceScene` falhar uma vez. Recebido: `velocidade: 2,00 m/s`, `E_c: 12,50 J`, `|p|: 5,00 kg·m/s`. A energia e o momento são os do mundo anterior, embora a cinemática já mostre o documento novo.
+- Sondagens temporárias com asserções contra E_pg=50,00 J e E_c=2,00 J: `npm test -- src/App.test.ts -t 'review probe|uma troca de cena cujo replaceScene falha'` → **2 failed / 135 skipped (137)**. Essas expectativas demonstram a discrepância; não escolhem o fallback. Instrumentação restaurada byte a byte. Suíte original após restauração: **1078 passed**, lint/typecheck/build verdes.
+- Pergunta para stage 1: sem estado válido para o documento atual, as energias devem mostrar `readout.noData` até reconstruir ou usar um estado inicial do documento? Avaliar também o sistema, molas/polias, boot com edições pendentes e retry. A cinemática e o histórico válido devem preservar seu comportamento atual.
+- Costuras existentes para especificar a correção: poll de energia e invalidação/captura do quadro em `src/App.tsx`, testes de DOM em `src/App.test.ts`. `src/sim/energy.ts` não apresentou erro de cálculo. Nenhuma correção foi implementada nesta triagem.
