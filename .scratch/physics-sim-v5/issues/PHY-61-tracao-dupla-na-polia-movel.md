@@ -1,5 +1,5 @@
 # PHY-61: Trechos paralelos numa polia viram uma seta 2T
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -34,3 +34,5 @@ O fator vai num campo opcional `factor` de `OverlayArrow` (ausente = 1). `vector
 ## Comments
 
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 5, print da polia móvel). As duas setas T sobrepostas foram confirmadas no código: `tensionArrows` faz um `push` por trecho adjacente no centro da polia. Bruno escolheu fundir em 2T, em vez de T₁/T₂ (a tração é a mesma) ou setas lado a lado.
+
+- 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-61-tracao-dupla-na-polia-movel-asked-20261003-0054`): PHY-61 marcado `blocked` no commit `15d227f`. /  / O consumidor em `src/App.tsx:248` consulta rótulos pela chave da corda; assim, não consegue distinguir `2T` da carga e `T` do contrapeso. /  / Posso incluir esse consumidor nos `Primary files`? A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “the implementer may touch those files and nothing else”. /  / Nenhum código alterado; testes não executados.
