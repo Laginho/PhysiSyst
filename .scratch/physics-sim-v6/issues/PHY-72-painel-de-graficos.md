@@ -1,5 +1,5 @@
 # PHY-72: Painel de gráficos da gravação
-Stage: blocked
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: PHY-71
 Review: human
@@ -67,3 +67,4 @@ Módulo puro `src/render/graph.ts`:
 - Proxy decided: com corpo selecionado o gráfico de energia mostra `E_c`, `E_pg` e `E_mec = E_c + E_pg` (3 curvas, sem `E_el` mesmo com molas), somado em `graph.ts` sem mexer em `bodyEnergy`; `E_el` e a 4ª curva ficam só no escopo sistema, com `E_mec` de `systemEnergy`; `src/App.browser.test.ts` entra em Primary files — a spec (§Energia, leitura do corpo) e o PHY-71 já dão ao corpo só E_c/E_pg e ao sistema E_el; a energia da mola não tem atribuição por corpo definida e inventar uma seria convenção física nova, enquanto E_c+E_pg é a energia mecânica de um corpo do livro; o teste de browser já era costura nomeada. Retomar da branch `asked/phy72-painel-graficos-20261003-2023` (só o commit de docs `5e80601`, sem código).
 
 - 2026-10-03 Attempt 1 stopped to ask: PHY-72 está `blocked` na branch `asked/phy72-painel-graficos-20261003-2023`. /  / A decisão que resolve o bloqueio já está na branch de sessão (`221000f`), mas ainda não foi incorporada à branch do ticket. /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige parar quando a etapa registrada é `blocked`. Nenhum código alterado; testes não executados.
+- 2026-10-03 Foreman: o segundo bloqueio foi causado pelo ponteiro "Retomar da branch asked/..." da linha Proxy decided acima: aquela branch só tem o commit de docs `5e80601` (Stage blocked, nenhum código). Não há nada a retomar: criar `phy/PHY-72-painel-de-graficos` a partir da sessão e implementar com o contrato já corrigido aqui (critério 3, bullet de energia, Primary files).
