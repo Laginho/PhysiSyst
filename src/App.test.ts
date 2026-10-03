@@ -2879,4 +2879,26 @@ describe('recorded time player (PHY-64)', () => {
     p.seek(4)
     expect(reading()).toContain(kind === 'spring' ? 'F_el: 4.00 N' : 'T: 4.00 N')
   })
+
+  it('paints the historical body pose and localizes the time label', async () => {
+    const translations: Array<[number, number]> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { translations.length = 0 }
+        if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    await p.steps(5)
+    p.seek(1)
+    expect(translations).toContainEqual([expect.closeTo(450.6, 8), 300])
+    expect(translations).not.toContainEqual([453, 300])
+    expect(p.host.textContent).toContain('t = 0,02 s')
+    const language = [...p.host.querySelectorAll('select')].find((select) => select.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, 'en'))
+    expect(p.host.textContent).toContain('t = 0.02 s')
+  })
+
 })
