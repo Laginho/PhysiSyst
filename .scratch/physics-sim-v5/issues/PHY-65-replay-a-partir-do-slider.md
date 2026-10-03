@@ -1,5 +1,5 @@
 # PHY-65: Play e passo único a partir de um ponto anterior
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: human
@@ -50,3 +50,30 @@ Isso substitui o critério 3 e o 15 do PHY-64 (play e passo com o cursor num reg
 
 - Stage 2 (2026-10-03): PHY-64 está done na base sweatshop/2026-10-02-2210. Consumidores de advance: App (dispatch/frame/fail), testes de integração, overlay e accelerationTracker. Os consumidores ao vivo existentes omitem length; preservar essa compatibilidade. Casos de fronteira: cursor zero, crédito fracionário sem passo, igualdade no último registro, excesso a 2x, gravação inicial/vazia no transporte ao vivo e limite de 600 registros.
 - Red antes de produção: `npx vitest run src/playback/scheduler.test.ts src/App.test.ts --reporter=dot`: 15 failed, 170 passed (185). As falhas são do contrato antigo: play perde cursor, stepOnce executa física em vez de história, frame ignora cursor. No DOM: replay 1x/0.5x recebeu slider 4 em vez de 0; single-step recebeu 4 em vez de 2; excesso 2x deu 6 passos em vez de 5; limite play/step recebeu 599 em vez de 598; teste atualizado da PHY-64 recebeu passos 203 em vez de 11.
+#### Stage 2 — mutate-verify (2026-10-03)
+
+Mutações temporárias em produção, sempre restauradas em `finally`. Nenhum teste usa cópia do scheduler.
+
+- M1: em `advanceCursor`, substituir o cálculo por `cursor = null` e `steps = credit` (pular registros e executar física).
+- M2: remover `showFrame(...)` do laço de frame do App (não exibir o registro nem restaurar o snapshot vivo antes dos passos excedentes).
+- M3: devolver `cursor: null` no `play` do scheduler.
+- M4: remover `setPlayback(t.state)` do laço de frame (refs avançam, mas os controles React ficam no cursor antigo).
+
+Comando M1: `npx vitest run src/App.test.ts src/playback/scheduler.test.ts -t 'PHY-65' --reporter=dot`: **14 failed, 4 passed, 167 skipped (185)**. Comando M2: `npx vitest run src/App.test.ts -t 'PHY-65' --reporter=dot`: **4 failed, 2 passed, 120 skipped (126)**.
+
+Evidência por teste DOM novo (nomes começam com PHY-65):
+
+| Teste | Mutação | Saída vermelha observada |
+|---|---|---|
+| replay at 1x paints recorded frames, pauses and resumes live without a jump | M1; M2 | `expected '5' to be '1'`; leitura não contém `(6.01, 4.00) m` |
+| replay at 0.5x paints recorded frames, pauses and resumes live without a jump | M1; M2 | `expected '4' to be '0'`; leitura não contém `(6.01, 4.00) m` |
+| single-step follows records and unlocks live fields and both history actions at the tip | M1; M4 | `expected '4' to be '2'`; `expected true to be false` nos controles que deveriam desbloquear |
+| spends only surplus 2x credit in the live world and restores live acceleration first | M1; M2 | `expected vi.fn() to be called 5 times, but got 6 times`; leitura não contém `(9.00, 0.00) m/s²` |
+| capped replay reaches the current live world via play | M1; M2 | `expected '599' to be '598'`; leitura não contém `(11.98, 4.00) m` |
+| capped replay reaches the current live world via step | M1 | `expected '599' to be '598'` |
+
+M3: `npx vitest run src/playback/scheduler.test.ts -t 'play keeps' --reporter=dot`: **1 failed, 58 skipped (59)**, cursor `null` em vez de `2`. M4: `npx vitest run src/App.test.ts -t 'PHY-65 single-step' --reporter=dot`: **1 failed, 125 skipped (126)**. Os oito casos de frame/stepOnce do scheduler falham sob M1; a preservação de play falha sob M3. Os três casos ao vivo são checks de compatibilidade já verdes antes da mudança.
+
+Implementação: play preserva cursor; frame/stepOnce consomem crédito em registros antes do mundo vivo, mantendo stepsTaken como contador físico. `length` é opcional para preservar os consumidores ao vivo existentes; o App fornece o comprimento atual nas duas ações. O frame restaura os refs ao vivo antes dos passos excedentes, atualiza controles ao mudar cursor e repinta cada registro. Sem mudanças no timestep ou no simulador.
+- Gate final (2026-10-03), produção restaurada após todas as mutações: `npm test` **31 files passed, 1003 tests passed**, 48.00 s; `npm run lint`, `npm run typecheck` e `npm run build` **exit 0**. Build: aviso de chunks maiores que 500 kB (bundle de simulação); sem erro. Foco antes das mutações: **2 files passed, 185 tests passed**.
+- Revisão final do diff: somente os quatro Primary files e este ticket; testes em `12988b2`, implementação no commit seguinte sem tocar testes. Critérios 1–10 cobertos; sem alteração no simulador ou na gravação. Etapa 2 concluída; revisão humana permanece para a etapa 3/PR da sessão.

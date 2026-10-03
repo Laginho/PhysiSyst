@@ -1229,8 +1229,16 @@ export default function App() {
     const tick = () => {
       if (!live) return
       if (syncWorld()) {
-        const t = advance(playbackRef.current, { type: 'frame' })
+        const previousCursor = playbackRef.current.cursor
+        const t = advance(playbackRef.current, { type: 'frame', length: recordingRef.current!.length })
         playbackRef.current = t.state
+        if (previousCursor !== t.state.cursor) {
+          // Restore the live snapshot before surplus steps so acceleration uses
+          // the actual preceding live step, not the previously displayed record.
+          showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+          setPlayback(t.state)
+          repaint()
+        }
         runSteps(t.steps)
       }
       if (live) handle = requestAnimationFrame(tick)
@@ -1240,7 +1248,7 @@ export default function App() {
       live = false
       cancelAnimationFrame(handle)
     }
-  }, [playback.status, runSteps, syncWorld])
+  }, [playback.status, runSteps, syncWorld, showFrame, repaint])
 
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
@@ -1322,7 +1330,7 @@ export default function App() {
 
   function stepOnce() {
     void ensureSim().then((sim) => {
-      if (sim) dispatch({ type: 'stepOnce' })
+      if (sim) dispatch({ type: 'stepOnce', length: recordingRef.current!.length })
     })
   }
 
