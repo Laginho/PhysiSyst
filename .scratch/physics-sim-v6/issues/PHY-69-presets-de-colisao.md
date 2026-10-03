@@ -1,5 +1,5 @@
 # PHY-69: Presets de colisão elástica e inelástica
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-68
 Review: agent
@@ -38,6 +38,9 @@ Nomes: 'Colisão elástica' / 'Elastic collision', 'Colisão inelástica' / 'Ine
 - `src/i18n/i18n.test.ts`: critério 6 já é coberto pela paridade existente.
 
 ## Comments
+
+- 2026-10-03 Stage 2 concluído na retomada: gate completo **1072 passed (1072), 32 arquivos passed (32)**; lint, typecheck e build com exit 0. Execução fora do sandbox após a execução focada restrita apresentar 2 desconexões do Chromium (186 passed / 2 failed); nenhuma falha no gate final. Build mantém o aviso de chunk acima de 500 kB.
+- Diff final revisado contra a base da sessão: somente Primary files e histórico do ticket; nenhuma alteração de produção adicional nesta retomada. Teste da galeria isolado em `77c3b01`, com vermelho por mutação registrado abaixo e verde no gate completo. Implementação e provas anteriores preservadas em `ebbcdfe` / `7debab0`; merge `f65b776` incorpora a autorização do planner e o PHY-70 já concluído. Pronto para stage 3, sem revisão ou merge de encerramento nesta sessão.
 
 - 2026-10-03 Retomada stage 2: integrada a base da sessão, preservando os commits `ebbcdfe` e `7debab0` e a autorização do planner. Atualizada somente a linha autorizada da expectativa da galeria.
 - Mutate-verify da expectativa DOM `agrupa por nó na ordem do livro, com os presets na ordem declarada, e só nós com preset aparecem`: substituído temporariamente `src/presets/index.ts` pela versão da base `sweatshop/2026-10-03-1618` (sem os presets de colisão). `npm test -- src/App.test.ts -t 'agrupa por nó na ordem do livro'`: **1 failed / 130 skipped (131)**, `AssertionError` em `src/App.test.ts:1851`, grupo esperado `Mecânica / Dinâmica / Colisões` com `Colisão elástica` e `Colisão inelástica` ausente do recebido. Produção restaurada integralmente após o vermelho.
