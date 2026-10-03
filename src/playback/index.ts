@@ -11,3 +11,4 @@ export type { PlaybackAction, PlaybackState, PlaybackStatus, PlaybackTransition 
 export { applyStates } from './view'
 export { applyLiveOps, routeDocChange } from './routing'
 export type { DocRoute, LiveOp } from './routing'
+export { Recording, RECORDING_CAP } from './recording'

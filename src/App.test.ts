@@ -12,11 +12,12 @@ import { trashRect } from './editor/trash'
 import { createSimulator, type BodyState, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
-import { setLang } from './i18n'
-import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { setLang, t } from './i18n'
+import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, INDEX_KEY, GALLERY_ACK_KEY, loadIndex, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { DEMO_SCENE } from './scene/demo'
 import { scenePath } from './scene'
 import type { Scene } from './scene/types'
-import { presetById } from './presets'
+import { PRESETS, presetById } from './presets'
 import { withBrowserSession } from './test/browser'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -249,8 +250,77 @@ function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasEle
 function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
   const canvas = host.querySelector('canvas')
   const box = canvas?.parentElement
-  return [...(box?.children ?? [])].find((el) => el !== canvas) as HTMLElement | undefined
+  return [...(box?.children ?? [])].find((el) => el !== canvas && el.tagName === 'DIV') as HTMLElement | undefined
 }
+
+describe('initial velocity overlay (PHY-59)', () => {
+  it.each([
+    ['global', 'step'],
+    ['selected', 'step'],
+    ['global', 'play'],
+    ['selected', 'play'],
+  ] as const)('shows v0 only before stepping and after reset: %s / %s', async (mode, transport) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const strokes: unknown[] = []
+    const labels: Array<{ color: unknown; text: string }> = []
+    // Record the current canvas frame at the browser boundary; all overlay
+    // producers and drawing functions remain real.
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { strokes.length = 0; labels.length = 0 }
+        if (key === 'stroke') return () => { strokes.push(target.strokeStyle) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const scene = blankScene()
+    scene.bodies = [{ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0, vx: 2 }]
+    scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 }]
+    const step = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), step })
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'velocity', name: 'Velocity', updatedAt: 1 }])
+      saveScene(storage, 'velocity', scene)
+      saveCurrentSceneId(storage, 'velocity')
+    })
+    await settleSimImport()
+    if (mode === 'global') {
+      const label = [...host.querySelectorAll('label')].find((el) => el.textContent?.trim() === ptBR['panel.showVectors'])!
+      act(() => label.querySelector('input')!.click())
+    } else {
+      click(canvas, { x: 6, y: 4 })
+    }
+    const expectOverlay = (visible: boolean) => {
+      expect(strokes.includes('#43a047')).toBe(visible)
+      expect(labels.filter((label) => label.color === '#43a047').map((label) => label.text)).toEqual(visible ? ['v₀'] : [])
+      expect(strokes).toContain('#d97742')
+      expect(labels.filter((label) => label.color === '#d97742').map((label) => label.text)).toEqual(['F'])
+    }
+    expectOverlay(true)
+    if (transport === 'step') {
+      await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    } else {
+      await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+      expectOverlay(true)
+      act(() => frame(16))
+      act(() => frame(32))
+    }
+    expect(step).toHaveBeenCalled()
+    expectOverlay(false)
+    if (transport === 'play') {
+      act(() => findButton(host, ptBR['playback.pause'])!.click())
+      expectOverlay(false)
+    }
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    expectOverlay(true)
+  })
+})
 
 describe('smoke', () => {
   it('loads the app module and exports a component', () => {
@@ -1669,8 +1739,8 @@ describe('rascunho numérico no Chromium (PHY-44)', () => {
     vi.stubGlobal('WebSocket', createRequire(import.meta.url)('ws'))
     await withBrowserSession(1280, 25000, async (session) => {
       await session.reset()
-      await session.evaluate(`[...document.querySelectorAll('label')].find(el => el.querySelector('strong')?.textContent === 'Massa-mola horizontal').querySelector('input').click()`)
-      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent === 'usar cena selecionada').click()`)
+      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.querySelector('strong')?.textContent === 'Massa-mola horizontal').click()`)
+      await session.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent === 'duplicar cena').click()`)
       await session.select(5, 0.2)
       await session.evaluate(`window.numericField = [...document.querySelectorAll('fieldset')]
         .find(el => el.querySelector('legend')?.textContent === 'mola');
@@ -1749,7 +1819,7 @@ describe('galeria em árvore (PHY-31)', () => {
     ])
   })
 
-  it('usar um preset cria a cena com o nome no idioma atual e o conteúdo do preset', () => {
+  it('duplicar um preset cria a cena no idioma atual (PHY-62)', () => {
     const host = renderApp()
     const english = en as Record<string, string>
     try {
@@ -1760,10 +1830,10 @@ describe('galeria em árvore (PHY-31)', () => {
       expect(galleryGroups(host, en['gallery.title'])[0]?.node).toBe('Mechanics / Dynamics / Principles')
 
       const gallery = panel(host, en['gallery.title'])!
-      const atwood = [...gallery.querySelectorAll('label')].find((l) => l.querySelector('strong')?.textContent?.trim() === name(english, 'atwood'))
+      const atwood = [...gallery.querySelectorAll('button')].find((l) => l.querySelector('strong')?.textContent?.trim() === name(english, 'atwood'))
       if (!atwood) throw new Error('missing Atwood preset')
-      act(() => atwood.querySelector('input')?.click())
-      act(() => findButton(host, en['gallery.useSelected'])?.click())
+      act(() => atwood.click())
+      act(() => findButton(host, en['scenes.duplicate'])!.click())
 
       const scenes = panel(host, en['scenes.title'])?.querySelector('select')
       expect(scenes?.selectedOptions[0]?.textContent?.trim()).toBe(name(english, 'atwood'))
@@ -2256,6 +2326,7 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
     const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
       get: (_t, name) => (...args: unknown[]) => {
         if (name === 'lineTo') lineTos.push([args[0] as number, args[1] as number])
+        if (name === 'measureText') return { width: 10 }
       },
       set: () => true,
     })
@@ -2339,4 +2410,729 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
     click(canvas, OPEN_SPACE)
     expect(panel(host, 'corda')).toBeUndefined()
   })
+})
+
+describe('galeria de um clique (PHY-62)', () => {
+  const storage = () => window.localStorage as unknown as PersistStorage
+  function card(host: HTMLElement, id: string): HTMLButtonElement {
+    const button = [...host.querySelectorAll('button')].find((b) => b.querySelector('strong')?.textContent === t(`preset.${id}.name`))
+    if (!button) throw new Error(`missing preset card: ${id}`)
+    return button
+  }
+  const sceneWrites = (calls: string[][]) => calls.filter(([key]) => key === INDEX_KEY || key!.startsWith(SCENE_KEY_PREFIX))
+  const flush = () => act(() => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS))
+
+  it.each(['g', 'F'])('entrada equivalente de %s preserva o preset até uma edição real', async (quantity) => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'wedge-flagship').click())
+    if (quantity === 'F') click(host.querySelector('canvas')!, { x: 12, y: 0.5 })
+    const field = quantity === 'g' ? inputForLabel(host, ptBR['panel.gLabel'])
+      : inputForLabel(panel(host, ptBR['forces.title'].replace('{id}', 'cunha'))!, ptBR['forces.magnitude'])
+    const indexBefore = storage().getItem(INDEX_KEY)
+    const savedBefore = storage().getItem(`${SCENE_KEY_PREFIX}cena-1`)
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      act(() => field.focus())
+      const equivalent = field.value.includes('.') ? `${field.value}0` : `${field.value}.0`
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, equivalent)
+        field.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      flush()
+      expect(sceneSelect(host).value).toBe('preset:wedge-flagship')
+      expect(host.textContent).toContain(t('preset.readOnlyHint'))
+      expect(sceneWrites(writes.mock.calls)).toEqual([])
+      expect(storage().getItem(INDEX_KEY)).toBe(indexBefore)
+      expect(storage().getItem(`${SCENE_KEY_PREFIX}cena-1`)).toBe(savedBefore)
+      expect(loadIndex(storage())).toHaveLength(1)
+      act(() => setNativeInputValue(field, 6))
+      flush()
+      expect(sceneSelect(host).value).toBe('cena-2')
+      expect(loadIndex(storage())).toHaveLength(2)
+      const copy = loadScene(storage(), 'cena-2')!
+      expect(quantity === 'g' ? copy.constants.g : copy.forces[0]!.magnitude).toBe(6)
+    } finally { writes.mockRestore() }
+  })
+
+  it('abre cada card em t=0 sem salvar cenas; transporte não cria cópia', async () => {
+    vi.useFakeTimers()
+    const replaceScene = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), replaceScene })
+    const host = renderApp()
+    await settleSimImport()
+    expect(sceneSelect(host).value).toBe('cena-1')
+    expect(loadIndex(storage())).toHaveLength(1)
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      for (const preset of PRESETS) {
+        act(() => card(host, preset.id).click())
+        expect(replaceScene).toHaveBeenLastCalledWith(preset.buildScene())
+        expect(sceneSelect(host).selectedOptions[0]?.disabled).toBe(true)
+        expect(sceneSelect(host).selectedOptions[0]?.textContent).toBe(t('scenes.presetOption', { name: t(`preset.${preset.id}.name`) }))
+        expect(host.textContent).toContain(t('preset.readOnlyHint'))
+        expect(host.textContent).toContain('passos: 0')
+        expect(findButton(host, ptBR['playback.play'])).toBeDefined()
+        expect(findButton(host, ptBR['scenes.delete'])!.disabled).toBe(true)
+        expect(panel(host, ptBR['gallery.title'])).toBeDefined()
+        await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+        act(() => findButton(host, ptBR['playback.reset'])!.click())
+        const speed = host.querySelector<HTMLInputElement>('input[type="range"]')!
+        act(() => setNativeInputValue(speed, 2))
+        await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+        flush()
+      }
+      expect(sceneWrites(writes.mock.calls)).toEqual([])
+      expect(storage().getItem(GALLERY_ACK_KEY)).toBe('true')
+      expect(host.querySelector('input[name="preset"]')).toBeNull()
+      expect(findButton(host, ptBR['gallery.useSelected'])).toBeUndefined()
+    } finally { writes.mockRestore() }
+  })
+
+  it('reabre o preset após reload; desconhecido volta à cena salva', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    expect(storage().getItem(CURRENT_SCENE_KEY)).toBe('preset:atwood')
+    act(() => root!.unmount())
+    root = null
+    const reloaded = renderApp()
+    await settleSimImport()
+    expect(sceneSelect(reloaded).value).toBe('preset:atwood')
+    expect(createSimulator).toHaveBeenLastCalledWith(presetById('atwood')!.buildScene())
+    expect(reloaded.textContent).toContain(t('preset.readOnlyHint'))
+    expect(reloaded.textContent).not.toContain('não encontrada')
+    act(() => root!.unmount())
+    root = null
+    saveCurrentSceneId(storage(), 'preset:unknown')
+    const fallback = renderApp()
+    expect(sceneSelect(fallback).value).toBe('cena-1')
+    expect(fallback.textContent).not.toContain(t('preset.readOnlyHint'))
+  })
+
+  it('clique no preset já aberto preserva playback e mundo', async () => {
+    vi.useFakeTimers()
+    let frame: FrameRequestCallback = () => {}
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const replaceScene = vi.fn()
+    const step = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), replaceScene, step })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => frame(0))
+    act(() => frame(100))
+    flush()
+    expect(step).toHaveBeenCalled()
+    const calls = replaceScene.mock.calls.length
+    const steps = host.textContent!.match(/passos: (\d+)/)![1]
+    expect(Number(steps)).toBeGreaterThan(0)
+    act(() => card(host, 'atwood').click())
+    expect(replaceScene).toHaveBeenCalledTimes(calls)
+    expect(host.textContent).toContain(`passos: ${steps}`)
+    expect(findButton(host, ptBR['playback.pause'])).toBeDefined()
+  })
+
+  it('primeira edição cria uma cópia; undo mantém o id e reabrir preserva o original', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    act(() => findButton(host, ptBR['palette.rectangle'])!.click())
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadIndex(storage())).toHaveLength(2)
+    expect(loadIndex(storage())[1]!.name).toBe(t('preset.atwood.name'))
+    expect(loadScene(storage(), 'cena-2')!.bodies).toHaveLength(5)
+    expect(host.textContent).not.toContain(t('preset.readOnlyHint'))
+    expect(sceneSelect(host).querySelector('option:disabled')).toBeNull()
+    expect(panel(host, ptBR['gallery.title'])).toBeDefined()
+    act(() => findButton(host, '↶')!.click())
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadIndex(storage())).toHaveLength(2)
+    expect(loadScene(storage(), 'cena-2')).toEqual(presetById('atwood')!.buildScene())
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 4))
+    flush()
+    expect(loadIndex(storage())).toHaveLength(2)
+    act(() => inputForLabel(host, ptBR['panel.gLabel']).dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    act(() => card(host, 'atwood').click())
+    expect(inputForLabel(host, ptBR['panel.gLabel']).value).toBe('9.81')
+    expect(loadScene(storage(), 'cena-2')!.constants.g).toBe(4)
+  })
+
+  it.each(['g', 'F'])('primeira edição de %s durante play cria cópia sem reset e chega ao mundo', async (quantity) => {
+    vi.useFakeTimers()
+    let frame: FrameRequestCallback = () => {}
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const replaceScene = vi.fn()
+    const setGravity = vi.fn()
+    const setForceMagnitude = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), replaceScene, setGravity, setForceMagnitude })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'wedge-flagship').click())
+    if (quantity === 'F') click(host.querySelector('canvas')!, { x: 12, y: 0.5 })
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => frame(0))
+    act(() => frame(100))
+    flush()
+    const steps = host.textContent!.match(/passos: (\d+)/)![1]
+    expect(Number(steps)).toBeGreaterThan(0)
+    const rebuilds = replaceScene.mock.calls.length
+    const field = quantity === 'g' ? inputForLabel(host, ptBR['panel.gLabel'])
+      : inputForLabel(panel(host, ptBR['forces.title'].replace('{id}', 'cunha'))!, ptBR['forces.magnitude'])
+    act(() => setNativeInputValue(field, 6))
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(replaceScene).toHaveBeenCalledTimes(rebuilds)
+    expect(host.textContent).toContain(`passos: ${steps}`)
+    expect(findButton(host, ptBR['playback.pause'])).toBeDefined()
+    if (quantity === 'g') {
+      expect(setGravity).toHaveBeenLastCalledWith(6)
+      expect(loadScene(storage(), 'cena-2')!.constants.g).toBe(6)
+    } else {
+      expect(setForceMagnitude).toHaveBeenLastCalledWith('empurrao', 6)
+      expect(loadScene(storage(), 'cena-2')!.forces[0]!.magnitude).toBe(6)
+    }
+    act(() => frame(200))
+    flush()
+    expect(Number(host.textContent!.match(/passos: (\d+)/)![1])).toBeGreaterThan(Number(steps))
+  })
+
+  it('exporta o doc do preset e duplicar cria cópias com nomes distintos', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:preset')
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      act(() => findButton(host, ptBR['scenes.export'])!.click())
+      const blob = createObjectURL.mock.calls[0]![0] as Blob
+      const json = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.readAsText(blob)
+      })
+      expect(JSON.parse(json)).toEqual(presetById('atwood')!.buildScene())
+      expect(loadIndex(storage())).toHaveLength(1)
+      act(() => findButton(host, ptBR['scenes.delete'])!.click())
+      expect(loadIndex(storage())).toHaveLength(1)
+      for (let n = 2; n <= 3; n++) {
+        act(() => findButton(host, ptBR['scenes.duplicate'])!.click())
+        expect(sceneSelect(host).value).toBe(`cena-${n}`)
+        expect(sceneSelect(host).selectedOptions[0]!.textContent).toBe(t('preset.atwood.name') + (n === 2 ? '' : ' (2)'))
+        expect(loadScene(storage(), `cena-${n}`)).toEqual(presetById('atwood')!.buildScene())
+        expect(panel(host, ptBR['gallery.title'])).toBeDefined()
+        act(() => card(host, 'atwood').click())
+      }
+    } finally { download.mockRestore() }
+  })
+
+  it('flush da cena salva precede abertura; cena em branco continua criando uma cena', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    expect(loadScene(storage(), 'cena-1')).toEqual(DEMO_SCENE)
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 3))
+    expect(loadScene(storage(), 'cena-1')!.constants.g).not.toBe(3)
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => card(host, 'atwood').click())
+    expect(loadScene(storage(), 'cena-1')!.constants.g).toBe(3)
+    expect(findButton(host, ptBR['playback.play'])).toBeDefined()
+    expect(host.textContent).toContain('passos: 0')
+    act(() => findButton(host, ptBR['gallery.blank'])!.click())
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadScene(storage(), 'cena-2')).toEqual(blankScene())
+    expect(host.textContent).not.toContain(t('preset.readOnlyHint'))
+  })
+
+  it('falha ao salvar cópia mantém preset intacto; repetir edição cria só uma cópia', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    const original = Storage.prototype.setItem
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === INDEX_KEY) throw new Error('quota PHY-62')
+      original.call(this, key, value)
+    })
+    try {
+      act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 5))
+      flush()
+      expect(sceneSelect(host).value).toBe('preset:atwood')
+      act(() => inputForLabel(host, ptBR['panel.gLabel']).dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+      expect(inputForLabel(host, ptBR['panel.gLabel']).value).toBe('9.81')
+      expect(loadIndex(storage())).toHaveLength(1)
+      expect(loadScene(storage(), 'cena-2')).toBeNull()
+      expect(host.textContent).toContain('quota PHY-62')
+    } finally { write.mockRestore() }
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['panel.gLabel']), 5))
+    flush()
+    expect(sceneSelect(host).value).toBe('cena-2')
+    expect(loadScene(storage(), 'cena-2')!.constants.g).toBe(5)
+    expect(loadIndex(storage())).toHaveLength(2)
+  })
+})
+
+
+describe('recorded time player (PHY-64)', () => {
+  async function setupRecording(kind?: 'spring' | 'rope') {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const scene: Scene = {
+      version: 1, constants: { g: 10 }, contacts: [], forces: [
+        { id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 },
+      ],
+      bodies: [
+        { id: 'wall', shape: 'circle', radius: 0.2, mass: 0, fixed: true, position: { x: 2, y: 4 }, rotation: 0 },
+        { id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0 },
+      ],
+    }
+    let count = 0
+    if (kind) {
+      const ends = { a: { bodyId: 'wall', anchor: { x: 0, y: 0 } }, b: { bodyId: 'ball', anchor: { x: 0, y: 0 } } }
+      scene.constraints = kind === 'spring'
+        ? [{ id: 'link', kind, ...ends, k: 10, x0: 4, c: 0 }]
+        : [{ id: 'link', kind, ...ends, via: [] }]
+    }
+    let current = scene
+    const step = vi.fn(() => { count++ })
+    const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(), step, replaceScene,
+      readConstraints: () => kind === 'spring'
+        ? [{ id: 'link', kind, dx: count / 100, force: { a: count, b: count } }]
+        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: false, segments: [count] }] : [],
+      readStates: () => new Map(current.bodies.map((b) => [b.id, {
+        position: { x: b.position.x + (b.fixed ? 0 : count / 100), y: b.position.y },
+        rotation: b.rotation, linvel: { x: b.fixed ? 0 : count * count / 60, y: 0 }, angvel: 0,
+      }])),
+    })
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'recorded', name: 'Recorded', updatedAt: 1 }])
+      saveScene(storage, 'recorded', scene)
+      saveCurrentSceneId(storage, 'recorded')
+    })
+    await settleSimImport()
+    const slider = () => {
+      const input = host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')
+      expect(input, 'time slider').not.toBeNull()
+      return input!
+    }
+    const poll = () => act(() => { vi.advanceTimersByTime(100) })
+    const seek = (index: number) => { act(() => setNativeInputValue(slider(), index)); poll() }
+    const play = async () => { await act(async () => { findButton(host, ptBR['playback.play'])!.click() }) }
+    const steps = async (n: number) => {
+      for (let i = 0; i < n; i++) await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+      poll()
+    }
+    return { host, canvas, slider, poll, seek, play, steps, step, replaceScene,
+      frame: () => act(() => frame(16)),
+      readout: () => panel(host, t('readout.title', { id: 'ball' }))?.textContent ?? '',
+    }
+  }
+
+  it('dragging a historical force handle at cursor zero edits the anchor and resets the recording', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(3)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.anchorX']), 0.4))
+    p.seek(0)
+    dragTo(p.canvas, { x: 6, y: 4 }, { x: 6, y: 4.5 })
+    p.poll()
+    const edited = p.replaceScene.mock.calls.at(-1)![0]
+    expect(edited.bodies.find(b => b.id === 'ball')!.position).toEqual({ x: 6, y: 4 })
+    expect(edited.forces[0]!.anchor).toEqual({ x: 0, y: 0.5 })
+    expect(p.slider().max).toBe('0')
+  })
+
+  it.each(['button', 'keyboard'] as const)('PHY-66 %s seeks backward from live and recorded play, stopping at zero', async (mode) => {
+    const translations: Array<[number, number]> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { translations.length = 0 }
+        if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    const backButton = () => findButton(p.host, '⏮ voltar um passo')!
+    const back = () => {
+      if (mode === 'button') act(() => backButton().click())
+      else pressKey('ArrowLeft')
+      p.poll()
+    }
+    expect(backButton()).toBeDefined()
+    expect(backButton().title).toBe('voltar um registro da gravação (←)')
+    expect(backButton().nextElementSibling).toBe(findButton(p.host, ptBR['playback.step']))
+    expect(backButton().disabled).toBe(true)
+    back()
+    expect(p.slider().value).toBe('0')
+    expect(p.step).not.toHaveBeenCalled()
+    await p.steps(4)
+    await p.play()
+    back()
+    expect(p.slider().value).toBe('3')
+    expect(p.host.textContent).toContain('t = 0,05 s')
+    expect(p.readout()).toContain('(6.03, 4.00) m')
+    expect(p.readout()).toContain('passos: 3')
+    p.frame()
+    expect(translations).toContainEqual([expect.closeTo(451.8, 8), 300])
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    expect(p.step).toHaveBeenCalledTimes(4)
+    await p.play()
+    back()
+    expect(p.slider().value).toBe('2')
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    back()
+    expect(p.slider().value).toBe('1')
+    back()
+    expect(p.slider().value).toBe('0')
+    expect(backButton().disabled).toBe(true)
+    await p.play()
+    back()
+    expect(p.slider().value).toBe('0')
+    expect(findButton(p.host, ptBR['playback.pause'])).toBeDefined()
+    p.frame()
+    p.poll()
+    expect(p.slider().value).toBe('1')
+    expect(p.step).toHaveBeenCalledTimes(4)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it('PHY-66 lists the left-arrow shortcut with localized text', async () => {
+    const p = await setupRecording()
+    pressKey('?')
+    const row = Array.from(p.host.querySelectorAll('tr')).find((r) => r.cells[0]?.textContent === '←')
+    expect(row?.cells[1]?.textContent).toBe('voltar um passo')
+  })
+
+  it('records each 2x step and seeks poses, velocities and per-step acceleration without rewinding physics', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    expect(p.slider().max).toBe('0')
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, 2))
+    await p.play()
+    for (let i = 0; i < 101; i++) p.frame()
+    p.poll()
+    expect(p.slider().max).toBe('202')
+    p.seek(10)
+    expect(p.readout()).toContain('passos: 10')
+    expect(p.readout()).toContain('(6.10, 4.00) m')
+    expect(p.readout()).toContain('(1.67, 0.00) m/s')
+    expect(p.readout()).toContain('(19.00, 0.00) m/s²')
+    p.seek(200)
+    expect(p.readout()).toContain('(8.00, 4.00) m')
+    expect(p.readout()).toContain('(399.00, 0.00) m/s²')
+    expect(p.host.textContent).toContain('t = 3,33 s')
+    // Hit-testing uses the same projected bodies as paint; the historical pose is selectable.
+    click(p.canvas, { x: 11, y: 7 })
+    click(p.canvas, { x: 8, y: 4 })
+    expect(panel(p.host, 'ball')).toBeDefined()
+    p.frame()
+    expect(p.step).toHaveBeenCalledTimes(202)
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    p.seek(0)
+    p.seek(202)
+    expect(p.readout()).toContain('(8.02, 4.00) m')
+    expect(p.slider().max).toBe('202')
+    expect(p.replaceScene).not.toHaveBeenCalled()
+    p.seek(10)
+    await p.steps(1)
+    expect(p.readout()).toContain('passos: 11')
+    expect(p.slider().value).toBe('11')
+    p.seek(10)
+    await p.play()
+    p.frame()
+    p.poll()
+    expect(p.step).toHaveBeenCalledTimes(202)
+    expect(p.slider().value).toBe('12')
+  })
+
+  it.each([1, 0.5])('PHY-65 replay at %sx paints recorded frames, pauses and resumes live without a jump', async (speed) => {
+    const translations: Array<[number, number]> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { translations.length = 0 }
+        if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(4)
+    p.seek(0)
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, speed))
+    await p.play()
+    expect(p.slider().value).toBe('0')
+    for (const index of [1, 2]) {
+      if (speed === 0.5) {
+        p.frame()
+        p.poll()
+        expect(p.slider().value).toBe(String(index - 1))
+      }
+      p.frame()
+      p.poll()
+      expect(p.slider().value).toBe(String(index))
+      expect(p.slider().max).toBe('4')
+      expect(p.step).toHaveBeenCalledTimes(4)
+      expect(p.readout()).toContain(index === 1 ? '(6.01, 4.00) m' : '(6.02, 4.00) m')
+      expect(p.host.textContent).toContain(index === 1 ? 't = 0,02 s' : 't = 0,03 s')
+      expect(translations).toContainEqual([expect.closeTo(index === 1 ? 450.6 : 451.2, 8), 300])
+    }
+    act(() => findButton(p.host, ptBR['playback.pause'])!.click())
+    p.frame()
+    p.poll()
+    expect(p.slider().value).toBe('2')
+    expect(p.step).toHaveBeenCalledTimes(4)
+    await p.play()
+    for (let i = 0; i < 2 / speed; i++) p.frame()
+    p.poll()
+    expect(p.slider().value).toBe('4')
+    expect(p.readout()).toContain('(6.04, 4.00) m')
+    expect(p.step).toHaveBeenCalledTimes(4)
+    for (let i = 0; i < 1 / speed; i++) p.frame()
+    p.poll()
+    expect(p.slider().max).toBe('5')
+    expect(p.slider().value).toBe('5')
+    expect(p.readout()).toContain('(6.05, 4.00) m')
+    expect(p.readout()).toContain('(9.00, 0.00) m/s²')
+    expect(p.step).toHaveBeenCalledTimes(5)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it('PHY-65 single-step follows records and unlocks live fields and both history actions at the tip', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    const gravity = () => inputForLabel(p.host, ptBR['panel.gLabel'])
+    act(() => setNativeInputValue(gravity(), 12))
+    act(() => setNativeInputValue(gravity(), 15))
+    act(() => findButton(p.host, '↶')!.click())
+    await p.steps(3)
+    p.seek(1)
+    const force = () => inputForLabel(panel(p.host, t('forces.title', { id: 'ball' }))!, ptBR['forces.magnitude'])
+    await p.steps(1)
+    expect(p.slider().value).toBe('2')
+    expect(p.readout()).toContain('(6.02, 4.00) m')
+    expect(p.step).toHaveBeenCalledTimes(3)
+    for (const control of [gravity(), force(), findButton(p.host, '↶')!, findButton(p.host, '↷')!]) expect(control.disabled).toBe(true)
+    await p.steps(1)
+    expect(p.slider().value).toBe('3')
+    expect(p.readout()).toContain('(6.03, 4.00) m')
+    expect(p.step).toHaveBeenCalledTimes(3)
+    for (const control of [gravity(), force(), findButton(p.host, '↶')!, findButton(p.host, '↷')!]) expect(control.disabled).toBe(false)
+    // The frame path must update React locks too, without a discrete action at the tip.
+    p.seek(1)
+    await p.play()
+    p.frame()
+    expect(gravity().disabled).toBe(true)
+    p.frame()
+    p.poll()
+    for (const control of [gravity(), force(), findButton(p.host, '↶')!, findButton(p.host, '↷')!]) expect(control.disabled).toBe(false)
+  })
+
+  it('PHY-65 spends only surplus 2x credit in the live world and restores live acceleration first', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(4)
+    p.seek(3)
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, 2))
+    await p.play()
+    p.frame()
+    p.poll()
+    expect(p.step).toHaveBeenCalledTimes(5)
+    expect(p.slider().value).toBe('5')
+    expect(p.readout()).toContain('(6.05, 4.00) m')
+    expect(p.readout()).toContain('(9.00, 0.00) m/s²')
+  })
+
+  it.each(['play', 'step'] as const)('PHY-65 capped replay reaches the current live world via %s', async (mode) => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.play()
+    for (let i = 0; i < 610; i++) p.frame()
+    p.poll()
+    p.seek(597)
+    if (mode === 'play') { await p.play(); p.frame(); p.poll() }
+    else await p.steps(1)
+    expect(p.slider().value).toBe('598')
+    expect(p.readout()).toContain('(11.98, 4.00) m')
+    expect(p.step).toHaveBeenCalledTimes(610)
+    if (mode === 'play') { p.frame(); p.poll() }
+    else await p.steps(1)
+    expect(p.slider().value).toBe('599')
+    expect(p.slider().max).toBe('599')
+    expect(p.readout()).toContain('(12.10, 4.00) m')
+    expect(p.readout()).toContain('passos: 610')
+    expect(p.host.textContent).toContain('t = 10,17 s')
+    expect(p.step).toHaveBeenCalledTimes(610)
+  })
+  it('keeps running past the cap and the last slider position is the live world', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.play()
+    for (let i = 0; i < 610; i++) p.frame()
+    p.poll()
+    expect(p.slider().max).toBe('599')
+    expect(p.readout()).toContain('passos: 610')
+    p.seek(10)
+    expect(p.readout()).toContain('(6.10, 4.00) m')
+    p.seek(599)
+    expect(p.readout()).toContain('(12.10, 4.00) m')
+    expect(p.readout()).toContain('passos: 610')
+    expect(p.step).toHaveBeenCalledTimes(610)
+  })
+
+  it('blocks live fields, history and force anchor drags while inspecting an old step', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    const gravity = () => inputForLabel(p.host, ptBR['panel.gLabel'])
+    act(() => setNativeInputValue(gravity(), 12))
+    act(() => setNativeInputValue(gravity(), 15))
+    act(() => findButton(p.host, '↶')!.click())
+    await p.steps(3)
+    p.seek(1)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    for (const input of [gravity(), inputForLabel(forces, ptBR['forces.magnitude']), inputForLabel(forces, ptBR['forces.direction'])]) {
+      expect(input.disabled).toBe(true)
+      expect(input.title).toBe('Volte ao fim da gravação para editar')
+    }
+    expect(findButton(p.host, '↶')!.disabled).toBe(true)
+    expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    pressKey('z', { ctrlKey: true })
+    pressKey('y', { ctrlKey: true })
+    expect(gravity().value).toBe('12')
+    dragTo(p.canvas, { x: 6.01, y: 4 }, { x: 6.4, y: 4.3 })
+    expect(inputForLabel(forces, ptBR['forces.anchorX']).value).toBe('0')
+    expect(inputForLabel(forces, ptBR['forces.anchorY']).value).toBe('0')
+    p.seek(3)
+    expect(gravity().disabled).toBe(false)
+    act(() => setNativeInputValue(gravity(), 20))
+    expect(gravity().value).toBe('20')
+    expect(p.slider().max).toBe('3')
+  })
+
+  it.each(['structure', 'gravity'] as const)('editing %s at cursor zero replaces the initial record and resets physics', async (edit) => {
+    const p = await setupRecording()
+    await p.steps(3)
+    p.seek(0)
+    expect(findButton(p.host, ptBR['palette.circle'])!.disabled).toBe(false)
+    if (edit === 'structure') act(() => findButton(p.host, ptBR['palette.circle'])!.click())
+    else act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 20))
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.slider().value).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(p.replaceScene).toHaveBeenCalled()
+    const edited = p.replaceScene.mock.calls.at(-1)![0]
+    if (edit === 'structure') expect(edited.bodies).toHaveLength(3)
+    else expect(edited.constants.g).toBe(20)
+    await p.steps(2)
+    p.seek(0)
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(p.slider().max).toBe('2')
+  })
+
+  it('refreshes record zero after a pre-step structural edit and clears history on reset and scene switch', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    dragTo(p.canvas, { x: 6.2, y: 4.2 }, { x: 7.2, y: 4.2 })
+    await p.steps(2)
+    p.seek(0)
+    expect(p.readout()).toContain('(7.00, 4.00) m')
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    await p.steps(2)
+    p.seek(1)
+    act(() => findButton(p.host, ptBR['scenes.duplicate'])!.click())
+    p.poll()
+    expect(p.slider().max).toBe('0')
+    expect(p.host.textContent).toContain('passos: 0')
+    expect(findButton(p.host, ptBR['palette.circle'])!.disabled).toBe(false)
+  })
+
+  it.each(['spring', 'rope'] as const)('reads the recorded %s instead of the live constraint', async (kind) => {
+    const p = await setupRecording(kind)
+    await p.steps(4)
+    p.seek(1)
+    click(p.canvas, { x: 4, y: 4 })
+    p.poll()
+    const reading = () => panel(p.host, t('readout.title', { id: 'link' }))?.textContent ?? ''
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 1.00 N' : 'T: 1.00 N')
+    if (kind === 'spring') expect(reading()).toContain('Δx: 0.010 m')
+    p.seek(4)
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 4.00 N' : 'T: 4.00 N')
+  })
+
+  it('paints the historical body pose and localizes the time label', async () => {
+    const translations: Array<[number, number]> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { translations.length = 0 }
+        if (key === 'translate') return (x: number, y: number) => { translations.push([x, y]) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    await p.steps(5)
+    p.seek(1)
+    expect(translations).toContainEqual([expect.closeTo(450.6, 8), 300])
+    expect(translations).not.toContainEqual([453, 300])
+    expect(p.host.textContent).toContain('t = 0,02 s')
+    const language = [...p.host.querySelectorAll('select')].find((select) => select.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, 'en'))
+    expect(p.host.textContent).toContain('t = 0.02 s')
+  })
+
+
+  it('keeps recorded force vectors when gravity and force change later at the live tip', async () => {
+    let path: number[][] = []
+    const arrows: Array<{ color: unknown; path: number[][] }> = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { arrows.length = 0 }
+        if (key === 'beginPath') return () => { path = [] }
+        if (key === 'moveTo' || key === 'lineTo') return (...point: number[]) => { path.push(point) }
+        if (key === 'stroke') return () => {
+          if (target.strokeStyle === '#d97742' || target.strokeStyle === '#2e7d32') arrows.push({ color: target.strokeStyle, path })
+        }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(1)
+    const recorded = structuredClone(arrows)
+    expect(recorded).toHaveLength(2)
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    act(() => setNativeInputValue(inputForLabel(forces, ptBR['forces.magnitude']), 30))
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    await p.steps(1)
+    expect(arrows).not.toEqual(recorded)
+    p.seek(1)
+    expect(arrows).toEqual(recorded)
+  })
+
 })

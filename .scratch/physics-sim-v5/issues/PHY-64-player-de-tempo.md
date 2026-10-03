@@ -1,5 +1,5 @@
 # PHY-64: Gravação e slider de tempo com a simulação pausada
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -73,3 +73,65 @@ As decisões e quem tomou cada uma estão em `../spec.md`, seção "Player de te
 - Proxy decided: o bloqueio desabilita g, F e também undo/redo — undo/redo seriam outro caminho para uma edição ao vivo.
 - Proxy decided: atalhos de teclado fora do PHY-64; → continua passo único — voltar um passo é o PHY-66.
 - Proxy decided (rodada 2, sobrescrito pelo Bruno): limite de 18 000 registros. O Bruno trocou por 10 s (600), porque a maioria das simulações dura até 5 s.
+
+
+#### Stage 2 implementation (2026-10-03)
+
+- Branch: phy/PHY-64-player-de-tempo, based on sweatshop/2026-10-02-2210. No stage-3 review or merge performed.
+- Caller audit: advance is consumed by App dispatch, fail and the animation loop; runSteps is called by dispatch and that loop; syncWorld serves both stepping paths; editDoc also guards undo/redo, numeric edits and pointer drags. The readout timer previously queried live constraints directly. Paint and hit-testing share the displayed state refs. Boundary cases covered: initial-only recording, negative/end seeks, two steps per frame, cursor zero after a run, recording full while physics continues, reset and scene switch.
+- Implementation: generic Recording, scheduler cursor/seek, per-step samples and acceleration, retained live tip, native time slider, historical body/constraint readouts, and edit guards. Each sample also retains the immutable scene reference so later live g/F edits cannot change recorded vectors or initial analytic acceleration. No engine snapshots or re-simulation.
+- Regression found by the full suite: initial readback must not activate simulated rope paths before the first step. Preserved the existing null display-state convention while retaining an initial simulator sample for the first measured acceleration. Existing PHY-56/CLEAN-27 tests passed after the fix.
+- Harness corrections, isolated in test commits: shell encoding damaged two Unicode assertions (fixed using the catalog/UTF-8); the locale scenario left the next scenario in English (setup now selects pt-BR). Neither changed the contract.
+- Pure-module red proof: recording initially failed import because the module did not exist; scheduler had 11 failures before cursor/seek. Mutation removing the cap failed with expected false / received true on push 600. Mutation forcing seek cursor to null failed 3 clamping cases. Restored sources passed all 50 recording/scheduler tests.
+
+DOM/canvas mutation evidence (every new App test; sources restored after each run):
+
+| Test in src/App.test.ts | Production mutation | Observed red output |
+| --- | --- | --- |
+| records each 2x step and seeks poses, velocities and per-step acceleration without rewinding physics | Remove runSteps recording.push | slider max expected 202, received 0 |
+| keeps running past the cap and the last slider position is the live world | Remove runSteps recording.push | slider max expected 599, received 0 |
+| blocks live fields, history and force anchor drags while inspecting an old step | Allow live edits with nonzero cursor in canEditDoc | anchorX expected 0, received 0.39000000000000057 |
+| editing structure at cursor zero replaces the initial record and resets physics | Disable resetOnEditRef at cursor zero | slider max expected 0, received 3 |
+| editing gravity at cursor zero replaces the initial record and resets physics | Disable resetOnEditRef at cursor zero | slider max expected 0, received 3 |
+| refreshes record zero after a pre-step structural edit and clears history on reset and scene switch | Remove recording.reset from resetRecording | after reset slider max expected 0, received 2 |
+| reads the recorded spring instead of the live constraint | Read constraints from sim in the readout timer | expected F_el: 1.00 N, received F_el: 4.00 N (dx 0.040) |
+| reads the recorded rope instead of the live constraint | Read constraints from sim in the readout timer | expected T: 1.00 N, received T: 4.00 N |
+| paints the historical body pose and localizes the time label | Pass liveFrameRef states to paint | expected canvas translation x 450.6, received 453 |
+| keeps recorded force vectors when gravity and force change later at the live tip | Pass current docRef to paint instead of displayedScene | historical arrow endpoint expected 485.24101615137755, received 560.1445115010332 |
+
+- Focused green: 10 recorded-time DOM/canvas cases. Initial full gate in the restricted environment exposed Chromium DevTools disconnects; the unrestricted rerun passed Chromium and all other tests. Build emits the existing large Rapier chunk warning.
+
+- Final gate (2026-10-03): npm test && npm run lint && npm run typecheck && npm run build exited 0. Tests: 31 files passed, 987 tests passed (43.48 s). ESLint and TypeScript passed; Vite build passed. Only the existing large-chunk warning remains. Final diff is restricted to Primary files plus this ticket; test and production changes are in separate commits.
+
+- 2026-10-03 Stage 3 small documentation fix: corrected the stale acceleration-tracker comment to distinguish its batch API from App's per-step sampling (n = 1). No behavior or tests changed; documentation made stale by this ticket is permitted outside Primary files by ticket-flow.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+- Decision: approved against all 16 numbered criteria and integrated without squash into the active session branch `sweatshop/2026-10-02-2210` (merge `567dc80`). `Review: human` remains a session-PR highlight under ticket-flow; this stage does not push or open a per-ticket PR.
+- Standards: source/test scope, separate red-test and production commits, committed stage transitions, and the 10 DOM/canvas mutation-evidence rows conform. One nonblocking process observation: the 14 implementation commits have empty bodies, although their subjects cite PHY-64; ticket-flow asks bodies to explain why. History was preserved. No actionable code smells or ADR conflicts found.
+- Spec: all 16 numbered criteria satisfied; no missing behavior, scope creep, or confirmed regression. Pre-step structural edits refresh record zero at the next syncWorld, before stepping or any subsequent historical view; no observable defect found.
+- Files: bounded Recording and cursor/seek scheduler; per-step App recording, historical display/readouts, edit guards, and native localized time slider; recording/scheduler/App tests; pt-BR/en catalogs. Review commit `e6b8db6` corrected only stale acceleration-tracker documentation; the documentation exception permits that comment outside Primary files.
+- Red-green proof: inspected all implementation commits and all 10 production-mutation/red-output records above. Pure-module tests call production Recording/advance; test and code changes remain in separate commits. Independent green run: 31 test files, 987 tests passed.
+- Gate: `npm test && npm run lint && npm run typecheck && npm run build` completed successfully (test duration 44.58 s; ESLint, TypeScript, Vite exit 0). The restricted run first had 972 passes and 15 Chromium DevTools connection/disconnection failures; the approved unrestricted rerun passed all 987. Existing Rapier chunk-size warning only. The subsequent change was documentation only; rebase was already up to date, merge had no conflicts, and final diff checks passed.
+- Proxy decisions reviewed by name: every displayed value follows the slider; acceleration belongs to the recorded step; localized two-decimal time with step counter; reset/scene-switch clears recording while seek-zero preserves it; native range in transport; seek pauses and stays paused; record zero is initial state; historical g/F and undo/redo are locked; keyboard shortcuts remain unchanged. The proxy's earlier 18,000-record proposal was explicitly superseded by Bruno's 600-record cap, which the implementation uses.
+- Remaining limitation: replay and backward-step controls remain assigned to PHY-65/PHY-66; the current play/step behavior returns to live as required.
+
+#### PR #15 corrections (2026-10-03)
+
+- Corrected force-anchor hit-testing to use the displayed recorded scene, matching the painted handle. Editing at cursor zero still updates the current document and resets playback normally (criterion 11).
+- New DOM regression: `dragging a historical force handle at cursor zero edits the anchor and resets the recording`. After three steps and a live anchor-X edit to 0.4, seeking zero and dragging the historical handle from (6, 4) to (6, 4.5) leaves the body at (6, 4), updates the anchor to (0, 0.5), and clears the recording.
+- Mutation proof: temporarily changed `displayedScene().forces.find` back to `docRef.current.forces.find`. Exact red output: `AssertionError: expected { x: 6, y: 4.5 } to deeply equal { x: 6, y: 4 }`; 1 failed, 129 skipped, exit 1. Restored production source: all 20 recorded-player cases passed, exit 0. Logs: `C:/Users/bruno/AppData/Local/Temp/physyst-pr15-fixes/force-handle-mutation-red.log` and `recorded-player-restored-green.log` in the same directory; initial red and first green are also retained there.
+- Timeline wrapper now grows with a 260px flex basis; its range fills the wrapper and its time readout stays on one line. Real Chromium measurements through the existing browser harness (temporary measurement file removed afterward):
+
+| Viewport width (px) | Slider before (px) | Slider after (px) | Transport height before/after (px) |
+| --- | --- | --- | --- |
+| 1920 | 129 | 685.36 | 23 / 23 |
+| 1280 | 129 | 821.59 | 52 / 52 |
+| 950 | 129 | 228.17 | 52 / 52 |
+| 700 | 129 | 260.17 | 52 / 52 |
+| 360 | 129 | 183.59 | 111 / 111 |
+
+- The timeline reaches the transport's right edge at every measured width. Transport button positions, widths, wrapping, and page scroll widths are unchanged. Raw before/after geometry, browser-run logs, and the measurement harness are retained in `C:/Users/bruno/AppData/Local/Temp/physyst-pr15-fixes/` (`timeline-before.jsonl`, `timeline-after.jsonl`, `timeline-before.log`, `timeline-after.log`, `timeline-measurement-harness.ts`).
+- Final gate for these corrections ran once in the foreground: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. All 31 test files and 1025 tests passed (29.12 s); ESLint, TypeScript, and Vite build passed. Full output with exit code: `C:/Users/bruno/AppData/Local/Temp/physyst-pr15-fixes/gate.log`. Only the existing large Rapier chunk warning remains.

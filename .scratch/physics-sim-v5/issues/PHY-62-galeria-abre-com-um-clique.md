@@ -1,5 +1,5 @@
 # PHY-62: A galeria abre o preset com um clique, sem criar cena
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -62,3 +62,129 @@ A decisão de design (Bruno): o `App` guarda qual preset está aberto; a cena ab
 - Proxy decided: "Cena em branco" e a primeira abertura não mudam — fora do pedido.
 - Proxy decided: clique no card do preset já aberto não faz nada — reset já tem botão.
 - Proxy decided: clique num card faz flush e abre pausado em t = 0, como troca de cena — nenhuma edição se perde.
+
+- Stage 2: chamadores inspecionados: editDoc centraliza commitDoc, undo/redo e arrastos; switchToScene atende seletor, criar, duplicar, excluir e importar; createPresetScene atende a galeria e testes; loadCurrentSceneId atende a inicialização do App. Bordas: preset desconhecido, índice vazio, nome repetido, falha de quota, edição pendente e edição ao vivo.
+- Red inicial: testes diretos PHY-62 (persistência + presets): 2 falhas, 69 ignorados. loadCurrentSceneId retornou null em vez de preset:atwood; a segunda cópia manteve Máquina de Atwood em vez de Máquina de Atwood (2).
+
+#### Stage 2 — evidência DOM e ajustes do harness (2026-10-03)
+
+- Red de navegação (f46556c): 3 falhas por ausência de card clicável (missing preset card: wedge-flagship/atwood).
+- Red de cópia (1a62d1c): 6 falhas, 4 verdes, 98 ignorados: id permaneceu preset:..., nome da duplicação foi Cena 2, e falha de quota não protegia o documento.
+- Ajustes de harness em commits só de testes: localizar o range pelo tipo (o label inclui o valor), preservar o caractere Unicode de undo, disparar blur para abandonar o rascunho numérico rejeitado, ler Blob com timers reais e comparar a primeira cena com DEMO_SCENE. Os testes Chromium existentes passaram a abrir o card e duplicar antes de testar números; as asserções originais foram mantidas.
+- Mutate-verify: cada mutação abaixo foi aplicada isoladamente em src/App.tsx, os 10 testes DOM PHY-62 foram executados e o arquivo foi restaurado em finally. Todos os mutantes falharam; trechos reais da saída vermelha por teste:
+
+**autosave-preset** — substituir `if (!openPreset) saverRef.current?.schedule(currentId, doc)` por `saverRef.current?.schedule(currentId, doc)`.
+
+- `abre cada card em t=0 sem salvar cenas; transporte não cria cópia`: `AssertionError: expected [ [ …(2) ], …(23) ] to deeply equal []`.
+
+**reload-preset** — substituir `if (openPreset) return openPreset.buildScene()` por `if (openPreset) return blankScene()`.
+
+- `reabre o preset após reload; desconhecido volta à cena salva`: `AssertionError: expected last "vi.fn()" call to have been called with [ { version: 1, …(6) } ]`.
+
+**same-card-reset** — substituir `if (openPresetRef.current?.id === preset.id) return` por `// mutant: allow repeated open`.
+
+- `clique no preset já aberto preserva playback e mundo`: `AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times`.
+
+**no-copy** — substituir `if (!copyOpenPreset()) return false` por `// mutant: edit without copy`.
+
+- `primeira edição cria uma cópia; undo mantém o id e reabrir preserva o original`: `AssertionError: expected 'preset:atwood' to be 'cena-2' // Object.is equality`.
+- `primeira edição de g durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected 'preset:wedge-flagship' to be 'cena-2' // Object.is equality`.
+- `primeira edição de F durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected 'preset:wedge-flagship' to be 'cena-2' // Object.is equality`.
+- `falha ao salvar cópia mantém preset intacto; repetir edição cria só uma cópia`: `AssertionError: expected '5' to be '9.81' // Object.is equality`.
+
+**copy-rebuild** — substituir `const { entry, scene } = result` por `simRef.current?.replaceScene(docRef.current)     const { entry, scene } = result`.
+
+- `primeira edição de g durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times`.
+- `primeira edição de F durante play cria cópia sem reset e chega ao mundo`: `AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times`.
+
+**duplicate-generic** — substituir `if (openPresetRef.current) {` por `if (false) {`.
+
+- `duplicar um preset cria a cena no idioma atual (PHY-62)`: `AssertionError: expected 'Cena 2' to be 'Atwood machine' // Object.is equality`.
+- `exporta o doc do preset e duplicar cria cópias com nomes distintos`: `AssertionError: expected 'Cena 2' to be 'Máquina de Atwood' // Object.is equality`.
+
+**skip-flush** — substituir `saverRef.current?.flush()     const scene = preset.buildScene()` por `saverRef.current?.cancel()     const scene = preset.buildScene()`.
+
+- `flush da cena salva precede abertura; cena em branco continua criando uma cena`: `AssertionError: expected 9.81 to be 3 // Object.is equality`.
+
+**ignore-copy-failure** — substituir `setStorageWarning(result.reason)       return false` por `setStorageWarning(result.reason)       return true`.
+
+- `falha ao salvar cópia mantém preset intacto; repetir edição cria só uma cópia`: `AssertionError: expected '5' to be '9.81' // Object.is equality`.
+
+**export-blank** — substituir `const txt = exportScene(doc)` por `const txt = exportScene(blankScene())`.
+
+- `exporta o doc do preset e duplicar cria cópias com nomes distintos`: `AssertionError: expected { version: 1, …(4) } to deeply equal { version: 1, …(6) }`.
+
+- Testes diretos também mutados: retirar o reconhecimento de preset: produziu expected null to be 'preset:atwood'; salvar sempre baseName produziu Expected Máquina de Atwood (2), Received Máquina de Atwood. Restaurados: 12 testes PHY-62 verdes, 167 ignorados (179 nos três arquivos).
+- As decisões Proxy decided já presentes foram seguidas; esta etapa não acrescentou decisão de proxy nem alterou critérios ou escopo. Abrir só grava as chaves de seleção/ack previstas nos critérios 8 e 10, nunca índice ou payload de cena. A cópia reaproveita createPresetScene (payload antes do índice, rollback de órfão) e só troca a identidade após sucesso.
+- Gate final: npm test && npm run lint && npm run typecheck && npm run build — 30 arquivos, 959 testes verdes; lint e typecheck sem erros; Vite build concluído. Aviso de bundle maior que 500 kB no simulador permanece.
+- Diff revisado: apenas Primary files e este ticket; sem artefatos gerados ou alteração de critérios. Commits de código não alteram testes. Entrega da etapa 2; revisão da etapa 3 pendente.
+
+#### Stage 3 review (2026-10-03)
+
+Verdict: Reopen — critério 3: entrada numérica equivalente cria cópia antes de mudar o conteúdo do doc.
+
+Base: `sweatshop/2026-10-02-2210` (`3ecf4f6`); HEAD revisado: `b16fba9`. Diff inteiro e chamadores revisados; Standards e Spec executados em agentes separados. Primeira revisão da PHY-62.
+
+##### Standards
+
+Nenhuma violação das normas documentadas. Os arquivos estão nos Primary files, além deste ticket. Commits de produção não alteram testes; os testes precedem suas implementações, e ajustes posteriores do harness estão em commits exclusivos. Há evidência de mutação para os dez testes DOM PHY-62. Terminologia e traduções seguem CONTEXT.md e as convenções existentes.
+
+Observação opcional, sem reprovação: possível Duplicated Code em `src/App.tsx:1072–1079`. A sequência `setDoc(scene); setSelection(null); ... setHistory(clearHistory()); docRef.current = scene; dispatch({ type: 'reset' })` repete a limpeza de `switchToScene:1048–1058`. Um helper poderia prevenir divergência futura. É julgamento de manutenção, não falha de contrato; nenhuma refatoração é exigida nesta reabertura. `copyOpenPreset` deve permanecer fora do caminho de reset.
+
+##### Spec
+
+- **❌ Critério 3 — P2:** o gatilho aprovado é a primeira **mudança no doc**. Abrir Atwood e acrescentar `0` ao campo `g = 9.81`, produzindo `9.810`, preserva o valor e conteúdo, mas cria `cena-2` e sai do modo preset. `NumField` (`src/App.tsx:309–312`) encaminha o número finito; `updateG` (`src/editor/doc.ts:204–205`) devolve um objeto equivalente; `editDoc` (`src/App.tsx:748–753`) compara apenas identidade antes de `copyOpenPreset`. Isso também contraria a definição já registrada pelo proxy: edição é o que muda o conteúdo protegido.
+- Reprodução DOM temporária usando App e harness existentes, restaurada em `finally`: renderizar, abrir Atwood, focar g, chamar o setter nativo de `HTMLInputElement.value` com `'9.810'` e disparar `input` com `bubbles: true`. A asserção `expect(loadScene(storage, 'cena-2')).toEqual(presetById('atwood')!.buildScene())` passou. Saída: `selected=cena-2`, `count=2`, `g=9.810`, `savedG=9.81`.
+- Vermelho: `expected 'cena-2' to be 'preset:atwood'` e `expected [...] to have a length of 1 but got 2`; **1 teste falhou, 108 ignorados (109)**. A suíte atual não cobre esse caso. A reprodução não foi incluída no commit.
+- Critérios 1, 2 e 4–13 atendidos nos caminhos revisados. Nenhuma mudança de produção alheia ao pedido. Escritas de seleção e ACK são previstas nos critérios 8/10 e não violam a proteção do índice/payload no critério 1.
+
+As dez decisões `Proxy decided` foram conferidas: (1) edição = mudança de conteúdo, com a falha acima; (2) cópia preserva playback/histórico; (3) opção/dica e Excluir/Duplicar/Exportar; (4) reload/fallback; (5) undo fica na cópia; (6) galeria aberta e ACK; (7) nome localizado e sufixos; (8) demo inicial e cena em branco; (9) clique no preset atual sem efeito; (10) flush e abertura pausada em t=0. Decisões 2–10 atendidas. Nenhuma decisão nova foi atribuída ao proxy.
+
+##### Validação independente
+
+- Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` — **30 arquivos, 959 testes passaram**; lint, typecheck e build passaram. A tentativa inicial no sandbox teve 12 falhas de conexão Chromium (947 passaram), junto de erro Windows `CreateProcessWithLogonW 1909`; fora do sandbox o gate completo passou. Permanece o aviso conhecido de bundle acima de 500 kB.
+- As **11 mutações registradas pela etapa 2** foram repetidas isoladamente, restaurando cada arquivo em `finally`. Falhas por mutante: `autosave-preset` 1; `reload-preset` 1; `same-card-reset` 1; `no-copy` 4; `copy-rebuild` 2; `duplicate-generic` 2; `skip-flush` 1; `ignore-copy-failure` 1; `export-blank` 1; `preset-reference` 1; `copy-name` 1. Os testes e motivos vermelhos coincidiram com a evidência já registrada acima. Nenhum mutante sobreviveu.
+- Restaurados os três arquivos, filtro `PHY-62`: **12 testes verdes, 167 ignorados (179)**. A reprodução adicional acima foi executada depois e removida; produção e testes permanecem idênticos a `b16fba9`. `git diff --check` passou.
+
+##### Trabalho restante para a etapa 2
+
+Somente o ❌ acima: impedir que uma atualização sem mudança de conteúdo materialize o preset. Acrescentar primeiro, em commit só de testes, a regressão DOM da entrada numérica equivalente, verificando que o preset permanece aberto e o índice/payload não mudam; uma edição real posterior ainda deve criar exatamente uma cópia. Inspecionar os demais chamadores de `editDoc` que podem devolver um objeto equivalente. Corrigir dentro dos Primary files, registrar mutate-verify e executar novamente o gate. Não reescrever critérios nem refatorar transições nesta correção.
+
+A correção precisa de teste novo e, pela regra mecânica de ticket-flow, volta à etapa 2. Nenhum merge foi feito e não havia linha PHY-62 no ledger para remover.
+
+Standards: 0 violações, 1 observação opcional. Spec: 1 achado P2, critério 3.
+
+#### Stage 2 — correção da reabertura (2026-10-03)
+
+- Costura aprovada: DOM de App.test.ts. Inspecionados editDoc, commitDoc, undo/redo, arrastos e todos os patches dos painéis: updateG, updateBody, updateForce, updateContact, updateSpring, updatePulley e updateParticleMode podem devolver objetos novos com conteúdo igual. A proteção ficará centralizada em editDoc, apenas enquanto houver preset aberto, preservando o fluxo das cenas salvas.
+- Red antes de produção: `npx vitest run src/App.test.ts -t 'entrada equivalente'`: 2 falhas, 108 ignorados (110). Os casos g e F falharam com `expected 'cena-2' to be 'preset:wedge-flagship'`. Cada caso verifica ausência de escrita de índice/payload após entrada equivalente e exatamente uma cópia após edição real.
+- Ajuste do harness em commit separado: `toFixed(3)` arredondava a força do preset, produzindo mudança real. Agora a entrada apenas acrescenta zero ao texto original. Mutate-verify dos dois casos corrigidos: removida isoladamente a guarda de conteúdo equivalente em editDoc; g e F falharam com `expected 'cena-2' to be 'preset:wedge-flagship'` (2 falhas, 108 ignorados). Produção restaurada em finally: 2 verdes, 108 ignorados. Nenhuma alteração do contrato.
+
+- Correção: antes de materializar o preset, editDoc compara o conteúdo JSON de prev/resolved; patches equivalentes retornam sem cópia, histórico ou atualização do doc. A comparação só ocorre com preset aberto. Os patches existentes preservam a ordem das propriedades e Scene contém dados JSON; serialize já usa esse formato. Não foram alterados helpers de edição, transições ou cenas salvas.
+- Gate final: npm test && npm run lint && npm run typecheck && npm run build passou fora do sandbox: **30 arquivos, 961 testes verdes**, lint, typecheck e build sem erros. A primeira tentativa restrita teve 12 falhas de conexão Chromium e 949 testes verdes, junto de erro Windows CreateProcessWithLogonW 1909. Permanece apenas o aviso conhecido de bundle acima de 500 kB.
+- Diff final conferido: somente App.tsx, App.test.ts e este ticket; git diff --check passou. Testes nos commits fa82ff5/37e5180, produção em commit separado. Critério 3 corrigido; etapa 2 encerrada, aguardando nova revisão.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+Revisão da reabertura: ponto fixo `afa2ebd`, HEAD `bfbb67a`, base da sessão `sweatshop/2026-10-02-2210` (`3ecf4f6`). Conferidos o único item ❌ da revisão anterior e todo o diff posterior, com Standards e Spec em agentes separados. O critério 3 está atendido: entradas numericamente equivalentes preservam o preset; a primeira edição real continua criando exatamente uma cópia. Nenhuma correção de produção foi necessária nesta etapa.
+
+##### Standards
+
+- Zero violações no código e nenhum smell novo. Escopo restrito a `src/App.tsx` (`editDoc`), `src/App.test.ts` e este ticket; Primary files e critérios preservados. `fa82ff5` e `37e5180` contêm apenas testes/documentação; `bfbb67a` contém produção/documentação, sem testes. A evidência DOM registra a mutação e o vermelho de cada novo caso.
+- Um desvio documental: os três commits têm assunto Conventional Commits em inglês e PHY-62, mas não têm corpo explicando o motivo, como pede ticket-flow em "Commits and closing". Isso não infringe critério, Primary files ou separação teste/produção e não sustenta reabertura pela regra mecânica da skill. O histórico foi preservado.
+- A observação opcional de duplicação da primeira revisão fica fora deste diff; nenhuma refatoração adicional foi exigida.
+
+##### Spec
+
+- Zero achados: não há requisito ausente/parcial, escopo excedido ou implementação incorreta identificada no diff da reabertura. A guarda em `editDoc` precede cópia, histórico e atualização do doc; aplica-se somente ao preset aberto. Os patches existentes preservam a ordem de propriedades, e `serialize` usa a mesma representação JSON.
+- As dez decisões `Proxy decided` existentes foram conferidas: (1) edição é mudança de conteúdo, agora atendida também para g/F equivalentes; (2) cópia preserva playback/histórico; (3) opção/dica e ações; (4) reload/fallback; (5) undo permanece na cópia; (6) galeria aberta e ACK; (7) nome localizado e sufixos; (8) demo/cena em branco; (9) clique repetido sem efeito; (10) flush e abertura pausada em t=0. A correção não altera as decisões 2–10. Nenhuma decisão nova de proxy ou omissão da revisão anterior foi identificada.
+
+##### Validação independente e integração
+
+- Mutate-verify repetido: removida isoladamente a guarda `if (openPresetRef.current && JSON.stringify(resolved) === JSON.stringify(prev)) return true`. Tanto `entrada equivalente de g preserva o preset até uma edição real` quanto `entrada equivalente de F preserva o preset até uma edição real` falharam em `App.test.ts:2442` com `expected 'cena-2' to be 'preset:wedge-flagship'`: **2 falhas, 108 ignorados (110)**. `App.tsx` foi restaurado byte a byte em `finally`; `git diff --exit-code -- src/App.tsx` confirmou a restauração.
+- Gate com a produção restaurada: `npm test && npm run lint && npm run typecheck && npm run build` — **30 arquivos, 961 testes verdes**, incluindo os dois casos acima; lint, typecheck e build passaram. Executado fora do sandbox após falha de inicialização Windows `CreateProcessWithLogonW 1909`. Permanece o aviso conhecido do bundle do simulador acima de 500 kB. `git diff --check` passou.
+- Rebase na sessão sem alterações: HEAD continuou `bfbb67a`, exatamente o código validado. Merge local sem squash em `bae10db`; `git diff bfbb67a HEAD --exit-code` confirmou árvore idêntica após o merge. `Stage: done`, esta resolução e a linha do ledger são registrados juntos no commit de fechamento. Conforme o fluxo de sessão, `Review: human` será destacado pelo driver no PR da sessão; esta etapa não faz push nem abre PR.
+
+Standards: 0 violações de código, 1 desvio documental não bloqueante. Spec: 0 achados. Critério 3 aprovado.

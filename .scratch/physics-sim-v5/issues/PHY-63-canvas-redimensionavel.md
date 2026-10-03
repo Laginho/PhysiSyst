@@ -1,5 +1,5 @@
 # PHY-63: Canvas da cena redimensionável
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -12,6 +12,7 @@ Difficulty: normal
   - src/persistence/persistence.test.ts
   - src/App.tsx (o `ResizeObserver` do `canvasBoxRef` em ~773, a caixa do canvas em ~1492)
   - src/App.browser.test.ts
+  - src/App.test.ts (helper `loadingOverlay`, na costura DOM já indicada em Tests stage 2 writes)
   - src/i18n/pt-BR.ts, src/i18n/en.ts (só o título da alça)
 
 #### What to build
@@ -51,3 +52,54 @@ Regra do tamanho: largura = máx(402, mín(escolha do usuário, ajuste automáti
 - Proxy decided: mínimo 402 × 268, largura = máx(MIN, mín(usuário, auto)); o piso de 600 px e o empilhamento só valem para o automático — o piso existe pelo layout lado a lado, não pela legibilidade.
 - Proxy decided: alinhamento como hoje, espaço que sobra vazio — sem pedido de mudar.
 - Proxy decided: alça no canto inferior direito, `nwse-resize`, largura manda em 3:2, sem botão "auto" — convenção da plataforma; arrastar ao máximo já é o automático.
+
+#### Stage 2 — evidência mutate-verify (2026-10-03)
+
+Implementado na branch `phy/PHY-63-canvas-redimensionavel`, a partir de `sweatshop/2026-10-02-2210`. Gate final: **30 arquivos / 967 testes passaram**, incluindo 13 testes Chromium deste arquivo; lint, typecheck e build passaram. Permanece apenas o aviso conhecido do chunk do simulador acima de 500 kB. `git diff --check` sem erros. Testes e correções de harness em commits próprios, separados dos commits de produção. Pronto para stage 3; sem merge nesta etapa.
+
+Mutações temporárias restauradas antes do gate; nenhuma integra a implementação.
+
+| Teste novo | Mutação na produção | Saída vermelha |
+| --- | --- | --- |
+| `drags the real corner handle with matching logical geometry and clamps both extremes` | Desativar o drag no `onPointerMove` da alça | `expected 1440 to be 1260` |
+| `keeps bodies, selection and undo unchanged and exposes a translated resize cursor` | Inserir `setSelection(null)` no início do arraste | `Error: missing caixa panel` (1 failed / 12 skipped) |
+| `loads a dragged preference in a fresh page and restores it after its viewport shrinks` | Salvar `null` em vez da escolha | Após carregar outra página: `expected 1440 to be 900` (1 failed / 12 skipped) |
+| mesmo teste de persistência/viewport | Ignorar a preferência no ResizeObserver | `expected 1440 to be 900` (1 failed / 12 skipped) |
+| mesmo teste de persistência/viewport | Sobrescrever a preferência com a largura limitada pelo viewport | Ao aumentar novamente: `expected 672 to be 900` (1 failed / 12 skipped) |
+
+Os testes diretos também foram mutados: ignorar userWidth → 1200×800 em vez de 750×500; gravar 600 fixo → `'600'` em vez de `'750'`; remover validação finita → `NaN` em vez de `null`. Resultado conjunto: 3 failed / 52 passed (55). O ensaio Chromium inicial sem alça teve 3 falhas `missing resize handle`; a versão correta passou os 3 testes novos.
+
+O teste de viewport carrega o app real em iframe da mesma origem, redimensiona a janela desse app de 1920 para 1000 e de volta para 1920, e recarrega essa página. O arraste usa eventos de mouse reais via CDP; não chama handlers React diretamente.
+
+- 2026-10-03 Gate inicial: 22 failed / 945 passed (967), todos os 22 causados pelo helper `loadingOverlay`, que classificava qualquer irmão do canvas como overlay. Correção restrita ao harness `App.test.ts`, já nomeado na seção Tests stage 2 writes; listado também em Primary files para explicitar essa manutenção. O helper agora seleciona o DIV do overlay e não o botão da alça. Mutação em produção `pointerEvents: 'none'` → `'auto'` derrubou `shows the loading overlay while booting...`: `expected 'auto' to be 'none'` (1 failed / 109 skipped), comprovando que a correção preserva a sensibilidade do teste.
+
+- 2026-10-03 Correção do harness em commit só de teste: o helper inicial assumia câmera de 12 m; usa agora a transformação pública de 15 m já usada pelo harness. Red comprovado desativando temporariamente `resizeDragRef` no movimento: teste `drags the real corner...` recebeu 1440 em vez de 1260; `loads a dragged preference...` recebeu 1440 em vez de 900. Green anterior à mutação: 3 passed / 10 skipped. O teste `keeps bodies...` tem mutação própria registrada abaixo.
+
+- 2026-10-03 Stage 2: callers examinados: `App` inicializa e recalcula `fitCanvas` no ResizeObserver; o piso automático também controla o empilhamento. Cobertos: escolha abaixo do mínimo, acima do automático, fracionária, contêiner menor que o piso e armazenamento inválido. Primeiro red: 3 failed / 52 passed (55); largura 1200 em vez de 750 e funções de persistência ausentes.
+
+- 2026-10-03 Stage 3: comentários da etapa 2 movidos para depois do histórico existente, conforme docs/agents/issue-tracker.md. Texto do contrato, produção e testes preservados.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+Primeira revisão, com o diff completo e os chamadores examinados. Base fixa `8f379eb` (`sweatshop/2026-10-02-2210`), implementação `0e58d26`, ajuste documental `da759c7`. Standards e Spec revisados em agentes separados. Os nove critérios estão atendidos; nenhuma correção de produção foi necessária nesta etapa.
+
+##### Standards
+
+- Zero violações de código e nenhum smell acionável. Alterações restritas aos Primary files e ao ticket. Testes precedem as respectivas implementações; os commits de produção não alteram testes. As correções de harness estão em commits exclusivos. A evidência de mutate-verify registra mutações e saídas vermelhas para os três testes Chromium novos e o helper de overlay corrigido.
+- Dois achados documentais leves: (1) comentários novos antes do histórico existente, contrariando `docs/agents/issue-tracker.md`, corrigido em `da759c7`; (2) os commits `256aa32`, `0572e24`, `050f6a7` e `71390a3` não têm corpo explicando o motivo, como exige ticket-flow em "Commits and closing". Todos citam PHY-63 no assunto. O histórico foi preservado; o segundo achado não infringe critério, Primary files ou separação teste/produção e não justifica reabertura.
+
+##### Spec
+
+- Zero achados: `fitCanvas` mantém o automático e limita a preferência a 402px e ao ajuste disponível, com proporção 3:2; persistência aceita números finitos e trata inválidos como automático. A alça traduzida redimensiona e salva sem editar corpos, seleção ou undo. O ResizeObserver limita a exibição sem sobrescrever a preferência, que retorna quando a janela cresce. O caminho existente de geometria atualiza zoom e backing store.
+- Conferidas as quatro decisões `Proxy decided`: preferência global em `physics-sim:canvasSize` com inválidos em automático; mínimo 402 × 268 com piso automático de 600px e empilhamento preservados; alinhamento e espaço restante preservados; alça inferior direita com `nwse-resize`, proporção comandada pela largura e retorno a automático ao arrastar ao máximo. Nenhuma decisão nova foi atribuída ao proxy.
+
+##### Validação independente e integração
+
+- Gate completo: `npm test && npm run lint && npm run typecheck && npm run build` — **30 arquivos, 967 testes passaram**; lint, typecheck e build passaram. A primeira tentativa restrita teve **15 falhas de conexão Chromium, 952 testes passando**; o gate repetido fora do sandbox passou integralmente. Permanece apenas o aviso conhecido de chunk acima de 500 kB.
+- Prova vermelha independente: mantidos os testes atuais e substituídos temporariamente `src/App.tsx`, `src/render/fitCanvas.ts` e `src/persistence/index.ts` pelas versões da base `8f379eb`. Filtro `PHY-63` nos três arquivos de teste: **6 falhas, 62 ignorados (68)**. O teste de tamanho recebeu 1200 × 800 em vez de 750 × 500; os dois de persistência falharam por funções ausentes; cada um dos três testes Chromium falhou com `missing resize handle`. Os três arquivos foram restaurados byte a byte em `finally`, confirmado com `git diff --exit-code`. A evidência das mutações mais específicas da etapa 2 também foi conferida acima.
+- Com produção restaurada, o mesmo filtro passou: **6 testes verdes, 62 ignorados (68)**. Produção e testes permaneceram idênticos ao HEAD `0e58d26` que passou o gate completo; só o ticket mudou nesta revisão. `git diff --check` passou.
+- Rebase sobre a sessão sem alterações. Merge local sem squash em `0b3caef`; `git diff da759c7 HEAD --exit-code` confirmou árvore idêntica após a integração. `Stage: done`, esta resolução e a linha do ledger são registrados juntos no commit de fechamento. No fluxo de sessão, `Review: human` será destacado pelo driver no PR da sessão; esta etapa não faz push nem abre PR.
+
+Standards: 2 achados documentais leves, um corrigido e um não bloqueante; 0 achados de código. Spec: 0 achados. Critérios 1–9 aprovados.

@@ -14,6 +14,18 @@ function memStorage(): Storage & { map: Map<string, string> } {
 }
 
 describe('presets: pure definitions via codec', () => {
+  it('desduplica o nome de cópias do preset no idioma atual (PHY-62)', () => {
+    const s = memStorage()
+    const preset = PRESETS.find((p) => p.id === 'atwood')!
+    const name = t('preset.atwood.name')
+    for (let n = 1; n <= 3; n++) {
+      const result = createPresetScene(s, preset, n)
+      expect(result).toHaveProperty('entry.name', n === 1 ? name : `${name} (${n})`)
+      expect(result).toHaveProperty('entry.id', `cena-${n}`)
+      expect(loadScene(s, `cena-${n}`)).toEqual(preset.buildScene())
+    }
+    expect(loadIndex(s)).toHaveLength(3)
+  })
   it('table: each preset parses, has ≥1 body, unique ids', () => {
     for (const p of PRESETS) {
       expect(p.id).toBeTruthy()

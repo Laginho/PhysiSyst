@@ -31,7 +31,7 @@ A dynamic body's launch velocity (`v₀`), set before playback in world-frame co
 _Avoid_: impulse, launch force, kick
 
 **Mass label**:
-The textbook symbol drawn inside a dynamic body: `M` for triangles, `m` for the other shapes, subscripted (`m_a`, `m_b`, `M_a`) whenever two bodies would share a symbol. Derived from the scene, never stored or hand-edited; fixed bodies carry no label.
+The textbook symbol drawn in or beside a dynamic body: `M` for triangles, `m` for the other shapes, subscripted (`m_a`, `m_b`, `M_a`) whenever two bodies would share a symbol. A label that does not fit the body's screen bounds moves above and to its right. Derived from the scene, never stored or hand-edited; fixed bodies carry no label.
 _Avoid_: name, tag, body label
 
 **Contact snap**:

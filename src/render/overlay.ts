@@ -41,8 +41,10 @@ export interface OverlayArrow {
   from: { x: number; y: number }
   vec: { x: number; y: number }
   kind: ArrowKind
-  /** The quantity the arrow draws: arrows sharing a key share a Vector label. */
+  /** The quantity the arrow draws: arrows sharing a kind/key share a symbol and number. */
   key: string
+  /** Multiplier of that quantity; absent means 1. */
+  factor?: number
 }
 
 export function weightArrows(scene: Scene, states: ReadonlyMap<string, BodyState> | null, pixelsPerMeter: number): OverlayArrow[] {
@@ -96,12 +98,30 @@ export function initialVelocityArrows(view: Scene, pixelsPerMeter: number): Over
 }
 
 export function normalArrows(contacts: readonly ContactPoint[]): OverlayArrow[] {
-  return contacts.map((c) => ({
-    from: { x: c.point.x, y: c.point.y },
-    vec: { x: c.normal.x * NORMAL_LEN, y: c.normal.y * NORMAL_LEN },
-    kind: 'normal',
-    // The pair, not the point: every point of one Contact carries the same N.
-    key: `normal:${c.aId < c.bId ? `${c.aId}|${c.bId}` : `${c.bId}|${c.aId}`}`,
+  const pairs = new Map<string, { arrow: OverlayArrow; count: number }>()
+  for (const c of contacts) {
+    const key = `normal:${c.aId < c.bId ? `${c.aId}|${c.bId}` : `${c.bId}|${c.aId}`}`
+    const pair = pairs.get(key)
+    if (pair) {
+      pair.arrow.from.x += c.point.x
+      pair.arrow.from.y += c.point.y
+      pair.count++
+    } else {
+      pairs.set(key, {
+        arrow: {
+          from: { x: c.point.x, y: c.point.y },
+          vec: { x: c.normal.x * NORMAL_LEN, y: c.normal.y * NORMAL_LEN },
+          kind: 'normal',
+          key,
+        },
+        count: 1,
+      })
+    }
+  }
+  // One N per Contact, at its mean point, in first appearance order.
+  return Array.from(pairs.values(), ({ arrow, count }) => ({
+    ...arrow,
+    from: { x: arrow.from.x / count, y: arrow.from.y / count },
   }))
 }
 
@@ -118,7 +138,8 @@ function arrowToward(from: Vec2, toward: Vec2, magnitude: number, pixelsPerMeter
 /**
  * T on every dynamic body a rope pulls: at each dynamic end's anchor, toward
  * the next point of the path; on a dynamic body mounting a pulley, one arrow
- * per adjacent segment at the pulley center, along that segment away from it,
+ * per adjacent segment at the pulley center, along that segment away from it.
+ * For an ideal rope, directions within 5 degrees merge into 2T along their mean,
  * unless the rope is loose from it (`sweep < 0`). The path is the reading's
  * when it has one (PHY-56), else the document path. A slack rope (T = 0) or one with
  * no reading draws nothing.
@@ -152,6 +173,19 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
       const c = bodyPointToWorld(mount, pulley.anchor)
       const into = path.segments[i]!
       const outOf = path.segments[i + 1]!
+      const incoming = { x: into.from.x - into.to.x, y: into.from.y - into.to.y }
+      const outgoing = { x: outOf.to.x - outOf.from.x, y: outOf.to.y - outOf.from.y }
+      const inLength = Math.hypot(incoming.x, incoming.y)
+      const outLength = Math.hypot(outgoing.x, outgoing.y)
+      if (!perSegment && inLength > 0 && outLength > 0) {
+        const u = { x: incoming.x / inLength, y: incoming.y / inLength }
+        const v = { x: outgoing.x / outLength, y: outgoing.y / outLength }
+        if (u.x * v.x + u.y * v.y >= Math.cos(5 * Math.PI / 180)) {
+          const vec = arrowToward(c, { x: c.x + u.x + v.x, y: c.y + u.y + v.y }, 2 * state.tension, pixelsPerMeter)
+          if (vec) out.push({ from: c, vec, kind: 'tension', key: `tension:${rope.id}`, factor: 2 })
+          return
+        }
+      }
       push(c, { x: c.x + into.from.x - into.to.x, y: c.y + into.from.y - into.to.y }, i)
       push(c, { x: c.x + outOf.to.x - outOf.from.x, y: c.y + outOf.to.y - outOf.from.y }, i + 1)
     })
@@ -206,23 +240,31 @@ export function numberedSymbol(symbol: string, n: number): string {
  * Vector labels, derived from the arrows on every render and never stored:
  * the kind's symbol in `lang`, numbered 1, 2, … in the order the arrows come
  * (document order) only when two or more quantities of that kind are drawn.
- * Keyed by OverlayArrow.key; `_` opens the subscript (`F_el`, `T_1`, `F_el,2`).
+ * Lookup uses kind/key and prefixes the arrow's factor, including for regenerated
+ * selection arrows. `_` opens the subscript (`F_el`, `T_1`, `F_el,2`).
  */
-export function vectorLabels(arrows: readonly OverlayArrow[], lang: Lang): Map<string, string> {
+export function vectorLabels(arrows: readonly OverlayArrow[], lang: Lang): (arrow: OverlayArrow) => string | undefined {
   const keysByKind = new Map<ArrowKind, string[]>()
   for (const a of arrows) {
     const keys = keysByKind.get(a.kind) ?? []
     if (!keys.includes(a.key)) keys.push(a.key)
     keysByKind.set(a.kind, keys)
   }
-  const out = new Map<string, string>()
+  const out = new Map<ArrowKind, Map<string, string>>()
   for (const [kind, keys] of keysByKind) {
     const symbol: string = getCatalog(lang)[SYMBOL_KEY[kind]]
+    const labels = new Map<string, string>()
     keys.forEach((key, i) => {
-      out.set(key, keys.length < 2 ? symbol : numberedSymbol(symbol, i + 1))
+      labels.set(key, keys.length < 2 ? symbol : numberedSymbol(symbol, i + 1))
     })
+    out.set(kind, labels)
   }
-  return out
+  return (arrow) => {
+    const label = out.get(arrow.kind)?.get(arrow.key)
+    if (label === undefined) return undefined
+    const factor = arrow.factor ?? 1
+    return factor === 1 ? label : `${factor}${label}`
+  }
 }
 
 /**

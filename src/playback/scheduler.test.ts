@@ -54,7 +54,7 @@ describe('speed clamping', () => {
 
 describe('initial state', () => {
   it('starts paused at rest with no accumulated credit', () => {
-    expect(initialPlayback()).toEqual({ status: 'paused', speed: DEFAULT_SPEED, acc: 0, stepsTaken: 0 })
+    expect(initialPlayback()).toEqual({ status: 'paused', speed: DEFAULT_SPEED, acc: 0, stepsTaken: 0, cursor: null })
   })
 
   it('clamps a caller-provided speed', () => {
@@ -171,7 +171,7 @@ describe('transport controls', () => {
     expect(t.rebuild).toBe(true)
     expect(t.steps).toBe(0)
     // Speed survives a reset: it is a view preference, not world state.
-    expect(t.state).toEqual({ status: 'paused', speed: 1.5, acc: 0, stepsTaken: 0 })
+    expect(t.state).toEqual({ status: 'paused', speed: 1.5, acc: 0, stepsTaken: 0, cursor: null })
   })
 
   it('setSpeed clamps, keeps the accumulator, and never changes status', () => {
@@ -204,7 +204,7 @@ describe('purity', () => {
   ]
   for (const action of actions) {
     it(`'${action.type}' does not mutate the state it is given`, () => {
-      const before: PlaybackState = { status: 'playing', speed: 1.5, acc: 0.75, stepsTaken: 7 }
+      const before: PlaybackState = { status: 'playing', speed: 1.5, acc: 0.75, stepsTaken: 7, cursor: null }
       const frozen = Object.freeze({ ...before })
       advance(frozen, action)
       expect(frozen).toEqual(before)
@@ -212,7 +212,69 @@ describe('purity', () => {
   }
 
   it('is a function of (state, action) only: same input, same output', () => {
-    const s: PlaybackState = { status: 'playing', speed: 0.75, acc: 0.5, stepsTaken: 3 }
+    const s: PlaybackState = { status: 'playing', speed: 0.75, acc: 0.5, stepsTaken: 3, cursor: null }
     expect(advance(s, { type: 'frame' })).toEqual(advance(s, { type: 'frame' }))
+  })
+})
+
+
+describe('recording cursor (PHY-64)', () => {
+  it.each([[-4, 0], [0, 0], [2, 2], [4, null], [9, null]])('seek %s pauses and clamps to %s', (index, cursor) => {
+    const before = { ...initialPlayback(0.5), status: 'playing' as const, acc: 0.5, stepsTaken: 20 }
+    const result = advance(before, { type: 'seek', index: index!, length: 5 })
+    expect(result).toEqual({ state: { ...before, status: 'paused', acc: 0, cursor }, steps: 0, rebuild: false })
+    expect(advance(result.state, { type: 'frame' }).state).toBe(result.state)
+  })
+
+  it('a recording with only its initial state stays live', () => {
+    expect(advance(initialPlayback(), { type: 'seek', index: 0, length: 1 }).state.cursor).toBeNull()
+  })
+
+  it.each(['reset'] as const)('%s returns to the live world before acting', (type) => {
+    const live = { ...initialPlayback(1.5), stepsTaken: 20 }
+    expect(advance({ ...live, cursor: 3 }, { type })).toEqual(advance(live, { type }))
+    expect(advance({ ...live, cursor: 3 }, { type }).state.cursor).toBeNull()
+  })
+})
+
+describe('recorded replay (PHY-65)', () => {
+  it('play keeps the selected record and pause preserves the replay position', () => {
+    const selected = { ...initialPlayback(0.5), cursor: 2, stepsTaken: 20 }
+    const playing = advance(selected, { type: 'play' })
+    expect(playing).toEqual({ state: { ...selected, status: 'playing' }, steps: 0, rebuild: false })
+    expect(advance({ ...playing.state, acc: 0.5 }, { type: 'pause' }).state).toEqual(selected)
+  })
+
+  it.each([
+    [0, 0.5, 0, 0, 0, 0.5],
+    [0, 0.5, 0.5, 1, 0, 0],
+    [1, 2, 0, 3, 0, 0],
+    [3, 1, 0, null, 0, 0],
+    [3, 2, 0, null, 1, 0],
+    [2, 1.75, 0.75, null, 0, 0.5],
+  ])('frame at %s with speed %s and credit %s consumes history before live steps', (cursor, speed, acc, next, steps, remainder) => {
+    const state = { ...initialPlayback(speed!), status: 'playing' as const, cursor: cursor!, acc: acc!, stepsTaken: 20 }
+    const action = { type: 'frame' as const, length: 5 }
+    expect(advance(state, action)).toEqual({
+      state: { ...state, cursor: next, acc: remainder, stepsTaken: 20 + steps! }, steps, rebuild: false,
+    })
+  })
+
+  it.each(['paused', 'playing'] as const)('stepOnce replays one record in status %s and retains fractional credit', (status) => {
+    const state = { ...initialPlayback(0.25), status, cursor: 1, acc: 0.75, stepsTaken: 20 }
+    const action = { type: 'stepOnce' as const, length: 4 }
+    const first = advance(state, action)
+    expect(first).toEqual({ state: { ...state, cursor: 2 }, steps: 0, rebuild: false })
+    const tip = advance(first.state, action)
+    expect(tip).toEqual({ state: { ...state, cursor: null }, steps: 0, rebuild: false })
+    expect(advance(tip.state, action)).toEqual({ state: { ...state, cursor: null, stepsTaken: 21 }, steps: 1, rebuild: false })
+  })
+
+  it.each([0, 1, 5])('live transport ignores recording length %s', (length) => {
+    const state = { ...initialPlayback(1.5), status: 'playing' as const, acc: 0.75, stepsTaken: 20 }
+    for (const type of ['frame', 'stepOnce', 'play'] as const) {
+      const action = { type, length }
+      expect(advance(state, action)).toEqual(advance(state, { type }))
+    }
   })
 })

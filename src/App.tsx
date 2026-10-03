@@ -6,6 +6,7 @@ import {
   applyLiveOps,
   applyStates,
   initialPlayback,
+  Recording,
   routeDocChange,
   SPEED_MAX,
   SPEED_MIN,
@@ -13,8 +14,9 @@ import {
   type PlaybackAction,
   type PlaybackState,
 } from './playback'
+import { TIMESTEP } from './sim/timestep'
 import { DEMO_SCENE } from './scene/demo'
-import { createPresetScene, galleryGroups, nodeLabelKeys, PRESETS } from './presets'
+import { createPresetScene, galleryGroups, nodeLabelKeys, presetById, type Preset } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
 import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
@@ -96,10 +98,12 @@ import {
   exportScene,
   importScene,
   loadCurrentSceneId,
+  loadCanvasSize,
   loadIndex,
   loadIndexResult,
   loadSceneOrBlank,
   saveCurrentSceneId,
+  saveCanvasSize,
   saveIndex,
   saveScene,
   shouldShowGallery,
@@ -184,6 +188,7 @@ function paint(
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: {
     showGlobal: boolean
+    stepsTaken: number
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
     lang?: Lang
@@ -233,9 +238,10 @@ function paint(
   // reads the same letter it has in global mode.
   const ppm = camera.pixelsPerMeter
   const constraints = opts?.constraints ?? []
+  const showInitialVelocity = (opts?.stepsTaken ?? 0) === 0
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
     { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
-    { arrows: initialVelocityArrows(view, ppm), style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
+    { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
     { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
     { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
     { arrows: tensionArrows(view, ropeReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
@@ -243,14 +249,16 @@ function paint(
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
-    for (const { arrows, style } of layers) for (const a of arrows) drawArrow(ctx, a.from, a.vec, transform, style, labels.get(a.key))
+    for (const { arrows, style } of layers) for (const a of arrows) drawArrow(ctx, a.from, a.vec, transform, style, labels(a))
   } else {
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels.get(a.key))
+      if (showInitialVelocity) {
+        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+      }
       for (const a of appliedArrows(selView, ppm)) {
-        drawArrow(ctx, a.from, a.vec, transform, undefined, labels.get(a.key))
+        drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
         // The application point is draggable (PHY-27): a ring marks the grip.
         screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
       }
@@ -285,11 +293,15 @@ function NumField({
   label,
   value,
   step,
+  disabled,
+  title,
   onChange,
 }: {
   label: string
   value: number
   step?: number
+  disabled?: boolean
+  title?: string
   onChange: (v: number) => boolean | void
 }) {
   const [draft, setDraft] = useState<{ value: number; text: string } | null>(null)
@@ -299,6 +311,8 @@ function NumField({
       {label}
       <input
         type="number"
+        disabled={disabled}
+        title={title}
         step={step ?? 'any'}
         value={draft?.text ?? value}
         style={{ width: 80 }}
@@ -410,6 +424,7 @@ function ForcesPanel({
   bodyId,
   forces,
   structuralLocked,
+  liveLocked,
   onAdd,
   onPatch,
   onRemove,
@@ -417,6 +432,7 @@ function ForcesPanel({
   bodyId: string
   forces: AppliedForce[]
   structuralLocked: boolean
+  liveLocked: boolean
   onAdd: () => string | null
   onPatch: (id: string, patch: Partial<Omit<AppliedForce, 'id' | 'bodyId'>>) => void
   onRemove: (id: string) => void
@@ -432,10 +448,10 @@ function ForcesPanel({
             <span>{f.id}</span>
             <button disabled={structuralLocked} onClick={() => onRemove(f.id)} title={t('forces.removeTitle')}>✕</button>
           </div>
-          <NumField label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
-          <NumField label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
-          <NumField label={t('forces.anchorX')} value={f.anchor.x} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, x: v } })} />
-          <NumField label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.magnitude')} value={f.magnitude} onChange={(v) => onPatch(f.id, { magnitude: Math.max(0, v) })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.direction')} value={f.direction} onChange={(v) => onPatch(f.id, { direction: v })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.anchorX')} value={f.anchor.x} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, x: v } })} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('forces.anchorY')} value={f.anchor.y} onChange={(v) => onPatch(f.id, { anchor: { ...f.anchor, y: v } })} />
         </div>
       ))}
       <button disabled={structuralLocked} style={{ marginTop: 6 }} onClick={() => setError(onAdd())}>{t('forces.add')}</button>
@@ -592,6 +608,9 @@ export default function App() {
   const storageRef = useRef<Storage | null>(null)
   if (!storageRef.current) storageRef.current = getAppStorage()
   const storage = storageRef.current
+  const preferredWidthRef = useRef(loadCanvasSize(storage))
+  const canvasContainerRef = useRef({ width: 900, height: 600 })
+  const resizeDragRef = useRef<{ pointerId: number; startX: number; width: number } | null>(null)
   let initialSeedWarning: string | null = null
   const [sceneIndex, setSceneIndex] = useState<SceneIndexEntry[]>(() => {
     const res = loadIndexResult(storage)
@@ -624,9 +643,16 @@ export default function App() {
       return 'cena-1'
     }
     if (res.kind === 'corrupt') return 'cena-1'
-    return loadCurrentSceneId(storage, res.index) ?? res.index[0]?.id ?? 'cena-1'
+    const saved = loadCurrentSceneId(storage, res.index)
+    if (saved?.startsWith('preset:')) {
+      return presetById(saved.slice(7)) ? saved : res.index[0]?.id ?? 'cena-1'
+    }
+    return saved ?? res.index[0]?.id ?? 'cena-1'
   })
+  const openPreset = currentId.startsWith('preset:') ? presetById(currentId.slice(7)) : undefined
+  const openPresetRef = useRef(openPreset)
   const [doc, setDoc] = useState<Scene>(() => {
+    if (openPreset) return openPreset.buildScene()
     const res = loadIndexResult(storage)
     if (res.kind === 'missing') {
       return loadIndex(storage).length > 0 ? DEMO_SCENE : blankScene()
@@ -653,15 +679,14 @@ export default function App() {
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [showGallery, setShowGallery] = useState(() => shouldShowGallery(storage))
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(galleryGroups()[0]?.presets[0]?.id ?? null)
   const [lang, setLangState] = useState<Lang>(() => getLang(storage))
   const lastSavedRef = useRef<Map<string, string>>(new Map([[currentId, JSON.stringify(serialize(doc))]]))
   /**
    * Transport mirror for the controls. The AUTHORITATIVE transport state lives
-   * in `playbackRef`: animation frames advance it without touching React state,
-   * because re-rendering the whole editor 60x/second to move an accumulator
-   * would be pure waste. Only discrete actions (play/pause/reset/speed/step)
-   * go through `dispatch`, which keeps this mirror in sync.
+   * in `playbackRef`: live animation frames keep accumulator updates out of
+   * React state. Discrete actions go through `dispatch`; replay frames also
+   * update this mirror when the cursor changes, keeping controls and edit locks
+   * aligned with the displayed record.
    */
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback)
   const [simError, setSimError] = useState<string | null>(null)
@@ -679,12 +704,43 @@ export default function App() {
   /** Last simulator readback; `null` means "nothing simulated, show the doc". */
   const statesRef = useRef<Map<string, BodyState> | null>(null)
   const accelRef = useRef(initialTracker())
+  // Display refs may point into history; the live frame always stays at the tip.
+  type RecordedFrame = {
+    scene: Scene
+    states: Map<string, BodyState> | null
+    contacts: ContactPoint[]
+    constraints: ConstraintState[]
+    acceleration: ReturnType<typeof initialTracker>
+  }
+  const liveFrameRef = useRef<RecordedFrame>({ scene: doc, states: null, contacts: [], constraints: [], acceleration: initialTracker() })
+  const recordingRef = useRef<Recording<RecordedFrame> | null>(null)
+  if (!recordingRef.current) recordingRef.current = new Recording(liveFrameRef.current)
+  const [recordingLength, setRecordingLength] = useState(1)
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
+  const captureFrame = useCallback((): RecordedFrame => ({
+    scene: docRef.current,
+    states: statesRef.current ?? simRef.current?.readStates() ?? null,
+    contacts: contactsRef.current,
+    constraints: constraintsRef.current,
+    acceleration: accelRef.current,
+  }), [])
+  const showFrame = useCallback((frame: RecordedFrame) => {
+    statesRef.current = playbackRef.current.cursor === 0 ? null : frame.states
+    contactsRef.current = frame.contacts
+    constraintsRef.current = frame.constraints
+    accelRef.current = frame.acceleration
+  }, [])
+  const resetRecording = useCallback(() => {
+    liveFrameRef.current = captureFrame()
+    recordingRef.current!.reset(liveFrameRef.current)
+    setRecordingLength(1)
+  }, [captureFrame])
   /** Document the running world was built from, for live-edit routing. */
   const builtDocRef = useRef<Scene>(doc)
   const pendingRebuildRef = useRef(false)
+  const resetOnEditRef = useRef(false)
   // Mirrors so the imperative rAF loop reads the latest document without
   // re-subscribing every render.
   const docRef = useRef<Scene>(doc)
@@ -709,25 +765,52 @@ export default function App() {
       else setSceneIndex(loadIndex(storage))
     })
   }
-  const structuralLocked = playback.stepsTaken > 0 || stepsTick > 0
-  const canEditDoc = useCallback((next: Scene) =>
-    playbackRef.current.stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live', [])
+  const liveLocked = playback.cursor !== null && playback.cursor > 0
+  const structuralLocked = playback.cursor !== 0 && (playback.stepsTaken > 0 || stepsTick > 0)
+  const canEditDoc = useCallback((next: Scene) => {
+    const { cursor, stepsTaken } = playbackRef.current
+    if (cursor !== null) return cursor === 0
+    return stepsTaken === 0 || routeDocChange(docRef.current, next).kind === 'live'
+  }, [])
+
+  /** Rebind identity without replacing the running world or clearing its undo history. */
+  const copyOpenPreset = useCallback((): boolean => {
+    const preset = openPresetRef.current
+    if (!preset) return true
+    const result = createPresetScene(storage, preset)
+    if ('reason' in result) {
+      setStorageWarning(result.reason)
+      return false
+    }
+    const { entry, scene } = result
+    lastSavedRef.current.set(entry.id, JSON.stringify(serialize(scene)))
+    openPresetRef.current = undefined
+    setCurrentId(entry.id)
+    saveCurrentSceneId(storage, entry.id)
+    setSceneIndex(loadIndex(storage))
+    return true
+  }, [storage])
 
   /** All edits share this guard; scene transitions reset playback separately. */
   const editDoc = useCallback((next: Scene | ((d: Scene) => Scene), recordHistory = false): boolean => {
     const prev = docRef.current
     const resolved = typeof next === 'function' ? next(prev) : next
     if (resolved === prev) return true
+    // Immutable patches can preserve every value (for example g: 9.810).
+    // Materialize a preset only when its persisted content actually changes.
+    if (openPresetRef.current && JSON.stringify(resolved) === JSON.stringify(prev)) return true
     if (!canEditDoc(resolved)) {
-      setToolError('editor.resetToEdit')
+      setToolError(playbackRef.current.cursor !== null ? 'playback.scrubbedEditHint' : 'editor.resetToEdit')
       return false
     }
+    if (!copyOpenPreset()) return false
+    if (playbackRef.current.cursor === 0) resetOnEditRef.current = true
     if (recordHistory) setHistory((h) => pushHistory(h, prev))
     docRef.current = resolved
     setDoc(resolved)
     setToolError(null)
     return true
-  }, [canEditDoc])
+  }, [canEditDoc, copyOpenPreset])
 
   // Discrete edits push once here; drags push their initial doc on pointer-up.
   const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
@@ -750,6 +833,11 @@ export default function App() {
     | null
   >(null)
 
+  const displayedScene = useCallback((): Scene => {
+    const cursor = playbackRef.current.cursor
+    return cursor === null ? docRef.current : recordingRef.current!.at(cursor)!.scene
+  }, [])
+
   const repaint = useCallback(() => {
     // The simulator mutates its warning array; publish a snapshot only when its content changes.
     const nextWarnings = simRef.current?.warnings ?? []
@@ -760,15 +848,16 @@ export default function App() {
     )
     const ctx = ctxRef.current
     if (ctx)
-      paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
+      paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
+        stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
         lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
       })
-  }, [size.width, size.height])
+  }, [size.width, size.height, displayedScene])
 
   // The container's own size drives the canvas — measured on mount and on
   // every resize (window resize/maximize, layout changes during playback).
@@ -782,7 +871,8 @@ export default function App() {
       setStacked((wasStacked) =>
         wasStacked ? width < CANVAS_MIN_WIDTH + INSPECTOR_WIDTH + ROW_GAP : width < CANVAS_MIN_WIDTH,
       )
-      setSize(fitCanvas(width, entry.contentRect.height))
+      canvasContainerRef.current = { width, height: entry.contentRect.height }
+      setSize(fitCanvas(width, entry.contentRect.height, preferredWidthRef.current))
     })
     ro.observe(box)
     return () => ro.disconnect()
@@ -840,9 +930,9 @@ export default function App() {
   // Autosave: DOC-only, debounced ~400 ms, soft warning on quota failure.
   // Flush is explicit on scene transitions (switchToScene/delete); this effect only debounces doc edits.
   useEffect(() => {
-    saverRef.current?.schedule(currentId, doc)
+    if (!openPreset) saverRef.current?.schedule(currentId, doc)
     return () => saverRef.current?.cancel()
-  }, [doc, currentId])
+  }, [doc, currentId, openPreset])
 
   // Leaving the page (F5, tab close, CLEAN-01's chunk reload) must not drop the edit still inside the debounce.
   useEffect(() => {
@@ -855,6 +945,7 @@ export default function App() {
   useEffect(() => {
     const idxRes = loadIndexResult(storage)
     if (idxRes.kind === 'corrupt') setCorruptWarningKey('error.indiceCorrompido')
+    if (openPreset) return
     const { warning } = loadSceneOrBlank(storage, currentId)
     if (warning) setStorageWarning((prev) => (prev?.includes(warning) ? prev : prev ? `${prev} | ${warning}` : warning))
   }, [])
@@ -862,12 +953,12 @@ export default function App() {
   // Low-frequency readout: polls refs without 60Hz React churn.
   useEffect(() => {
     const id = setInterval(() => {
-      setStepsTick(playbackRef.current.stepsTaken)
+      setStepsTick(playbackRef.current.cursor ?? playbackRef.current.stepsTaken)
+      setRecordingLength(recordingRef.current!.length)
       const constraintSel = selectedOf(selectionRef.current, 'constraint')
       if (constraintSel) {
         // A world awaiting its rebuild still holds the old constraints: no reading.
-        const sim = pendingRebuildRef.current ? null : simRef.current
-        setConstraintReadout(sim?.readConstraints().find((c) => c.id === constraintSel) ?? null)
+        setConstraintReadout(pendingRebuildRef.current ? null : constraintsRef.current.find((c) => c.id === constraintSel) ?? null)
       } else {
         setConstraintReadout(null)
       }
@@ -876,25 +967,26 @@ export default function App() {
         setReadout(null)
         return
       }
+      const scene = displayedScene()
       const curr = statesRef.current
       const s = curr?.get(sel)
       if (!s) {
         // Not yet simulated — use the document pose, initial velocity, and
         // analytic acceleration until a measured simulator sample exists.
-        const docBody = docRef.current.bodies.find((b) => b.id === sel)
+        const docBody = scene.bodies.find((b) => b.id === sel)
         if (!docBody) {
           setReadout(null)
           return
         }
-        const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+        const acc = getAcceleration(accelRef.current, scene, sel, playbackRef.current.status === 'paused')
         setReadout({ x: docBody.position.x, y: docBody.position.y, vx: docBody.vx ?? 0, vy: docBody.vy ?? 0, ax: acc.x, ay: acc.y, approximate: acc.approximate })
         return
       }
-      const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+      const acc = getAcceleration(accelRef.current, scene, sel, playbackRef.current.status === 'paused')
       setReadout({ x: s.position.x, y: s.position.y, vx: s.linvel.x, vy: s.linvel.y, ax: acc.x, ay: acc.y, approximate: acc.approximate })
     }, 100)
     return () => clearInterval(id)
-  }, [])
+  }, [displayedScene])
 
   /**
    * Applies pending document edits by rebuilding from the document at a frame boundary.
@@ -913,6 +1005,7 @@ export default function App() {
       contactsRef.current = sim.readContacts()
       constraintsRef.current = sim.readConstraints()
       pendingRebuildRef.current = false
+      resetRecording()
       setSimError(null)
       return true
     } catch (e) {
@@ -920,7 +1013,7 @@ export default function App() {
       pendingRebuildRef.current = true
       return false
     }
-  }, [fail])
+  }, [fail, resetRecording])
 
   /** Runs `n` fixed TIMESTEPs on the running world, then repaints once. */
   const runSteps = useCallback(
@@ -929,13 +1022,17 @@ export default function App() {
       if (!sim || n <= 0) return
       if (!syncWorld()) return
       try {
-        for (let i = 0; i < n; i++) sim.step()
-        const prev = statesRef.current
-        const next = sim.readStates()
-        accelRef.current = onSteps(accelRef.current, n, prev, next)
-        statesRef.current = next
-        contactsRef.current = sim.readContacts()
-        constraintsRef.current = sim.readConstraints()
+        for (let i = 0; i < n; i++) {
+          const prev = statesRef.current ?? sim.readStates()
+          sim.step()
+          const next = sim.readStates()
+          accelRef.current = onSteps(accelRef.current, 1, prev, next)
+          statesRef.current = next
+          contactsRef.current = sim.readContacts()
+          constraintsRef.current = sim.readConstraints()
+          liveFrameRef.current = captureFrame()
+          recordingRef.current!.push(liveFrameRef.current)
+        }
       } catch (e) {
         fail(e)
         return
@@ -945,16 +1042,20 @@ export default function App() {
       // making React follow every later animation frame.
       if (playbackRef.current.stepsTaken === n) setStepsTick(playbackRef.current.stepsTaken)
     },
-    [fail, repaint, syncWorld],
+    [fail, repaint, syncWorld, captureFrame],
   )
 
   /** Discrete transport actions: pure decision in `advance`, effects here. */
   const dispatch = useCallback(
     (action: PlaybackAction) => {
+      const previousCursor = playbackRef.current.cursor
       const t = advance(playbackRef.current, action)
       playbackRef.current = t.state
       setPlayback(t.state)
-      setStepsTick(t.state.stepsTaken)
+      setStepsTick(t.state.cursor ?? t.state.stepsTaken)
+      if (action.type === 'seek' || previousCursor !== t.state.cursor) {
+        showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+      }
       if (t.rebuild) {
         setToolError(null)
         // Clear readings before rebuilding: a failed reset must still show the document.
@@ -975,16 +1076,22 @@ export default function App() {
           setSimError(messageOf(e))
           pendingRebuildRef.current = true
         }
-        repaint()
+        resetRecording()
       }
+      repaint()
       if (t.steps > 0) runSteps(t.steps)
+      setRecordingLength(recordingRef.current!.length)
     },
-    [repaint, runSteps],
+    [repaint, runSteps, showFrame, resetRecording],
   )
 
   useEffect(() => {
     docRef.current = doc
     showGlobalRef.current = showGlobal
+    if (resetOnEditRef.current) {
+      resetOnEditRef.current = false
+      dispatch({ type: 'reset' })
+    }
     if (simRef.current && builtDocRef.current !== doc) {
       // Live edits mutate the running world; structural edits rebuild at t = 0 (PHY-39).
       const route = routeDocChange(builtDocRef.current, doc)
@@ -995,6 +1102,7 @@ export default function App() {
         try {
           applyLiveOps(simRef.current, route.ops)
           builtDocRef.current = doc
+          if (playbackRef.current.stepsTaken === 0) resetRecording()
         } catch (e) {
           dispatch({ type: 'reset' })
           setSimError(messageOf(e))
@@ -1002,7 +1110,7 @@ export default function App() {
       }
     }
     repaint()
-  }, [doc, showGlobal, repaint, dispatch])
+  }, [doc, showGlobal, repaint, dispatch, resetRecording])
 
   const switchToScene = useCallback(
     (id: string) => {
@@ -1011,6 +1119,7 @@ export default function App() {
       if (warning) setStorageWarning(warning)
       lastSavedRef.current.set(id, JSON.stringify(serialize(scene)))
       setSceneIndex(loadIndex(storage))
+      openPresetRef.current = undefined
       setCurrentId(id)
       saveCurrentSceneId(storage, id)
       setDoc(scene)
@@ -1027,6 +1136,25 @@ export default function App() {
     },
     [storage, dispatch],
   )
+
+  const openGalleryPreset = useCallback((preset: Preset) => {
+    if (openPresetRef.current?.id === preset.id) return
+    saverRef.current?.flush()
+    const scene = preset.buildScene()
+    const id = `preset:${preset.id}`
+    openPresetRef.current = preset
+    setCurrentId(id)
+    saveCurrentSceneId(storage, id)
+    ackGallery(storage)
+    setDoc(scene)
+    setSelection(null)
+    setTool(null)
+    setToolError(null)
+    setImportError(null)
+    setHistory(clearHistory())
+    docRef.current = scene
+    dispatch({ type: 'reset' })
+  }, [storage, dispatch])
 
   /**
    * Boots the WASM world on first use; concurrent callers share one boot.
@@ -1051,6 +1179,7 @@ export default function App() {
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
+          resetRecording()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc
           setSimError(null)
@@ -1068,7 +1197,7 @@ export default function App() {
       )
     }
     return simBootRef.current
-  }, [])
+  }, [resetRecording])
 
   /** Retries a failed boot, restarting the joke rotation from the top. */
   const retryBoot = useCallback(() => {
@@ -1091,8 +1220,8 @@ export default function App() {
     return () => clearInterval(id)
   }, [bootState])
 
-  // The playback loop. Deliberately thin: the scheduler decides how many
-  // TIMESTEPs this frame is worth, this only executes them.
+  // The playback loop displays the scheduler's chosen record, then executes
+  // any remaining live TIMESTEPs.
   useEffect(() => {
     if (playback.status !== 'playing') return
     let live = true
@@ -1100,8 +1229,16 @@ export default function App() {
     const tick = () => {
       if (!live) return
       if (syncWorld()) {
-        const t = advance(playbackRef.current, { type: 'frame' })
+        const previousCursor = playbackRef.current.cursor
+        const t = advance(playbackRef.current, { type: 'frame', length: recordingRef.current!.length })
         playbackRef.current = t.state
+        if (previousCursor !== t.state.cursor) {
+          // Restore the live snapshot before surplus steps so acceleration uses
+          // the actual preceding live step, not the previously displayed record.
+          showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
+          setPlayback(t.state)
+          repaint()
+        }
         runSteps(t.steps)
       }
       if (live) handle = requestAnimationFrame(tick)
@@ -1111,7 +1248,7 @@ export default function App() {
       live = false
       cancelAnimationFrame(handle)
     }
-  }, [playback.status, runSteps, syncWorld])
+  }, [playback.status, runSteps, syncWorld, showFrame, repaint])
 
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
@@ -1160,6 +1297,9 @@ export default function App() {
         case 'stepOnce':
           stepOnce()
           break
+        case 'stepBack':
+          stepBack()
+          break
         case 'reset':
           dispatch({ type: 'reset' })
           break
@@ -1191,9 +1331,15 @@ export default function App() {
     })
   }
 
+  function stepBack() {
+    const length = recordingRef.current!.length
+    const index = playbackRef.current.cursor ?? length - 1
+    if (index > 0) dispatch({ type: 'seek', index: index - 1, length })
+  }
+
   function stepOnce() {
     void ensureSim().then((sim) => {
-      if (sim) dispatch({ type: 'stepOnce' })
+      if (sim) dispatch({ type: 'stepOnce', length: recordingRef.current!.length })
     })
   }
 
@@ -1291,7 +1437,7 @@ export default function App() {
         return
       }
       // Then the application points of its forces, which drag with Anchor snap.
-      const grabbed = docRef.current.forces.find((f) => {
+      const grabbed = displayedScene().forces.find((f) => {
         if (f.bodyId !== selected.id) return false
         const p = bodyPointToWorld(selected, f.anchor)
         const s = worldToScreen(transform, p.x, p.y)
@@ -1525,6 +1671,50 @@ export default function App() {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
+            <button
+              type="button"
+              title={t('canvas.resize')}
+              aria-label={t('canvas.resize')}
+              style={{
+                position: 'absolute',
+                left: stacked ? size.width - 18 : `calc(50% + ${size.width / 2 - 18}px)`,
+                top: size.height - 18,
+                width: 20,
+                height: 20,
+                padding: 0,
+                border: 0,
+                background: 'transparent',
+                color: '#666',
+                cursor: 'nwse-resize',
+                touchAction: 'none',
+              }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.preventDefault()
+                event.stopPropagation()
+                resizeDragRef.current = { pointerId: event.pointerId, startX: event.clientX, width: size.width }
+                event.currentTarget.setPointerCapture(event.pointerId)
+              }}
+              onPointerMove={(event) => {
+                const drag = resizeDragRef.current
+                if (!drag || drag.pointerId !== event.pointerId) return
+                const container = canvasContainerRef.current
+                const next = fitCanvas(container.width, container.height, drag.width + event.clientX - drag.startX)
+                const auto = fitCanvas(container.width, container.height)
+                preferredWidthRef.current = next.width === auto.width ? null : next.width
+                setSize(next)
+                saveCanvasSize(storage, preferredWidthRef.current)
+              }}
+              onPointerUp={(event) => {
+                if (resizeDragRef.current?.pointerId !== event.pointerId) return
+                resizeDragRef.current = null
+                event.currentTarget.releasePointerCapture(event.pointerId)
+              }}
+              onLostPointerCapture={() => { resizeDragRef.current = null }}
+              onPointerCancel={() => { resizeDragRef.current = null }}
+            >
+              ◢
+            </button>
             {bootState === 'booting' && (
               // A small badge, not a full-canvas cover: the student can see
               // and edit the scene while the engine loads. pointerEvents:
@@ -1571,8 +1761,12 @@ export default function App() {
             )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
             <button onClick={togglePlay} style={{ minWidth: 110 }}>
               {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
+            </button>
+            <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
+              {t('playback.stepBack')}
             </button>
             <button onClick={stepOnce} title={t('playback.stepTitle')}>
               {t('playback.step')}
@@ -1580,10 +1774,10 @@ export default function App() {
             <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
               {t('playback.reset')}
             </button>
-            <button onClick={undo} disabled={!canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
+            <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
               ↶
             </button>
-            <button onClick={redo} disabled={!canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
+            <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
               ↷
             </button>
             <span style={{ position: 'relative' }}>
@@ -1618,6 +1812,7 @@ export default function App() {
                         <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
+                        <tr><td style={{ paddingRight: 12 }}>←</td><td>{t('shortcuts.stepBack')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
                         <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
@@ -1639,6 +1834,16 @@ export default function App() {
               />
               <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
                 {playback.speed.toFixed(2)}×
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
+              {t('playback.timeLabel')}
+              <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
+                value={playback.cursor ?? recordingLength - 1}
+                onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
+              />
+              <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
               </span>
             </label>
           </div>
@@ -1688,6 +1893,7 @@ export default function App() {
               }}
               style={{ width: '100%', marginBottom: 4 }}
             >
+              {openPreset && <option value={currentId} disabled>{t('scenes.presetOption', { name: t(`preset.${openPreset.id}.name`) })}</option>}
               {sceneIndex.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name}
@@ -1709,6 +1915,10 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
+                  if (openPresetRef.current) {
+                    copyOpenPreset()
+                    return
+                  }
                   const res = duplicatePersistedScene(storage, currentId, doc)
                   if ('reason' in res) {
                     setStorageWarning(res.reason)
@@ -1720,6 +1930,7 @@ export default function App() {
                 {t('scenes.duplicate')}
               </button>
               <button
+                disabled={!!openPreset}
                 onClick={() => {
                   if (saverRef.current?.getPendingId() === currentId) saverRef.current?.flush()
                   else saverRef.current?.cancel()
@@ -1813,34 +2024,18 @@ export default function App() {
                     <div key={keys[keys.length - 1]} role="group" aria-label={path} style={{ display: 'grid', gap: 6 }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{path}</div>
                       {presets.map((p) => (
-                        <label key={p.id} style={{ display: 'flex', gap: 6, border: selectedPreset === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
-                          <input type="radio" name="preset" checked={selectedPreset === p.id} onChange={() => setSelectedPreset(p.id)} />
+                        <button type="button" key={p.id} onClick={() => openGalleryPreset(p)} aria-pressed={openPreset?.id === p.id}
+                          style={{ display: 'flex', textAlign: 'left', gap: 6, border: openPreset?.id === p.id ? '1px solid #4a90d9' : '1px solid #ddd', padding: 4, cursor: 'pointer' }}>
                           <span style={{ fontSize: 12 }}>
                             <strong>{t(`preset.${p.id}.name`)}</strong>
                             <br />
                             <span style={{ color: '#555' }}>{t(`preset.${p.id}.description`)}</span>
                           </span>
-                        </label>
+                        </button>
                       ))}
                     </div>
                   )
                 })}
-                <button
-                  onClick={() => {
-                    const preset = PRESETS.find((x) => x.id === selectedPreset)
-                    if (!preset) return
-                    const res = createPresetScene(storage, preset)
-                    if ('reason' in res) {
-                      setStorageWarning(res.reason)
-                      return
-                    }
-                    ackGallery(storage)
-                    switchToScene(res.entry.id)
-                    setShowGallery(false)
-                  }}
-                >
-                  {t('gallery.useSelected')}
-                </button>
                 <button
                   onClick={() => {
                     const res = createNewScene(storage)
@@ -1923,7 +2118,7 @@ export default function App() {
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <NumField label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
+          <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
@@ -1939,6 +2134,7 @@ export default function App() {
               <ForcesPanel
                 bodyId={selected.id}
                 structuralLocked={structuralLocked}
+                liveLocked={liveLocked}
                 forces={doc.forces.filter((f) => f.bodyId === selected.id)}
                 onAdd={() => {
                   const res = addForce(doc, { bodyId: selected.id, anchor: { x: 0, y: 0 }, magnitude: 10, direction: 0 })

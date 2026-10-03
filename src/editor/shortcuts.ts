@@ -4,6 +4,7 @@ export type ShortcutAction =
   | 'delete'
   | 'togglePlay'
   | 'stepOnce'
+  | 'stepBack'
   | 'reset'
   | 'deselectOrClose'
   | 'toggleHelp'
@@ -40,6 +41,8 @@ export function actionForKey(input: KeyInput): ShortcutAction | null {
       return 'togglePlay'
     case 'arrowright':
       return 'stepOnce'
+    case 'arrowleft':
+      return 'stepBack'
     case 'r':
       return 'reset'
     case 'escape':
