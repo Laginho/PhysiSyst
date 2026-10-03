@@ -1,5 +1,5 @@
 # PHY-72: Painel de gráficos da gravação
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-71
 Review: human
@@ -68,3 +68,15 @@ Módulo puro `src/render/graph.ts`:
 
 - 2026-10-03 Attempt 1 stopped to ask: PHY-72 está `blocked` na branch `asked/phy72-painel-graficos-20261003-2023`. /  / A decisão que resolve o bloqueio já está na branch de sessão (`221000f`), mas ainda não foi incorporada à branch do ticket. /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige parar quando a etapa registrada é `blocked`. Nenhum código alterado; testes não executados.
 - 2026-10-03 Foreman: o segundo bloqueio foi causado pelo ponteiro "Retomar da branch asked/..." da linha Proxy decided acima: aquela branch só tem o commit de docs `5e80601` (Stage blocked, nenhum código). Não há nada a retomar: criar `phy/PHY-72-painel-de-graficos` a partir da sessão e implementar com o contrato já corrigido aqui (critério 3, bullet de energia, Primary files).
+
+#### Stage 2 implementation (2026-10-03)
+
+- Base: `sweatshop/2026-10-03-1618`; new branch `phy/PHY-72-painel-de-graficos`, as directed by the foreman. PHY-71 is `done`. The archived `asked/*` branch was not resumed.
+- Read-around: `splitLabel` callers are `drawScene` and `drawArrow`; only its export changes. `repaint` is called by resize, selection/language effects, document edits, stepping and playback seeking. The graph shares these repaint paths and reads recorded frames, without changing transport or energy calculation. Examined empty/constant series, missing body, no selection, null initial states, spring/no-spring energy, and stored acceleration.
+- TDD vertical slices: `ab6f2ba` adds module tests (red: `Cannot find module './graph'`), followed by production commits `7ac3443` and `7f3a89b`; `bcdb8a6` adds DOM/browser tests before their App implementation (DOM: `expected undefined to be defined`; browser: `Error: missing graph toggle`). No production commit edits tests.
+- Module mutate-verify: shifting `mapT` by 1 produced `expected 65 to be 64`; replacing y ticks with `[1, 2]` produced `expected [ 1, 2 ] to include +0`; replacing sample values with zero failed both energy cases (`[0,0,0]` versus `[25,60,85]`) and recorded vectors (`0` versus `3,4,5`). All 5 module tests failed under these temporary mutations; source restored.
+- DOM mutate-verify, `toggles an accessible panel, defaults to energy and follows selection`: replaced graph aria id with system label unconditionally. Red: `expected 'gráfico de energia — sistema' to contain 'caixa'` at `src/App.test.ts:157`. Source restored.
+- Browser mutate-verify, `resizes the recording graph with the scene canvas (PHY-72)`: replaced graph CSS width `size.width` with `500`. Red: `expected 500 to be 1161` at `src/App.browser.test.ts:129`. Source restored. This test drags the real PHY-63 corner handle and checks both widths plus 180 px height.
+- Focused unmutated validation: 3 files passed; 7 tests passed, 149 unrelated tests skipped by the PHY-72 filter. Typecheck passed. Chromium initially disconnected inside the sandbox; rerunning with external execution permission produced the expected red and green results.
+- Final gate: standard command first stopped on Vitest worker startup timeout (948 tests passed, 1 unhandled worker error). Full retry with `npm test -- --maxWorkers=2` followed by lint, typecheck and build passed: **33 test files, 1085 tests**, no skipped tests or failures. Lint/typecheck exit 0; Vite built 52 modules. Worker limit is command-only, no project configuration changed.
+- Final diff checked for scope and whitespace; only Primary files plus this ticket changed. Ready for independent stage-3 review; no merge performed in stage 2.

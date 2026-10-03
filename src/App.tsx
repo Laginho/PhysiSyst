@@ -89,6 +89,7 @@ import {
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
 import { fmtNum, getLang, setLang as persistLang, t, type Lang } from './i18n'
+import { drawGraph, graphLayout, seriesFor, GRAPH_KINDS, type GraphKind } from './render/graph'
 import {
   AUTOSAVE_DELAY_MS,
   DebouncedSaver,
@@ -723,6 +724,12 @@ export default function App() {
   const recordingRef = useRef<Recording<RecordedFrame> | null>(null)
   if (!recordingRef.current) recordingRef.current = new Recording(liveFrameRef.current)
   const [recordingLength, setRecordingLength] = useState(1)
+  const [graphOpen, setGraphOpen] = useState(false)
+  const [graphKind, setGraphKind] = useState<GraphKind>('energy')
+  const graphCanvasRef = useRef<HTMLCanvasElement>(null)
+  const graphKindRef = useRef<GraphKind>('energy')
+  const graphBodyId = selectedOf(selection, 'body')
+  const effectiveGraphKind = graphBodyId === null && graphKind !== 'energy' && graphKind !== 'momentum' ? 'energy' : graphKind
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
@@ -846,6 +853,28 @@ export default function App() {
     return cursor === null ? docRef.current : recordingRef.current!.at(cursor)!.scene
   }, [])
 
+  const repaintGraph = useCallback(() => {
+    const canvas = graphCanvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = Math.round(size.width * dpr)
+    canvas.height = Math.round(180 * dpr)
+    ctx.setTransform(canvas.width / size.width, 0, 0, canvas.height / 180, 0, 0)
+    const recording = recordingRef.current!
+    const frames = Array.from({ length: recording.length }, (_, i) => recording.at(i)!)
+    const bodyId = selectedOf(selectionRef.current, 'body')
+    const kind = bodyId === null && graphKindRef.current !== 'energy' && graphKindRef.current !== 'momentum' ? 'energy' : graphKindRef.current
+    const series = seriesFor(kind, frames, bodyId, displayedScene())
+    drawGraph(ctx, graphLayout(series, Math.max(1, (recording.length - 1) * TIMESTEP), size.width, 180), series,
+      (playbackRef.current.cursor ?? recording.length - 1) * TIMESTEP, langRef.current)
+  }, [size.width, displayedScene])
+
+  useEffect(() => {
+    graphKindRef.current = effectiveGraphKind
+    repaintGraph()
+  }, [graphOpen, effectiveGraphKind, graphBodyId, repaintGraph])
+
   const repaint = useCallback(() => {
     // The simulator mutates its warning array; publish a snapshot only when its content changes.
     const nextWarnings = simRef.current?.warnings ?? []
@@ -865,7 +894,8 @@ export default function App() {
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
       })
-  }, [size.width, size.height, displayedScene])
+    repaintGraph()
+  }, [size.width, size.height, displayedScene, repaintGraph])
 
   // The container's own size drives the canvas — measured on mount and on
   // every resize (window resize/maximize, layout changes during playback).
@@ -1864,7 +1894,16 @@ export default function App() {
                 t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
               </span>
             </label>
+            <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
           </div>
+          {graphOpen && <div id="recording-graph" style={{ position: 'relative', width: size.width, height: 180 }}>
+            <select aria-label={t('graph.kindLabel')} value={effectiveGraphKind}
+              onChange={e => setGraphKind(e.target.value as GraphKind)} style={{ position: 'absolute', top: 0, left: 0 }}>
+              {GRAPH_KINDS.map(kind => <option key={kind} value={kind}>{t(`graph.kind.${kind}`)}</option>)}
+            </select>
+            <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
+              style={{ display: 'block', width: size.width, height: 180 }} />
+          </div>}
           <div style={{ display: 'flex', gap: 6 }}>
             <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
             <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>

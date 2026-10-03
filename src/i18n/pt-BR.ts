@@ -1,4 +1,12 @@
 export const ptBR = {
+  'graph.toggle': 'gráfico',
+  'graph.kindLabel': 'Grandeza do gráfico',
+  'graph.kind.position': 'posição',
+  'graph.kind.velocity': 'velocidade',
+  'graph.kind.acceleration': 'aceleração',
+  'graph.kind.energy': 'energia',
+  'graph.kind.momentum': 'momento',
+  'graph.aria': 'gráfico de {kind} — {id}',
   'canvas.resize': 'Redimensionar canvas',
   'app.title': 'physics-sim',
   'playback.play': '▶ reproduzir',
