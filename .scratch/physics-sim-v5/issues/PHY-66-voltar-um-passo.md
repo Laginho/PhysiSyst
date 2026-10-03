@@ -1,5 +1,5 @@
 # PHY-66: Voltar um passo
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-64
 Review: agent
@@ -51,3 +51,16 @@ O espelho do passo único: um botão "voltar um passo" ao lado do "Passo" e a se
 - Green: focused new tests 4 passed / 143 skipped. Full gate: 31 files, 1007 tests passed; lint, typecheck and build passed. Initial sandbox run had 15 Chromium connection failures (992 passed); rerun outside sandbox passed all 1007. Build retains large-chunk warning. Final diff reviewed: only Primary files and this ticket; code commit does not modify tests.
 
 - 2026-10-03 Stage 3: corrected comment chronology to retain the original planning entries before the appended Stage 2 evidence, as required by docs/agents/issue-tracker.md. No production or test changes.
+
+#### Resolution (2026-10-03)
+Verdict: Approve
+
+- Standards: one documentation finding corrected in `440a227`: implementation comments now follow the original planning history, as required by `docs/agents/issue-tracker.md`. No remaining documented-standard violations or relevant code smells.
+- Spec: zero findings. Criteria 1–7 met: ArrowLeft respects text fields and Ctrl/Cmd; the adjacent localized button and keyboard shortcut seek exactly one preceding record, update poses/time/slider/readout, pause playback, and do nothing at zero or with one record. No simulator stepping or rebuilding.
+- Proxy decision reviewed: "atalhos fora do PHY-64, → continua passo único, ← e o botão de voltar viram este ticket". Implementation preserves that scope and the right-arrow behavior.
+- Files: `src/App.tsx`, `src/App.test.ts`, `src/editor/shortcuts.ts`, `src/editor/shortcuts.test.ts`, `src/i18n/pt-BR.ts`, `src/i18n/en.ts`; stage 3 changed only this ticket and the ledger. Test-only commit `06f9f78` precedes implementation `c14cbfc`, whose diff contains no test changes.
+- Red proof rerun in stage 3, `node node_modules/vitest/vitest.mjs run src/App.test.ts -t PHY-66`: replacing the seek target `index - 1` with `index` failed both button and keyboard cases at `App.test.ts:2771`, `expected '4' to be '3'`; replacing the table key with `shortcuts.stepOnce` failed the shortcut-table case at `App.test.ts:2803`, `expected 'avançar um passo' to be 'voltar um passo'`. Result: 3 failed, 126 skipped.
+- Shortcut red proof rerun: returning `null` for ArrowLeft failed at `shortcuts.test.ts:54`, `expected null to be 'stepBack'`. Result: 1 failed, 17 skipped. All mutated production files were restored byte for byte.
+- Green proof after restoration, `node node_modules/vitest/vitest.mjs run src/editor/shortcuts.test.ts src/App.test.ts -t 'ArrowLeft|PHY-66'`: 2 files passed, 4 tests passed, 143 skipped.
+- Independent full gate: `npm test && npm run lint && npm run typecheck && npm run build` passed, 31 test files and 1007 tests. Existing Vite chunk-size warning remains. Commands ran outside the unavailable Windows sandbox (process creation error 1909).
+- Rebase onto `sweatshop/2026-10-02-2210` was already up to date; the validated production and test trees did not change. Merged locally without squash as `bef6215`; final ticket and ledger closure recorded together on the session branch.
