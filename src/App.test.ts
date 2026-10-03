@@ -2433,7 +2433,7 @@ describe('galeria de um clique (PHY-62)', () => {
     const writes = vi.spyOn(Storage.prototype, 'setItem')
     try {
       act(() => field.focus())
-      const equivalent = `${Number(field.value).toFixed(3)}0`
+      const equivalent = field.value.includes('.') ? `${field.value}0` : `${field.value}.0`
       act(() => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, equivalent)
         field.dispatchEvent(new Event('input', { bubbles: true }))
