@@ -315,7 +315,11 @@ export function createPresetScene(
   const ids = new Set(index.map((e) => e.id))
   while (ids.has(`cena-${n}`)) n++
   const id = `cena-${n}`
-  const entry: SceneIndexEntry = { id, name: t(`preset.${preset.id}.name`), updatedAt: now }
+  const baseName = t(`preset.${preset.id}.name`)
+  const names = new Set(index.map((e) => e.name))
+  let name = baseName
+  for (let suffix = 2; names.has(name); suffix++) name = `${baseName} (${suffix})`
+  const entry: SceneIndexEntry = { id, name, updatedAt: now }
   const pw = saveScene(storage, id, scene)
   if (pw) return { reason: pw }
   const iw = saveIndex(storage, [...index, entry])

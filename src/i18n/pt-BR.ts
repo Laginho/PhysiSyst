@@ -87,6 +87,8 @@ export const ptBR = {
   'scenes.galleryOpen': 'cenas prontas',
   'scenes.galleryClose': 'fechar galeria',
   'gallery.title': 'galeria — cenas prontas',
+  'scenes.presetOption': 'Preset: {name} (só leitura)',
+  'preset.readOnlyHint': 'A primeira edição cria uma cópia deste preset.',
   'gallery.useSelected': 'usar cena selecionada',
   'gallery.blank': 'cena em branco',
   'preset.wedge-flagship.name': 'Cunha empurrada (clássico)',

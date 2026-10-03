@@ -87,6 +87,8 @@ export const en = {
   'scenes.galleryOpen': 'presets',
   'scenes.galleryClose': 'close gallery',
   'gallery.title': 'gallery — presets',
+  'scenes.presetOption': 'Preset: {name} (read-only)',
+  'preset.readOnlyHint': 'Your first edit creates a copy of this preset.',
   'gallery.useSelected': 'use selected scene',
   'gallery.blank': 'blank scene',
   'preset.wedge-flagship.name': 'Pushed wedge (classic)',
