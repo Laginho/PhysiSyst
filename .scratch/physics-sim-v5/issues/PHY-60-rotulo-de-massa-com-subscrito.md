@@ -1,5 +1,5 @@
 # PHY-60: Rótulo de massa com subscrito e fora de corpo pequeno
-Stage: blocked
+Stage: to-implement
 Status: ready-for-agent
 Review: agent
 Difficulty: normal
@@ -7,6 +7,7 @@ Difficulty: normal
 - Primary files:
   - src/render/draw.ts (o `fillText(label)` dos rótulos de massa em ~243 e o rótulo em `drawArrow`)
   - src/render/draw.test.ts
+  - src/App.test.ts (só os dois `getContext` falsos: `measureText` devolve `{ width }`; nenhuma asserção muda)
 
 #### What to build
 
@@ -35,3 +36,5 @@ O rótulo de massa sai literal, com o sublinhado (`m_a`, `m_b`), centrado no cor
 - 2026-10-02 Aberto do feedback do Bruno vendo a v4 (item 5, "o m_b está bem ruim").
 
 - 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-60-rotulo-massa-asked-20261003-0051`): PHY-60 implementado, mas marcado `blocked` por escopo. /  / - Subscritos e posicionamento externo prontos. / - 27 testes focados, lint, typecheck e build passaram. / - Restam sete falhas causadas por canvases falsos em `src/App.test.ts`. /  / Posso incluir esse arquivo para corrigir os dois retornos de `measureText`? A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “the implementer may touch those files and nothing else”; ele está fora dos `Primary files`. /  / Trabalho preservado nos commits `0426c42` e `9ece33d`.
+
+- 2026-10-03 Proxy decided: sim, `src/App.test.ts` entra, restrito aos dois `getContext` falsos (gravador do PHY-59 ~l.270 e `recordCanvas` ~l.2325), só para `measureText` devolver `{ width: <número> }`; nenhuma asserção, cenário ou expectativa muda; commit test-only próprio; o stage 2 retoma do branch `phy/PHY-60-rotulo-massa-asked-20261003-0051` (0426c42, 9ece33d) sem refazer nada — as sete falhas são um `TypeError` de harness (proxy devolve `undefined` para `measureText`), não regressão: as asserções desses testes filtram por cor de vetor ou por `lineTo`, e o critério 2 exige `measureText`; corrigir isso em `draw.ts` com `?.width ?? 0` seria dobrar produção a um double, não cabe.
