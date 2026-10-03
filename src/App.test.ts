@@ -12,11 +12,11 @@ import { trashRect } from './editor/trash'
 import { createSimulator, type BodyState, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
-import { setLang } from './i18n'
-import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
+import { setLang, t } from './i18n'
+import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, INDEX_KEY, GALLERY_ACK_KEY, loadIndex, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import { scenePath } from './scene'
 import type { Scene } from './scene/types'
-import { presetById } from './presets'
+import { PRESETS, presetById } from './presets'
 import { withBrowserSession } from './test/browser'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -2406,5 +2406,96 @@ describe('desenho da corda durante o playback (PHY-56)', () => {
     await resetOnce(host)
     click(canvas, OPEN_SPACE)
     expect(panel(host, 'corda')).toBeUndefined()
+  })
+})
+
+describe('galeria de um clique (PHY-62)', () => {
+  const storage = () => window.localStorage as unknown as PersistStorage
+  function card(host: HTMLElement, id: string): HTMLButtonElement {
+    const button = [...host.querySelectorAll('button')].find((b) => b.querySelector('strong')?.textContent === t(`preset.${id}.name`))
+    if (!button) throw new Error(`missing preset card: ${id}`)
+    return button
+  }
+  const sceneWrites = (calls: string[][]) => calls.filter(([key]) => key === INDEX_KEY || key!.startsWith(SCENE_KEY_PREFIX))
+  const flush = () => act(() => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS))
+
+  it('abre cada card em t=0 sem salvar cenas; transporte não cria cópia', async () => {
+    vi.useFakeTimers()
+    const replaceScene = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), replaceScene })
+    const host = renderApp()
+    await settleSimImport()
+    expect(sceneSelect(host).value).toBe('cena-1')
+    expect(loadIndex(storage())).toHaveLength(1)
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      for (const preset of PRESETS) {
+        act(() => card(host, preset.id).click())
+        expect(replaceScene).toHaveBeenLastCalledWith(preset.buildScene())
+        expect(sceneSelect(host).selectedOptions[0]?.disabled).toBe(true)
+        expect(sceneSelect(host).selectedOptions[0]?.textContent).toBe(t('scenes.presetOption', { name: t(`preset.${preset.id}.name`) }))
+        expect(host.textContent).toContain(t('preset.readOnlyHint'))
+        expect(host.textContent).toContain('passos: 0')
+        expect(findButton(host, ptBR['playback.play'])).toBeDefined()
+        expect(findButton(host, ptBR['scenes.delete'])!.disabled).toBe(true)
+        expect(panel(host, ptBR['gallery.title'])).toBeDefined()
+        await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+        act(() => findButton(host, ptBR['playback.reset'])!.click())
+        const speed = inputForLabel(host, ptBR['playback.speedLabel'])
+        act(() => setNativeInputValue(speed, 2))
+        await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+        flush()
+      }
+      expect(sceneWrites(writes.mock.calls)).toEqual([])
+      expect(storage().getItem(GALLERY_ACK_KEY)).toBe('true')
+      expect(host.querySelector('input[name="preset"]')).toBeNull()
+      expect(findButton(host, ptBR['gallery.useSelected'])).toBeUndefined()
+    } finally { writes.mockRestore() }
+  })
+
+  it('reabre o preset após reload; desconhecido volta à cena salva', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    expect(storage().getItem(CURRENT_SCENE_KEY)).toBe('preset:atwood')
+    act(() => root!.unmount())
+    root = null
+    const reloaded = renderApp()
+    await settleSimImport()
+    expect(sceneSelect(reloaded).value).toBe('preset:atwood')
+    expect(createSimulator).toHaveBeenLastCalledWith(presetById('atwood')!.buildScene())
+    expect(reloaded.textContent).toContain(t('preset.readOnlyHint'))
+    expect(reloaded.textContent).not.toContain('não encontrada')
+    act(() => root!.unmount())
+    root = null
+    saveCurrentSceneId(storage(), 'preset:unknown')
+    const fallback = renderApp()
+    expect(sceneSelect(fallback).value).toBe('cena-1')
+    expect(fallback.textContent).not.toContain(t('preset.readOnlyHint'))
+  })
+
+  it('clique no preset já aberto preserva playback e mundo', async () => {
+    vi.useFakeTimers()
+    let frame: FrameRequestCallback = () => {}
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frame = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const replaceScene = vi.fn()
+    const step = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), replaceScene, step })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => card(host, 'atwood').click())
+    await act(async () => { findButton(host, ptBR['playback.play'])!.click() })
+    act(() => frame(0))
+    act(() => frame(100))
+    flush()
+    expect(step).toHaveBeenCalled()
+    const calls = replaceScene.mock.calls.length
+    const steps = host.textContent!.match(/passos: (\d+)/)![1]
+    expect(Number(steps)).toBeGreaterThan(0)
+    act(() => card(host, 'atwood').click())
+    expect(replaceScene).toHaveBeenCalledTimes(calls)
+    expect(host.textContent).toContain(`passos: ${steps}`)
+    expect(findButton(host, ptBR['playback.pause'])).toBeDefined()
   })
 })
