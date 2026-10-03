@@ -1,5 +1,5 @@
 # PHY-70: Módulo de energia e momento
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -68,3 +68,52 @@ Simulador:
 - Mutate-verify, production restored after each run: triangular inertia divisor 18 -> 12: 1 failed / 8 passed, expected 0.1111111111111111, received 0.16666666666666666. Triangle centroid x offset halved: 1 failed / 8 passed, expected y=3, received 2. Particle rotation enabled: 1 failed / 8 passed, expected Ec=1, received 1.1066666666666667. Fixed-body exclusion removed: 1 failed / 8 passed, expected Ec=8.606666666666667, received 561.94. Spring elastic contribution zeroed: 2 failed / 7 passed, expected 1.5, received 0. Disk energy zeroed: 2 failed / 7 passed, expected 2.3, received 0.3. Disk readout angvel forced to zero: 1 failed / 35 passed, expected >0.01, received 0. Chain readout energy forced to zero: 1 failed / 35 passed, expected >0, received 0. Restored focused tests: 45/45; isolated inertia recheck restored: 9/9.
 - Gate: npm test (32 files, 1069 tests passed); npm run lint; npm run typecheck; npm run build — all exit 0. git diff --check clean. Test-only and production commits kept separate.
 - Limits match the written contract: energy sums body contributions, endpoint spring strain, node kinetic energy and disk spin; it is not a complete conservation diagnostic for massive springs or moving pulley axles. This is documented on systemEnergy. UI consumption remains PHY-71.
+
+#### Stage 3 review (2026-10-03)
+
+Verdict: Reopen — stage 2 expanded the original Primary-files boundary without recorded planner, human or proxy approval.
+
+- Reviewed `3ac429cc022140fd31148b61e054dce663782245...70896c4185ec9e22d516fc63a5dbf2db581ade72`, against the session base `sweatshop/2026-10-03-1618`. Standards and Spec were reviewed independently in parallel. This is the first stage-3 review.
+
+##### Standards
+
+- ❌ Primary-files rule: `c5ea165` added `readPulleys: () => []` to `src/App.test.ts` and simultaneously added that file to Primary files. The approved base ticket did not list it. The stage-2 comment explains necessity but records no approval. Ticket-flow explicitly makes Primary files the boundary: "the implementer may touch those files and nothing else". Criterion 8 already anticipates `App.test.ts`, and adapting the typed fake is required for the new mandatory Simulator method and typecheck; the edit introduces no test or seam and has no behavioral scope creep. That functional justification does not resolve the explicit Primary-files approval requirement. The implementation-authored entry remains visible above but is not evidence of approval.
+- Nonblocking standards note: test commit `c5ea165` has no explanatory body, although its subject cites PHY-70. Ticket-flow asks for an English Conventional Commit with a body explaining why and citing the ID. This does not fail a numbered criterion, the Primary-files boundary or test-first separation, and is not a second reopen item.
+- Nonblocking heuristic: possible Mysterious Name in `bodyEnergy`, where `rotation` holds rotational kinetic energy. `rotationalEnergy` would be clearer. This is an optional naming judgment, not an acceptance requirement.
+
+##### Spec
+
+No missing, partial or incorrectly implemented functional criteria; no behavioral scope creep.
+
+1. ✅ Centroidal inertia: rectangle and circle formulas match; the right-triangle formula is `m(b²+h²)/18`. Direct tests cover all three.
+2. ✅ Triangle CM: `(2b/3, h/3)` is rotated and translated using the recorded pose; rectangle/circle positions are preserved.
+3. ✅ Body energy and momentum: current linear/angular velocities, centroid height and scene gravity are used; particle mode suppresses body spin energy.
+4. ✅ Fixed bodies are omitted from all system body contributions, including supplied nonzero velocities.
+5. ✅ Spring strain, chain kinetic energy and massive-disk spin are summed; disk spin remains in particle mode; `Emec = Ec + Epg + Eel`.
+6. ✅ `readPulleys` snapshots only massive disks in document insertion order, including nonzero spin after 60 steps and rebuilt/empty scenes.
+7. ✅ Initialized chains have eight nodes; readout is `½(mₛ/N)Σw_i²`, finite and nonnegative for the tested massive spring. Ideal/zero-mass springs omit the field.
+8. ✅ Recorded-frame type, initial frame and capture include pulley readings. The fake is not inspected by recorded frame, so the written criterion allows typecheck without a new App test.
+
+- Test-first separation: `c5ea165` changes only test files plus the ticket; production commit `70896c4` changes production plus the ticket and touches no tests. The stage-2 red record identifies the missing energy module, missing `readPulleys` and absent `chainKinetic` before production.
+- Examined callers, failure paths and interactions: pure energy helpers and their current tests (no UI consumer yet); shape origins and simulator CM velocity; `readSpring` through `readConstraints`; chain construction, placement and step updates; disk construction, insertion order and transactional `replaceScene`; real Simulator and App fake; recording initialization, boot, reset, rebuild, step and seek paths. Checked empty scenes, absent optional arrays/readouts, fixed bodies, compression, negative gravity, zero mass and particle mode. The unchanged physics solver continues through the full existing suite.
+- The existing `Proxy decided` line is satisfied in all four choices: massive pulleys only, fixed-body exclusion, disk spin retained in particle mode, and centroid potential using scene gravity. No proxy decision was added during this review.
+- Not examined exhaustively: invalid/extreme numeric inputs beyond existing codec/simulator validation; future PHY-71/72 UI consumers; a standalone manual UI session. Internal chain strain and moving-axle energy are documented omissions outside the numbered contract.
+
+##### Independent validation
+
+- Gate: **32 files / 1069 tests passed**, lint, typecheck and production build all exit 0. The sandbox attempt had 15 local Chromium connection/disconnection failures with 1054 tests passing; the full gate outside the sandbox passed all 1069. Build retains its existing large-chunk warning.
+- Repeated every recorded production mutation, restoring original file bytes after each:
+
+| Mutation | Red result |
+| --- | --- |
+| Triangle inertia divisor 18 → 12 | 1 failed / 8 passed; expected `0.1111111111111111`, received `0.16666666666666666` |
+| Triangle centroid x offset halved | 1 failed / 8 passed; expected y `3`, received `2` |
+| Particle rotation enabled | 1 failed / 8 passed; expected Ec `1`, received `1.1066666666666667` |
+| Fixed-body exclusion removed | 1 failed / 8 passed; expected Ec `8.606666666666667`, received `561.94` |
+| Spring elastic contribution zeroed | 2 failed / 7 passed; expected Eel `1.5`, received `0` |
+| Disk energy zeroed | 2 failed / 7 passed; expected Ec `2.3`, received `0.3` |
+| Disk readout angvel forced to zero | 1 failed / 35 passed; expected `> 0.01`, received `0` |
+| Chain readout energy forced to zero | 1 failed / 35 passed; expected `> 0`, received `0` |
+
+- Restored focused suite: **2 files / 45 tests passed**. No production or test change remains from review validation.
+- Axis totals: Standards has one reopening boundary violation, one nonblocking commit-message note and one optional naming heuristic; Spec has zero functional findings. The sole remaining ❌ item is approval of the exact App fake compatibility edit through the planner, human or configured proxy; no new behavior or test is requested. Continue on this branch after that contract clarification. No merge or ledger entry was made.
