@@ -2743,6 +2743,8 @@ describe('recorded time player (PHY-64)', () => {
         ? [{ id: 'link', kind, ...ends, k: 10, x0: 4, c: 0 }]
         : [{ id: 'link', kind, ...ends, via: [] }]
     }
+    if (bodies === 'empty') { scene.bodies = []; scene.forces = [] }
+    if (bodies === 'fixed') scene.bodies.forEach(b => { b.fixed = true })
     let current = scene
     const step = vi.fn(() => { count++ })
     const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })

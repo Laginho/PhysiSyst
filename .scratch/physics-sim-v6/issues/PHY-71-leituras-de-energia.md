@@ -48,3 +48,5 @@ Chaves novas: `readout.system`, `readout.kinetic` ('E_c'), `readout.potential` (
 - Proxy decided: linhas do corpo no "ver mais" e bloco "sistema" sempre visível com E_mec em negrito (220 px obrigam a divisão); `fmtNum` substitui também os `toFixed` existentes — um painel, uma convenção; símbolos em texto plano como F_el.
 
 - Stage 2: inspected the polling readout, recorded/live frame selection, RopePanel and all toFixed consumers. Tests use the approved fmtNum and App DOM seams; edge cases include frame zero, no selection, empty and fixed-only scenes. Existing decimal expectations migrate with the tests. Initial focused red: fmtNum is not a function; body position received (6.10, 4.00), expected (6,10, 4,00); system fieldset absent; spring system reading empty.
+
+- Test harness correction: the fixed/empty parameter was declared but its fixture conversion was missing after a CRLF-sensitive edit. Added the conversion in a separate test-only commit. Proved red by removing the production non-fixed-body guard: both cases fail, expected sem leitura, received E_mec: 0,00 J (2 failed / 4 passed in the PHY-71 focus). Restored production passes both.
