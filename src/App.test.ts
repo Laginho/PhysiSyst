@@ -1853,6 +1853,7 @@ describe('galeria em árvore (PHY-31)', () => {
       { node: 'Mecânica / Dinâmica / Atrito entre sólidos', presets: names('incline-block') },
       { node: 'Mecânica / Dinâmica / Resultantes tangencial e centrípeta', presets: names('loop-pendulum') },
       { node: 'Mecânica / Dinâmica / Movimentos em campo gravitacional uniforme', presets: names('free-fall', 'projectile') },
+      { node: 'Mecânica / Dinâmica / Colisões', presets: names('collision-elastic', 'collision-inelastic') },
       { node: 'Ondulatória / MHS', presets: names('spring-horizontal', 'spring-vertical', 'simple-pendulum', 'spring-damped') },
     ])
   })
