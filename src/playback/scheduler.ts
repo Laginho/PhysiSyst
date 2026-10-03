@@ -119,7 +119,7 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
 
     case 'stepOnce':
       // Exactly one TIMESTEP, at any speed and in either status, and it resets
-      // nothing — the fractional credit and the status ride through untouched.
+      // no live-world state: fractional credit and status ride through untouched.
       return { state: { ...state, cursor: null, stepsTaken: state.stepsTaken + 1 }, steps: 1, rebuild: false }
   }
 }

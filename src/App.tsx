@@ -706,12 +706,13 @@ export default function App() {
   const accelRef = useRef(initialTracker())
   // Display refs may point into history; the live frame always stays at the tip.
   type RecordedFrame = {
+    scene: Scene
     states: Map<string, BodyState> | null
     contacts: ContactPoint[]
     constraints: ConstraintState[]
     acceleration: ReturnType<typeof initialTracker>
   }
-  const liveFrameRef = useRef<RecordedFrame>({ states: null, contacts: [], constraints: [], acceleration: initialTracker() })
+  const liveFrameRef = useRef<RecordedFrame>({ scene: doc, states: null, contacts: [], constraints: [], acceleration: initialTracker() })
   const recordingRef = useRef<Recording<RecordedFrame> | null>(null)
   if (!recordingRef.current) recordingRef.current = new Recording(liveFrameRef.current)
   const [recordingLength, setRecordingLength] = useState(1)
@@ -719,6 +720,7 @@ export default function App() {
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
   const captureFrame = useCallback((): RecordedFrame => ({
+    scene: docRef.current,
     states: statesRef.current ?? simRef.current?.readStates() ?? null,
     contacts: contactsRef.current,
     constraints: constraintsRef.current,
@@ -831,6 +833,11 @@ export default function App() {
     | null
   >(null)
 
+  const displayedScene = useCallback((): Scene => {
+    const cursor = playbackRef.current.cursor
+    return cursor === null ? docRef.current : recordingRef.current!.at(cursor)!.scene
+  }, [])
+
   const repaint = useCallback(() => {
     // The simulator mutates its warning array; publish a snapshot only when its content changes.
     const nextWarnings = simRef.current?.warnings ?? []
@@ -841,7 +848,7 @@ export default function App() {
     )
     const ctx = ctxRef.current
     if (ctx)
-      paint(ctx, docRef.current, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
+      paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
         stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
@@ -850,7 +857,7 @@ export default function App() {
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
       })
-  }, [size.width, size.height])
+  }, [size.width, size.height, displayedScene])
 
   // The container's own size drives the canvas — measured on mount and on
   // every resize (window resize/maximize, layout changes during playback).
@@ -960,25 +967,26 @@ export default function App() {
         setReadout(null)
         return
       }
+      const scene = displayedScene()
       const curr = statesRef.current
       const s = curr?.get(sel)
       if (!s) {
         // Not yet simulated — use the document pose, initial velocity, and
         // analytic acceleration until a measured simulator sample exists.
-        const docBody = docRef.current.bodies.find((b) => b.id === sel)
+        const docBody = scene.bodies.find((b) => b.id === sel)
         if (!docBody) {
           setReadout(null)
           return
         }
-        const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+        const acc = getAcceleration(accelRef.current, scene, sel, playbackRef.current.status === 'paused')
         setReadout({ x: docBody.position.x, y: docBody.position.y, vx: docBody.vx ?? 0, vy: docBody.vy ?? 0, ax: acc.x, ay: acc.y, approximate: acc.approximate })
         return
       }
-      const acc = getAcceleration(accelRef.current, docRef.current, sel, playbackRef.current.status === 'paused')
+      const acc = getAcceleration(accelRef.current, scene, sel, playbackRef.current.status === 'paused')
       setReadout({ x: s.position.x, y: s.position.y, vx: s.linvel.x, vy: s.linvel.y, ax: acc.x, ay: acc.y, approximate: acc.approximate })
     }, 100)
     return () => clearInterval(id)
-  }, [])
+  }, [displayedScene])
 
   /**
    * Applies pending document edits by rebuilding from the document at a frame boundary.
@@ -1094,6 +1102,7 @@ export default function App() {
         try {
           applyLiveOps(simRef.current, route.ops)
           builtDocRef.current = doc
+          if (playbackRef.current.stepsTaken === 0) resetRecording()
         } catch (e) {
           dispatch({ type: 'reset' })
           setSimError(messageOf(e))
@@ -1101,7 +1110,7 @@ export default function App() {
       }
     }
     repaint()
-  }, [doc, showGlobal, repaint, dispatch])
+  }, [doc, showGlobal, repaint, dispatch, resetRecording])
 
   const switchToScene = useCallback(
     (id: string) => {
