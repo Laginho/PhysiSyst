@@ -63,8 +63,8 @@ describe('canvas dock geometry (PHY-76)', () => {
     })
   }, 30000)
 
-  it('scales transport height by 1.6 while sizer buttons and graph keep their height', async () => {
-    await withBrowserSession(1920, 25000, async session => {
+  it.each([1920, 1280])('scales transport height by 1.6 while sizer buttons and graph keep their height at %ipx', async width => {
+    await withBrowserSession(width, 25000, async session => {
       await session.reset()
       await openGraph(session)
       const before = await measure(session)
@@ -77,6 +77,35 @@ describe('canvas dock geometry (PHY-76)', () => {
       expect(after.smaller.height).toBe(before.smaller.height)
       expect(before.graph.height).toBe(180)
       expect(after.graph.height).toBe(180)
+    })
+  }, 30000)
+
+  it('keeps the sizer and scaled controls inside a 402px preferred canvas at scale 1.6', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      const canvas = await session.rect()
+      const handle = await session.evaluate<{ x: number; y: number }>(`(() => {
+        const r = document.querySelector('[aria-label="${ptBR['canvas.resize']}"]').getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`)
+      const ppm = pixelsPerMeterForWidth(canvas.width - 2)
+      const transform = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: ppm }, canvas.width - 2, canvas.height - 2)
+      const from = screenToWorld(transform, handle.x - canvas.left, handle.y - canvas.top)
+      await session.drag(from, { x: from.x - 3000 / ppm, y: from.y })
+      await enlarge(session)
+      const g = await measure(session)
+      expect(g.canvas.width).toBe(404)
+      expect(g.dock.width).toBe(404)
+      expect(g.bigger.left).toBeGreaterThanOrEqual(g.dock.left)
+      expect(g.bigger.right).toBeLessThanOrEqual(g.dock.right)
+      expect(g.smaller.right).toBeLessThanOrEqual(g.dock.right)
+      const overflow = await session.evaluate<number>(`(() => {
+        const scaled = [...document.querySelectorAll('div')].find(el => el.style.zoom);
+        const right = scaled.getBoundingClientRect().right;
+        return Math.max(...[...scaled.querySelectorAll('button, label, input')].map(el => el.getBoundingClientRect().right - right));
+      })()`)
+      expect(overflow).toBeLessThanOrEqual(1)
     })
   }, 30000)
 
