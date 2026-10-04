@@ -6,6 +6,7 @@ export const ptBR = {
   'focus.momentum': 'momento',
   'graph.toggle': 'gráfico',
   'graph.kindLabel': 'Grandeza do gráfico',
+  'graph.legend': 'curvas do gráfico',
   'graph.kind.position': 'posição',
   'graph.kind.velocity': 'velocidade',
   'graph.kind.acceleration': 'aceleração',

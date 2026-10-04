@@ -6,6 +6,7 @@ export const en = {
   'focus.momentum': 'momentum',
   'graph.toggle': 'graph',
   'graph.kindLabel': 'Graph quantity',
+  'graph.legend': 'graph curves',
   'graph.kind.position': 'position',
   'graph.kind.velocity': 'velocity',
   'graph.kind.acceleration': 'acceleration',

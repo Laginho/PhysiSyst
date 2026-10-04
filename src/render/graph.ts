@@ -4,9 +4,22 @@ import { bodyEnergy, systemEnergy } from '../sim/energy'
 import { TIMESTEP } from '../sim/timestep'
 import { getAcceleration, type AccelTracker } from '../playback/accelerationTracker'
 import { fmtNum, type Lang } from '../i18n'
-import { splitLabel } from './draw'
 
 export const GRAPH_COLORS = ['#2563eb', '#c2410c', '#15803d', '#9333ea'] as const
+
+/** A curve keeps its color when neighboring curves are hidden. */
+export function colorOf(name: string): string {
+  switch (name) {
+    case 'y': case 'v_y': case 'a_y': case 'E_pg': case 'p_y': return GRAPH_COLORS[1]
+    case '|v|': case '|a|': case 'E_mec': case '|p|': return GRAPH_COLORS[2]
+    case 'E_el': return GRAPH_COLORS[3]
+    default: return GRAPH_COLORS[0]
+  }
+}
+
+export function visibleSeries(series: readonly Series[], hidden: readonly string[] | undefined): Series[] {
+  return series.filter(s => !hidden?.includes(s.name))
+}
 export const GRAPH_KINDS = ['position', 'velocity', 'acceleration', 'energy', 'momentum'] as const
 export type GraphKind = typeof GRAPH_KINDS[number]
 export interface GraphFrame {
@@ -33,7 +46,7 @@ export function graphLayout(series: Series[], tMax: number, width: number, heigh
   const values = series.flatMap(s => s.points.map(p => p.value)).filter(Number.isFinite)
   const min = values.length ? Math.min(...values) : 0
   const max = values.length ? Math.max(...values) : 0
-  const margin = (max - min || Math.abs(min) || 1) * 0.05
+  const margin = values.length ? (max - min || Math.abs(min) || 1) * 0.05 : 1
   const low = min - margin
   const high = max + margin
   const end = Math.max(tMax, 1)
@@ -115,8 +128,8 @@ export function drawGraph(ctx: CanvasRenderingContext2D, layout: Layout, series:
   ctx.beginPath()
   ctx.rect(plot.x, plot.y, plot.width, plot.height)
   ctx.clip()
-  series.forEach((s, i) => {
-    ctx.strokeStyle = GRAPH_COLORS[i % GRAPH_COLORS.length]
+  series.forEach(s => {
+    ctx.strokeStyle = colorOf(s.name)
     ctx.lineWidth = 1.5
     ctx.beginPath()
     s.points.forEach((p, j) => j ? ctx.lineTo(mapT(p.t), mapY(p.value)) : ctx.moveTo(mapT(p.t), mapY(p.value)))
@@ -129,17 +142,5 @@ export function drawGraph(ctx: CanvasRenderingContext2D, layout: Layout, series:
   ctx.lineTo(mapT(cursorT), plot.y + plot.height)
   ctx.stroke()
   ctx.restore()
-  // Right-aligned legend leaves the upper-left corner to the native selector.
-  let x = plot.x + plot.width
-  for (let i = series.length - 1; i >= 0; i--) {
-    const [base, sub] = splitLabel(series[i].name)
-    ctx.fillStyle = GRAPH_COLORS[i % GRAPH_COLORS.length]
-    ctx.font = '10px system-ui, sans-serif'
-    ctx.fillText(sub, x, 22)
-    x -= ctx.measureText(sub).width
-    ctx.font = '13px system-ui, sans-serif'
-    ctx.fillText(base, x, 18)
-    x -= ctx.measureText(base).width + 16
-  }
   ctx.restore()
 }

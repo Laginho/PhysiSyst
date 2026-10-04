@@ -73,7 +73,7 @@ import {
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
-import { drawArrow, drawGrid, drawScene, massLabels, selectedOf, type ArrowStyle, type Selection } from './render/draw'
+import { drawArrow, drawGrid, drawScene, massLabels, selectedOf, splitLabel, type ArrowStyle, type Selection } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import {
@@ -92,7 +92,7 @@ import {
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
 import { fmtNum, getLang, setLang as persistLang, t, type Lang } from './i18n'
-import { drawGraph, graphLayout, indexAtX, seriesFor, GRAPH_KINDS, type GraphKind } from './render/graph'
+import { colorOf, drawGraph, graphLayout, indexAtX, seriesFor, visibleSeries, GRAPH_KINDS, type GraphKind } from './render/graph'
 import {
   AUTOSAVE_DELAY_MS,
   DebouncedSaver,
@@ -883,14 +883,28 @@ export default function App() {
   const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
 
   /** Focus edits change only the view, including on presets and historical frames. */
+  const editFocus = useCallback((focus: Focus) => {
+    const next: Scene = { ...docRef.current, focus }
+    docRef.current = next
+    setDoc(next)
+  }, [])
+
   const toggleFocusGroup = useCallback((group: FocusGroup) => {
     const current = docRef.current
     const shown = current.focus?.show ?? FOCUS_GROUPS
     const show = FOCUS_GROUPS.filter((g) => g === group ? !shown.includes(g) : shown.includes(g))
-    const next: Scene = { ...current, focus: { ...current.focus, show } }
-    docRef.current = next
-    setDoc(next)
-  }, [])
+    editFocus({ ...current.focus, show })
+  }, [editFocus])
+
+  const toggleGraphCurve = useCallback((kind: GraphKind, name: string) => {
+    const focus = docRef.current.focus
+    const hidden = focus?.hidden?.[kind] ?? []
+    editFocus({
+      ...focus,
+      show: focus?.show ?? [...FOCUS_GROUPS],
+      hidden: { ...focus?.hidden, [kind]: hidden.includes(name) ? hidden.filter(n => n !== name) : [...hidden, name] },
+    })
+  }, [editFocus])
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
@@ -927,7 +941,7 @@ export default function App() {
     const frames = Array.from({ length: recording.length }, (_, i) => recording.at(i)!)
     const bodyId = selectedOf(selectionRef.current, 'body')
     const kind = bodyId === null && graphKindRef.current !== 'energy' && graphKindRef.current !== 'momentum' ? 'energy' : graphKindRef.current
-    const series = seriesFor(kind, frames, bodyId, displayedScene())
+    const series = visibleSeries(seriesFor(kind, frames, bodyId, displayedScene()), docRef.current.focus?.hidden?.[kind])
     drawGraph(ctx, graphLayout(series, Math.max(1, (recording.length - 1) * TIMESTEP), size.width, 180), series,
       (playbackRef.current.cursor ?? recording.length - 1) * TIMESTEP, langRef.current)
   }, [size.width, displayedScene])
@@ -1751,6 +1765,7 @@ export default function App() {
   const showKinematics = shownGroups.includes('kinematics')
   const showEnergy = shownGroups.includes('energy')
   const showMomentum = shownGroups.includes('momentum')
+  const graphLegendSeries = graphOpen ? seriesFor(effectiveGraphKind, [], graphBodyId, displayedScene()) : []
   const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
@@ -2054,6 +2069,20 @@ export default function App() {
                 {GRAPH_KINDS.map(kind => <option key={kind} value={kind}
                   disabled={graphBodyId === null && kind !== 'energy' && kind !== 'momentum'}>{t(`graph.kind.${kind}`)}</option>)}
               </select>
+              <ul aria-label={t('graph.legend')} style={{ position: 'absolute', top: 0, right: 0, display: 'flex',
+                flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4, margin: 0, padding: 0, listStyle: 'none', maxWidth: 'calc(100% - 112px)' }}>
+                {graphLegendSeries.map(series => {
+                  const [base, sub] = splitLabel(series.name)
+                  const visible = !doc.focus?.hidden?.[effectiveGraphKind]?.includes(series.name)
+                  return <li key={series.name}>
+                    <button type="button" aria-pressed={visible} onClick={() => toggleGraphCurve(effectiveGraphKind, series.name)}
+                      style={{ fontSize: 12, background: '#fff', opacity: visible ? 1 : 0.5 }}>
+                      <span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 3, marginRight: 4, background: colorOf(series.name) }} />
+                      {base}{sub && <sub>{sub}</sub>}
+                    </button>
+                  </li>
+                })}
+              </ul>
               <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
                 onPointerDown={e => {
                   if (e.button !== 0) return
