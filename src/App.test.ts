@@ -465,10 +465,14 @@ describe('selected Body contacts (PHY-75)', () => {
     const { host, canvas } = setup()
     click(canvas, { x: 4, y: 3 })
     const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
-    act(() => setSelectValue(language, 'en'))
-    expect(panel(host, 'contacts of m_a')?.textContent).toContain('fixed: rectangle 1')
-    click(canvas, { x: 1, y: -0.5 })
-    expect(panel(host, 'contacts of fixed: rectangle 1')).toBeDefined()
+    try {
+      act(() => setSelectValue(language, 'en'))
+      expect(panel(host, 'contacts of m_a')?.textContent).toContain('fixed: rectangle 1')
+      click(canvas, { x: 1, y: -0.5 })
+      expect(panel(host, 'contacts of fixed: rectangle 1')).toBeDefined()
+    } finally {
+      act(() => setSelectValue(language, 'pt-BR'))
+    }
   })
 })
 
@@ -1870,8 +1874,9 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
     expect(sceneSelect(host).value).toBe('cena-3')
     // Pins the *content* half of criterion 2 — the canvas doc, not only the
     // <select>, must be the persisted scene's.
-    expect(host.textContent).toContain('marca-cena-3')
-    expect(host.textContent).not.toContain('marca-cena-1')
+    click(host.querySelector('canvas')!, { x: 1, y: 1 })
+    expect(panel(host, 'marca-cena-3')).toBeDefined()
+    expect(panel(host, 'marca-cena-1')).toBeUndefined()
   })
 
   it('sem marca de cena atual, a inicialização abre a primeira do índice (comportamento atual)', () => {
@@ -1894,8 +1899,9 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const reopened = renderApp()
     expect(sceneSelect(reopened).value).toBe('cena-2')
-    expect(reopened.textContent).toContain('marca-cena-2')
-    expect(reopened.textContent).not.toContain('marca-cena-1')
+    click(reopened.querySelector('canvas')!, { x: 1, y: 1 })
+    expect(panel(reopened, 'marca-cena-2')).toBeDefined()
+    expect(panel(reopened, 'marca-cena-1')).toBeUndefined()
   })
 
   it('excluir a cena atual e reinicializar abre a primeira do índice restante, sem tela quebrada', () => {
@@ -2065,9 +2071,13 @@ describe('galeria em árvore (PHY-31)', () => {
 
       const scenes = panel(host, en['scenes.title'])?.querySelector('select')
       expect(scenes?.selectedOptions[0]?.textContent?.trim()).toBe(name(english, 'atwood'))
-      // The canvas doc is the preset's: its blocks are listed in the app.
-      expect(host.textContent).toContain('bloco-1')
-      expect(host.textContent).toContain('bloco-2')
+      // Inspect both blocks on the canvas; the removed global contact
+      // dropdowns no longer list every body id in the DOM.
+      const canvas = host.querySelector('canvas')!
+      click(canvas, { x: 5.75, y: 3 })
+      expect(panel(host, 'bloco-1')).toBeDefined()
+      click(canvas, { x: 6.25, y: 2 })
+      expect(panel(host, 'bloco-2')).toBeDefined()
     } finally {
       setLang('pt-BR')
     }
