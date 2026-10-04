@@ -1697,6 +1697,9 @@ export default function App() {
   const selectedConstraint = selectedSpring ?? selectedRope
   const selectedItem = selected ?? selectedConstraint ?? selectedPulley
   const shownGroups = docRef.current.focus?.show ?? FOCUS_GROUPS
+  const showKinematics = shownGroups.includes('kinematics')
+  const showEnergy = shownGroups.includes('energy')
+  const showMomentum = shownGroups.includes('momentum')
   const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
@@ -2223,6 +2226,7 @@ export default function App() {
               <div>{t('readout.speed')}: {fmtNum(playback.speed, 2, lang)}×</div>
               {selected && readout && (
                 <>
+                  {showKinematics && <>
                   <div>
                     {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
                   </div>
@@ -2232,20 +2236,25 @@ export default function App() {
                   <div style={{ fontWeight: 600, fontSize: 14 }}>
                     {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
                   </div>
-                  <details>
+                  </>}
+                  {(showKinematics || showEnergy || showMomentum) && <details>
                     <summary>{t('readout.more')}</summary>
+                    {showKinematics && <>
                     <div>
                       {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
                     </div>
                     <div>
                       {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
                     </div>
-                    {energyReadout.body && <>
+                    </>}
+                    {showEnergy && energyReadout.body && <>
                       <div>{t('readout.kinetic')}: {fmtNum(energyReadout.body.Ec, 2, lang)} J</div>
                       <div>{t('readout.potential')}: {fmtNum(energyReadout.body.Epg, 2, lang)} J</div>
-                      <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s</div>
                     </>}
-                  </details>
+                    {showMomentum && energyReadout.body && <div>
+                      {t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s
+                    </div>}
+                  </details>}
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
@@ -2284,23 +2293,27 @@ export default function App() {
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <fieldset style={{ width: 220 }}>
+          {(showEnergy || showMomentum) && <fieldset style={{ width: 220 }}>
             <legend>{t('readout.system')}</legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               {energyReadout.system ? <>
+                {showEnergy && <>
                 <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
                 <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
                 {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
                 <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
+                </>}
+                {showMomentum && <>
                 <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
                 <details>
                   <summary>{t('readout.more')}</summary>
                   <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
                   <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
                 </details>
+                </>}
               </> : <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
             </div>
-          </fieldset>
+          </fieldset>}
           <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input
