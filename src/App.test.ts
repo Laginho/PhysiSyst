@@ -2898,6 +2898,21 @@ describe('recorded time player (PHY-64)', () => {
     expect(panel(p.host, 'sistema')?.textContent).not.toContain('E_mec')
   })
 
+  it('CLEAN-30 reads document energy while a t0 structural edit awaits its rebuild', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    p.poll()
+    expect(p.readout()).toContain('E_pg: 40,00 J')
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['properties.posY']), 5))
+    p.poll()
+    expect(p.readout()).toContain('posição: (6,00, 5,00) m')
+    expect(p.readout()).toContain('E_pg: 50,00 J')
+    expect(panel(p.host, 'sistema')?.textContent).toContain('E_mec: 50,00 J')
+    expect(p.replaceScene).not.toHaveBeenCalled()
+    await p.steps(1)
+    expect(p.readout()).toContain('E_pg: 50,00 J')
+  })
+
   it('PHY-71 localizes body, component and speed readings when language changes', async () => {
     const p = await setupRecording()
     click(p.canvas, { x: 6, y: 4 })
