@@ -712,14 +712,13 @@ describe('initial force vectors (PHY-82)', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const labels: string[] = []
     const arrows: Array<{ color: unknown; path: number[][] }> = []
-    const moves: number[][] = []
+    const points: number[][] = []
     let path: number[][] = []
     const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
       get(target, key) {
-        if (key === 'clearRect') return () => { labels.length = 0; arrows.length = 0; moves.length = 0 }
+        if (key === 'clearRect') return () => { labels.length = 0; arrows.length = 0; points.length = 0 }
         if (key === 'beginPath') return () => { path = [] }
-        if (key === 'moveTo') return (x: number, y: number) => { path.push([x, y]); moves.push([x, y]) }
-        if (key === 'lineTo') return (x: number, y: number) => { path.push([x, y]) }
+        if (key === 'moveTo' || key === 'lineTo') return (x: number, y: number) => { path.push([x, y]); points.push([x, y]) }
         if (key === 'stroke') return () => {
           if (['#1565c0', '#6a1b9a', '#00838f'].includes(target.strokeStyle as string)) {
             arrows.push({ color: target.strokeStyle, path: [...path] })
@@ -776,7 +775,7 @@ describe('initial force vectors (PHY-82)', () => {
     const seek = (index: number) => act(() => {
       setNativeInputValue(host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!, index)
     })
-    return { host, canvas, labels, arrows, moves, sim, step, probeInitial, origin, point, steps, seek,
+    return { host, canvas, labels, arrows, points, sim, step, probeInitial, origin, point, steps, seek,
       resolveBoot: () => act(async () => { resolveBoot(sim) }),
     }
   }
@@ -897,8 +896,10 @@ describe('initial force vectors (PHY-82)', () => {
     scene.constraints!.push({ id: 'mola', kind: 'spring', a: { bodyId: 'pivo', anchor: { x: -1, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0, y: 0 } }, k: 10, x0: 2.3 })
     const p = await setupProbe({ scene })
     expect(p.probeInitial).toHaveBeenCalledTimes(1)
-    expect(p.moves).toContainEqual([8, 6])
-    expect(p.moves).not.toContainEqual([10, 4])
+    expect(p.points).toContainEqual([8, 6])
+    expect(p.points).toContainEqual([8, 3.2])
+    expect(p.points).not.toContainEqual([10, 4])
+    expect(p.origin('#00838f')).toEqual(p.point(8, 3))
     const spring = p.arrows.find(arrow => arrow.color === '#00838f')!.path
     expect(spring[0]).toEqual(p.point(8, 3))
     expect(Math.hypot(spring[1]![0]! - spring[0]![0]!, spring[1]![1]! - spring[0]![1]!)).toBeCloseTo(20 * Math.sqrt(7), 6)
