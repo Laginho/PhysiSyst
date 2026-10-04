@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -128,3 +128,71 @@ Evidência por teste novo de DOM/canvas (cada mutação foi aplicada ao código 
 - 2026-10-04 Attempt 1 stopped to ask: PHY-78 ficou `blocked`, registrado no commit `58c5ac4`. O critério 9 exige contatos habilitados após um passo, contrariando o bloqueio existente e o spec. /  / 39 testes focados passaram; 389 ficaram fora do filtro. Apenas o ticket mudou. /  / Aprova preservar contatos bloqueados após um passo e habilitados no registro zero, ajustando o critério e seu teste? O [ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “a session without a proxy asks by stopping”. /  / A revisão automática rejeitou a consulta ao Claude por envolver envio de código privado a um destino externo não verificado. Sua decisão direta resolve essa pendência.
 - 2026-10-04 Proxy decided: manter o bloqueio estrutural (PHY-39, ADR-0004) e reescrever o critério 9: o Foco não pode esconder nem mudar a habilitação de campo nenhum, verificado no mesmo instante; contatos desabilitados após um passo é o PHY-39, não o PHY-78 — a regra do spec ("campos de edição nunca são filtrados") é sobre o Foco, não sobre os outros bloqueios, e o critério como escrito pedia que este ticket desfizesse o PHY-39, o que ninguém decidiu. Nenhuma mudança de produção; só o teste do critério 9 (commit test-only) e o texto do critério. O que o teste deve asserir: (a) após `p.steps(1)`, selecionar o corpo e capturar `disabled` de cada input de forças e de `contacts.muS/muK/e` com forças ligadas; (b) `toggleFocus('forces')` e asserir que os mesmos inputs seguem no DOM com `disabled` igual ao capturado — forças `false`, contatos `true` — sem `seek(0)` antes; (c) só então `p.seek(0)` e asserir todos `false`, ainda com forças desligadas; (d) religar forças e asserir `P`. Mutate-verify: a mutação "fieldset de contatos recebe `disabled={disabled || !showForces}`" (ou `hidden` nos campos com forças desligadas) deve ficar vermelha em (b); registrar a saída no ticket. Retomar da branch `phy/PHY-78-modelo-de-foco-e-chips` (fb7bb72): os outros critérios passaram com 22 mutações; `src/App.tsx` não muda.
 - 2026-10-04 Foreman: retomar da branch `phy/PHY-78-modelo-de-foco-e-chips` (código revisado em `fb7bb72`; a sessão ainda não foi mergeada nela e `src/App.tsx` conflita com o PHY-82, já na sessão: integrar a sessão faz parte da retomada); falta só o commit test-only do critério 9 com a mutação registrada.
+
+#### Stage 3 review (2026-10-04)
+
+Verdict: Reopen — criterion 9 requires enabled contact fields after one step, but the implementation and test preserve the existing structural lock.
+
+- **Standards:** 0 violações documentadas e 0 smells acionáveis. Diff completo e os 12 commits examinados: somente Primary files e o ticket; testes e produção separados, inclusive as duas correções de harness; evidência de mutate-verify presente por caso novo de DOM/canvas. Nenhuma correção de produção nesta revisão.
+- **Spec:** 1 achado de reabertura, critério 9. O contrato numerado exige, depois de um passo, os NumField de forças e contatos no DOM **e habilitados**. Em `src/App.tsx:808`, `structuralLocked` fica verdadeiro após o passo; `:2353` o passa a `BodyContactsPanel`, cujo fieldset `:505` desabilita os contatos. O teste `src/App.test.ts:3491` volta ao registro zero antes de verificar habilitação em `:3494-3495`, provando outro instante.
+
+O bloqueio já existe na base `d6b9a700` (`App.tsx:804`, `:2313`, `:501`). A implementação preserva esse comportamento e concorda com a prosa "contatos ficam como estão"; não é regressão de contatos introduzida pelo PHY-78. Entretanto, a prosa e o comentário do stage 2 não substituem um critério numerado. Esta revisão não altera o texto do critério nem decide habilitar edição estrutural depois do passo.
+
+Sondagem temporária no teste existente: depois do passo e de desligar forças, selecionar o corpo e executar a asserção de contatos **antes** de `p.seek(0)`. Vermelho: `AssertionError: expected true to be false` na asserção `input.matches(':disabled')` (1 falha desse caso). Junto com a sondagem de undo abaixo: **2 failed / 0 passed / 185 skipped**. Instrumentação restaurada, sem teste ou código novo persistido.
+
+| Critério | Veredito | Evidência examinada |
+| --- | --- | --- |
+| 1 | ✅ | Parse canoniza grupos, preserva hidden e ausência de focus. |
+| 2 | ✅ | Grupos inválidos/repetidos, tipos inválidos e chaves desconhecidas rejeitados com erro de focus. |
+| 3 | ✅ | Bytes v6 preservados; focus depois de constraints; round-trip. |
+| 4 | ✅ | Padrão explícito da cena em branco, criação/carga e bytes canônicos. |
+| 5 | ✅ | Mudança só de focus roteada live, sem ops. |
+| 6 | ✅ | Primeira fileira do inspetor, quatro botões acessíveis e padrões demo/blank. |
+| 7 | ✅ | Leitura inicial do corpo e detalhes respondem ao grupo cinemática. |
+| 8 | ✅ | Energia/momento independentes no corpo e sistema; fieldset removido com ambos desligados. |
+| 9 | ❌ parcial | Camadas e leitura de mola ocultadas/restauradas; campos presentes. Contatos desabilitados no instante pós-passo exigido; habilitação só testada no registro zero. |
+| 10 | ✅ | v₀ responde à cinemática nos dois escopos; campos vx/vy preservados. |
+| 11 | ✅ | Chips não empilham histórico, não avançam/reconstroem mundo e funcionam no cursor 5; gravação preservada no cursor zero. |
+| 12 | ✅ | Preset conserva identidade/índice, não persiste cópia e reabrir restaura o padrão. |
+| 13 | ✅ | Autosave de cena do usuário conserva focus e hidden. |
+| 14 | ✅ | Escopo global marcado ao montar. |
+| 15 | ✅ | Catálogos pt-BR/en e paridade, com tradução pelo controle público. |
+
+**Restante para o próximo stage:** somente o ❌ do critério 9. O conflito entre habilitação pós-passo e bloqueio estrutural preexistente precisa de resolução explícita do stage 1/proxy antes de uma implementação que altere o contrato. Depois, o teste deve verificar o instante aprovado, sem uma navegação silenciosa para outro registro. Reaberto em `to-implement`, sem merge e sem linha PHY-78 no ledger.
+
+**Fora dos critérios, CLEAN-31:** desfazer/refazer uma edição física restaura a Scene inteira, inclusive um Foco anterior. Reprodução: cena nova → adicionar corpo → desligar momento → desfazer corpo; o chip momento volta a pressionado. Sondagem temporária: `expected 'true' to be 'false'`. Critério 11 só exige que cliques nos chips não criem entradas; não define preservação do Foco ao consumir histórico físico existente. Requisito separado em triagem, sem usá-lo como motivo de reabertura.
+
+**Chamadores, falhas e interações examinados:** codec público em import/load/fallback; serialização em autosave/export/duplicação/comparação de payload; blankScene/createNewScene; editDoc/commitDoc/copyOpenPreset e autosave após materializar preset; routeDocChange/applyLiveOps; boot/reset/syncWorld; captureFrame/displayedScene/repaint e leituras no passado; escopos global/selecionado e anel da força; energia/momento, mola/corda frouxa, campos de edição, troca/reabertura de cena, undo/redo e independência dos tipos do gráfico. Fronteiras: focus ausente, show vazio, hidden vazio e chaves especiais, ambos grupos do sistema desligados, cenas sem corpos, cursores zero/passado/ponta. Não repetido um passe humano independente nem outros navegadores/mobile. Não há linhas `Proxy decided` no ticket.
+
+##### Validação independente
+
+- Base fixada: `d6b9a700e7b84aff842f74d7e32727e3540edab9`, sessão `sweatshop/2026-10-04-1243`; implementação revisada `fb7bb72`.
+- Gate oficial: **exit 0; 33 arquivos / 1210 testes passed, zero skips**; lint, typecheck e build exit 0. Vite: 52 módulos; aviso preexistente do chunk do simulador >500 kB (2136,50 kB).
+- Primeira execução no sandbox: 1182 passed / 28 failed, todos os failures em conexão/desconexão do Chromium (26 layout/browser e 2 App/Chromium). Nova execução integral fora do sandbox passou, sem omitir testes ou alterar o harness. O sandbox também passou a falhar ao iniciar comandos de leitura com `CreateProcessWithLogonW failed: 1909`; comandos locais fora dele funcionaram.
+- Repetidas **22 mutações documentadas**, todas com falha de asserção, atingindo cada um dos **39 casos novos**. Arquivos de produção restaurados em finally, byte a byte; `git diff --exit-code -- src` exit 0.
+- Verde após as mutações e novamente após as duas sondagens: **4 arquivos / 39 passed / 389 skipped**, filtro `scene focus|PHY-78` na costura focada (os 389 são casos fora desse filtro; o gate integral acima não tem skips). `git diff --check` verde.
+
+| Mutação repetida | Red observado na revisão (failed / passed dentro do filtro) |
+| --- | --- |
+| aria-pressed sempre false | Demo e blank: arrays esperados true; **2 / 0**. |
+| showGlobal inicia false | `expected false to be true`; **1 / 0**. |
+| Chip chama commitDoc | Undo habilitado, preset vira cena-2, slider max 0 em vez de 8; **3 / 0**. |
+| Remover spread de current.focus | Focus salvo perde hidden; **1 / 0**. |
+| focus.show pt-BR = mutant | Esperado mostrar:, recebido mutant; **1 / 0**. |
+| focus.show en = mutant | Esperado show:, recebido mutant; **1 / 0**. |
+| showKinematics = true | Leitura inicial e cursor 5 ainda contêm posição; **2 / 0**. |
+| showEnergy = true | Sistema ainda contém E_c; **1 / 0**. |
+| Foco do painel vem de displayedScene | Chip true em vez de false no cursor 5; **1 / 0**. |
+| Remover guard cinemática de v₀ | v₀ presente nos dois escopos; **2 / 0**. |
+| Forças sempre ligadas no canvas | P/T permanecem na mola, corda frouxa/esticada e cursor histórico; **4 / 0**. |
+| N sem guard | Canvas ainda contém N; **1 / 0**. |
+| F_el sem guard | Chamadas F/el ainda presentes; **1 / 0**. |
+| Leitura de mola sem guard | Leitura ainda contém F_el; **1 / 0**. |
+| Leitura de corda sem guard | T ainda presente nos dois casos de frouxa; **2 / 0**. |
+| paint recebe displayedScene().focus | Canvas histórico ainda contém P; **1 / 0**. |
+| Forças selecionadas sem guard | Anel de âncora ainda presente; **1 / 0**. |
+| parseFocus sem validação/canonização | Canonização e rejeições falham; **17 / 3**. |
+| Descartar focus validado | Focus/hidden/show vazio perdidos; **3 / 17**. |
+| Inserir focus quando ausente | Documento v6 ganha focus; **1 / 19**. |
+| Remover padrão de blankScene | `expected undefined to deeply equal { show: ... }`; **1 / 0**. |
+| Roteamento de focus estrutural | Esperado live sem ops, recebido structural; **1 / 0**. |
