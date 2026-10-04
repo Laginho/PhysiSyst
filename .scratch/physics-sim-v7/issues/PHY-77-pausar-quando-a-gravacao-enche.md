@@ -51,6 +51,8 @@ No App: `togglePlay` e `stepOnce` passam `recordingRef.current!.length`; os bot�
 
 ## Comments
 
+- Stage 2, harness de tradução: a troca de idioma usa o select público (valor `en`), não `setLang` isolado nem um botão. Correção em commit só de teste/documentação; os seis casos permanecem vermelhos contra o adaptador antigo.
+
 - 2026-10-04 Stage 2: costuras aprovadas: `advance` direto e DOM do App com `setupRecording`. Chamadores examinados: dispatch e rAF do App; transportes de integração, aceleração e overlay que omitem `length` preservam o comportamento anterior. Limites cobertos: gravação inicial, crédito fracionário/zero, uma ou duas vagas restantes, `length` acima do cap, stepOnce já cheio, replay com crédito excedente e retomada após reset.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: ao encher, pausar no último passo com o aviso "gravação cheia (10 s) — reinicie"; na ponta cheia reproduzir e passo não fazem nada, slider e voltar um passo navegam, replay pausa de novo no fim, reiniciar apaga tudo; altera o critério 14 do PHY-64 e corrige o bug do slider em 10 s com a ponta em 15 s.

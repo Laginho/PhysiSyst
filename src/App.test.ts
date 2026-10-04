@@ -3672,7 +3672,8 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.host.textContent).toContain('t = 9,98 s')
     expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
     expect(p.host.textContent).toContain('gravação cheia (10 s) — reinicie')
-    act(() => findButton(p.host, 'english')!.click())
+    const language = p.host.querySelector<HTMLSelectElement>('select:has(option[value="en"])')!
+    act(() => setSelectValue(language, 'en'))
     expect(p.host.textContent).toContain('recording full (10 s) — reset')
   })
 
@@ -3688,6 +3689,8 @@ describe('recorded time player (PHY-64)', () => {
     expect(step.disabled).toBe(true)
     act(() => { play.click(); step.click() })
     await act(async () => { pressKey(' '); pressKey('ArrowRight') })
+    expect(p.step).toHaveBeenCalledTimes(599)
+    expect(findButton(p.host, ptBR['playback.play'])?.disabled).toBe(true)
     p.frame()
     p.poll()
     expect(p.step).toHaveBeenCalledTimes(599)
