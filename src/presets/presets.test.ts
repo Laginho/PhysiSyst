@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { collectWarnings, parse, serialize } from '../scene/codec'
 import { PRESETS, TREE, createPresetScene, type Preset, type TopicNode } from './index'
 import { createSimulator, TIMESTEP, type RopeState } from '../sim'
+import { systemEnergy } from '../sim/energy'
 import { setLang, t } from '../i18n'
 import { en } from '../i18n/en'
 import type { ConstraintEnd, Scene } from '../scene/types'
@@ -276,6 +277,38 @@ describe('PHY-31: presets em árvore', () => {
     }
     return out
   }
+  it('PHY-74: projectile conserves mechanical energy within 0.5% at every airborne frame up to one second', async () => {
+    const scene = byId('projectile').buildScene()
+    const sim = await load(scene)
+    const energy = () => systemEnergy(scene, sim.readStates(), sim.readConstraints(), sim.readPulleys()).Emec
+    const initial = energy()
+    expect(initial).toBeGreaterThan(0)
+    const samples = [initial]
+    let lastAirborneFrame = 0
+    for (let frame = 1; frame <= Math.round(1 / TIMESTEP); frame++) {
+      sim.step()
+      samples.push(energy())
+      if (!sim.readContacts().some((contact) => contact.aId === 'projetil' || contact.bId === 'projetil')) lastAirborneFrame = frame
+    }
+    // The launch can still report its initial ground contact on the first step.
+    expect(lastAirborneFrame).toBe(Math.round(1 / TIMESTEP))
+    for (let frame = 1; frame <= lastAirborneFrame; frame++) {
+      expect(Math.abs(samples[frame]! - initial), `frame ${frame}`).toBeLessThanOrEqual(0.005 * initial)
+    }
+  })
+
+  it('PHY-74: simple pendulum conserves mechanical energy within 2% throughout 600 steps', async () => {
+    const scene = byId('simple-pendulum').buildScene()
+    const sim = await load(scene)
+    const samples = run(sim, 600, () => systemEnergy(scene, sim.readStates(), sim.readConstraints(), sim.readPulleys()).Emec)
+    const initial = samples[0]!
+    expect(initial).toBeGreaterThan(0)
+    expect(samples).toHaveLength(601)
+    for (const [frame, energy] of samples.entries()) {
+      expect(Math.abs(energy - initial), `frame ${frame}`).toBeLessThanOrEqual(0.02 * initial)
+    }
+  })
+
   function upCrossings(samples: readonly number[], level: number): number[] {
     const out: number[] = []
     for (let i = 1; i < samples.length; i++) {
