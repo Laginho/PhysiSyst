@@ -57,3 +57,22 @@ Hoje a barra de transporte, o painel do gráfico e a paleta são irmãos da caix
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: dock sob o canvas na largura dele em todo layout, ordem barra → paleta → gráfico; `+`/`−` sempre visíveis, 70–160 % em passos de 10 %, persistido como `loadCanvasSize`/`saveCanvasSize`; CSS `zoom`, botões fora do bloco; gráfico 180 px sem escala com toggle; o fit subtrai o dock e nunca mede uma caixa que envolve o canvas; validado em `proto/ui-scale` variante D (`9080046`, `?variant=D`), que nunca é mesclada.
 - Planner: `Review: human` porque o layout foi aceito a olho no protótipo; a largura interna do bloco escalado é `(size.width − sizer) / scale` para a largura escalada bater com a do canvas.
 - 2026-10-04 Stage 2: costuras aprovadas no ticket: persistência pública, DOM do App com `FakeResizeObserver`, geometria real com `withBrowserSession`. Consumidores examinados: os três caminhos de `fitCanvas` (montagem, observer e alça), transformação/pintura do canvas, repaint/seek do gráfico, empilhamento com histerese e controles de reprodução/paleta. Entradas de borda: storage indisponível/não finito, limites 0,7/1,6, canvas preferido de 402 px, abertura do gráfico e quebra de linha dos controles. O dock continuará irmão da caixa medida; não haverá nova caixa envolvendo ambos. O commit de protótipo `9080046` não está disponível neste clone; o contrato escrito especifica a implementação.
+
+#### Stage 2 — evidência DOM (2026-10-04)
+
+- Red: `0d167a7`, nove casos novos falharam no App sem dock/zoom/sizer. Green: nove casos passaram após a implementação. Comandos: `npm test -- src/App.test.ts -t 'canvas dock and controls scale'`.
+- Mutação real em `src/App.tsx`, depois de green: fixar `zoom: 1`, mudar a largura do dock para `size.width + 3` e trocar os dois títulos traduzidos por `"controls.sizeTitle"`. Resultado: **9 failed, 157 skipped (166)**; mutações removidas.
+
+| Novo teste (nome abreviado) | Mutação que o matou | Saída vermelha |
+|---|---|---|
+| hydrates the saved scale… | `zoom: 1` | expected `'1'` to be `'1.3'` |
+| increments in tenths… | `zoom: 1` | expected `'1'` to be `'1.1'` |
+| stops bigger at its bound… | `zoom: 1` | expected `'1'` to be `'1.6'` |
+| stops smaller at its bound… | `zoom: 1` | expected `'1'` to be `'0.7'` |
+| orders… at 1200x800 | dock `width: size.width + 3` | expected `'1203px'` to be `'1200px'` |
+| orders… at 700x900 | dock `width: size.width + 3` | expected `'702px'` to be `'699px'` |
+| keeps the graph… | `zoom: 1` | expected `'1'` to be `'1.6'` |
+| updates dock width… | dock `width: size.width + 3` | expected `'1023px'` to be `'1020px'` |
+| translates both sizer labels… | títulos literais sem tradução | expected `'controls.sizeTitle'` to be `'Tamanho dos controles: 100%'` |
+
+- Rodada ampliada de App/persistência/i18n: 245 passed e dois testes PHY-44 desconectados pelo sandbox. Reexecução dos mesmos dois testes com permissão para o Chromium: **2 passed, 164 skipped (166)**. As próximas verificações com browser rodam com essa permissão.

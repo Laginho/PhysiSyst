@@ -102,11 +102,13 @@ import {
   importScene,
   loadCurrentSceneId,
   loadCanvasSize,
+  loadControlsScale,
   loadIndex,
   loadIndexResult,
   loadSceneOrBlank,
   saveCurrentSceneId,
   saveCanvasSize,
+  saveControlsScale,
   saveIndex,
   saveScene,
   shouldShowGallery,
@@ -606,6 +608,8 @@ function getAppStorage(): Storage {
 // the room the canvas column gives up when the two sit side by side.
 const INSPECTOR_WIDTH = 270
 const ROW_GAP = 12
+// Two 32px buttons with 6px of space beside the scaled controls.
+const CONTROLS_SIZER_WIDTH = 38
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -624,9 +628,11 @@ export default function App() {
   const storageRef = useRef<Storage | null>(null)
   if (!storageRef.current) storageRef.current = getAppStorage()
   const storage = storageRef.current
+  const [controlsScale, setControlsScale] = useState(() => loadControlsScale(storage))
   const preferredWidthRef = useRef(loadCanvasSize(storage))
   const canvasContainerRef = useRef({ width: 900, height: 600 })
   const resizeDragRef = useRef<{ pointerId: number; startX: number; width: number } | null>(null)
+  useEffect(() => saveControlsScale(storage, controlsScale), [storage, controlsScale])
   let initialSeedWarning: string | null = null
   const [sceneIndex, setSceneIndex] = useState<SceneIndexEntry[]>(() => {
     const res = loadIndexResult(storage)
@@ -1843,125 +1849,145 @@ export default function App() {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
-            <button onClick={togglePlay} style={{ minWidth: 110 }}>
-              {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
-            </button>
-            <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
-              {t('playback.stepBack')}
-            </button>
-            <button onClick={stepOnce} title={t('playback.stepTitle')}>
-              {t('playback.step')}
-            </button>
-            <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
-              {t('playback.reset')}
-            </button>
-            <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
-              ↶
-            </button>
-            <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
-              ↷
-            </button>
-            <span style={{ position: 'relative' }}>
-              <button onClick={() => setShowShortcuts((v) => !v)} title={t('shortcuts.title')}>
-                ?
-              </button>
-              {showShortcuts && (
-                <div
-                  onClick={() => setShowShortcuts(false)}
-                  style={{ position: 'fixed', inset: 0, zIndex: 1 }}
-                >
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: 'absolute',
-                      top: 24,
-                      left: 0,
-                      background: '#fff',
-                      border: '1px solid #999',
-                      borderRadius: 4,
-                      padding: 10,
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                      fontSize: 12,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <strong>{t('shortcuts.title')}</strong>
-                    <table style={{ marginTop: 6, borderSpacing: '0 4px' }}>
-                      <tbody>
-                        <tr><td style={{ paddingRight: 12 }}>Ctrl+Z</td><td>{t('shortcuts.undo')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Ctrl+Shift+Z / Ctrl+Y</td><td>{t('shortcuts.redo')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>←</td><td>{t('shortcuts.stepBack')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+          {/* Match the scene canvas's side borders while preserving its logical
+              width. The dock is a sibling of the measured canvas area. */}
+          <div style={{
+            width: size.width, borderInline: '1px solid transparent',
+            alignSelf: stacked ? 'flex-start' : 'center', flexShrink: 0,
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <div style={{ zoom: controlsScale, width: (size.width - CONTROLS_SIZER_WIDTH) / controlsScale, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
+                  <button onClick={togglePlay} style={{ minWidth: 110 }}>
+                    {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
+                  </button>
+                  <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
+                    {t('playback.stepBack')}
+                  </button>
+                  <button onClick={stepOnce} title={t('playback.stepTitle')}>
+                    {t('playback.step')}
+                  </button>
+                  <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
+                    {t('playback.reset')}
+                  </button>
+                  <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
+                    ↶
+                  </button>
+                  <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
+                    ↷
+                  </button>
+                  <span style={{ position: 'relative' }}>
+                    <button onClick={() => setShowShortcuts((v) => !v)} title={t('shortcuts.title')}>
+                      ?
+                    </button>
+                    {showShortcuts && (
+                      <div
+                        onClick={() => setShowShortcuts(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 1 }}
+                      >
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: 'absolute',
+                            top: 24,
+                            left: 0,
+                            background: '#fff',
+                            border: '1px solid #999',
+                            borderRadius: 4,
+                            padding: 10,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                            fontSize: 12,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <strong>{t('shortcuts.title')}</strong>
+                          <table style={{ marginTop: 6, borderSpacing: '0 4px' }}>
+                            <tbody>
+                              <tr><td style={{ paddingRight: 12 }}>Ctrl+Z</td><td>{t('shortcuts.undo')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>Ctrl+Shift+Z / Ctrl+Y</td><td>{t('shortcuts.redo')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>←</td><td>{t('shortcuts.stepBack')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+                    {t('playback.speedLabel')}
+                    <input
+                      type="range"
+                      min={SPEED_MIN}
+                      max={SPEED_MAX}
+                      step={SPEED_STEP}
+                      value={playback.speed}
+                      onChange={(e) => dispatch({ type: 'setSpeed', speed: e.target.valueAsNumber })}
+                    />
+                    <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
+                      {fmtNum(playback.speed, 2, lang)}×
+                    </span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
+                    {t('playback.timeLabel')}
+                    <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
+                      value={playback.cursor ?? recordingLength - 1}
+                      onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
+                    />
+                    <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
+                    </span>
+                  </label>
+                  <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
                 </div>
-              )}
-            </span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
-              {t('playback.speedLabel')}
-              <input
-                type="range"
-                min={SPEED_MIN}
-                max={SPEED_MAX}
-                step={SPEED_STEP}
-                value={playback.speed}
-                onChange={(e) => dispatch({ type: 'setSpeed', speed: e.target.valueAsNumber })}
-              />
-              <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
-                {fmtNum(playback.speed, 2, lang)}×
-              </span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
-              {t('playback.timeLabel')}
-              <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
-                value={playback.cursor ?? recordingLength - 1}
-                onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
-              />
-              <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
-              </span>
-            </label>
-            <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
-          </div>
-          {graphOpen && <div id="recording-graph" style={{ position: 'relative', width: size.width, height: 180 }}>
-            <select aria-label={t('graph.kindLabel')} value={effectiveGraphKind}
-              onChange={e => setGraphKind(e.target.value as GraphKind)} style={{ position: 'absolute', top: 0, left: 0 }}>
-              {GRAPH_KINDS.map(kind => <option key={kind} value={kind}
-                disabled={graphBodyId === null && kind !== 'energy' && kind !== 'momentum'}>{t(`graph.kind.${kind}`)}</option>)}
-            </select>
-            <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
-              onPointerDown={e => {
-                if (e.button !== 0) return
-                e.currentTarget.setPointerCapture(e.pointerId)
-                seekGraph(e.currentTarget, e.clientX)
-              }}
-              onPointerMove={e => {
-                if (e.buttons & 1) seekGraph(e.currentTarget, e.clientX)
-              }}
-              style={{ display: 'block', width: size.width, height: 180, touchAction: 'none' }} />
-          </div>}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
-            <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>
-            <button disabled={structuralLocked} onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
-            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
-            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
-            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
-          </div>
-          {(tool || toolError) && (
-            <div style={{ fontSize: 12, color: '#555' }}>
-              {tool && t(toolHint(tool))}
-              {toolError && <span style={{ color: '#b00' }}>{tool && ' — '}{t(toolError)}</span>}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
+                  <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>
+                  <button disabled={structuralLocked} onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
+                  <button disabled={structuralLocked} onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
+                  <button disabled={structuralLocked} onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
+                  <button disabled={structuralLocked} onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
+                </div>
+                {(tool || toolError) && (
+                  <div style={{ fontSize: 12, color: '#555' }}>
+                    {tool && t(toolHint(tool))}
+                    {toolError && <span style={{ color: '#b00' }}>{tool && ' — '}{t(toolError)}</span>}
+                  </div>
+                )}
+              </div>
+              <div style={{ width: CONTROLS_SIZER_WIDTH, paddingLeft: 6, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <button type="button" aria-label={t('controls.bigger')} title={t('controls.sizeTitle', { pct: Math.round(controlsScale * 100) })}
+                  disabled={controlsScale >= 1.6} onClick={() => setControlsScale(scale => Math.min(1.6, Math.round((scale + 0.1) * 10) / 10))}
+                  style={{ width: 32, height: 24, padding: 0 }}>+</button>
+                <button type="button" aria-label={t('controls.smaller')} title={t('controls.sizeTitle', { pct: Math.round(controlsScale * 100) })}
+                  disabled={controlsScale <= 0.7} onClick={() => setControlsScale(scale => Math.max(0.7, Math.round((scale - 0.1) * 10) / 10))}
+                  style={{ width: 32, height: 24, padding: 0 }}>−</button>
+              </div>
             </div>
-          )}
+            {graphOpen && <div id="recording-graph" style={{ position: 'relative', width: size.width, height: 180 }}>
+              <select aria-label={t('graph.kindLabel')} value={effectiveGraphKind}
+                onChange={e => setGraphKind(e.target.value as GraphKind)} style={{ position: 'absolute', top: 0, left: 0 }}>
+                {GRAPH_KINDS.map(kind => <option key={kind} value={kind}
+                  disabled={graphBodyId === null && kind !== 'energy' && kind !== 'momentum'}>{t(`graph.kind.${kind}`)}</option>)}
+              </select>
+              <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
+                onPointerDown={e => {
+                  if (e.button !== 0) return
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  seekGraph(e.currentTarget, e.clientX)
+                }}
+                onPointerMove={e => {
+                  if (e.buttons & 1) seekGraph(e.currentTarget, e.clientX)
+                }}
+                style={{ display: 'block', width: size.width, height: 180, touchAction: 'none' }} />
+            </div>}
+          </div>
         </div>
         {/* The row sets the panel height; excess content scrolls independently.
             The width is fixed because the panel's content width changes with the
