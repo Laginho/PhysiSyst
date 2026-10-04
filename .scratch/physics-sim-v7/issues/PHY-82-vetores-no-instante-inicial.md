@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -135,3 +135,23 @@ Verdict: Reopen — critério 7: a sonda fica desatualizada ao desfazer ou arras
 - Escopo desta retomada: somente o ❌ do critério 7. Costura já aprovada: eventos reais do App e desenho no canvas em `src/App.test.ts`, com o simulador falso pela API pública. Um cenário parametrizado cobre desfazer e arrastar de volta, antes do primeiro passo.
 - Chamadores e fronteiras reexaminados: doc effect por edição/undo/redo, seleção, visibilidade dos vetores e resize; `refreshInitialProbe` também chamado por boot e rebuild/reset; `syncWorld` continua reservado ao próximo passo. Preservar boot pendente, reset no registro 0, falha opcional da sonda e ausência de sondas extras por edição ao vivo ou após passos.
 - Vermelho permanente antes de alterar produção: `npm test -- src/App.test.ts -t 'refreshes initial forces when'` → **2 failed | 178 skipped (180)**. Ambos mostram `expected [330, 540] to deeply equal [270, 540]`: depois de voltar de `(9, 3)` para `(8, 3)`, N ainda corresponde à sonda do documento anterior. O teste também verifica T na âncora documental, uma chamada por mudança estrutural e zero passos do mundo vivo.
+- Correção em `src/App.tsx`: a atualização compara o documento atual com `initialProbeDocRef` independentemente do roteamento contra `builtDocRef`. Mantém as condições de simulador disponível, zero passos e mudança estrutural; executa antes do repaint, sem alterar o rebuild vivo ou `syncWorld`.
+- Verde do grupo de forças iniciais: `npm test -- src/App.test.ts -t 'initial force vectors'` → **11 passed | 169 skipped (180)**.
+
+##### Mutate-verify dos retornos estruturais
+
+Mutação temporária em `src/App.tsx`: recolocar a chamada de `refreshInitialProbe` dentro do ramo estrutural contra `builtDocRef`, removendo a verificação independente. Comando: `npm test -- src/App.test.ts -t 'refreshes initial forces when'`. A correção foi restaurada antes da validação focada.
+
+| Teste novo | Saída vermelha com a mutação |
+| --- | --- |
+| `refreshes initial forces when undo restores the original geometry before the first step` | Falha em N: `expected [330, 540] to deeply equal [270, 540]`. |
+| `refreshes initial forces when drag back restores the original geometry before the first step` | Falha em N: `expected [330, 540] to deeply equal [270, 540]`. |
+
+- Resultado conjunto da mutação: **2 failed | 178 skipped (180)**. Validação focada após restaurar a produção, fora do sandbox para incluir Chromium: `npm test -- src/sim/contacts.test.ts src/App.test.ts` → **197 passed (197), 2 arquivos**.
+
+##### Handoff da retomada stage 2
+
+- Critério 7 corrigido para ambos os retornos à geometria do mundo vivo: undo da referência original e arrasto de volta com novo documento. N acompanha a nova sonda, T continua na âncora do documento e o mundo vivo não avança durante as edições. Os demais critérios permanecem cobertos pela suíte existente.
+- Testes permanentes vermelhos no commit `4874118`; correção e handoff em commit separado sem alterações em testes. As duas evidências de mutate-verify estão registradas acima.
+- Gate completo fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1187 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). Permanece somente o aviso já existente de chunk do simulador acima de 500 kB; nenhuma validação pendente.
+- Diff desta retomada revisado contra `feeb4eb`: apenas `src/App.tsx`, `src/App.test.ts` e este ticket; sem alterações de solver, API, gravação, painel ou artefatos gerados. Stage 2 devolvido a `to-review` na mesma branch; sem revisão stage 3 ou merge nesta sessão.

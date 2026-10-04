@@ -1209,9 +1209,6 @@ export default function App() {
       if (route.kind === 'structural') {
         statesRef.current = null
         pendingRebuildRef.current = true
-        if (playbackRef.current.stepsTaken === 0 && routeDocChange(initialProbeDocRef.current, doc).kind === 'structural') {
-          refreshInitialProbe()
-        }
       } else {
         try {
           applyLiveOps(simRef.current, route.ops)
@@ -1222,6 +1219,10 @@ export default function App() {
           setSimError(messageOf(e))
         }
       }
+    }
+    // Returning to the live world's geometry can still invalidate the probe.
+    if (simRef.current && playbackRef.current.stepsTaken === 0 && routeDocChange(initialProbeDocRef.current, doc).kind === 'structural') {
+      refreshInitialProbe()
     }
     repaint()
   }, [doc, showGlobal, bootState, repaint, dispatch, resetRecording, refreshInitialProbe])
