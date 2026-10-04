@@ -9,7 +9,7 @@ import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
 import { CANVAS_MIN_WIDTH } from './render/fitCanvas'
 import { trashRect } from './editor/trash'
-import { createSimulator, type BodyState, type Simulator } from './sim'
+import { createSimulator, type BodyState, type InitialProbe, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang, t } from './i18n'
@@ -684,6 +684,227 @@ describe('initial velocity overlay (PHY-59)', () => {
     }
     act(() => findButton(host, ptBR['playback.reset'])!.click())
     expectOverlay(true)
+  })
+})
+
+describe('initial force vectors (PHY-82)', () => {
+  const doc = (): Scene => ({
+    version: 1, constants: { g: 9.81 }, contacts: [], forces: [],
+    bodies: [
+      ...blankScene().bodies,
+      { id: 'caixa', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 3, y: 0.5 }, rotation: 0 },
+      { id: 'pivo', shape: 'circle', radius: 0.2, fixed: true, mass: 0, position: { x: 8, y: 6 }, rotation: 0 },
+      { id: 'bola', shape: 'circle', radius: 0.3, fixed: false, mass: 1, position: { x: 8, y: 3 }, rotation: Math.PI / 2 },
+    ],
+    constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'pivo', anchor: { x: 0, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0.2, y: 0 } }, via: [] }],
+  })
+  const probeReading = (): InitialProbe => ({
+    contacts: [{ aId: 'chao', bId: 'caixa', point: { x: 3, y: 0 }, normal: { x: 0, y: 1 } }],
+    constraints: [{
+      id: 'corda', kind: 'rope', tension: 5, slack: false, segments: [5],
+      // Poses after the disposable step differ from the document anchors.
+      path: { segments: [{ from: { x: 8, y: 6 }, to: { x: 10, y: 4 } }], arcs: [], length: Math.sqrt(8) },
+    }],
+  })
+
+  async function setupProbe(options: { scene?: Scene; otherScene?: Scene; throws?: boolean; delayedBoot?: boolean } = {}) {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const labels: string[] = []
+    const arrows: Array<{ color: unknown; path: number[][] }> = []
+    const moves: number[][] = []
+    let path: number[][] = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { labels.length = 0; arrows.length = 0; moves.length = 0 }
+        if (key === 'beginPath') return () => { path = [] }
+        if (key === 'moveTo') return (x: number, y: number) => { path.push([x, y]); moves.push([x, y]) }
+        if (key === 'lineTo') return (x: number, y: number) => { path.push([x, y]) }
+        if (key === 'stroke') return () => {
+          if (['#1565c0', '#6a1b9a', '#00838f'].includes(target.strokeStyle as string)) {
+            arrows.push({ color: target.strokeStyle, path: [...path] })
+          }
+        }
+        if (key === 'fillText') return (text: string) => { labels.push(text) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const scene = options.scene ?? doc()
+    let current = scene
+    let count = 0
+    const step = vi.fn(() => { count++ })
+    const probeInitial = vi.fn((_scene: Scene): InitialProbe => {
+      if (options.throws) throw new Error('probe failed')
+      return probeReading()
+    })
+    const sim: Simulator = {
+      ...makeFakeSimulator(), step, probeInitial,
+      replaceScene: vi.fn((next: Scene) => { current = next; count = 0 }),
+      readContacts: () => count === 0 ? [] : [{ aId: 'chao', bId: 'caixa', point: { x: 3 + count / 10, y: 0 }, normal: { x: 0, y: 1 } }],
+      readConstraints: () => [
+        { id: 'corda', kind: 'rope', tension: count * 9, slack: false, segments: [count * 9] },
+        ...(current.constraints?.some(c => c.kind === 'spring')
+          ? [{ id: 'mola', kind: 'spring' as const, dx: 0.7, force: { a: 7, b: 7 } }] : []),
+      ],
+      readStates: () => new Map(current.bodies.map(body => [body.id, {
+        position: { x: body.position.x + (body.fixed ? 0 : count / 10), y: body.position.y },
+        rotation: body.rotation, linvel: { x: body.fixed ? 0 : count, y: 0 }, angvel: 0,
+      }])),
+    }
+    let resolveBoot!: (sim: Simulator) => void
+    if (options.delayedBoot) vi.mocked(createSimulator).mockImplementation(() => new Promise(resolve => { resolveBoot = resolve }))
+    else vi.mocked(createSimulator).mockResolvedValue(sim)
+    const { host, canvas } = setupWith(() => {
+      saveIndex(window.localStorage, [
+        { id: 'probe', name: 'Probe', updatedAt: 1 },
+        ...(options.otherScene ? [{ id: 'other', name: 'Other', updatedAt: 2 }] : []),
+      ])
+      saveScene(window.localStorage, 'probe', scene)
+      if (options.otherScene) saveScene(window.localStorage, 'other', options.otherScene)
+      saveCurrentSceneId(window.localStorage, 'probe')
+    })
+    // Enable forces while boot is still pending: resolving boot itself must repaint.
+    act(() => inputForLabel(host, ptBR['panel.showVectors']).click())
+    await settleSimImport()
+    const origin = (color: string): number[] | undefined => arrows.find(arrow => arrow.color === color)?.path[0]
+    const point = (x: number, y: number): number[] => { const p = screen(x, y); return [p.x, p.y] }
+    const steps = async (n: number) => {
+      for (let i = 0; i < n; i++) await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    }
+    const seek = (index: number) => act(() => {
+      setNativeInputValue(host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!, index)
+    })
+    return { host, canvas, labels, arrows, moves, sim, step, probeInitial, origin, point, steps, seek,
+      resolveBoot: () => act(async () => { resolveBoot(sim) }),
+    }
+  }
+
+  it('paints N and T at t0 and anchors T to the document rather than the disposable pose', async () => {
+    const p = await setupProbe()
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
+    expect(p.origin('#6a1b9a')).not.toEqual(p.point(10, 4))
+    expect(p.probeInitial).toHaveBeenCalledExactlyOnceWith(doc())
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
+  it('uses live contacts and constraints after the first step without probing again', async () => {
+    const p = await setupProbe()
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    await p.steps(1)
+    expect(p.origin('#1565c0')).toEqual(p.point(3.1, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8.1, 3.2))
+    const tension = p.arrows.find(arrow => arrow.color === '#6a1b9a')!.path
+    expect(Math.hypot(tension[1]![0]! - tension[0]![0]!, tension[1]![1]! - tension[0]![1]!)).toBeCloseTo(60, 6)
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).toHaveBeenCalledTimes(1)
+  })
+
+  it('probes once per structural t0 edit and reset, but never for g or pending-world synchronization', async () => {
+    const p = await setupProbe()
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    for (let i = 0; i < 3; i++) {
+      dragTo(p.canvas, { x: 8 + i, y: 3 }, { x: 9 + i, y: 3 })
+      expect(p.probeInitial).toHaveBeenCalledTimes(i + 2)
+      expect(p.probeInitial.mock.lastCall![0].bodies.find(body => body.id === 'bola')!.position.x).toBe(9 + i)
+    }
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    expect(p.probeInitial).toHaveBeenCalledTimes(4)
+    // Selection and vector visibility repaint a document whose live rebuild is pending.
+    click(p.canvas, { x: 1, y: 7 })
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(4)
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(5)
+    expect(p.probeInitial.mock.lastCall![0].constants.g).toBe(5)
+    expect(p.step).not.toHaveBeenCalled()
+    await p.steps(1)
+    expect(p.probeInitial).toHaveBeenCalledTimes(5)
+  })
+
+  it('uses the cached probe on seek(0) and the recorded contact on seek(5)', async () => {
+    const p = await setupProbe()
+    await p.steps(10)
+    expect(p.origin('#1565c0')).toEqual(p.point(4, 0))
+    p.seek(0)
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
+    p.seek(5)
+    expect(p.origin('#1565c0')).toEqual(p.point(3.5, 0))
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).toHaveBeenCalledTimes(10)
+  })
+
+  it('keeps painting without N, T or simError when the optional probe throws', async () => {
+    const p = await setupProbe({ throws: true })
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.labels).toContain('P')
+    expect(p.labels).not.toContain('N')
+    expect(p.labels).not.toContain('T')
+    expect(loadingOverlay(p.host)).toBeUndefined()
+    expect(p.host.textContent).not.toContain('probe failed')
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(2)
+    expect(p.host.textContent).not.toContain('probe failed')
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
+  it('probes the latest document after edits made while boot is pending', async () => {
+    const p = await setupProbe({ delayedBoot: true })
+    expect(p.probeInitial).not.toHaveBeenCalled()
+    dragTo(p.canvas, { x: 8, y: 3 }, { x: 9, y: 3 })
+    await p.resolveBoot()
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.probeInitial.mock.lastCall![0].bodies.find(body => body.id === 'bola')!.position.x).toBe(9)
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    expect(p.step).not.toHaveBeenCalled()
+    await p.steps(1)
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes on scene switching and on editing the initial recorded document', async () => {
+    const next = doc()
+    next.bodies = next.bodies.map(body => body.id === 'bola' ? { ...body, position: { x: 9, y: 3 } } : body)
+    const p = await setupProbe({ otherScene: next })
+    // Opening the preset uses the same rebuild transition as opening a saved scene.
+    act(() => findButton(p.host, ptBR['scenes.galleryOpen'])!.click())
+    const atwood = [...p.host.querySelectorAll('button')].find(button => button.textContent?.includes(ptBR['preset.atwood.name']))!
+    act(() => atwood.click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(2)
+    expect(p.probeInitial.mock.lastCall![0]).toEqual(presetById('atwood')!.buildScene())
+    act(() => setSelectValue(sceneSelect(p.host), 'other'))
+    expect(p.probeInitial).toHaveBeenCalledTimes(3)
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    await p.steps(2)
+    p.seek(0)
+    dragTo(p.canvas, { x: 9, y: 3 }, { x: 10, y: 3 })
+    expect(p.probeInitial).toHaveBeenCalledTimes(4)
+    expect(p.origin('#6a1b9a')).toEqual(p.point(10, 3.2))
+    expect(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!.max).toBe('0')
+    expect(p.step).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves the document rope drawing and live initial spring readings', async () => {
+    const scene = doc()
+    scene.constraints!.push({ id: 'mola', kind: 'spring', a: { bodyId: 'pivo', anchor: { x: -1, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0, y: 0 } }, k: 10, x0: 2.3 })
+    const p = await setupProbe({ scene })
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.moves).toContainEqual([8, 6])
+    expect(p.moves).not.toContainEqual([10, 4])
+    const spring = p.arrows.find(arrow => arrow.color === '#00838f')!.path
+    expect(spring[0]).toEqual(p.point(8, 3))
+    expect(Math.hypot(spring[1]![0]! - spring[0]![0]!, spring[1]![1]! - spring[0]![1]!)).toBeCloseTo(20 * Math.sqrt(7), 6)
+    click(p.canvas, { x: 8, y: 4.5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(panel(p.host, t('readout.title', { id: 'corda' }))?.textContent).toContain('T: 0,00 N')
   })
 })
 
