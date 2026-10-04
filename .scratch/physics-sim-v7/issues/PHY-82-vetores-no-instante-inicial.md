@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: reviewing
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -89,3 +89,43 @@ Cada linha corresponde a um teste novo de `describe('initial force vectors (PHY-
 - A pintura ao terminar o boot passa pelo doc effect que observa `bootState`, usando o tamanho atual do canvas. **14 testes novos**: 5 na API real e 9 no App. Testes vermelhos/correções de harness ficaram em commits próprios; commits de produção não alteram testes.
 - Gate final fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1185 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). O build emite o aviso de chunk acima de 500 kB no bundle do simulador; sem falha de build. Nenhuma validação pendente.
 - Diff final restrito aos cinco Primary files e ao próprio ticket; sem alterações em `syncWorld`, painel T, solver existente ou artefatos gerados. Stage 2 encerrado em `to-review`; sem review ou merge nesta sessão.
+
+#### Stage 3 — revisão (2026-10-04)
+
+Verdict: Reopen — critério 7: a sonda fica desatualizada ao desfazer ou arrastar de volta à geometria do mundo vivo antes do primeiro passo.
+
+- Base da revisão: `5ac927d` (`sweatshop/2026-10-04-1243`); implementação revisada até `cd60c4d`, diff completo e os oito commits examinados. Rebase sobre a sessão sem conflitos ou mudanças.
+- Chamadores e caminhos examinados: `paint`/`repaint` por documento, seleção, idioma, resize, transporte e rAF; `ensureSim` por mount/play/step/retry; boot pendente com edição e resize; `dispatch(reset)` e abertura de preset/cena salva; `syncWorld`/`runSteps`; roteamento estrutural e ao vivo (g/F); undo/redo; seek(0), seek posterior e replay. Na API, construtor, `buildWorld`, `step`, leitores, `replaceScene`, falha de construção e liberação no `finally`.
+- Interações examinadas: desenho e hit test da corda no documento, âncoras locais rotacionadas, F_el e painel T vivos, gravação, aceleração, energia e avisos. Não foram examinadas integrações com PHY-78–81 ainda não mesclados, nem foi feito perfil prolongado de memória; não são requisitos deste ticket. Não há decisões `Proxy decided` no ticket.
+
+##### Standards
+
+- Um comentário desatualizado em `src/render/overlay.ts` dizia que `paint` só passava leituras durante playback. Corrigido em `a362004`: a leitura da sonda em t = 0 descarta seu caminho e usa o documental. Mudança exclusivamente documental, permitida pela exceção de documentação desatualizada do `ticket-flow`, embora o arquivo esteja fora dos Primary files. Nenhum comportamento ou teste mudou nesse commit.
+- Sem violações bloqueantes ou smells que justifiquem mudança. Os dois commits de produção não alteram testes; testes e correções de harness estão em commits próprios. O ticket contém mutação e saída vermelha para cada um dos nove testes novos de DOM/canvas; os cinco testes da API chamam a costura pública de produção diretamente.
+
+##### Spec
+
+- **P2 — critério 7 parcial**, `src/App.tsx:1206–1214`: o contrato exige "uma vez a mais a cada edição estrutural em t = 0". Depois de boot em A e arrasto para B, a sonda passa a B, mas o mundo vivo continua construído de A. Desfazer restaura a própria referência A de `builtDocRef`, pulando todo o ramo de roteamento; arrastar de volta à geometria A produz rota `live` contra o mundo vivo, pulando o ramo estrutural. Nos dois casos existe mudança estrutural contra `initialProbeDocRef` (B → A), mas a sonda não é atualizada. N pode ficar na posição anterior, e T mantém a tração da sonda anterior.
+- Os testes existentes arrastam progressivamente para posições novas e não cobrem a volta à geometria do mundo vivo. A correção precisa de novos testes no seam DOM/canvas já aprovado, portanto volta ao stage 2; nenhum conserto comportamental foi feito nesta revisão.
+- Nenhum outro requisito ausente ou incorreto e nenhum desvio de escopo encontrado na primeira passagem completa.
+
+##### Critérios
+
+1. ✅ Normal vertical unitária com Rapier real.
+2. ✅ Atwood com tração dentro de 15 % de 23,54 N e corda tensa.
+3. ✅ Isolamento do mundo vivo e repetição determinística de 20 sondas.
+4. ✅ Massa inválida retorna leituras vazias e preserva o mundo vivo utilizável.
+5. ✅ N/T em t = 0; T ancorada no documento, sem o caminho movido da sonda.
+6. ✅ Contatos/vínculos vivos após o primeiro passo, sem nova sonda.
+7. ❌ Atualização omitida em edição estrutural que retorna à geometria construída, por undo ou arrasto de volta; demais cadências verificadas pelos testes existentes.
+8. ✅ seek(0) usa a sonda; seek(5) usa a gravação.
+9. ✅ Falha opcional da sonda preserva pintura e não publica `simError`.
+
+##### Reprodução e validação
+
+- Foram adicionados temporariamente dois testes ao `describe('initial force vectors (PHY-82)')`, usando `setupProbe` e eventos reais do App. O mock devolvia o contato em `x = posição da bola − 5`, para tornar a posição de N observável em cada documento. A bola era arrastada de `(8, 3)` para `(9, 3)`; um teste clicava `↶`, o outro arrastava de volta para `(8, 3)`, tudo antes de qualquer passo.
+- `npm test -- src/App.test.ts -t 'review reproducer'` → **2 failed | 178 skipped (180)**. Em ambos, N ficou em `[330, 540]` em vez de `[270, 540]`. Reexecutando com a contagem antes da posição, ambos falharam com `expected "vi.fn()" to be called 3 times, but got 2 times`. Os dois testes temporários foram removidos, e `src/App.test.ts` foi restaurado exatamente ao commit de implementação.
+- Primeiro gate no sandbox: **28 failed | 1157 passed (1185)**, todos os erros de conexão/disconexão do Chromium DevTools; lint/typecheck/build não executados nessa tentativa porque o comando para no teste vermelho.
+- Gate completo repetido fora do sandbox, após restaurar os testes: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1185 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). Permanece o aviso de chunk do simulador acima de 500 kB. A suíte atual fica verde apesar da lacuna reproduzida no critério 7.
+- Trabalho restante para stage 2: somente o ❌ do critério 7, com testes permanentes vermelhos de undo/arrasto de retorno no seam existente; atualização da sonda determinada pela mudança estrutural contra seu próprio documento, preservando zero chamadas extras por g/F, seleção, resize e `syncWorld`. Registrar mutate-verify dos novos testes de DOM, passar o gate e devolver a `to-review` na mesma branch. Critérios e Primary files não foram reescritos.
+- Sem merge na sessão e sem linha de ledger: o ticket volta a `to-implement` neste commit. A correção documental permanece na branch.
