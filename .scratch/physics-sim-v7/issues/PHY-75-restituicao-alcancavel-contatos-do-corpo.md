@@ -1,5 +1,5 @@
 # PHY-75: Restituição alcançável e contatos no painel do corpo
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -49,6 +49,62 @@ Nenhum `e` padrão por cena. O simulador não muda.
 - `src/App.test.ts`: critérios 4 a 8 com o simulador falso; vermelhos hoje (o painel global existe e o do corpo não). Os testes atuais do `ContactsPanel` (ex.: `shows restitution after kinetic friction for each pair…`) são reescritos para a costura nova no mesmo commit. Costura de DOM: registrar no ticket, por teste novo, a mutação aplicada e a saída vermelha.
 
 ## Comments
+
+#### Stage 2 — mutate-verify (2026-10-04)
+
+Cada mutação abaixo foi aplicada temporariamente à produção, executada contra o teste indicado e restaurada em `finally`. Os testes do DOM chamam o App real com o simulador falso já usado nesta costura; a edição/remoção é observada pelo documento salvo via `pagehide`/`loadScene`.
+
+| Teste em `src/App.test.ts` | Mutação na produção | Saída vermelha observada |
+| --- | --- | --- |
+| `has no global contact panel…: populated` | Reintroduzir fieldset global `contatos` na montagem | `expected <fieldset><legend></legend></fieldset> to be undefined` (:317); 2 failed junto com empty |
+| `has no global contact panel…: empty` | Mesmo fieldset global, inclusive sem corpos | Mesma assertion (:317); 2 failed no conjunto |
+| `shows all and only selected-body pairs…` | Filtrar só `c.a === bodyId` | `expected [ 'm_b' ] to deeply equal [ 'fixo: retângulo 1', 'm_b' ]` (:325); 1 failed |
+| `edits restitution from endpoint b…` | Trocar a/b no callback de `updateContact` | `expected [ …(2) ] to deeply equal [ …(2) ]` (:349), e não gravado; 2 failed junto com friction |
+| Mesmo teste, remoção | Trocar a/b no callback de `removeContact` | `expected [ …(2) ] to deeply equal [ { a: 'chao', b: 'bloco', …(3) } ]` (:353); 1 failed |
+| `edits both friction coefficients independently…` | Trocar a/b no callback de `updateContact` | `expected [ …(2) ] to deeply equal [ …(2) ]` (:364), μs não gravado; 2 failed no conjunto |
+| `disables an exhausted partner picker…` | Remover a exclusão dos parceiros já pareados | `expected HTMLOptionsCollection… to have a length of +0 but got 2`; 1 failed |
+| `keeps partner choice valid…` | Ignorar escolha, usar sempre o primeiro parceiro | `expected [ { a: 'bola', b: 'chao', …(3) } ] to deeply equal [ { a: 'bola', b: 'bloco', …(3) } ]` (:399); 1 failed |
+| `numbers fixed partners by shape…` | Usar `n = 1` para todo corpo fixo | Listas divergem (:422): parede vira `fixo: retângulo 1` em vez de 2; 1 failed |
+| `shows an empty, disabled partner picker…` | Remover disabled do seletor e botão sem parceiros | `expected false to be true` (:440); 1 failed |
+| `locks the whole body contact fieldset…` | Fieldset ignora structuralLocked (`disabled={false}`) | `expected false to be true` (:451); 1 failed |
+| `localizes body and fixed contact labels…` | Rótulo fixo usa id bruto | `expected 'contacts of m_achao✕μs — static frict…' to contain 'fixed: rectangle 1'` (:469); 1 failed |
+
+Os cinco testes antigos de snap usam agora o documento salvo. Mutação de `onPointerUp` omitindo `addContact`: 4 failed, 1 passed, 152 skipped (157); criação falha com `expected 1 to be 2`; re-snap, persistência ao afastar e remoção no lixo falham com `expected [ 'rampa ↔ bloco' ] to include 'caixa ↔ chao'`. Para o quinto (`never creates a Contact mid-drag…`), declarar o contato em `onPointerMove` produz `expected [ 'rampa ↔ bloco', 'caixa ↔ chao' ] to deeply equal [ 'rampa ↔ bloco' ]` (:738); 1 failed, 156 skipped.
+
+Presets, costura direta: remover as quatro declarações com chão gera 4 failed, 35 skipped (39); remover só a da queda livre faz o quique falhar com `expected 0 to be greater than or equal to 9.025222778320312`. Alterar `e` dos pares com chão de 0 para 1 derruba os quatro testes de igualdade de trajetória (4 failed, 35 skipped): queda livre, passo 70, diferença `11.28152847290039`; projétil, passo 74, `5.935490608215332`; colisão elástica, passo 82, `0.16350001096725464`; inelástica, passo 81, `5.960464477539063e-8`, todas acima de `1e-9`.
+
+Green antes das mutações: presets 39 passed (39); casos novos do painel 11 passed, 146 skipped (157). Typecheck também passou. Todas as mutações foram restauradas antes do gate completo.
+
+#### Stage 2 — correção de harness (2026-10-04)
+
+O primeiro gate terminou em 63 failed, 1056 passed (1119), 1 arquivo failed / 32 passed (33). O novo teste de tradução deixava o singleton de idioma em inglês; corrigido com `try/finally` restaurando pt-BR pelo seletor real. As assertions antigas de galeria e de duas recargas de cena observavam ids nas opções do `ContactsPanel` global: agora clicam no corpo do canvas e verificam seu inspetor, preservando a prova do conteúdo carregado. Depois da correção de idioma/galeria, a execução focal terminou em 2 failed, 194 passed (196), isolando as duas assertions de recarga ainda acopladas ao seletor removido. Nenhuma mudança de contrato ou produção para corrigir estes testes.
+
+Nova prova vermelha, após as correções do harness (mutações sempre restauradas):
+
+| Teste adaptado | Mutação na produção | Saída vermelha |
+| --- | --- | --- |
+| `localizes body and fixed contact labels…` | Rótulo fixo usa id bruto, como na prova anterior | `expected 'contacts of m_achao✕μs — static frict…' to contain 'fixed: rectangle 1'` (:470); 1 failed, 156 skipped |
+| `com a terceira cena marcada…` | Inicialização lê conteúdo de `cena-1` mantendo identidade selecionada | `expected undefined to be defined` para inspetor `marca-cena-3` (:1878); 2 failed, 155 skipped junto com reload |
+| `trocar de cena persiste…` | Mesma mutação na inicialização do documento | `expected undefined to be defined` para `marca-cena-2` (:1903); 2 failed no conjunto |
+| `duplicar um preset cria a cena…` | `openGalleryPreset` usa DEMO_SCENE em vez do builder escolhido | `expected undefined to be defined` para `bloco-1` (:2078); 1 failed, 156 skipped |
+| `recusa Delete, Backspace e campos estruturais…` | Fieldset do corpo ignora structuralLocked | `expected false to be true` (:2562); 1 failed, 156 skipped |
+
+Uma tentativa de mutar `switchToScene` sobre o teste de cópia de preset sobreviveu (1 passed, 156 skipped): equivalente para esse cenário, pois duplicar um preset chama `copyOpenPreset`, rebind da identidade que preserva o documento, sem passar por `switchToScene`. A mutação foi descartada e a prova passou a atingir `openGalleryPreset`, que efetivamente determina o documento exibido nesse teste.
+
+Green com harness corrigido e produção restaurada: `npm test -- src/App.test.ts src/presets/presets.test.ts`: 2 arquivos passed; 196 passed (196), sem skips.
+
+#### Stage 2 — handoff (2026-10-04)
+
+- Implementado: quatro presets com contatos de chão μs = μk = e = 0; painel global removido; `BodyContactsPanel` abaixo das forças do corpo selecionado, pares acessíveis por a/b com ordem original preservada; rótulos de massa/fixos e traduções pt-BR/en; parceiros só não pareados, escolha válida após alterações, controles desabilitados sem parceiro e fieldset bloqueado pelo structuralLocked.
+- Testes separados da produção: `7ebb83e` (presets, red), `920aa9f` (painel, red), `b96de57` (harness corrigido, nova prova red por mutação). Commit de produção dos presets: `e3a7a05`. Nenhum commit de produção altera testes.
+- Gate completo `npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente com parada na primeira falha: **33 arquivos passed (33), 1119 passed (1119), sem skips**; lint e typecheck exit 0; build exit 0 (52 módulos). Testes de Chromium incluídos. Build mantém aviso de chunk maior que 500 kB (chunk `sim`, 2136,50 kB).
+- Diff final revisado: apenas Primary files e este ticket; simulador, editor/doc e render/draw não alterados; nenhuma dependência, versão de cena ou regra de restituição nova. `git diff --check` passou.
+- Consequência prevista mantida: marcador ≈ na aceleração analítica inicial de queda livre/projétil, conforme contrato e débito PHY-86. Etapa 3 ainda pendente; sem merge ou push nesta etapa.
+
+- Red do DOM: `npm test -- src/App.test.ts -t 'selected Body contacts'` (fora do sandbox após timeout de inicialização do worker): 11 failed, 146 skipped (157). Sem seleção: `expected <fieldset …> to be undefined`; leitura/edição/parceiros/fixos/bloqueio: `missing contacts of m_a/m_b/m`; catálogo: `expected undefined to be truthy` para `contacts.of`.
+
+- 2026-10-04 Stage 2: branch criada sobre `sweatshop/2026-10-04-1243`. Costuras aprovadas: builders/createSimulator/updateContact e DOM do App. Callers examinados: abertura/cópia/persistência de presets, snap de contato, update/remove com identidade ordenada, massLabels no desenho; casos de fronteira: nenhum corpo/parceiro, todos pareados, seleção no lado b, seleção fixa, troca de corpo e parceiro removido. `editor/doc.ts` e `render/draw.ts` serão apenas consumidos.
+- Red dos presets: `npm test -- src/presets/presets.test.ts -t 'reachable ground restitution'`: 5 failed, 4 passed, 30 skipped (39). Quatro falhas por pares com chão ausentes; quique: `expected 0 to be greater than or equal to 9.025222778320312`.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: retrofit dos presets com o par com o chão (μ = 0, e = 0), comportamento igual; `ContactsPanel` sai; seção "contatos de m_a" no painel do corpo, par alcançável dos dois lados; parceiro em `<select>` (dinâmicos pelo rótulo de massa, fixos como "fixo: retângulo 1"); sem `e` padrão por cena.
 - Planner: rótulo fixo sempre numerado, `n` entre os fixos da mesma forma na ordem do documento, forma pelas strings da paleta; `<select>` só com parceiros ainda não pareados. O "≈" na aceleração analítica de queda livre e projétil antes do primeiro passo é consequência de `isHeld` e fica.

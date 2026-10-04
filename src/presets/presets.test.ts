@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { collectWarnings, parse, serialize } from '../scene/codec'
-import { PRESETS, TREE, createPresetScene, type Preset, type TopicNode } from './index'
+import { PRESETS, TREE, createPresetScene, presetById, type Preset, type TopicNode } from './index'
+import { updateContact } from '../editor/doc'
 import { createSimulator, TIMESTEP, type RopeState } from '../sim'
 import { systemEnergy } from '../sim/energy'
 import { setLang, t } from '../i18n'
@@ -8,6 +9,68 @@ import { en } from '../i18n/en'
 import type { ConstraintEnd, Scene } from '../scene/types'
 import { GALLERY_ACK_KEY, isGalleryAcked, loadIndex, loadScene, sceneKey, shouldShowGallery } from '../persistence'
 import type { Storage } from '../persistence'
+
+describe('reachable ground restitution (PHY-75)', () => {
+  const cases = [
+    ['free-fall', [{ a: 'chao', b: 'bola', muS: 0, muK: 0, e: 0 }]],
+    ['projectile', [{ a: 'chao', b: 'projetil', muS: 0, muK: 0, e: 0 }]],
+    ['collision-elastic', [
+      { a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e: 1 },
+      { a: 'chao', b: 'esfera-1', muS: 0, muK: 0, e: 0 },
+      { a: 'chao', b: 'esfera-2', muS: 0, muK: 0, e: 0 },
+    ]],
+    ['collision-inelastic', [
+      { a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e: 0.5 },
+      { a: 'chao', b: 'esfera-1', muS: 0, muK: 0, e: 0 },
+      { a: 'chao', b: 'esfera-2', muS: 0, muK: 0, e: 0 },
+    ]],
+  ] as const
+
+  it.each(cases)('%s declares editable, frictionless, inelastic ground pairs', (id, contacts) => {
+    const scene = presetById(id)!.buildScene()
+    expect(scene.contacts).toEqual(contacts)
+    expect(collectWarnings(scene)).toEqual([])
+  })
+
+  it.each(cases)('%s preserves every body trajectory for 120 steps', async (id) => {
+    const scene = presetById(id)!.buildScene()
+    const declared = await createSimulator(scene)
+    const undeclared = await createSimulator({ ...scene, contacts: scene.contacts.filter(c => c.a !== 'chao' && c.b !== 'chao') })
+    for (let step = 0; step < 120; step++) {
+      declared.step()
+      undeclared.step()
+      const expected = undeclared.readStates()
+      const actual = declared.readStates()
+      expect([...actual.keys()]).toEqual([...expected.keys()])
+      for (const [id, state] of actual) {
+        const old = expected.get(id)!
+        for (const [value, reference] of [
+          [state.position.x, old.position.x], [state.position.y, old.position.y],
+          [state.rotation, old.rotation], [state.linvel.x, old.linvel.x],
+          [state.linvel.y, old.linvel.y], [state.angvel, old.angvel],
+        ]) expect(Math.abs(value - reference), `${id} at step ${step + 1}`).toBeLessThanOrEqual(1e-9)
+      }
+    }
+    expect(declared.warnings).toEqual([])
+    expect(undeclared.warnings).toEqual([])
+  })
+
+  it('free-fall bounces within two seconds after editing the ground pair to e=1', async () => {
+    const scene = updateContact(presetById('free-fall')!.buildScene(), 'chao', 'bola', { e: 1 })
+    const sim = await createSimulator(scene)
+    let fastestFall = 0
+    let bounce = 0
+    for (let step = 0; step < Math.round(2 / TIMESTEP); step++) {
+      sim.step()
+      const vy = sim.readStates().get('bola')!.linvel.y
+      if (vy > 0) { bounce = vy; break }
+      fastestFall = Math.max(fastestFall, Math.abs(vy))
+    }
+    expect(fastestFall).toBeGreaterThan(0)
+    expect(bounce).toBeGreaterThanOrEqual(0.8 * fastestFall)
+    expect(sim.warnings).toEqual([])
+  })
+})
 
 function memStorage(): Storage & { map: Map<string, string> } {
   const map = new Map<string, string>()

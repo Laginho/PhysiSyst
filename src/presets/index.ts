@@ -132,7 +132,7 @@ function projectileLaunch(): Scene {
       },
     ],
     forces: [],
-    contacts: [],
+    contacts: [{ a: 'chao', b: 'projetil', muS: 0, muK: 0, e: 0 }],
   }
 }
 
@@ -146,7 +146,11 @@ function collision(e: number): Scene {
       { id: 'esfera-2', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 8, y: 0.5 }, rotation: 0 },
     ],
     forces: [],
-    contacts: [{ a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e }],
+    contacts: [
+      { a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e },
+      { a: 'chao', b: 'esfera-1', muS: 0, muK: 0, e: 0 },
+      { a: 'chao', b: 'esfera-2', muS: 0, muK: 0, e: 0 },
+    ],
   }
 }
 
@@ -159,7 +163,7 @@ function freeFall(): Scene {
       { id: 'bola', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 6, y: 7 }, rotation: 0 },
     ],
     forces: [],
-    contacts: [],
+    contacts: [{ a: 'chao', b: 'bola', muS: 0, muK: 0, e: 0 }],
   }
 }
 
