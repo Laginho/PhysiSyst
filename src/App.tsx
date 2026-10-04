@@ -1863,8 +1863,9 @@ export default function App() {
           }}>
             <div style={{ display: 'flex', alignItems: 'flex-start' }}>
               <div style={{ zoom: controlsScale, width: (size.width - CONTROLS_SIZER_WIDTH) / controlsScale, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* Keep the preset hint on its own row at every controls scale. */}
+                  {openPreset && <span style={{ fontSize: 12, flexBasis: '100%' }}>{t('preset.readOnlyHint')}</span>}
                   <button onClick={togglePlay} style={{ minWidth: 110 }}>
                     {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
                   </button>
