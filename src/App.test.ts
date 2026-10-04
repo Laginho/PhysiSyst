@@ -153,17 +153,19 @@ function toggleFocus(host: HTMLElement, ...groups: FocusGroup[]): void {
 function captureVectorFrame() {
   const labels: Array<{ color: unknown; text: string }> = []
   const rings: Array<{ color: unknown; x: number; y: number }> = []
+  const lines: Array<{ color: unknown; x: number; y: number }> = []
   const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
     get(target, key) {
-      if (key === 'clearRect') return () => { labels.length = 0; rings.length = 0 }
+      if (key === 'clearRect') return () => { labels.length = 0; rings.length = 0; lines.length = 0 }
       if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
       if (key === 'arc') return (x: number, y: number) => { rings.push({ color: target.strokeStyle, x, y }) }
+      if (key === 'lineTo') return (x: number, y: number) => { lines.push({ color: target.strokeStyle, x, y }) }
       if (key === 'measureText') return () => ({ width: 10 })
       return target[key] ?? (() => {})
     },
   })
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
-  return { labels, rings }
+  return { labels, rings, lines }
 }
 
 describe('scene focus chips (PHY-78)', () => {
@@ -3745,6 +3747,7 @@ describe('galeria de um clique (PHY-62)', () => {
 describe('recorded time player (PHY-64)', () => {
   async function setupRecording(kind?: 'spring' | 'rope', bodies: 'dynamic' | 'fixed' | 'empty' = 'dynamic', options: {
     configure?: (scene: Scene) => void
+    velocity?: (step: number) => BodyState['linvel']
     contacts?: ReturnType<Simulator['readContacts']>
     slack?: boolean
   } = {}) {
@@ -3783,7 +3786,7 @@ describe('recorded time player (PHY-64)', () => {
         : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: options.slack ?? false, segments: [count] }] : [],
       readStates: () => new Map(current.bodies.map((b) => [b.id, {
         position: { x: b.position.x + (b.fixed ? 0 : count / 100), y: b.position.y },
-        rotation: b.rotation, linvel: { x: b.fixed ? 0 : count * count / 60, y: 0 }, angvel: 0,
+        rotation: b.rotation, linvel: b.fixed ? { x: 0, y: 0 } : options.velocity?.(count) ?? { x: count * count / 60, y: 0 }, angvel: 0,
       }])),
     })
     const { host, canvas } = setupWith(() => {
@@ -3810,6 +3813,106 @@ describe('recorded time player (PHY-64)', () => {
       readout: () => panel(host, t('readout.title', { id: 'ball' }))?.textContent ?? '',
     }
   }
+
+  it('PHY-80 replaces launch velocity with live velocity after stepping and restores it at record zero', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.bodies.find(b => b.id === 'ball')!.vx = 2 },
+      velocity: count => ({ x: count === 0 ? 2 : 1, y: 0 }),
+    })
+    const velocityLabels = () => frame.labels.filter(l => l.color === '#43a047').map(l => l.text)
+    expect(velocityLabels()).toEqual(['v₀'])
+    await p.steps(1)
+    expect(velocityLabels()).toEqual(['v'])
+    expect(frame.lines.find(l => l.color === '#43a047')).toMatchObject({ x: 474.6, y: 300 })
+    p.seek(0)
+    expect(velocityLabels()).toEqual(['v₀'])
+    p.seek(1)
+    expect(velocityLabels()).toEqual(['v'])
+    expect(p.step).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['global', 'selected'] as const)('PHY-80 keeps launch velocity after a zero-step rebuild in %s scope', async (scope) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.bodies.find(b => b.id === 'ball')!.vx = 2 },
+      velocity: count => ({ x: count === 0 ? 2 : 1, y: 0 }),
+    })
+    const velocityLabels = () => frame.labels.filter(l => l.color === '#43a047').map(l => l.text)
+    click(p.canvas, { x: 6, y: 4 })
+    if (scope === 'selected') act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['properties.posY']), 5))
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, 0.5))
+    await p.play()
+    // Half speed rebuilds the world on this frame, before the first timestep.
+    p.frame()
+    act(() => findButton(p.host, ptBR['playback.pause'])!.click())
+    expect(p.replaceScene).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(velocityLabels()).toEqual(['v₀'])
+    await p.steps(1)
+    expect(velocityLabels()).toEqual(['v'])
+    p.seek(0)
+    expect(velocityLabels()).toEqual(['v₀'])
+  })
+
+  it('PHY-80 paints analytic acceleration at initial time and restores it when seeking to zero', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.constants.g = 9; scene.forces = [] },
+    })
+    const accelerationTip = () => frame.lines.find(l => l.color === '#c62828')
+    expect(frame.labels.filter(l => l.color === '#c62828').map(l => l.text)).toEqual(['a'])
+    expect(accelerationTip()).toMatchObject({ x: 450, y: 360 })
+    await p.steps(2)
+    expect(accelerationTip()!.y).toBe(300)
+    p.seek(0)
+    expect(accelerationTip()).toMatchObject({ x: 450, y: 360 })
+  })
+
+  it('PHY-80 paints acceleration from the displayed recording instead of the live tip', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording()
+    await p.steps(2)
+    const accelerationTip = () => frame.lines.find(l => l.color === '#c62828')
+    expect(frame.labels.filter(l => l.color === '#c62828').map(l => l.text)).toEqual(['a'])
+    expect(accelerationTip()).toMatchObject({ x: expect.closeTo(485.8410161513775, 8), y: 300 })
+    p.seek(1)
+    expect(accelerationTip()).toMatchObject({ x: expect.closeTo(474.6, 8), y: 300 })
+    p.seek(2)
+    expect(accelerationTip()).toMatchObject({ x: expect.closeTo(485.8410161513775, 8), y: 300 })
+    expect(p.step).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['initial', 'live'] as const)('PHY-80 composes %s kinematic vectors with global scope, selection and focus', async (time) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => {
+        const ball = scene.bodies.find(b => b.id === 'ball')!
+        ball.vx = 2
+        scene.bodies.push({ ...ball, id: 'other', position: { x: 8, y: 4 } })
+      },
+    })
+    if (time === 'live') await p.steps(2)
+    const velocitySymbol = time === 'initial' ? 'v₀' : 'v'
+    const symbols = () => frame.labels.filter(l => l.color === '#43a047' || l.color === '#c62828')
+      .map(l => l.text).filter(text => ['v₀', 'v', 'a'].includes(text))
+    expect(symbols()).toEqual([velocitySymbol, velocitySymbol, 'a', 'a'])
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    expect(symbols()).toEqual([])
+    click(p.canvas, { x: time === 'live' ? 6.02 : 6, y: 4 })
+    expect(symbols()).toEqual([velocitySymbol, 'a'])
+    // Numbering still identifies the selected body's scene-wide quantities.
+    expect(frame.labels.filter(l => l.color === '#43a047').map(l => l.text)).toEqual([velocitySymbol, '1'])
+    toggleFocus(p.host, 'kinematics')
+    expect(symbols()).toEqual([])
+    click(p.canvas, { x: 11, y: 7 })
+    expect(symbols()).toEqual([])
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    expect(symbols()).toEqual([])
+    toggleFocus(p.host, 'kinematics')
+    expect(symbols()).toEqual([velocitySymbol, velocitySymbol, 'a', 'a'])
+  })
 
   async function setupGraph() {
     const p = await setupRecording()

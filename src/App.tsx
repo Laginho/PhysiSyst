@@ -77,13 +77,15 @@ import { drawArrow, drawGrid, drawScene, massLabels, selectedOf, type ArrowStyle
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import {
+  accelerationArrows,
   appliedArrows,
   elasticArrows,
-  initialVelocityArrows,
+  velocityArrows,
   normalArrows,
   numberedSymbol,
   tensionArrows,
   vectorLabels,
+  VECTOR_COLORS,
   weightArrows,
   type OverlayArrow,
 } from './render/overlay'
@@ -200,6 +202,7 @@ function paint(
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
     initialProbe?: InitialProbe
+    accelerations?: ReadonlyMap<string, Vec2>
     lang?: Lang
     draggingBody?: boolean
     /** The spring or rope tool's first anchor, until the tool finishes. */
@@ -250,19 +253,23 @@ function paint(
   const shownGroups = opts?.focus?.show ?? FOCUS_GROUPS
   const showForces = shownGroups.includes('forces')
   const atInitialTime = (opts?.stepsTaken ?? 0) === 0
-  const showInitialVelocity = shownGroups.includes('kinematics') && atInitialTime
+  // A structural rebuild can populate states before the first timestep.
+  const velocityStates = atInitialTime ? null : states
+  const showKinematics = shownGroups.includes('kinematics')
+  const accelerations = opts?.accelerations ?? new Map<string, Vec2>()
   const initialProbe = atInitialTime ? opts?.initialProbe : undefined
   // Only forces come from the disposable step; its moved rope path must not reach the editor.
   const tensionReadings = initialProbe
     ? initialProbe.constraints.map(state => state.kind === 'rope' ? { ...state, path: undefined } : state)
     : ropeReadings
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
-    { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
-    { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
-    { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
-    { arrows: showForces ? normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []) : [], style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
-    { arrows: showForces ? tensionArrows(view, tensionReadings, ppm) : [], style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
-    { arrows: showForces ? elasticArrows(view, constraints, ppm) : [], style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: VECTOR_COLORS.weight, widthPx: 2, headLenPx: 8 } },
+    { arrows: showKinematics ? velocityArrows(view, velocityStates, ppm) : [], style: { color: VECTOR_COLORS.velocity, widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: VECTOR_COLORS.applied, widthPx: 2, headLenPx: 10 } },
+    { arrows: showForces ? normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []) : [], style: { color: VECTOR_COLORS.normal, widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? tensionArrows(view, tensionReadings, ppm) : [], style: { color: VECTOR_COLORS.tension, widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? elasticArrows(view, constraints, ppm) : [], style: { color: VECTOR_COLORS.elastic, widthPx: 2, headLenPx: 8 } },
+    { arrows: showKinematics ? accelerationArrows(view, accelerations, ppm) : [], style: { color: VECTOR_COLORS.acceleration, widthPx: 2, headLenPx: 8 } },
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
@@ -271,13 +278,14 @@ function paint(
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      if (showInitialVelocity) {
-        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+      if (showKinematics) {
+        for (const a of velocityArrows(selView, velocityStates, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+        for (const a of accelerationArrows(selView, accelerations, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[6]!.style, labels(a))
       }
       for (const a of showForces ? appliedArrows(selView, ppm) : []) {
         drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
         // The application point is draggable (PHY-27): a ring marks the grip.
-        screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
+        screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, VECTOR_COLORS.applied, 1.5)
       }
     }
   }
@@ -938,18 +946,25 @@ export default function App() {
         : [...nextWarnings],
     )
     const ctx = ctxRef.current
-    if (ctx)
-      paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
+    if (ctx) {
+      const scene = displayedScene()
+      const accelerations = new Map<string, Vec2>()
+      for (const body of scene.bodies) {
+        if (!body.fixed) accelerations.set(body.id, getAcceleration(accelRef.current, scene, body.id, playbackRef.current.status === 'paused'))
+      }
+      paint(ctx, scene, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
         focus: docRef.current.focus,
         stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
         initialProbe: initialProbeRef.current,
+        accelerations,
         lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
       })
+    }
     repaintGraph()
   }, [size.width, size.height, displayedScene, repaintGraph])
 

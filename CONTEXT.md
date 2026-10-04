@@ -67,7 +67,7 @@ A constraint between two anchored bodies with stiffness `k`, natural length `x�
 _Avoid_: `L₀` for the natural length, elastic
 
 **Vector label**:
-The letter drawn beside every vector arrow (`P`, `N`, `F`, `T`, `F_el`, `v₀` in pt-BR; `W` and `F_s` in en-US), numbered only when two of the same kind exist. Derived from the scene, never stored; never shows a value.
+The letter drawn beside every vector arrow (`P`, `N`, `F`, `T`, `F_el`, `v₀`, `v`, `a` in pt-BR; `W` and `F_s` in en-US), numbered only when two of the same kind exist. `v₀` is shown before the first step; `v` and `a` follow the displayed simulation record, with analytic `a` at initial time. Derived from the scene, never stored; never shows a value.
 _Avoid_: arrow name, tag
 
 **Foco** (focus):

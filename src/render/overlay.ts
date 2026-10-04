@@ -35,7 +35,18 @@ export function vectorArrowLengthPx(magnitude: number): number {
   return Math.min(ARROW_MAX_PX, Math.max(ARROW_MIN_PX, ARROW_SCALE_PX * Math.sqrt(magnitude)))
 }
 
-export type ArrowKind = 'weight' | 'applied' | 'normal' | 'initial-velocity' | 'tension' | 'elastic'
+export type ArrowKind = 'weight' | 'applied' | 'normal' | 'initial-velocity' | 'velocity' | 'acceleration' | 'tension' | 'elastic'
+
+export const VECTOR_COLORS: Record<ArrowKind, string> = {
+  weight: '#2e7d32',
+  applied: '#d97742',
+  normal: '#1565c0',
+  'initial-velocity': '#43a047',
+  velocity: '#43a047',
+  acceleration: '#c62828',
+  tension: '#6a1b9a',
+  elastic: '#00838f',
+}
 
 export interface OverlayArrow {
   from: { x: number; y: number }
@@ -78,20 +89,41 @@ export function appliedArrows(view: Scene, pixelsPerMeter: number): OverlayArrow
   return out
 }
 
-export function initialVelocityArrows(view: Scene, pixelsPerMeter: number): OverlayArrow[] {
+export function velocityArrows(view: Scene, states: ReadonlyMap<string, BodyState> | null, pixelsPerMeter: number): OverlayArrow[] {
   const out: OverlayArrow[] = []
   for (const body of view.bodies) {
     if (body.fixed) continue
-    const vx = body.vx ?? 0
-    const vy = body.vy ?? 0
+    const state = states?.get(body.id)
+    if (states !== null && !state) continue
+    const vx = state ? state.linvel.x : body.vx ?? 0
+    const vy = state ? state.linvel.y : body.vy ?? 0
     const magnitude = Math.hypot(vx, vy)
     if (magnitude === 0) continue
     const lenM = vectorArrowLengthPx(magnitude) / pixelsPerMeter
     out.push({
-      from: { x: body.position.x, y: body.position.y },
+      from: { ...(state?.position ?? body.position) },
       vec: { x: (lenM * vx) / magnitude, y: (lenM * vy) / magnitude },
-      kind: 'initial-velocity',
-      key: `initial-velocity:${body.id}`,
+      kind: states === null ? 'initial-velocity' : 'velocity',
+      key: `${states === null ? 'initial-velocity' : 'velocity'}:${body.id}`,
+    })
+  }
+  return out
+}
+
+export function accelerationArrows(view: Scene, accelerations: ReadonlyMap<string, Vec2>, pixelsPerMeter: number): OverlayArrow[] {
+  const out: OverlayArrow[] = []
+  for (const body of view.bodies) {
+    if (body.fixed) continue
+    const acceleration = accelerations.get(body.id)
+    if (!acceleration) continue
+    const magnitude = Math.hypot(acceleration.x, acceleration.y)
+    if (magnitude === 0) continue
+    const lenM = vectorArrowLengthPx(magnitude) / pixelsPerMeter
+    out.push({
+      from: { ...body.position },
+      vec: { x: (lenM * acceleration.x) / magnitude, y: (lenM * acceleration.y) / magnitude },
+      kind: 'acceleration',
+      key: `acceleration:${body.id}`,
     })
   }
   return out
@@ -229,6 +261,8 @@ const SYMBOL_KEY: Record<ArrowKind, I18nKey> = {
   tension: 'vector.tension',
   elastic: 'vector.elastic',
   'initial-velocity': 'vector.initialVelocity',
+  velocity: 'vector.velocity',
+  acceleration: 'vector.acceleration',
 }
 
 /** The n-th of a symbol: `,n` after a subscript already open (`F_el,2`), else `_n` (`T_2`). */
