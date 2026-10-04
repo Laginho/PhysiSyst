@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -50,3 +50,10 @@ Com o grupo forças do Foco desligado (PHY-78, quando existir) as setas da sonda
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: independente de A–F; sonda = simulador descartável do mesmo documento pelo caminho de construção de `replaceScene`, um `TIMESTEP`, ler contatos e trações, liberar, desenhar em t = 0 junto do que já existe; o mundo vivo nunca é tocado; recalcular só em edições estruturais em t = 0.
 - Planner: `probeInitial` como método síncrono do `Simulator`, com `dispose` no `RapierSimulator`; o `path` da leitura da sonda é descartado para a seta de T cair no caminho do documento; o resultado vale também com o cursor em 0; a leitura de T do painel em t = 0 fica fora do escopo (spec, "Fora de escopo").
+
+#### Stage 2 — costuras e primeiro vermelho (2026-10-04)
+
+- Costuras aprovadas: API pública do `Simulator` em `contacts.test.ts`; DOM e canvas reais do App com simulador falso em `App.test.ts`.
+- Chamadores examinados antes dos testes: `paint` via `repaint` (resize, seleção, idioma, documento, transporte e rAF); `ensureSim` via mount, play, step e retry; `dispatch(reset)` via reinício, edição no registro 0 e transições de cena; `syncWorld` via step/rAF. `readContacts` e `readConstraints` também alimentam gravação, painéis e energia; a sonda não substitui essas leituras.
+- Fronteiras a preservar: documento vazio; massa dinâmica inválida com mundo vivo ainda utilizável; boot pendente e erro da sonda; edição ao vivo após rebuild estrutural pendente; cursor 0 e registros posteriores; caminho de corda e F_el do documento/mundo vivo.
+- Vermelho da API: `npm test -- src/sim/contacts.test.ts` → **5 failed | 12 passed (17)**, os cinco novos testes com `TypeError: sim.probeInitial is not a function`. Nenhum código de produção alterado.

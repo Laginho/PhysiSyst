@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { assignPairRestitutions, createSimulator } from './simulator'
 import type { Scene } from '../scene'
+import { groundBody } from '../persistence'
+import { presetById } from '../presets'
 
 describe('assignPairRestitutions', () => {
   function solve(pairs: Array<[string, string, number | undefined]>) {
@@ -94,5 +96,72 @@ describe('readContacts', () => {
     const sim = await createSimulator(scene)
     sim.step()
     expect(sim.readContacts()).toEqual([])
+  })
+})
+
+describe('probeInitial (PHY-82)', () => {
+  const restingScene = (): Scene => ({
+    version: 1, constants: { g: 9.81 }, forces: [], contacts: [],
+    bodies: [
+      groundBody(),
+      { id: 'caixa', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 6, y: 0.5 }, rotation: 0 },
+    ],
+  })
+
+  it('reports a unit vertical normal for a box resting on the ground before live steps', async () => {
+    const scene = restingScene()
+    const sim = await createSimulator(scene)
+    const contacts = sim.probeInitial(scene).contacts
+    expect(contacts.length).toBeGreaterThan(0)
+    for (const contact of contacts) {
+      expect(new Set([contact.aId, contact.bId])).toEqual(new Set(['chao', 'caixa']))
+      expect(Math.hypot(contact.normal.x, contact.normal.y)).toBeCloseTo(1, 6)
+      expect(Math.abs(contact.normal.y)).toBeGreaterThan(0.99)
+    }
+  })
+
+  it('reports the initial taut Atwood tension within 15 percent of 23.54 N', async () => {
+    const scene = presetById('atwood')!.buildScene()
+    const sim = await createSimulator(scene)
+    const rope = sim.probeInitial(scene).constraints.find(state => state.id === 'corda')
+    expect(rope?.kind).toBe('rope')
+    if (rope?.kind !== 'rope') throw new Error('missing corda reading')
+    expect(Math.abs(rope.tension - 23.54)).toBeLessThanOrEqual(0.15 * 23.54)
+    expect(rope.slack).toBe(false)
+  })
+
+  it('repeats twenty probes without changing the live poses, contacts or constraint readings', async () => {
+    const scene = presetById('atwood')!.buildScene()
+    const sim = await createSimulator(scene)
+    const states = sim.readStates()
+    const constraints = sim.readConstraints()
+    const warnings = [...sim.warnings]
+    expect(sim.readContacts()).toEqual([])
+    const first = sim.probeInitial(scene)
+    for (let i = 0; i < 20; i++) {
+      expect(sim.probeInitial(scene)).toEqual(first)
+      expect(sim.readStates()).toEqual(states)
+      expect(sim.readContacts()).toEqual([])
+      expect(sim.readConstraints()).toEqual(constraints)
+      expect(sim.warnings).toEqual(warnings)
+    }
+  })
+
+  it('ignores an invalid dynamic mass and leaves the live simulator usable', async () => {
+    const scene = restingScene()
+    const sim = await createSimulator(scene)
+    const states = sim.readStates()
+    const invalid: Scene = { ...scene, bodies: scene.bodies.map(body => body.fixed ? body : { ...body, mass: 0 }) }
+    expect(sim.probeInitial(invalid)).toEqual({ contacts: [], constraints: [] })
+    expect(sim.readStates()).toEqual(states)
+    expect(() => sim.step()).not.toThrow()
+  })
+
+  it('supports an empty scene without touching an unrelated live scene', async () => {
+    const sim = await createSimulator(restingScene())
+    const states = sim.readStates()
+    const empty: Scene = { version: 1, constants: { g: 0 }, bodies: [], forces: [], contacts: [] }
+    expect(sim.probeInitial(empty)).toEqual({ contacts: [], constraints: [] })
+    expect(sim.readStates()).toEqual(states)
   })
 })
