@@ -76,3 +76,5 @@ Hoje a barra de transporte, o painel do gráfico e a paleta são irmãos da caix
 | translates both sizer labels… | títulos literais sem tradução | expected `'controls.sizeTitle'` to be `'Tamanho dos controles: 100%'` |
 
 - Rodada ampliada de App/persistência/i18n: 245 passed e dois testes PHY-44 desconectados pelo sandbox. Reexecução dos mesmos dois testes com permissão para o Chromium: **2 passed, 164 skipped (166)**. As próximas verificações com browser rodam com essa permissão.
+
+- 2026-10-04 Correção do harness do teste de 402 px (commit exclusivo de testes): o seletor inicial media `button, label, input`, mas não o `span` da leitura de velocidade. Um slider inflexível de 129 px deixava esse span vazar e sobrevivia. O teste agora confirma zoom 1,6 e mede todos os descendentes. A mesma mutação na produção (`style={{ width: 129, flexShrink: 0 }}` no slider de velocidade) produz **1 failed, 23 skipped (24)**: `expected 44.609375 to be less than or equal to 1`. Mutação removida; o contrato não mudou.

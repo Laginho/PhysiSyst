@@ -95,6 +95,7 @@ describe('canvas dock geometry (PHY-76)', () => {
       await session.drag(from, { x: from.x - 3000 / ppm, y: from.y })
       await enlarge(session)
       const g = await measure(session)
+      expect(g.zoom).toBe(1.6)
       expect(g.canvas.width).toBe(404)
       expect(g.dock.width).toBe(404)
       expect(g.bigger.left).toBeGreaterThanOrEqual(g.dock.left)
@@ -103,7 +104,7 @@ describe('canvas dock geometry (PHY-76)', () => {
       const overflow = await session.evaluate<number>(`(() => {
         const scaled = [...document.querySelectorAll('div')].find(el => el.style.zoom);
         const right = scaled.getBoundingClientRect().right;
-        return Math.max(...[...scaled.querySelectorAll('button, label, input')].map(el => el.getBoundingClientRect().right - right));
+        return Math.max(...[...scaled.querySelectorAll('*')].map(el => el.getBoundingClientRect().right - right));
       })()`)
       expect(overflow).toBeLessThanOrEqual(1)
     })
