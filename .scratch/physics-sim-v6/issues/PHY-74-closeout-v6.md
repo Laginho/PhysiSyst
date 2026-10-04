@@ -1,5 +1,5 @@
 # PHY-74: Closeout v6: testes de E_mec, 0.6.0, FINAL_REPORT
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-69, PHY-73
 Review: human
@@ -71,3 +71,33 @@ Passe manual desktop (registrar OK/defeito por item):
 - Evidence outside repo: `%TEMP%/PHY-74-desktop.mjs`, `PHY-74-desktop.log`, `PHY-74-desktop-results.json`, and `PHY-74-*.png`. Initial harness selector mismatch was corrected to include the gallery button's description; a second complete run also captured English panel text. No application source or tests changed in this resumption.
 - Resumed gate, one sequential run: `npm test -- --maxWorkers=2` **1094 passed / 33 files passed**, no skips/failures, 72.70 s; lint **0 warnings**; typecheck/build exit 0. Log `%TEMP%/PHY-74-gate-resume.log`; counts filtered from it. Build: 52 modules, entry 306.32 kB, physics 2136.50 kB; existing >500 kB advisory recorded in the report. Redirected npm stderr notices appear as PowerShell `NativeCommandError` records despite successful command exit codes.
 - Final scope check: only report and ticket changed in this resumption; test-only commit 8fc30c5 remains separate, versions remain 0.6.0, ledger contains exactly PHY-67–73 and awaits stage-3 closure for PHY-74. Independent review/merge is the next session; no stage-3 work performed here.
+
+#### Resolution (2026-10-03)
+
+Verdict: Approve
+
+- First stage-3 review covered the entire `29a13ae...6d9d1d4` diff and every commit, with independent Standards and Spec agents. Rebased onto session base `29a13ae`; conflicts affected only this ticket's history and Stage line. Implementation evidence and proxy/foreman records were preserved. Rebased HEAD `bac8556` has the same tree as reviewed HEAD `6d9d1d4`.
+- Merged locally without squash into `sweatshop/2026-10-03-1618` as `c70c462`, whose tree exactly matches validated HEAD `bac8556`. Resolution, ledger line, `Stage: done` and final report wording are committed together on the session. `Review: human` remains for the session PR. Delivered files: `src/presets/presets.test.ts`, `package.json`, `package-lock.json`, `FINAL_REPORT.md`, v6 ledger and ticket.
+
+##### Standards
+
+No reopen-level finding or material baseline smell. Scope is limited to Primary files and the workflow's ticket record. Test-only commit `3d4c4d6` precedes delivery commit `629480c`; delivery and documentation commit `bac8556` touch no tests. The new tests use preset → codec → real simulator → `systemEnergy`, with per-test mutation evidence. Dependencies and production logic are unchanged.
+
+One nonblocking convention finding was corrected during rebase: original commits `8fc30c5` and `86ca45e` omitted explanatory bodies. Replacements `3d4c4d6` and `629480c` now state why and cite PHY-74. Report wording was refreshed for closure. No unrelated refactor or generated artifact is included.
+
+##### Spec
+
+No missing requirement, scope creep, incorrect implementation or actual regression found.
+
+1. ✅ Projectile: every frame 1–60 satisfies the 0.5% bound, with a nonempty contact-free endpoint and initial launch contact covered.
+2. ✅ Pendulum: all 601 observations cover the initial state and 600 steps at 2%.
+3. ✅ Package and both root lockfile versions are `0.6.0`; dependencies are unchanged.
+4. ✅ Report contains all five blocks, PHY-67–74 scope rows, the v5 note, required limitations/v7 steps, and eight desktop results. Script, rendered readings, paint text, log and inspected collision/pendulum/English graph PNGs support the observations. Small pendulum exchange on the shared axis is disclosed.
+5. ✅ One complete independent sequential gate passed outside the sandbox: **33 files / 1094 tests passed**, no skips/failures; lint **0 warnings**, typecheck/build exit 0. Counts and four exits were filtered from `%TEMP%/PHY-74-review-gate-elevated.log` (79.36 s). Two-worker mitigation is command-only. Vite built 52 modules; the existing >500 kB advisory remains. Earlier sandbox run: **1077 passed / 17 failed**, all `Chromium disconnected`, chain stopped before lint; `%TEMP%/PHY-74-review-gate.log` preserves it.
+6. ✅ Exactly one prerequisite ledger entry exists per PHY-67–73, all `done`; this closure adds PHY-74 with merge `c70c462`.
+
+- Both existing `Proxy decided` lines were examined: conservation windows/tolerances and 0.6.0 closeout; then the headless desktop procedure using real UI/CDP events, rendered readings and screenshots. No new proxy decision or criterion change.
+- Callers/failure paths/interactions examined: `byId/load/run`, preset builders and codec, simulator state/contact/constraint/pulley readouts, energy calculations, App capture/readout/replay/reset, graph series/paint/seek, resize and locale. Boundaries include launch contact, observation windows, fixed-body exclusion and empty optional readouts; interactions include landing restitution, rope projection and recorded-frame energy. Pending/failed rebuild behavior remains documented in CLEAN-30. Human interactive repetition, mobile/other browsers, CI/deployment and physics outside the contracted windows were not re-audited; the full suite covers unchanged application paths.
+- Independent mutate-verify changed production `bodyEnergy.Epg` gravity to 0: **2 failed / 28 skipped (30)**, exit 1. Projectile red: `frame 1: expected 0.9676328953628399 to be less than or equal to 0.25`. Pendulum red: `expected 0 to be greater than 0` (positive-initial-energy guard). Byte-for-byte restoration then gave **2 passed / 28 skipped (30)**, exit 0. Logs: `%TEMP%/PHY-74-review-mutation.log` and `%TEMP%/PHY-74-review-focused.log`. Validation left no production/test edits.
+
+Findings: Standards **1 convention finding corrected, 0 unresolved**; Spec **0 findings**.

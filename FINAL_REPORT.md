@@ -285,7 +285,7 @@ Following the v4 spec's roadmap (*Depois da v4*):
 
 # physics-sim v6 — Energy, momentum and graphs
 
-**PHY-74, 2026-10-03 — desktop pass complete; independent review pending.** Version advances directly from 0.4.0 to 0.6.0. v5 (PHY-58–PHY-66) had neither a version bump nor its own report section; its specification, tickets and ledger remain in [.scratch/physics-sim-v5/](.scratch/physics-sim-v5/).
+**PHY-74, 2026-10-03 — independently reviewed and closed locally on the session branch.** Version advances directly from 0.4.0 to 0.6.0. v5 (PHY-58–PHY-66) had neither a version bump nor its own report section; its specification, tickets and ledger remain in [.scratch/physics-sim-v5/](.scratch/physics-sim-v5/).
 
 ## Scope Delivered
 
@@ -298,13 +298,14 @@ Following the v4 spec's roadmap (*Depois da v4*):
 | PHY-71 | Body and system energy/momentum readouts. |
 | PHY-72 | Collapsible recording graphs for position, velocity, acceleration, energy and momentum. |
 | PHY-73 | Graph click/drag seeks the recording and pauses playback; available graph types follow body selection. |
-| PHY-74 | Conservation tests, version 0.6.0 and completed desktop verification recorded below; independent review remains pending. |
+| PHY-74 | Conservation tests, version 0.6.0, eight desktop observations and independent review. |
 
-The v6 ledger contains one closing entry for each of PHY-67–PHY-73. PHY-74 receives its entry only when stage 3 closes it.
+The v6 ledger contains one closing entry for each of PHY-67–PHY-74.
 
 ## Gate Outcomes
 
-- **1094 tests / 33 files passed**, no skips or failures; lint **0 warnings**, typecheck and build exit 0. The resumed closeout passed one complete sequential run of `npm test -- --maxWorkers=2`, `npm run lint`, `npm run typecheck`, `npm run build`, using the command-only two-worker mitigation already recorded for PHY-72/73. Counts were extracted from `%TEMP%/PHY-74-gate-resume.log`, outside the repository (test duration 72.70 s). No configuration changed. The earlier successful run is retained at `%TEMP%/PHY-74-gate-workers2.log`.
+- **1094 tests / 33 files passed**, no skips or failures; lint **0 warnings**, typecheck and build exit 0. Independent stage 3 passed one complete sequential run of `npm test -- --maxWorkers=2`, `npm run lint`, `npm run typecheck`, `npm run build` outside the sandbox, using the command-only two-worker mitigation already recorded for PHY-72/73. Counts and exit codes were filtered from `%TEMP%/PHY-74-review-gate-elevated.log`, outside the repository (test duration 79.36 s). No configuration changed. Earlier successful runs remain at `%TEMP%/PHY-74-gate-resume.log` (72.70 s) and `%TEMP%/PHY-74-gate-workers2.log`.
+- The independent review's sandbox attempt passed 1077 tests and failed 17, all with `Chromium disconnected`; its chain stopped before lint. The complete run outside the sandbox passed on identical source. The failed environment run remains at `%TEMP%/PHY-74-review-gate.log`.
 - The preceding unrestricted-worker attempt passed 1093 tests and failed one browser setup assertion (slider remained at 0 instead of the prepared 60 frames); lint/typecheck/build did not run in that failed chain. Its output is retained separately in `%TEMP%/PHY-74-gate.log`.
 - Build: 52 modules; entry 306.32 kB (gzip 94.55 kB), lazy physics chunk 2136.50 kB (gzip 811.26 kB). The resumed build emitted the existing >500 kB chunk-size advisory; it exited 0. PowerShell also labels npm's stderr notices `NativeCommandError` in the redirected log; all four command exit codes were 0. No new CI/deployment run is claimed.
 
@@ -336,6 +337,6 @@ The two new conservation tests call the actual preset, codec, simulator and `sys
 
 ## Next Steps
 
-- Complete the independent PHY-74 review before closing v6; the eight desktop observations are recorded above.
+- Review the session PR before publishing v6; PHY-74 is closed locally with independent review and the eight desktop observations recorded above.
 - v7: normal/friction magnitudes, work and dissipation, graph export.
 - Specify CLEAN-30's pending-rebuild readout behavior.
