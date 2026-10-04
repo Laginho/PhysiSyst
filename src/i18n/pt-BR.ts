@@ -207,6 +207,7 @@ export const ptBR = {
   'vector.elastic': 'F_el',
   'vector.initialVelocity': 'v₀',
   'vector.velocity': 'v',
+  'vector.acceleration': 'a',
   'lang.label': 'idioma',
   'lang.pt-BR': 'português',
   'lang.en': 'english',
