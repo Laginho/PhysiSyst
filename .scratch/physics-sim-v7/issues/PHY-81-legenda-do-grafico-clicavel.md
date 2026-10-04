@@ -51,6 +51,23 @@ Hoje a legenda é texto pintado no canto superior direito do canvas do gráfico,
 
 ## Comments
 
+#### Evidência de mutação das costuras DOM/browser (Stage 2, 2026-10-04)
+
+Todos os arquivos de produção foram restaurados em `finally` após cada lote. Comando DOM: `npm test -- src/App.test.ts -t '<nome do teste>'`.
+
+| Novo teste | Mutação de produção | Saída vermelha observada |
+| --- | --- | --- |
+| `shows localized accessible energy curves ... in pt-BR` | `<sub>` substituído por `<span>` na legenda | `expected [ undefined, undefined, undefined ] to deeply equal [ 'c', 'pg', 'mec' ]` |
+| `shows localized accessible energy curves ... in en` | Mesma remoção dos subscritos HTML | Mesma saída; lote: **2 failed, 215 skipped (217)** |
+| `keeps hidden curves per kind, autosaves ...` | Removido `...focus?.hidden` ao alternar uma curva, apagando preferências de outros tipos | Ao voltar a energia: `expected 'true' to be 'false'`; **1 failed, 216 skipped (217)** |
+| `opens stored hidden curves ...` | `const visible = true`, ignorando o Foco salvo | `expected 'true' to be 'false'` para `E_pg` na abertura; **1 failed, 216 skipped (217)** |
+| `keeps preset hidden curves only ...` | `editFocus` passou a chamar `copyOpenPreset()` | `expected 'cena-2' to be 'preset:free-fall'`; **1 failed, 216 skipped (217)** |
+| `PHY-81 toggles current graph visibility at record five and zero ...` | `toggleGraphCurve` retornava sem editar quando `cursor > 0` | No registro 5: `expected 'true' to be 'false'`; **1 failed, 216 skipped (217)** |
+| `PHY-81 removes hidden curve pixels ...` | `repaintGraph` passou `undefined` ao filtro de curvas | Depois do clique: `expected 1976 to be +0`; **1 failed, 26 skipped (27)** |
+| Mesmo teste Chromium, caminho histórico | Filtro passou a ler `displayedScene().focus` em vez de `docRef.current.focus` | Depois de confirmar slider 5: `expected 1971 to be +0`; **1 failed, 26 skipped (27)** |
+
+- Teste browser também executado contra `src/App.tsx` do HEAD anterior à legenda HTML: **1 failed, 26 skipped (27)**, `Cannot read properties of undefined (reading 'click')`, pois não havia botão `E_pg`. O commit exclusivo de teste não inclui produção. No sandbox o Chromium desconectou; executado fora do sandbox, usando o harness existente, passou **1 passed, 26 skipped (27)** com pixels, tolerância ±5%, geometria e histórico reais. DOM sem mutações: **6 passed, 211 skipped (217)**.
+
 - Segunda fatia, DOM: `npm test -- src/App.test.ts -t 'PHY-81'` — **6 failed, 211 skipped (217)**, todos com `HTML graph legend: expected null not to be null`. Dois casos de localização, isolamento por tipo/autosave/restauração, reabertura de curvas salvas/composição com chips, preset sem cópia e cursor 5/0 sem undo/step/reset. Testes chamam a interface do App e a persistência real; o simulador é o falso já usado pelo harness. Produção do App ainda inalterada neste commit.
 - Renderer restaurado após quatro mutações: cor de `E_pg` igual à de `E_c` → `expected '#2563eb' to be '#c2410c'`; filtro removido → lista com 3 em vez de 2 e escala [-10, 0, 210] em vez de [-0.5, 0, 10.5]; eixo vazio anterior → [-0.05, 0, 0.05] em vez de [-1, 0, 1]; legenda `fillText('E_pg')` recolocada → `expected true to be false`. Verde: **11 passed (11)** em `src/render/graph.test.ts`.
 

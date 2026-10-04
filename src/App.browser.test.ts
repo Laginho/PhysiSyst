@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { withBrowserSession } from './test/browser'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld } from './render/transform'
 import { ptBR } from './i18n/pt-BR'
+import { colorOf } from './render/graph'
 
 describe('canvas dock geometry (PHY-76)', () => {
   type Session = import('./test/browser').BrowserSession
@@ -154,6 +155,64 @@ describe('canvas dock geometry (PHY-76)', () => {
     })
   }, 30000)
 })
+
+it('PHY-81 removes hidden curve pixels, preserves neighboring colors and contains the HTML legend', async () => {
+  await withBrowserSession(1920, 25000, async session => {
+    await session.reset()
+    await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['scenes.galleryOpen'])})?.click()`)
+    await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.querySelector('strong')?.textContent === ${JSON.stringify(ptBR['preset.free-fall.name'])}).click()`)
+    await session.select(6, 7)
+    expect(await session.selectedLegends()).toContain('bola')
+    await session.evaluate(`(() => {
+      const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text);
+      button(${JSON.stringify(ptBR['graph.toggle'])}).click();
+      for (let i = 0; i < 60; i++) button(${JSON.stringify(ptBR['playback.step'])}).click();
+    })()`)
+    await session.evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    expect(await session.evaluate<string>('document.querySelector(\'input[type="range"][min="0"]\').value')).toBe('60')
+    const pixels = () => session.evaluate<number[]>(`(() => {
+      const canvas = document.querySelector('#recording-graph canvas');
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      const colors = ${JSON.stringify(['E_pg', 'E_c'].map(colorOf))}.map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+      return colors.map(rgb => {
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] && Math.hypot(data[i] - rgb[0], data[i + 1] - rgb[1], data[i + 2] - rgb[2]) <= 40) count++;
+        }
+        return count;
+      });
+    })()`)
+    const before = await pixels()
+    expect(before[0]).toBeGreaterThan(0)
+    expect(before[1]).toBeGreaterThan(0)
+    await session.evaluate(`[...document.querySelectorAll('#recording-graph [aria-label="curvas do gráfico"] button')].find(b => b.querySelector('sub')?.textContent === 'pg').click()`)
+    await session.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    const after = await pixels()
+    expect(after[0]).toBe(0)
+    expect(after[1]).toBeGreaterThanOrEqual(before[1] * 0.95)
+    expect(after[1]).toBeLessThanOrEqual(before[1] * 1.05)
+    const geometry = await session.evaluate<{ panel: DOMRect; legend: DOMRect }>(`(() => {
+      const panel = document.querySelector('#recording-graph').getBoundingClientRect();
+      const legend = document.querySelector('#recording-graph [aria-label="curvas do gráfico"]').getBoundingClientRect();
+      return { panel: panel.toJSON(), legend: legend.toJSON() };
+    })()`)
+    expect(geometry.legend.left).toBeGreaterThanOrEqual(geometry.panel.left)
+    expect(geometry.legend.top).toBeGreaterThanOrEqual(geometry.panel.top)
+    expect(geometry.legend.right).toBeLessThanOrEqual(geometry.panel.right)
+    expect(geometry.legend.bottom).toBeLessThanOrEqual(geometry.panel.bottom)
+    expect(geometry.panel.right - geometry.legend.right).toBeLessThanOrEqual(8)
+    // Hidden names belong to today's Focus even when displaying an older frame.
+    await session.evaluate(`(() => {
+      const slider = document.querySelector('input[type="range"][min="0"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '5');
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      slider.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    await session.evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    expect(await session.evaluate<string>('document.querySelector(\'input[type="range"][min="0"]\').value')).toBe('5')
+    expect((await pixels())[0]).toBe(0)
+  })
+}, 30000)
 
 it('PHY-73 seeks from a real graph click to the expected slider index', async () => {
   await withBrowserSession(1920, 25000, async session => {
