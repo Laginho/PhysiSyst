@@ -302,6 +302,8 @@ Following the v4 spec's roadmap (*Depois da v4*):
 
 The v6 ledger contains one closing entry for each of PHY-67–PHY-74.
 
+**CLEAN-30 correction (2026-10-04):** while booting or awaiting a structural rebuild/retry, energy and momentum use the displayed document's initial state, including spring strain. Valid recorded frames retain their captured readings. The correction's full gate passed 1100 tests / 33 files, lint, typecheck and build; evidence is recorded in the CLEAN-30 ticket.
+
 ## Gate Outcomes
 
 - **1094 tests / 33 files passed**, no skips or failures; lint **0 warnings**, typecheck and build exit 0. Independent stage 3 passed one complete sequential run of `npm test -- --maxWorkers=2`, `npm run lint`, `npm run typecheck`, `npm run build` outside the sandbox, using the command-only two-worker mitigation already recorded for PHY-72/73. Counts and exit codes were filtered from `%TEMP%/PHY-74-review-gate-elevated.log`, outside the repository (test duration 79.36 s). No configuration changed. Earlier successful runs remain at `%TEMP%/PHY-74-gate-resume.log` (72.70 s) and `%TEMP%/PHY-74-gate-workers2.log`.
@@ -331,7 +333,6 @@ The two new conservation tests call the actual preset, codec, simulator and `sys
 - Rapier 0.20 exposes no restitution velocity threshold here: a ball with `e = 1` keeps bouncing.
 - Undeclared pairs whose bodies participate in other positive-restitution pairs inherit `r_a · r_b`, the accepted residual deviation described in ADR-0005, analogous to friction.
 - Normal and friction forces still lack magnitude readouts; their representation remains directional.
-- Energy/momentum can temporarily reflect the previous world while a structural rebuild is pending or fails; CLEAN-30 records the reproductions and awaits a stage-1 contract.
 - Numerical rope projection can dissipate energy in fast swings (ADR-0004); the conservation checks establish only the stated preset windows and tolerances.
 - The lazy Rapier chunk remains large (about 2.14 MB before gzip).
 
@@ -339,4 +340,3 @@ The two new conservation tests call the actual preset, codec, simulator and `sys
 
 - Review the session PR before publishing v6; PHY-74 is closed locally with independent review and the eight desktop observations recorded above.
 - v7: normal/friction magnitudes, work and dissipation, graph export.
-- Specify CLEAN-30's pending-rebuild readout behavior.

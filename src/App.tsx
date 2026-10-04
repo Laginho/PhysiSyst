@@ -1005,12 +1005,24 @@ export default function App() {
       const scene = displayedScene()
       const cursor = playbackRef.current.cursor
       const frame = cursor === null ? liveFrameRef.current : recordingRef.current!.at(cursor)!
+      // A pending/failed rebuild (or boot) leaves no valid energy frame for
+      // this document. Derive its initial state without publishing fake
+      // constraint readings or replacing valid historical snapshots.
+      const fromDocument = !frame.states || (pendingRebuildRef.current && (cursor === null || cursor === 0))
+      const energyStates = fromDocument ? new Map<string, BodyState>(scene.bodies.map(b => [b.id, {
+        position: b.position, rotation: b.rotation,
+        linvel: { x: b.vx ?? 0, y: b.vy ?? 0 }, angvel: 0,
+      }])) : frame.states!
+      const energyConstraints: ConstraintState[] = fromDocument
+        ? (scene.constraints ?? []).filter((c): c is Spring => c.kind === 'spring').map(c => ({
+          id: c.id, kind: 'spring', dx: springDx(scene, c), force: { a: 0, b: 0 },
+        })) : frame.constraints
       const body = scene.bodies.find(b => b.id === sel)
-      const state = body && frame.states?.get(body.id)
+      const state = body && energyStates.get(body.id)
       setEnergyReadout({
         body: body && state ? bodyEnergy(scene, body, state) : null,
-        system: frame.states && scene.bodies.some(b => !b.fixed)
-          ? systemEnergy(scene, frame.states, frame.constraints, frame.pulleys) : null,
+        system: scene.bodies.some(b => !b.fixed)
+          ? systemEnergy(scene, energyStates, energyConstraints, fromDocument ? [] : frame.pulleys) : null,
         hasSpring: (scene.constraints ?? []).some(c => c.kind === 'spring'),
       })
       if (!sel) {
