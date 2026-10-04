@@ -278,3 +278,87 @@ describe('recorded replay (PHY-65)', () => {
     }
   })
 })
+
+describe('full recording pauses transport (PHY-77)', () => {
+  it.each([
+    [600, 1, 0, 0, 'paused', 0],
+    [601, 0.25, 0.5, 0, 'paused', 0],
+    [599, 2, 0, 1, 'paused', 0],
+    [598, 2, 0, 2, 'paused', 0],
+    [597, 2, 0, 2, 'playing', 0],
+    [599, 0.5, 0, 0, 'playing', 0.5],
+    [599, 1.75, 0, 1, 'paused', 0],
+  ] as const)('frame with length %s, speed %s and accumulator %s stops at the cap', (length, speed, acc, steps, status, remainder) => {
+    const state = { ...initialPlayback(speed), status: 'playing' as const, acc, stepsTaken: length - 1 }
+    expect(advance(state, { type: 'frame', length })).toEqual({
+      state: { ...state, status, acc: remainder, stepsTaken: state.stepsTaken + steps }, steps, rebuild: false,
+    })
+  })
+
+  it.each([600, 601])('play at the full live tip of length %s leaves paused state untouched', (length) => {
+    const state = { ...initialPlayback(), acc: 0.5, stepsTaken: 599 }
+    const action = { type: 'play' as const, length }
+    expect(advance(state, action)).toEqual({ state, steps: 0, rebuild: false })
+    expect(advance(state, action).state).toBe(state)
+  })
+
+  it.each([599, undefined])('play below the cap or without length (%s) still starts playback', (length) => {
+    const state = { ...initialPlayback(), acc: 0.5 }
+    const action = { type: 'play' as const, length }
+    expect(advance(state, action)).toEqual({ state: { ...state, status: 'playing', acc: 0 }, steps: 0, rebuild: false })
+  })
+
+  it.each(['paused', 'playing'] as const)('stepOnce at the full live tip preserves %s state and credit', (status) => {
+    const state = { ...initialPlayback(), status, acc: 0.75, stepsTaken: 599 }
+    expect(advance(state, { type: 'stepOnce', length: 600 })).toEqual({ state, steps: 0, rebuild: false })
+    expect(advance(state, { type: 'stepOnce', length: 600 }).state).toBe(state)
+  })
+
+  it('stepOnce filling the recording pauses and discards fractional credit', () => {
+    const state = { ...initialPlayback(), status: 'playing' as const, acc: 0.75, stepsTaken: 598 }
+    expect(advance(state, { type: 'stepOnce', length: 599 })).toEqual({
+      state: { ...state, status: 'paused', acc: 0, stepsTaken: 599 }, steps: 1, rebuild: false,
+    })
+  })
+
+  it.each([
+    [598, 1, 0, null, 'paused', 0],
+    [597, 2, 0, null, 'paused', 0],
+    [598, 2, 0, null, 'paused', 0],
+    [598, 1.75, 0, null, 'paused', 0],
+    [10, 1, 0, 11, 'playing', 0],
+    [598, 0.5, 0, 598, 'playing', 0.5],
+  ] as const)('full replay from %s at speed %s and accumulator %s spends no surplus on physics', (cursor, speed, acc, next, status, remainder) => {
+    const state = { ...initialPlayback(speed), status: 'playing' as const, cursor, acc, stepsTaken: 599 }
+    expect(advance(state, { type: 'frame', length: 600 })).toEqual({
+      state: { ...state, cursor: next, status, acc: remainder }, steps: 0, rebuild: false,
+    })
+  })
+
+  it('play allows replay inside a full recording', () => {
+    const state = { ...initialPlayback(), cursor: 590, stepsTaken: 599 }
+    const action = { type: 'play' as const, length: 600 }
+    expect(advance(state, action)).toEqual({ state: { ...state, status: 'playing' }, steps: 0, rebuild: false })
+  })
+
+  it.each(['paused', 'playing'] as const)('stepOnce reaches the last full record from %s without a live step', (status) => {
+    const state = { ...initialPlayback(), status, cursor: 598, acc: 0.75, stepsTaken: 599 }
+    expect(advance(state, { type: 'stepOnce', length: 600 })).toEqual({
+      state: { ...state, status: 'paused', cursor: null, acc: 0 }, steps: 0, rebuild: false,
+    })
+  })
+
+  it.each([1, 597, 598])('live transport below the cap (%s) preserves the existing action behavior', (length) => {
+    for (const status of ['paused', 'playing'] as const) {
+      const state = { ...initialPlayback(0.75), status, acc: 0.5, stepsTaken: 20 }
+      const actions = [
+        { type: 'play' }, { type: 'pause' }, { type: 'reset' }, { type: 'frame' },
+        { type: 'stepOnce' }, { type: 'setSpeed', speed: 1.5 },
+      ] as const
+      for (const action of actions) expect(advance(state, { ...action, length })).toEqual(advance(state, action))
+      expect(advance(state, { type: 'seek', index: length - 1, length })).toEqual({
+        state: { ...state, status: 'paused', acc: 0 }, steps: 0, rebuild: false,
+      })
+    }
+  })
+})

@@ -1,5 +1,5 @@
 # PHY-77: Pausar quando a gravação enche
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -50,6 +50,8 @@ No App: `togglePlay` e `stepOnce` passam `recordingRef.current!.length`; os bot�
 - `src/App.test.ts`: critérios 6 a 9 com `setupRecording` e o `requestAnimationFrame` controlado que o arquivo já usa; vermelhos hoje (`step` é chamado 610 vezes e não há aviso). Os dois testes que fixavam o comportamento antigo (:3333 e :3354) são reescritos no mesmo commit para a regra nova. Costura de DOM: registrar a mutação aplicada e a saída vermelha por teste novo.
 
 ## Comments
+
+- 2026-10-04 Stage 2: costuras aprovadas: `advance` direto e DOM do App com `setupRecording`. Chamadores examinados: dispatch e rAF do App; transportes de integração, aceleração e overlay que omitem `length` preservam o comportamento anterior. Limites cobertos: gravação inicial, crédito fracionário/zero, uma ou duas vagas restantes, `length` acima do cap, stepOnce já cheio, replay com crédito excedente e retomada após reset.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: ao encher, pausar no último passo com o aviso "gravação cheia (10 s) — reinicie"; na ponta cheia reproduzir e passo não fazem nada, slider e voltar um passo navegam, replay pausa de novo no fim, reiniciar apaga tudo; altera o critério 14 do PHY-64 e corrige o bug do slider em 10 s com a ponta em 15 s.
 - Planner: a regra fica em `advance` (puro), com `play` recebendo `length` opcional; o App só passa `length` e desabilita os dois botões na ponta cheia.
