@@ -1,5 +1,5 @@
 # PHY-80: Setas de v e a ao vivo
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -50,12 +50,12 @@ Hoje o canvas desenha v₀ só antes do primeiro passo e nunca desenha a acelera
 
 ## Comments
 
+- 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: depende de D1; v ao vivo usa o verde de v₀ e a substitui depois do primeiro passo; a ganha uma cor nova escolhida pelo implementador e lê a aceleração gravada, sem saída nova do motor; mesma regra 20·√módulo, mesmo clamp e mesmo escopo das setas de força.
+- Planner: `velocityArrows(view, states, ppm)` generaliza `initialVelocityArrows`; `accelerationArrows` recebe um mapa pronto para evitar import circular; `VECTOR_COLORS` em `overlay.ts` torna a distinção da cor testável.
+
 - Stage 2 harness correction: the scope test initially included a mass-label subscript `a` in its vector-symbol list. It now filters the canvas vector colors before checking symbols. This is a test-only correction; both initial/live scope cases remain red without acceleration integration.
 
 - Stage 2: the approved seams are the overlay producers/labels and App's canvas after transport/focus interactions. Callers inspected: paint's global and selected branches, vectorLabels, existing initial-velocity tests, repaint/showFrame, and getAcceleration's panel consumer. Empty/missing state maps, zero vectors, fixed bodies and the recording cursor at zero are covered. PHY-78 is done on the active session base.
-
-- 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: depende de D1; v ao vivo usa o verde de v₀ e a substitui depois do primeiro passo; a ganha uma cor nova escolhida pelo implementador e lê a aceleração gravada, sem saída nova do motor; mesma regra 20·√módulo, mesmo clamp e mesmo escopo das setas de força.
-- Planner: `velocityArrows(view, states, ppm)` generaliza `initialVelocityArrows`; `accelerationArrows` recebe um mapa pronto para evitar import circular; `VECTOR_COLORS` em `overlay.ts` torna a distinção da cor testável.
 
 #### Stage 2 mutation evidence (2026-10-04)
 
@@ -80,3 +80,5 @@ Implementation: `velocityArrows` uses null states for v₀ and simulated states 
 - Full gate `npm test && npm run lint && npm run typecheck && npm run build`: **exit 0**. Vitest: **33 files passed (33), 1274 tests passed (1274)**, including Chromium layout checks; ESLint and TypeScript passed; Vite built **52 modules**. Vite warns about chunks over 500 kB (the simulator chunk is 2,136.71 kB); this does not fail the build.
 - `git diff --check` passed. Final diff inspected for scope, regressions, temporary mutations and generated artifacts; `dist` is not tracked. Tests remain in their own commits; production commits do not touch test files.
 - Stage 2 stops at `to-review`; stage 3 reviews and integrates the branch into the session base.
+
+- 2026-10-04 Stage 3 documentation cleanup: README's vector list now includes live `v`/`a` and their displayed-record/initial-time behavior. Stage 2 comments were moved after the existing planner entries to preserve append order under `## Comments`. No source or test files changed.
