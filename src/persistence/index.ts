@@ -7,6 +7,24 @@ export const GALLERY_ACK_KEY = 'physics-sim:galleryAck'
 export const CURRENT_SCENE_KEY = 'physics-sim:currentScene'
 export const AUTOSAVE_DELAY_MS = 400
 export const CANVAS_SIZE_KEY = 'physics-sim:canvasSize'
+export const CONTROLS_SCALE_KEY = 'physics-sim:controlsScale'
+
+export function loadControlsScale(storage: Storage): number {
+  try {
+    const raw = storage.getItem(CONTROLS_SCALE_KEY)
+    if (raw === null || raw.trim() === '') return 1
+    const scale = Number(raw)
+    return Number.isFinite(scale) ? Math.round(Math.max(0.7, Math.min(1.6, scale)) * 10) / 10 : 1
+  } catch {
+    return 1
+  }
+}
+
+export function saveControlsScale(storage: Storage, scale: number): void {
+  try {
+    storage.setItem(CONTROLS_SCALE_KEY, String(scale))
+  } catch {}
+}
 
 export function loadCanvasSize(storage: Storage): number | null {
   try {
