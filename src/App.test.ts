@@ -284,7 +284,7 @@ describe('scene focus chips (PHY-78)', () => {
     })
   })
 
-  it('keeps preset focus in memory without creating a scene and restores it on reopening', async () => {
+  it('PHY-79 keeps preset focus in memory without creating a scene and restores its topic focus on reopening', async () => {
     vi.useFakeTimers()
     const host = renderApp()
     await settleSimImport()
@@ -299,14 +299,33 @@ describe('scene focus chips (PHY-78)', () => {
     act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
     expect(sceneSelect(host).value).toBe('preset:free-fall')
     expect(sceneSelect(host).selectedOptions[0]!.textContent).toBe(t('scenes.presetOption', { name: t('preset.free-fall.name') }))
-    expect(focusChip(host, 'forces').getAttribute('aria-pressed')).toBe('false')
+    expect(focusChip(host, 'forces').getAttribute('aria-pressed')).toBe('true')
     expect(loadIndex(window.localStorage)).toEqual(before)
     expect(window.localStorage.getItem('physics-sim:scene:preset:free-fall')).toBeNull()
     act(() => setSelectValue(sceneSelect(host), 'cena-1'))
     openPreset()
     expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
       focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
-    )).toEqual(['true', 'true', 'true', 'true'])
+    )).toEqual(['false', 'true', 'true', 'false'])
+  })
+
+  it('PHY-79 opens elastic collisions from the gallery with kinematics and momentum readouts', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    const gallery = panel(host, t('gallery.title'))!
+    const card = [...gallery.querySelectorAll('button')].find(button =>
+      button.querySelector('strong')?.textContent === t('preset.collision-elastic.name'),
+    )
+    expect(card).toBeDefined()
+    act(() => card!.click())
+    expect(sceneSelect(host).value).toBe('preset:collision-elastic')
+    expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+      focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+    )).toEqual(['false', 'true', 'false', 'true'])
+    const system = panel(host, t('readout.system'))
+    expect(system).toBeDefined()
+    expect(system!.textContent).toContain(t('readout.momentum'))
+    expect(system!.textContent).not.toContain(t('readout.mechanical'))
   })
 
   it.each([

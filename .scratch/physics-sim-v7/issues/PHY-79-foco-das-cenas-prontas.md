@@ -1,5 +1,5 @@
 # PHY-79: Foco das cenas prontas
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -50,3 +50,6 @@ Com o Foco explícito, a regra do PHY-78 para presets passa a ser observável: u
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu a tabela: princípios, atrito e pêndulo volta completa → forças; queda livre e projétil → cinemática + energia; colisões → cinemática + momento com |p| no painel; mola horizontal e amortecida → energia com E_pg escondida no gráfico; mola vertical e pêndulo simples → forças + energia.
 - Planner: `hidden` das molas horizontais é dado inerte até o PHY-81; o critério testa o dado, não o desenho.
+
+- 2026-10-04 Stage 2: base da sessão `sweatshop/2026-10-04-1243`, commit `ae93388`; PHY-78 está `done`. Costuras confirmadas pelo ticket: `presetById/buildScene`, codec e avisos; App pela galeria com simulador falso. Chamadores examinados: montagem/reload e `openGalleryPreset` no App; `createPresetScene` para cópias persistidas; galeria e testes de física. O novo dado não altera corpos, contatos, forças ou vínculos; as cenas sem `focus` ficam fixadas por 14 snapshots literais capturados do commit base. Casos distintos cobertos: presets com/sem vínculos, variantes compartilhadas de colisão, mola e pêndulo, e `hidden` exclusivo das molas horizontais.
+- 2026-10-04 Red antes da produção: `npm test -- src/presets/presets.test.ts src/App.test.ts -t PHY-79` → **16 failed, 15 passed, 241 skipped** (272 total). Os 14 testes de Foco receberam `undefined`; colisão recebeu chips `true,true,true,true` em vez de `false,true,false,true`; queda livre recebeu forças `false` depois do clique em vez de `true`. Os 14 snapshots sem Foco e a cobertura exata da tabela passaram. O teste anterior de reabertura foi atualizado para o padrão explícito deste ticket.
