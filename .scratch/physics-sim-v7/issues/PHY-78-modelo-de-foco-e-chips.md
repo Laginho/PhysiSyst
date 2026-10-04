@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -79,6 +79,8 @@ Ficam sempre: "passos", "velocidade" (da reprodução), a legenda da leitura, "s
 - `src/App.test.ts`: critérios 6 a 14 com o simulador falso e o mock de canvas que o arquivo já usa (os rótulos passam por `fillText`); vermelhos hoje (não há chips, `showGlobal` começa desligado). Costura de DOM: registrar a mutação aplicada e a saída vermelha por teste novo.
 
 ## Comments
+
+- 2026-10-04 Stage 2: costuras confirmadas pelo contrato: codec público, persistência pública, `routeDocChange` e App no DOM/canvas com simulador falso. Chamadores examinados antes dos testes: `parse` em `loadScene`, `loadSceneOrBlank` e `classifyImport`; `serialize` no autosave, exportação, comparação de payload e cópia de cenas; `blankScene` em criação e fallback de carga; `paint` no `repaint`, inclusive registro histórico. Fronteiras a preservar: `focus` ausente, `show: []`, `hidden` vazio/chaves arbitrárias, ambos energia/momento desligados, cenas sem corpos, cursor zero/passado/ponta, preset e campos de edição.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: `focus` opcional na `Scene`, ausente = tudo ligado, cena em branco com forças + energia + momento; fileira "mostrar: forças · cinemática · energia · momento" no topo do painel direito; forças = setas de força + leituras de força, cinemática = setas v/a + leituras cinemáticas, energia e momento só painel; setas independentes; "mostrar todos os vetores" vira escopo e nasce ligado; grupos valem para leitura do corpo e sistema, edição nunca filtrada; chips fora do undo e sem reset, salvos em cenas do usuário e só da sessão em presets; chips não filtram tipos do gráfico.
 - Planner: forma `{ show, hidden? }` com `show` canonizado; leitura de vínculo pertence a forças; "sistema" some com energia e momento desligados; a seta de F aplicada sai com forças (a âncora continua editável pelo painel); Foco lido do `docRef`, nunca do registro; caminho dos chips fora de `editDoc`; `routeDocChange` já trata `focus` como `live` sem ops.
