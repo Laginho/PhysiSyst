@@ -1,5 +1,5 @@
 # PHY-76: Dock sob o canvas e tamanho dos controles
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -56,3 +56,4 @@ Hoje a barra de transporte, o painel do gráfico e a paleta são irmãos da caix
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: dock sob o canvas na largura dele em todo layout, ordem barra → paleta → gráfico; `+`/`−` sempre visíveis, 70–160 % em passos de 10 %, persistido como `loadCanvasSize`/`saveCanvasSize`; CSS `zoom`, botões fora do bloco; gráfico 180 px sem escala com toggle; o fit subtrai o dock e nunca mede uma caixa que envolve o canvas; validado em `proto/ui-scale` variante D (`9080046`, `?variant=D`), que nunca é mesclada.
 - Planner: `Review: human` porque o layout foi aceito a olho no protótipo; a largura interna do bloco escalado é `(size.width − sizer) / scale` para a largura escalada bater com a do canvas.
+- 2026-10-04 Stage 2: costuras aprovadas no ticket: persistência pública, DOM do App com `FakeResizeObserver`, geometria real com `withBrowserSession`. Consumidores examinados: os três caminhos de `fitCanvas` (montagem, observer e alça), transformação/pintura do canvas, repaint/seek do gráfico, empilhamento com histerese e controles de reprodução/paleta. Entradas de borda: storage indisponível/não finito, limites 0,7/1,6, canvas preferido de 402 px, abertura do gráfico e quebra de linha dos controles. O dock continuará irmão da caixa medida; não haverá nova caixa envolvendo ambos. O commit de protótipo `9080046` não está disponível neste clone; o contrato escrito especifica a implementação.
