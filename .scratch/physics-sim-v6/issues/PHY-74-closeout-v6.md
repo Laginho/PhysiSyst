@@ -1,5 +1,5 @@
 # PHY-74: Closeout v6: testes de E_mec, 0.6.0, FINAL_REPORT
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: PHY-69, PHY-73
 Review: human
@@ -55,3 +55,5 @@ Passe manual desktop (registrar OK/defeito por item):
 - 2026-10-03 Stage 1 (planner, grilling com proxy).
 - Proxy decided: projétil só nos quadros em voo (pousa em ~1,2 s e o impacto dissipa), pêndulo 2% na gravação inteira; versão 0.6.0; closeout igual aos anteriores (gate sweep, passe manual desktop, seção v6).
 - Planner: `package.json` está em 0.4.0 e o FINAL_REPORT não tem seção v5; sobe direto para 0.6.0 e anota.
+
+- 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-74-closeout-v6-asked-20261003-2134`): PHY-74 salvo como `blocked`: falta o passe desktop, pois o controle de navegador está indisponível. /  / - Testes de conservação validados por mutação. / - Versão 0.6.0 e relatório v6 preparados. / - Gate verde com dois workers: **1.094 testes**, lint sem avisos, typecheck e build. / - Commits: `8fc30c5`, `86ca45e`. /  / Para concluir, preciso de uma conexão de navegador ou dos resultados dos oito itens manuais.
