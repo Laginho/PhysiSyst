@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -349,3 +349,55 @@ Mutação temporária de produção: trocar a comparação de identidade por
 `sem leitura` até sincronizar a edição física, recebido `T: 0,00 N` da cena
 antiga. A mutação foi removida antes deste segundo commit só de teste;
 `src/App.tsx` voltou à comparação original, sem diff de produção.
+
+##### Correção e mutate-verify desta regressão
+
+Na conclusão de `ensureSim`, comparar a união das chaves dos documentos
+imutáveis de boot e corrente, ignorando somente `focus`. Um chip preserva as
+referências de todos os campos físicos e não cria pendência; patches físicos
+continuam marcando o mundo como pendente, inclusive restituição de contatos.
+Nenhuma alteração em roteamento, polling, sonda inicial ou setters de chips.
+
+Commits só de teste anteriores à produção: `94818aa` (regressão e controles)
+e `6446948` (guard de restituição). Mutate-verify na produção corrigida:
+cada mutação foi removida em `finally`, com restauração e comparação dos bytes
+originais de `App.tsx`. As execuções do Vitest abaixo terminaram com exit 1.
+
+| Caso novo na costura DOM/canvas | Mutação em produção | Vermelho observado |
+| --- | --- | --- |
+| Leitura inicial com chip `during boot` | Restaurar `pendingRebuildRef.current = docRef.current !== bootDoc` no boot | `App.test.ts:1101`: esperado `T: 0,00 N`, recebido `leitura — cordapassos: 0velocidade: 1,00×sem leitura`. **1 failed / 2 passed / 200 skipped** no filtro `PHY-78 preserves initial rope readouts`. |
+| Controles de leitura inicial `none`, `during boot` e `after boot` | Polling de vínculo sempre publica `setConstraintReadout(null)` | Os três casos falham em `App.test.ts:1101`, esperado `T: 0,00 N`, recebido `sem leitura`. **3 failed / 200 skipped**, mesmo filtro. |
+| Edição de posição pendente com chip `during boot` e `after boot` | Ramo estrutural do efeito de doc escreve `pendingRebuildRef.current = false` | Os dois casos falham em `App.test.ts:1127`: esperado `sem leitura` até sincronizar o mundo, recebido `T: 0,00 N` da cena antiga. **2 failed / 201 skipped** no filtro `PHY-78 keeps physical boot edits pending`. |
+| Edição de restituição durante boot, com chips antes/depois do boot | Substituir a comparação por classificação `structural || ops.length > 0` | `App.test.ts:1154`: esperado `sem leitura`, recebido `T: 0,00 N` da cena antiga. **1 failed / 202 skipped** no filtro `PHY-78 preserves restitution edits during boot`. |
+
+Produção restaurada, verde:
+`npm test -- src/App.test.ts -t 'PHY-78.*boot|PHY-78 preserves initial rope readouts'`
+→ **6 passed / 197 skipped**, exit 0. Cada um dos seis casos novos tem vermelho
+por mutação registrado acima; todos os skips são casos fora dos filtros.
+
+##### Stage 2 handoff da regressão de boot (2026-10-04)
+
+- Regressão da última revisão corrigida: alternar somente Foco durante boot
+  mantém a leitura inicial da corda, N/T da sonda e o mundo sem rebuild
+  redundante. Edições físicas durante boot seguem pendentes e são aplicadas
+  no primeiro passo, incluindo posição e restituição de contatos.
+- Os seis casos novos de App estão nos commits só de teste `94818aa` e
+  `6446948`; a correção de produção não modifica testes. Evidência vermelha
+  antes da correção e mutate-verify por caso estão registrados acima.
+- Verificação focada completa, fora do sandbox para permitir Chromium:
+  `npm test -- src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts src/App.test.ts`
+  → **4 arquivos / 445 testes passed, zero skips**, exit 0.
+- Gate oficial completo, também fora do sandbox:
+  `npm test && npm run lint && npm run typecheck && npm run build`
+  → **33 arquivos / 1232 testes passed, zero skips**, lint, typecheck e build
+  **exit 0**. Vite: 52 módulos; aviso preexistente do chunk do simulador acima
+  de 500 kB (2136,71 kB). Nenhuma validação pendente.
+- Diff da retomada revisado contra `95c7332`: somente `App.test.ts`,
+  `App.tsx` (comparação ao concluir boot) e este ticket, todos dentro da
+  costura/Primary files aprovados. `git diff --check` verde, produção
+  restaurada após cada mutação e nenhum artefato de build no diff.
+- CLEAN-31 continua sendo a limitação já registrada de Foco no histórico
+  físico; esta correção não altera undo/redo. Revisão independente, outros
+  navegadores/mobile e perfil prolongado de desempenho ficam fora deste passe.
+
+Etapa 2 encerrada em `to-review`; branch preservada para o stage 3, sem merge.

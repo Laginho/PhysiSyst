@@ -1312,8 +1312,11 @@ export default function App() {
           constraintsRef.current = sim.readConstraints()
           refreshInitialProbe()
           resetRecording()
-          // Edits made while WASM was booting land at the next frame boundary.
-          pendingRebuildRef.current = docRef.current !== bootDoc
+          // Scene patches are immutable. Only changes outside focus can make
+          // the booted world stale and require the next frame boundary.
+          const currentDoc = docRef.current
+          const docKeys = Object.keys({ ...bootDoc, ...currentDoc }) as (keyof Scene)[]
+          pendingRebuildRef.current = docKeys.some(key => key !== 'focus' && bootDoc[key] !== currentDoc[key])
           setSimError(null)
           setBootState('ready')
           return sim
