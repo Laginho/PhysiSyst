@@ -1,5 +1,5 @@
 # PHY-81: Legenda do gráfico clicável
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-76, PHY-78
 Review: agent
@@ -85,3 +85,63 @@ Todos os arquivos de produção foram restaurados em `finally` após cada lote. 
 - Verificação focada: `npm test -- src/render/graph.test.ts src/App.test.ts src/App.browser.test.ts` — **3 files passed, 255 tests passed (255)**.
 - Gate completo, sequencial e em primeiro plano: `npm test && npm run lint && npm run typecheck && npm run build` — **33 files passed, 1287 tests passed (1287)**; ESLint e TypeScript sem erros; Vite concluiu o build (52 módulos). Aviso de chunk maior que 500 kB, incluindo o chunk separado do simulador/Rapier (2,136.71 kB); nenhuma falha do gate.
 - Conferência final: diff limitado aos Primary files e ao ticket; nenhum arquivo de teste no commit de produção, segredo, log acidental ou artefato gerado incluído. `git diff --check` verde. `src/render/draw.ts` e `src/scene/types.ts` somente consumidos, sem alteração. `CONTEXT.md` já descreve curvas escondidas no Foco; nenhuma documentação de mecanismo ficou desatualizada. Todos os critérios cobertos, sem validação pendente nesta etapa. `Stage: to-review`; revisão/merge ficam para Stage 3, sem push nesta etapa.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Integração aprovada dos critérios 1–10 na sessão `sweatshop/2026-10-04-1243`, sem squash, pelo merge `1cacf9e`. Único ajuste da revisão: `159a2ec` reorganiza o histórico de comentários em ordem cronológica, conforme `docs/agents/issue-tracker.md`, preservando o contrato e a produção. Rebase sem alterações: a branch já estava atualizada sobre `5984894`.
+
+**Standards**
+
+Uma ocorrência documental: os comentários da Stage 2 estavam antes do histórico existente da Stage 1; o tracker exige acrescentar comentários ao final de `## Comments`. Corrigida em `159a2ec`; não exige teste nem reabertura. Nenhuma violação nos arquivos de produção/testes ou ocorrência da baseline de smells. Diff limitado aos Primary files e registros do fluxo. Commits de teste precedem as respectivas fatias de produção; nenhum commit de produção altera testes. Cada teste novo de DOM/browser tem mutação e saída vermelha registrada.
+
+Examinados: `seriesFor`, `repaintGraph`, `seekGraph`, edição compartilhada do Foco, autosave/presets, histórico, seleção/fallback de tipo, séries vazias/todas escondidas, nomes desconhecidos, energia com mola e botões acessíveis traduzidos. Caminhos existentes de contexto canvas e avisos de storage preservados; nenhum consumidor alterado relevante ficou sem inspeção.
+
+**Spec**
+
+Zero ocorrências de requisito numerado ausente/parcial, escopo extra ou implementação incorreta. Os critérios 1–10 são atendidos. Revisão completa do diff de oito arquivos contra `5984894`, incluindo cores por identidade, filtro em ordem, escala das visíveis, eixos vazios, cursor, Foco corrente no histórico, seleção corpo/sistema, repaint, autosave/codec, reabertura de presets, boot/recording e edições físicas. O clique fica fora do undo e das operações do simulador.
+
+A evidência vermelha cobre cada caso DOM, incluindo ambos os idiomas; no browser, os mutantes de filtro e Foco histórico falham em assertions de pixels, além da ausência inicial do botão. Nenhuma inconsistência ou costura sem contato com a produção encontrada. As variantes de energia do sistema com quatro curvas foram verificadas no renderer e por inspeção; não houve cenário Chromium dedicado a essa variante nem passe manual de todos os presets. Não há linhas `Proxy decided` neste ticket.
+
+| Critério | Resultado |
+| --- | --- |
+| 1 | ✅ Cores por nome, distintas em cada tipo; quatro cores na energia com mola. |
+| 2 | ✅ Filtro por nome preserva ordem e amostras; undefined, nomes desconhecidos e todas escondidas cobertos. |
+| 3 | ✅ Escala somente das visíveis: [-0.5, 0, 10.5], contra [-10, 0, 210] com ambas. Todas escondidas: [-1, 0, 1]. |
+| 4 | ✅ Traços usam `colorOf`; canvas sem legenda, mantendo eixos/cursor. |
+| 5 | ✅ Lista traduzida, três botões de energia, subscritos HTML e amostras com a mesma cor do traço. |
+| 6 | ✅ Preferências isoladas por tipo, alternância reversível e autosave real. |
+| 7 | ✅ Cursor 5/0, slider e gravação preservados; sem undo/redo, step ou reset adicional. |
+| 8 | ✅ Foco carregado do storage aparece na legenda e compõe com os chips. |
+| 9 | ✅ Chromium real: pixels de E_pg somem, E_c fica em ±5%, legenda contida e borda direita ≤8 px; Foco corrente também no registro 5. |
+| 10 | ✅ Tradução pt-BR/en e teste de paridade verdes. |
+
+**Prova vermelha/verde reproduzida nesta revisão**
+
+Todas as 12 mutações documentadas foram reaplicadas sequencialmente e restauradas byte a byte em `finally`. Cada execução terminou com falha de assertion esperada, não com erro de harness.
+
+| Mutação reaplicada | Saída vermelha observada |
+| --- | --- |
+| E_pg com a cor de E_c | `expected '#2563eb' to be '#c2410c'`; 1 failed, 10 skipped (11). |
+| Filtro de séries removido | Lista com 3 em vez de 2; escala [-10, 0, 210] em vez de [-0.5, 0, 10.5]; 2 failed, 9 skipped (11). |
+| Margem vazia anterior | [-0.05, 0, 0.05] em vez de [-1, 0, 1]; 1 failed, 10 skipped (11). |
+| Legenda E_pg recolocada no canvas | `expected true to be false`; 1 failed, 10 skipped (11). |
+| Traços com cores por índice | Array de cores diferente: E_mec recebe a cor de E_pg; 1 failed, 10 skipped (11). |
+| Subscritos substituídos por spans | Ambos os idiomas: [undefined, undefined, undefined] em vez de ['c', 'pg', 'mec']; 2 failed, 215 skipped (217). |
+| Preferências de outros tipos apagadas | `expected 'true' to be 'false'` ao voltar à energia; 1 failed, 216 skipped (217). |
+| Visibilidade ignora Foco salvo | `expected 'true' to be 'false'` na abertura; 1 failed, 216 skipped (217). |
+| Edição de Foco copia preset | `expected 'cena-2' to be 'preset:free-fall'`; 1 failed, 216 skipped (217). |
+| Alternância bloqueada no histórico | `expected 'true' to be 'false'` no registro 5; 1 failed, 216 skipped (217). |
+| Canvas ignora hidden | `expected 1976 to be +0` pixels; 1 failed, 26 skipped (27). |
+| Canvas lê Foco do registro histórico | `expected 1971 to be +0` pixels no registro 5; 1 failed, 26 skipped (27). |
+
+Após restaurar a produção: `npm test -- src/render/graph.test.ts src/App.test.ts src/App.browser.test.ts -t PHY-81` — **3 files passed; 11 passed, 244 skipped (255)**.
+
+**Gate e conferência final**
+
+`npm test && npm run lint && npm run typecheck && npm run build` executado sequencialmente e lido até o fim: **33 files passed; 1287 tests passed (1287)**; ESLint e TypeScript sem erros; Vite construiu 52 módulos. A tentativa no sandbox falhou somente nos 29 casos Chromium por desconexão/DevTools; o gate integral fora do sandbox passou. Continua o aviso não bloqueante de chunk maior que 500 kB, incluindo simulador/Rapier separado (2,136.71 kB).
+
+Arquivos revistos: `src/render/graph.ts`, `src/render/graph.test.ts`, `src/App.tsx`, `src/App.test.ts`, `src/App.browser.test.ts`, `src/i18n/pt-BR.ts`, `src/i18n/en.ts` e este ticket. Fechamento inclui o ledger. `CONTEXT.md` já descreve as curvas escondidas no Foco. Sem mutação residual, segredo, log acidental ou artefato gerado no diff. Nenhuma mudança de produção após o gate; rebase sem mudança de conteúdo e merge preservam exatamente a produção validada.
+
+Padrões: 1 ocorrência documental corrigida, 0 pendentes; especificação: 0 ocorrências. `Stage: done`, ledger com `1cacf9e`, sem validação bloqueada. A sessão fica responsável pelo push/PR do lote.
