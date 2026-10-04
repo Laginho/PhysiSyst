@@ -1,5 +1,5 @@
 # PHY-83: Snap de orientação de mola e corda
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -61,3 +61,5 @@ O encaixe em contato alinha um corpo a uma superfície e o de âncora puxa um po
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: independente; arrastando um corpo ou âncora, segmento de mola ou corda quase vertical/horizontal em relação à outra ponta trava em 90°/0° com guia tracejada; mesma família do encaixe em contato e de âncora; sem mudança no motor; não é snap de grade.
 - Planner: tolerância 10 px como as irmãs, medida como afastamento perpendicular; só molas e cordas sem polia; encaixe em contato vence no arrasto, encaixe de âncora vence no clique da ferramenta; guia também no hover com a ferramenta armada.
+
+- 2026-10-04 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-83-snap-de-orientacao-de-mola-e-corda-asked-20261004-1630`): PHY-83 ficou `blocked`, registrado no commit `fd56c2e`. /  / O critério 1 exige snap horizontal para `(0,1; 0,05)`, mas esse segmento mede **6,71 px** e a regra exige `null` para comprimentos ≤ 10 px. /  / Recomendo trocar o exemplo por **`(0,15; 0,1)`**, que mede 10,82 px. Confirma essa correção? /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) determina: “Only stage 1 does” para alterações nos critérios. O proxy configurado está indisponível neste runtime. Por isso, registrei o bloqueio; código e testes não foram alterados. `git diff --check` passou.
