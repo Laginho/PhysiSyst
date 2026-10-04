@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -86,3 +86,40 @@ Ficam sempre: "passos", "velocidade" (da reprodução), a legenda da leitura, "s
 - 2026-10-04 Attempt 1 stopped to ask: PHY-78 ficou `blocked`, registrado no commit `58c5ac4`. O critério 9 exige contatos habilitados após um passo, contrariando o bloqueio existente e o spec. /  / 39 testes focados passaram; 389 ficaram fora do filtro. Apenas o ticket mudou. /  / Aprova preservar contatos bloqueados após um passo e habilitados no registro zero, ajustando o critério e seu teste? O [ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “a session without a proxy asks by stopping”. /  / A revisão automática rejeitou a consulta ao Claude por envolver envio de código privado a um destino externo não verificado. Sua decisão direta resolve essa pendência.
 - 2026-10-04 Proxy decided: manter o bloqueio estrutural (PHY-39, ADR-0004) e reescrever o critério 9: o Foco não pode esconder nem mudar a habilitação de campo nenhum, verificado no mesmo instante; contatos desabilitados após um passo é o PHY-39, não o PHY-78 — a regra do spec ("campos de edição nunca são filtrados") é sobre o Foco, não sobre os outros bloqueios, e o critério como escrito pedia que este ticket desfizesse o PHY-39, o que ninguém decidiu. Nenhuma mudança de produção; só o teste do critério 9 (commit test-only) e o texto do critério. O que o teste deve asserir: (a) após `p.steps(1)`, selecionar o corpo e capturar `disabled` de cada input de forças e de `contacts.muS/muK/e` com forças ligadas; (b) `toggleFocus('forces')` e asserir que os mesmos inputs seguem no DOM com `disabled` igual ao capturado — forças `false`, contatos `true` — sem `seek(0)` antes; (c) só então `p.seek(0)` e asserir todos `false`, ainda com forças desligadas; (d) religar forças e asserir `P`. Mutate-verify: a mutação "fieldset de contatos recebe `disabled={disabled || !showForces}`" (ou `hidden` nos campos com forças desligadas) deve ficar vermelha em (b); registrar a saída no ticket. Retomar da branch `phy/PHY-78-modelo-de-foco-e-chips` (fb7bb72): os outros critérios passaram com 22 mutações; `src/App.tsx` não muda.
 - 2026-10-04 Foreman: retomar da branch `phy/PHY-78-modelo-de-foco-e-chips` (código revisado em `fb7bb72`; a sessão ainda não foi mergeada nela e `src/App.tsx` conflita com o PHY-82, já na sessão: integrar a sessão faz parte da retomada); falta só o commit test-only do critério 9 com a mutação registrada.
+
+#### Stage 2 resume (2026-10-04)
+
+Somente o teste do critério 9 foi reforçado, conforme a decisão do proxy acima.
+No mesmo instante após um passo, seleciona o corpo, captura os quatro campos de
+força habilitados e os três de contato bloqueados, desliga forças e exige os
+mesmos campos e bloqueios. Só depois navega ao registro zero e exige os sete
+campos habilitados, ainda com forças desligadas. Religar forças deve restaurar P.
+
+Costura: DOM e canvas reais do App com o simulador falso já aprovado no ticket.
+`ForcesPanel` e `BodyContactsPanel` são chamados apenas pelo ramo do corpo
+selecionado. Foram examinados `liveLocked`, `structuralLocked`, `showFrame`,
+`seek(0)` e o caminho dos chips fora de `editDoc`; nenhuma alteração de produção
+é necessária para os bloqueios. O caso distingue a ponta após um passo do
+registro zero, evitando a navegação que ocultava a lacuna do teste anterior.
+
+##### Mutate-verify do teste do critério 9
+
+Comando por mutação: `npm test -- src/App.test.ts -t 'PHY-78 hides force layers and spring readouts'`.
+As mutações abaixo foram aplicadas temporariamente ao App de produção e
+restauradas byte a byte em `finally`; `git diff --exit-code -- src/App.tsx`
+confirmou a restauração.
+
+| Mutação em produção | Vermelho observado |
+| --- | --- |
+| Prop de `BodyContactsPanel`: `doc={showForces ? doc : { ...doc, contacts: [] }}`, removendo os campos de contato quando forças estão desligadas | `Error: missing input for μs — atrito estático`, na comparação imediatamente após desligar forças, antes de `seek(0)` (`src/App.test.ts:3492`). **1 failed / 185 skipped**, exit 1. |
+| Prop de `BodyContactsPanel`: `disabled={structuralLocked || !showForces}` | No registro zero, esperado `[false, false, false, false, false, false, false]`, recebido `[false, false, false, false, true, true, true]` (`src/App.test.ts:3509`). **1 failed / 185 skipped**, exit 1. Na ponta esta mutação é equivalente ao bloqueio estrutural; a primeira mutação prova a comparação antes do seek. |
+
+Sem mutação, antes de integrar a sessão, os novos checks de campos passam e a
+última asserção fica vermelha: `expected [ 'm', 'F', 'N' ] to include 'P'`,
+**1 failed / 185 skipped**, exit 1. A branch ainda usa `weightArrows` sem estados
+no registro zero; o PHY-82, já na sessão, fornece esse comportamento. A integração
+da sessão é o próximo passo autorizado pelo foreman, sem nova decisão de produto.
+
+A revisão e as 22 mutações dos demais critérios continuam disponíveis no commit
+`0cdd8c0`; a decisão do planner incorporada por `91cb99a` substituiu o corpo do
+ticket e deixou somente a pendência do critério 9.

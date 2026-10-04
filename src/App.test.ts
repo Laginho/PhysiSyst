@@ -3732,7 +3732,23 @@ describe('recorded time player (PHY-64)', () => {
     expect(frame.labels.map(l => l.text)).toContain('N')
     // F_el is drawn as separate base/subscript fillText calls, not the literal "F_el".
     expect(frame.labels.filter(l => l.color === '#00838f').map(l => l.text)).toEqual(['F', 'el'])
+    click(p.canvas, { x: 6, y: 0.5 })
+    p.poll()
+    const editingFields = () => {
+      const forces = panel(p.host, t('forces.title', { id: 'ball' }))
+      expect(forces, 'force editor remains in the DOM').toBeDefined()
+      const forceInputs = [...forces!.querySelectorAll('input')]
+      expect(forceInputs).toHaveLength(4)
+      return [
+        ...forceInputs,
+        ...['muS', 'muK', 'e'].map(key => inputForLabel(p.host, t(`contacts.${key}`))),
+      ]
+    }
+    const disabledAtTip = editingFields().map(input => input.matches(':disabled'))
+    expect(disabledAtTip).toEqual([false, false, false, false, true, true, true])
     toggleFocus(p.host, 'forces')
+    // Compare at the same post-step instant, before any seek changes the locks.
+    expect(editingFields().map(input => input.matches(':disabled'))).toEqual(disabledAtTip)
     expect(frame.labels.map(l => l.text)).not.toContain('P')
     expect(frame.labels.map(l => l.text)).not.toContain('N')
     expect(frame.labels.filter(l => l.color === '#00838f' || l.color === '#d97742')).toEqual([])
@@ -3746,12 +3762,12 @@ describe('recorded time player (PHY-64)', () => {
     expect(reading.textContent).toContain(t('readout.springForce'))
     expect(frame.labels.map(l => l.text)).toContain('P')
     toggleFocus(p.host, 'forces')
-    // Existing structural locks still apply after stepping; record zero permits editing.
+    // Record zero releases the existing structural locks with forces still hidden.
     p.seek(0)
     click(p.canvas, { x: 6, y: 0.5 })
-    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
-    for (const input of forces.querySelectorAll('input')) expect(input.matches(':disabled')).toBe(false)
-    for (const key of ['muS', 'muK', 'e']) expect(inputForLabel(p.host, t(`contacts.${key}`)).matches(':disabled')).toBe(false)
+    expect(editingFields().map(input => input.matches(':disabled'))).toEqual([false, false, false, false, false, false, false])
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).toContain('P')
   })
 
   it.each([false, true])('PHY-78 hides rope tension and slack readouts with forces off (slack=%s)', async (slack) => {
