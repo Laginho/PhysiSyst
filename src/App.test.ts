@@ -153,6 +153,35 @@ describe('scene focus chips (PHY-78)', () => {
   beforeEach(() => setLang('pt-BR'))
   afterEach(() => setLang('pt-BR'))
 
+  it('filters initial body readouts with blank focus and restores kinematics on request', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    act(() => findButton(host, t('palette.circle'))!.click())
+    act(() => { vi.advanceTimersByTime(100) })
+    const reading = [...host.querySelectorAll('fieldset')].find(f =>
+      f.querySelector('legend')?.textContent?.startsWith(t('readout.title', { id: '' })),
+    )!
+    expect(reading.textContent).toContain(t('readout.steps'))
+    expect(reading.textContent).toContain(t('readout.speed'))
+    for (const key of ['position', 'velocityMagnitude', 'accelerationMagnitude']) {
+      expect(reading.textContent).not.toContain(t(`readout.${key}`))
+    }
+    const more = reading.querySelector('details')!
+    act(() => more.querySelector('summary')!.click())
+    expect(more.textContent).toContain('E_c')
+    expect(more.textContent).toContain('|p|')
+    expect(more.textContent).not.toContain(t('readout.velocity'))
+    expect(more.textContent).not.toContain(t('readout.acceleration'))
+    toggleFocus(host, 'kinematics')
+    for (const key of ['position', 'velocityMagnitude', 'accelerationMagnitude']) {
+      expect(reading.textContent).toContain(t(`readout.${key}`))
+    }
+    expect(more.textContent).toContain(t('readout.velocity'))
+    expect(more.textContent).toContain(t('readout.acceleration'))
+  })
+
   it.each([
     ['demo', ['true', 'true', 'true', 'true']],
     ['blank', ['true', 'false', 'true', 'true']],
@@ -3633,6 +3662,73 @@ describe('recorded time player (PHY-64)', () => {
     }
     return { ...p, graph, select, pointer, capture }
   }
+
+  it('PHY-78 filters body and spring system energy independently from momentum', async () => {
+    const p = await setupRecording('spring')
+    click(p.canvas, { x: 6, y: 4 })
+    p.poll()
+    const bodyMore = () => panel(p.host, t('readout.title', { id: 'ball' }))!.querySelector('details')!
+    const system = () => panel(p.host, t('readout.system'))
+    expect(system()!.textContent).toContain('E_el')
+    toggleFocus(p.host, 'energy')
+    for (const key of ['kinetic', 'potential', 'elastic', 'mechanical']) {
+      expect(system()!.textContent).not.toContain(t(`readout.${key}`))
+    }
+    for (const key of ['momentum', 'momentumX', 'momentumY']) {
+      expect(system()!.textContent).toContain(t(`readout.${key}`))
+    }
+    expect(bodyMore().textContent).not.toContain('E_c')
+    expect(bodyMore().textContent).not.toContain('E_pg')
+    expect(bodyMore().textContent).toContain('|p|')
+    toggleFocus(p.host, 'momentum')
+    expect(system()).toBeUndefined()
+    expect(bodyMore().textContent).not.toContain('|p|')
+    toggleFocus(p.host, 'energy')
+    for (const key of ['kinetic', 'potential', 'elastic', 'mechanical']) {
+      expect(system()!.textContent).toContain(t(`readout.${key}`))
+    }
+    for (const key of ['momentum', 'momentumX', 'momentumY']) {
+      expect(system()!.textContent).not.toContain(t(`readout.${key}`))
+    }
+    expect(bodyMore().textContent).toContain('E_c')
+    expect(bodyMore().textContent).not.toContain('|p|')
+  })
+
+  it('PHY-78 edits the current focus at record five while physics fields remain locked', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(10)
+    p.seek(5)
+    expect(inputForLabel(p.host, t('panel.gLabel')).disabled).toBe(true)
+    expect(inputForLabel(panel(p.host, 'ball')!, t('properties.vx')).matches(':disabled')).toBe(true)
+    expect(focusChip(p.host, 'kinematics').disabled).toBe(false)
+    toggleFocus(p.host, 'kinematics')
+    expect(focusChip(p.host, 'kinematics').getAttribute('aria-pressed')).toBe('false')
+    expect(p.readout()).not.toContain(t('readout.position'))
+    toggleFocus(p.host, 'kinematics')
+    expect(p.readout()).toContain('posição: (6,05, 4,00) m')
+    expect(p.slider().value).toBe('5')
+    expect(p.slider().max).toBe('10')
+    expect(p.step).toHaveBeenCalledTimes(10)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it('PHY-78 preserves the recording when focus changes at record zero', async () => {
+    const p = await setupRecording()
+    await p.steps(8)
+    p.seek(0)
+    toggleFocus(p.host, 'energy', 'momentum', 'forces')
+    expect(p.slider().value).toBe('0')
+    expect(p.slider().max).toBe('8')
+    expect(panel(p.host, t('readout.system'))).toBeUndefined()
+    expect(p.step).toHaveBeenCalledTimes(8)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+    expect(findButton(p.host, '↶')!.disabled).toBe(true)
+    expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    await p.steps(1)
+    expect(p.slider().value).toBe('1')
+    expect(p.step).toHaveBeenCalledTimes(8)
+  })
 
   it('PHY-73 seeks the midpoint to frame 30 and returns to the live tip at the right margin', async () => {
     const p = await setupGraph()
