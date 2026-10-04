@@ -1,5 +1,5 @@
 # PHY-80: Setas de v e a ao vivo
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -206,3 +206,8 @@ session stays at `a5098e1`; there is no merge and no PHY-80 ledger line to remov
 Review totals: Standards — 2 documentation findings fixed, 2 optional smell
 observations (worst documented issue: stale README, fixed); Spec — 1 blocking
 P2 finding, criterion 6.
+
+#### Stage 2 criterion-6 regression (2026-10-04)
+
+- Approved seam: real App canvas labels after a structural position edit, one half-speed animation frame and pause; parameterized for global and selected-body scope. Callers inspected: both paint branches, repaint's displayed step count, syncWorld, runSteps and showFrame. A populated state map before any step is the failing boundary; live playback and recording zero remain in each regression case.
+- Before any production fix, `npm test -- src/App.test.ts -t 'PHY-80 keeps launch velocity after a zero-step rebuild'` failed in both scopes: **2 failed / 209 skipped (211)**, exit 1, `AssertionError: expected [ 'v' ] to deeply equal [ 'v₀' ]`. Both cases first confirm one rebuild and zero simulator steps. Tests and the implementing transition are committed separately from production code.

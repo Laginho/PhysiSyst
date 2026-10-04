@@ -3832,6 +3832,30 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.step).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['global', 'selected'] as const)('PHY-80 keeps launch velocity after a zero-step rebuild in %s scope', async (scope) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.bodies.find(b => b.id === 'ball')!.vx = 2 },
+      velocity: count => ({ x: count === 0 ? 2 : 1, y: 0 }),
+    })
+    const velocityLabels = () => frame.labels.filter(l => l.color === '#43a047').map(l => l.text)
+    click(p.canvas, { x: 6, y: 4 })
+    if (scope === 'selected') act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['properties.posY']), 5))
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, 0.5))
+    await p.play()
+    // Half speed rebuilds the world on this frame, before the first timestep.
+    p.frame()
+    act(() => findButton(p.host, ptBR['playback.pause'])!.click())
+    expect(p.replaceScene).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(velocityLabels()).toEqual(['v₀'])
+    await p.steps(1)
+    expect(velocityLabels()).toEqual(['v'])
+    p.seek(0)
+    expect(velocityLabels()).toEqual(['v₀'])
+  })
+
   it('PHY-80 paints analytic acceleration at initial time and restores it when seeking to zero', async () => {
     const frame = captureVectorFrame()
     const p = await setupRecording(undefined, 'dynamic', {
