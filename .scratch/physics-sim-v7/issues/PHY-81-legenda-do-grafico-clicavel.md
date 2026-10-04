@@ -1,5 +1,5 @@
 # PHY-81: Legenda do gráfico clicável
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-76, PHY-78
 Review: agent
@@ -50,6 +50,15 @@ Hoje a legenda é texto pintado no canto superior direito do canvas do gráfico,
 - `src/App.browser.test.ts`: critério 9 com `withBrowserSession` e `getImageData`; vermelho hoje. Mesma regra de evidência.
 
 ## Comments
+
+#### Handoff Stage 2 (2026-10-04)
+
+- Implementado: legenda HTML com lista acessível traduzida, botões `aria-pressed`, amostras por `colorOf` e subscritos via `splitLabel`. `editFocus` é o caminho compartilhado dos chips e das curvas: fora do undo e das edições físicas. `focus.hidden` é preservado por tipo e salvo pelo autosave existente nas cenas do usuário; presets mantêm apenas a edição em memória. Renderer recebe somente as visíveis para escala e traçado, usando o Foco atual também no histórico; canvas mantém eixos/cursor sem legenda.
+- Separação de commits: `1f52225` testes vermelhos do renderer + `implementing`; `9155fbf` somente produção do renderer; `9f275e0` somente testes DOM/registro; `54dd2f1` somente teste Chromium/registro. O commit deste handoff contém App/i18n/registro, sem alterar testes.
+- Mutação adicional do renderer: troca de `colorOf(s.name)` por cor conforme índice no array → `strokes only passed curves ...` falha, `E_mec` recebe `#c2410c` em vez de `#15803d`; **1 failed, 10 skipped (11)**. Arquivo restaurado.
+- Verificação focada: `npm test -- src/render/graph.test.ts src/App.test.ts src/App.browser.test.ts` — **3 files passed, 255 tests passed (255)**.
+- Gate completo, sequencial e em primeiro plano: `npm test && npm run lint && npm run typecheck && npm run build` — **33 files passed, 1287 tests passed (1287)**; ESLint e TypeScript sem erros; Vite concluiu o build (52 módulos). Aviso de chunk maior que 500 kB, incluindo o chunk separado do simulador/Rapier (2,136.71 kB); nenhuma falha do gate.
+- Conferência final: diff limitado aos Primary files e ao ticket; nenhum arquivo de teste no commit de produção, segredo, log acidental ou artefato gerado incluído. `git diff --check` verde. `src/render/draw.ts` e `src/scene/types.ts` somente consumidos, sem alteração. `CONTEXT.md` já descreve curvas escondidas no Foco; nenhuma documentação de mecanismo ficou desatualizada. Todos os critérios cobertos, sem validação pendente nesta etapa. `Stage: to-review`; revisão/merge ficam para Stage 3, sem push nesta etapa.
 
 #### Evidência de mutação das costuras DOM/browser (Stage 2, 2026-10-04)
 
