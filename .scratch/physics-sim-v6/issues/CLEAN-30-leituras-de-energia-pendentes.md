@@ -1,5 +1,5 @@
 # CLEAN-30: Energia e momento antigos enquanto o mundo aguarda reconstrução
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -35,6 +35,12 @@ Aplicar a decisão do proxy existente: sem quadro válido para o documento exibi
 - Para cada nova regressão DOM, registrar abaixo a mutação em produção e o vermelho correspondente.
 
 ## Comments
+
+### Review resolution — 2026-10-04
+
+- Approved after parent review of commits `63bf4ee`, `373fd67` and `eddf728`. The document fallback is local to energy/momentum readings, uses the existing energy and spring helpers, and preserves valid recorded frames and constraint readouts. No additional blocking findings.
+- Reviewed the regression assertions, per-test production mutation evidence, and the complete `%TEMP%/clean30-gate.log`: **1100 tests / 33 files passed**, lint/typecheck/build exit 0. The gate was not repeated after documentation-only closeout. No additional manual desktop pass; the Chromium suite passed.
+- Implementation commit: `eddf728`. Closed on the PR session branch; this does not claim the PR has merged into main.
 
 - 2026-10-03 Aberto na revisão do PHY-71 (merge `e484370`). Motivo de blocked: stage 1 precisa definir o comportamento das energias quando não há estado válido para o documento exibido, e então publicar Primary files, critérios numerados e testes. Os critérios 3/4 do PHY-71 cobrem quadros com estado válido; a revisão não acrescentou uma política de fallback.
 - Problema confirmado em `src/App.tsx:976-982`: o poll combina `displayedScene()` com `liveFrameRef.current.states` mesmo quando `pendingRebuildRef.current` é true. Edições estruturais em t0 limpam `statesRef`, mas mantêm o quadro vivo antigo. Em reset/troca que falha, `captureFrame` pode ler o mundo anterior, pois `replaceScene` é transacional.
