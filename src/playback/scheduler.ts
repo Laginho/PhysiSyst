@@ -1,3 +1,5 @@
+import { RECORDING_CAP } from './recording'
+
 /**
  * Playback scheduler — the transport logic behind play/pause/reset, the speed
  * slider and the single-frame step button.
@@ -10,9 +12,11 @@
  * Core invariant (spec, ADR-0001): the speed multiplier scales STEPS PER FRAME,
  * never the timestep. `acc += speed` per animation frame, then whole steps are
  * withdrawn and the remainder carries to the next frame. So 0.5x steps on every
- * other frame with the SAME dt as 1x. From zero credit, N frames at a fixed speed
- * consume exactly floor(N * speed) recorded or live timesteps; only credit left
- * after replay advances the live world and increments stepsTaken.
+ * other frame with the SAME dt as 1x. Starting with zero credit and before the
+ * recording limit, N frames at a fixed speed consume floor(N * speed) recorded
+ * or live timesteps. Replay consumes records first; remaining whole-step credit
+ * advances the live world and increments stepsTaken only while recording has
+ * room. Reaching the full tip pauses playback and discards any remaining credit.
  */
 
 /** Slider bounds from the spec (story 17). */
@@ -41,14 +45,14 @@ export interface PlaybackState {
 
 export type PlaybackAction =
   | { readonly type: 'seek'; readonly index: number; readonly length: number }
-  | { readonly type: 'play' }
+  | { readonly type: 'play'; readonly length?: number }
   | { readonly type: 'pause' }
   /** Discard the running world and rebuild it from the document. */
   | { readonly type: 'reset' }
   | { readonly type: 'setSpeed'; readonly speed: number }
-  /** One animation frame elapsed. Length is needed when replaying a record. */
+  /** One animation frame elapsed. Length bounds replay and live recording. */
   | { readonly type: 'frame'; readonly length?: number }
-  /** Advance one recorded or live TIMESTEP; length is needed for replay. */
+  /** Advance one recorded or live TIMESTEP; length bounds recording. */
   | { readonly type: 'stepOnce'; readonly length?: number }
 
 export interface PlaybackTransition {
@@ -81,8 +85,13 @@ function advanceCursor(state: PlaybackState, credit: number, length: number): Pl
   const next = state.cursor === null ? null : state.cursor + credit
   const last = Math.max(0, length - 1)
   const cursor = next !== null && next < last ? next : null
-  const steps = next === null ? credit : Math.max(0, next - last)
-  return { state: { ...state, cursor, stepsTaken: state.stepsTaken + steps }, steps, rebuild: false }
+  const available = Math.max(0, RECORDING_CAP - length)
+  const steps = Math.min(available, next === null ? credit : Math.max(0, next - last))
+  const fullTip = cursor === null && length + steps >= RECORDING_CAP
+  return {
+    state: { ...state, cursor, stepsTaken: state.stepsTaken + steps, ...(fullTip ? { status: 'paused', acc: 0 } as const : {}) },
+    steps, rebuild: false,
+  }
 }
 
 export function advance(state: PlaybackState, action: PlaybackAction): PlaybackTransition {
@@ -97,6 +106,7 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
       // Idempotent, and the accumulator starts clean: stale sub-step credit
       // from before a pause would make the first resumed frame non-reproducible.
       if (state.status === 'playing') return { state, ...NO_OP }
+      if (state.cursor === null && (action.length ?? 1) >= RECORDING_CAP) return { state, ...NO_OP }
       return { state: { ...state, status: 'playing', acc: 0 }, ...NO_OP }
 
     case 'pause':
@@ -124,7 +134,8 @@ export function advance(state: PlaybackState, action: PlaybackAction): PlaybackT
 
     case 'stepOnce':
       // Exactly one recorded or live TIMESTEP, in either status, and it resets
-      // no live-world state: fractional credit and status ride through untouched.
+      // no live-world state: credit and status survive unless recording fills.
+      if (state.cursor === null && (action.length ?? 1) >= RECORDING_CAP) return { state, ...NO_OP }
       return advanceCursor(state, 1, action.length ?? 1)
   }
 }

@@ -1,4 +1,4 @@
-/** Includes the initial state; once full, the live world keeps running. */
+/** Includes the initial state; once full, playback pauses at the last record. */
 export const RECORDING_CAP = 600
 
 export class Recording<T> {

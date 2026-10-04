@@ -9,6 +9,7 @@ import {
   applyStates,
   initialPlayback,
   Recording,
+  RECORDING_CAP,
   routeDocChange,
   SPEED_MAX,
   SPEED_MIN,
@@ -1318,19 +1319,23 @@ export default function App() {
     const tick = () => {
       if (!live) return
       if (syncWorld()) {
-        const previousCursor = playbackRef.current.cursor
+        const previous = playbackRef.current
         const t = advance(playbackRef.current, { type: 'frame', length: recordingRef.current!.length })
         playbackRef.current = t.state
-        if (previousCursor !== t.state.cursor) {
+        if (previous.cursor !== t.state.cursor) {
           // Restore the live snapshot before surplus steps so acceleration uses
           // the actual preceding live step, not the previously displayed record.
           showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
-          setPlayback(t.state)
           repaint()
         }
+        if (previous.cursor !== t.state.cursor || previous.status !== t.state.status) setPlayback(t.state)
         runSteps(t.steps)
+        if (previous.status !== t.state.status) {
+          setStepsTick(t.state.cursor ?? t.state.stepsTaken)
+          setRecordingLength(recordingRef.current!.length)
+        }
       }
-      if (live) handle = requestAnimationFrame(tick)
+      if (live && playbackRef.current.status === 'playing') handle = requestAnimationFrame(tick)
     }
     handle = requestAnimationFrame(tick)
     return () => {
@@ -1416,7 +1421,7 @@ export default function App() {
       return
     }
     void ensureSim().then((sim) => {
-      if (sim) dispatch({ type: 'play' })
+      if (sim) dispatch({ type: 'play', length: recordingRef.current!.length })
     })
   }
 
@@ -1866,13 +1871,13 @@ export default function App() {
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                   {/* Keep the preset hint on its own row at every controls scale. */}
                   {openPreset && <span style={{ fontSize: 12, flexBasis: '100%' }}>{t('preset.readOnlyHint')}</span>}
-                  <button onClick={togglePlay} style={{ minWidth: 110 }}>
+                  <button onClick={togglePlay} disabled={recordingLength >= RECORDING_CAP && playback.cursor === null} style={{ minWidth: 110 }}>
                     {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
                   </button>
                   <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
                     {t('playback.stepBack')}
                   </button>
-                  <button onClick={stepOnce} title={t('playback.stepTitle')}>
+                  <button onClick={stepOnce} disabled={recordingLength >= RECORDING_CAP && playback.cursor === null} title={t('playback.stepTitle')}>
                     {t('playback.step')}
                   </button>
                   <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
@@ -1952,6 +1957,7 @@ export default function App() {
                       t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
                     </span>
                   </label>
+                  {recordingLength >= RECORDING_CAP && <span role="status" style={{ fontSize: 12, flexBasis: '100%' }}>{t('playback.recordingFull')}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>

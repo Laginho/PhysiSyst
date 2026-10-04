@@ -1,5 +1,5 @@
 # PHY-77: Pausar quando a gravação enche
-Stage: to-implement
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -51,5 +51,34 @@ No App: `togglePlay` e `stepOnce` passam `recordingRef.current!.length`; os bot�
 
 ## Comments
 
+- Stage 2, harness de tradução: a troca de idioma usa o select público (valor `en`), não `setLang` isolado nem um botão. Correção em commit só de teste/documentação; os seis casos permanecem vermelhos contra o adaptador antigo.
+
+- 2026-10-04 Stage 2: costuras aprovadas: `advance` direto e DOM do App com `setupRecording`. Chamadores examinados: dispatch e rAF do App; transportes de integração, aceleração e overlay que omitem `length` preservam o comportamento anterior. Limites cobertos: gravação inicial, crédito fracionário/zero, uma ou duas vagas restantes, `length` acima do cap, stepOnce já cheio, replay com crédito excedente e retomada após reset.
+
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: ao encher, pausar no último passo com o aviso "gravação cheia (10 s) — reinicie"; na ponta cheia reproduzir e passo não fazem nada, slider e voltar um passo navegam, replay pausa de novo no fim, reiniciar apaga tudo; altera o critério 14 do PHY-64 e corrige o bug do slider em 10 s com a ponta em 15 s.
 - Planner: a regra fica em `advance` (puro), com `play` recebendo `length` opcional; o App só passa `length` e desabilita os dois botões na ponta cheia.
+
+#### Stage 2 — provas red/green e mutate-verify (2026-10-04)
+
+- Scheduler: commit vermelho `99a1d23` (16 falhas, 69 passes); implementação `57e7c4a` (85 passes). Nenhum teste existente foi alterado. Os novos casos cobrem critérios 1–5, inclusive stepOnce que enche, replay com sobra a 2×, crédito fracionário e comprimento acima do limite.
+- DOM: commit vermelho `e23b63c`, harness corrigido em `7263303`; seis casos vermelhos contra o App antigo (botão ainda em pausar, controles habilitados e aviso ausente). Depois da implementação: filtro `PHY-77|full recording` com 32 passes, 222 ignorados.
+- Mutação M1: substituir temporariamente o import de `RECORDING_CAP` no scheduler por `const RECORDING_CAP = Number.POSITIVE_INFINITY`. Filtro combinado: **22 falhas, 10 passes, 222 ignorados** (16 scheduler + seis DOM). Filtro só DOM: **seis falhas, 163 ignorados**. Mutação restaurada antes das verificações verdes.
+
+| Teste DOM (prefixo PHY-77) | Mutação aplicada | Saída vermelha observada |
+| --- | --- | --- |
+| capped replay pauses at the last recorded pose via play | M1 | `expected "vi.fn()" to be called 599 times, but got 610 times` |
+| capped replay pauses at the last recorded pose via step | M1 | `expected "vi.fn()" to be called 599 times, but got 610 times` |
+| pauses when full with the slider, clock and step count at the last record | M1; adicional: renderizar aviso só com `recordingLength > RECORDING_CAP` | M1: 610 chamadas em vez de 599; aviso: `expected 'physics-simidioma portuguêsenglish◢▶ …' to contain 'gravação cheia (10 s) — reinicie'` |
+| blocks full-tip buttons and keyboard steps while keeping recorded navigation available | Omitir `length` de play; omitir `length` de stepOnce; forçar ambos `disabled={false}` (três execuções independentes) | Play: `expected undefined to be true`; stepOnce: 600 chamadas em vez de 599; disabled: `expected false to be true`. Uma falha, 168 ignorados em cada execução |
+| replays a full recording from 590 and pauses again without new physics steps | M1; adicional: no rAF, sincronizar setPlayback só em mudança de status, omitindo mudança de cursor | Replay: `expected '590' to be '591'` (uma falha, 168 ignorados) |
+| reset clears the full warning and enables recording a new run | M1; adicional: suprimir `resetRecording()` no dispatch quando length é 600 | M1: 610 chamadas em vez de 599; reset: `expected 'physics-simidioma portuguêsenglish◢▶ …' not to contain 'gravação cheia (10 s) — reinicie'` (uma falha, 168 ignorados) |
+
+- Todas as mutações foram removidas. A troca para inglês usa o select real do App e verifica o aviso inglês no DOM. O aviso tem `role="status"`; nenhuma chamada à física ocorre em replay cheio.
+- Mutação adicional de tradução: trocar `en['playback.recordingFull']` por `incorrect notice`; o teste `pauses when full` falhou com `to contain 'recording full (10 s) — reset'` (uma falha, 168 ignorados), depois restaurado.
+- Correção de harness após typecheck: o teste de compatibilidade passa a ação com `length` numa variável, respeitando a checagem de propriedades extras do TypeScript para pause/reset/setSpeed, sem mudar as ações públicas. Commit separado só de teste/documentação; red novamente com M1.
+- Verificação focada sem filtro: 252 passes, duas falhas de infraestrutura em testes Chromium PHY-44 (`Chromium disconnected`), sem falha dos testes PHY-77. Gate completo executado fora do sandbox para verificar o navegador.
+- Verificação final (todas as mutações restauradas): `npm test -- src/playback/scheduler.test.ts src/App.test.ts` — **2 arquivos, 254 testes passaram**, incluindo Chromium.
+- Gate final: `npm test && npm run lint && npm run typecheck && npm run build` — **33 arquivos, 1171 testes passaram**, lint e typecheck sem erros; Vite construiu 52 módulos com sucesso. Paridade i18n incluída no gate.
+- Handoff: App sincroniza status/cursor do scheduler e interrompe rAF ao pausar; 599 passos e `t = 9,98 s` na ponta cheia, controles/atalhos sem passos extras, aviso localizado, navegação/replay e reset preservados. `stepOnce` já passava length no App. Diff limitado a Primary files e ao ticket; commits de implementação não alteram testes. Stage 2 concluída; revisão e merge ficam para Stage 3.
+
+- 2026-10-04 Stage 3, S1 (Standards): o coment?rio de m?dulo do scheduler ainda prometia `floor(N * speed)` sem considerar o limite e o descarte de cr?dito. Corrigido somente o coment?rio para descrever a pausa na ponta cheia; nenhuma altera??o de comportamento ou teste novo. Corre??o pequena dentro de Primary files, conforme `ticket-flow`. Spec: dez crit?rios atendidos, sem finding. As nove execu??es das muta??es registradas foram repetidas e verificadas; produ??o restaurada byte a byte antes desta corre??o.
