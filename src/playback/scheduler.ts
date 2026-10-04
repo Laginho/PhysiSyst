@@ -12,9 +12,11 @@ import { RECORDING_CAP } from './recording'
  * Core invariant (spec, ADR-0001): the speed multiplier scales STEPS PER FRAME,
  * never the timestep. `acc += speed` per animation frame, then whole steps are
  * withdrawn and the remainder carries to the next frame. So 0.5x steps on every
- * other frame with the SAME dt as 1x. From zero credit, N frames at a fixed speed
- * consume exactly floor(N * speed) recorded or live timesteps; only credit left
- * after replay advances the live world and increments stepsTaken.
+ * other frame with the SAME dt as 1x. Starting with zero credit and before the
+ * recording limit, N frames at a fixed speed consume floor(N * speed) recorded
+ * or live timesteps. Replay consumes records first; remaining whole-step credit
+ * advances the live world and increments stepsTaken only while recording has
+ * room. Reaching the full tip pauses playback and discards any remaining credit.
  */
 
 /** Slider bounds from the spec (story 17). */

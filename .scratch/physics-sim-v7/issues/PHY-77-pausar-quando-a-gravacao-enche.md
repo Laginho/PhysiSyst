@@ -1,5 +1,5 @@
 # PHY-77: Pausar quando a gravação enche
-Stage: to-review
+Stage: reviewing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -80,3 +80,5 @@ No App: `togglePlay` e `stepOnce` passam `recordingRef.current!.length`; os bot�
 - Verificação final (todas as mutações restauradas): `npm test -- src/playback/scheduler.test.ts src/App.test.ts` — **2 arquivos, 254 testes passaram**, incluindo Chromium.
 - Gate final: `npm test && npm run lint && npm run typecheck && npm run build` — **33 arquivos, 1171 testes passaram**, lint e typecheck sem erros; Vite construiu 52 módulos com sucesso. Paridade i18n incluída no gate.
 - Handoff: App sincroniza status/cursor do scheduler e interrompe rAF ao pausar; 599 passos e `t = 9,98 s` na ponta cheia, controles/atalhos sem passos extras, aviso localizado, navegação/replay e reset preservados. `stepOnce` já passava length no App. Diff limitado a Primary files e ao ticket; commits de implementação não alteram testes. Stage 2 concluída; revisão e merge ficam para Stage 3.
+
+- 2026-10-04 Stage 3, S1 (Standards): o coment?rio de m?dulo do scheduler ainda prometia `floor(N * speed)` sem considerar o limite e o descarte de cr?dito. Corrigido somente o coment?rio para descrever a pausa na ponta cheia; nenhuma altera??o de comportamento ou teste novo. Corre??o pequena dentro de Primary files, conforme `ticket-flow`. Spec: dez crit?rios atendidos, sem finding. As nove execu??es das muta??es registradas foram repetidas e verificadas; produ??o restaurada byte a byte antes desta corre??o.
