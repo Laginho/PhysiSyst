@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-review
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -188,3 +188,110 @@ foram restauradas. Correções de harness e evidência ficam em commit só de te
   `CLEAN-31`, que esta retomada preserva sem modificar.
 
 Etapa 2 encerrada em `to-review`, pronta para a revisão independente do stage 3.
+
+#### Stage 3 re-review (2026-10-04)
+
+Verdict: Reopen — regression: changing focus during simulator boot suppresses the initial constraint readout after boot succeeds.
+
+- **Standards:** 0 violações documentadas e 0 smells acionáveis. Diff completo
+  de 13 arquivos e os 18 commits examinados contra a base fixada `b3aca92`
+  (`sweatshop/2026-10-04-1243`), HEAD revisado `e20f60e`. Primary files
+  respeitados; produção e testes permanecem em commits separados. Nenhuma
+  correção de produção ou teste novo persistido nesta revisão.
+- **Spec:** os critérios numerados 1–15 passam, incluindo a pendência anterior
+  do critério 9. Há **1 regressão**, descrita abaixo; ela exige teste novo,
+  portanto retorna mecanicamente ao stage 2. O rebuild redundante antes do
+  primeiro passo, isoladamente, não reprova o critério 11.
+- **Decisão do proxy examinada:** a linha `Proxy decided` que preserva o
+  bloqueio estrutural de PHY-39/ADR-0004 está incorporada ao critério 9. O teste
+  agora compara os sete campos na mesma ponta, antes de seek; contatos seguem
+  bloqueados ali e todos os campos ficam habilitados no registro zero. A
+  integração de PHY-82 mantém N/T independentes de cinemática e não dá novos
+  passos nem novas sondas por um clique nos chips.
+
+##### ❌ Regressão: leitura inicial perdida por uma edição de visualização durante boot
+
+Reprodução no DOM do App, com o simulador falso e a costura de boot já existentes:
+
+1. Carregar a cena de `setupProbe({ delayedBoot: true })`, que tem a corda
+   `corda`, mantendo a construção do simulador pendente.
+2. Clicar no chip **energia**, sem desligar forças, antes de resolver o boot.
+3. Resolver o boot com sucesso, selecionar a corda no canvas em `(8, 4.5)` e
+   avançar o polling de leitura em 100 ms, sem executar nenhum passo.
+4. A leitura mostra `leitura — cordapassos: 0velocidade: 1,00×sem leitura`.
+   Sem o clique, ou com o mesmo clique depois do boot, ela contém `T` como
+   antes. O teste existente de PHY-82 também exige `T: 0,00 N` em t = 0.
+
+Causa: `toggleFocusGroup` muda a identidade de `docRef.current`
+(`src/App.tsx:883`). Ao concluir o boot, `ensureSim` marca
+`pendingRebuildRef.current = docRef.current !== bootDoc` (`:1316`), mesmo sendo
+uma diferença só de Foco. O efeito classifica a edição como live sem ops e
+atualiza `builtDocRef` (`:1224-1232`), mas não limpa essa pendência. O polling
+usa o flag para descartar a leitura válida em `constraintsRef` (`:1055`). O
+primeiro passo/rebuild pode liberar a leitura, mas uma edição de visualização
+não deve invalidar a leitura de um mundo que já corresponde à mesma física.
+
+Este caminho de boot já estava no código examinado pela revisão anterior
+`906b9ae`; o achado é **uma omissão daquela revisão**, e não um requisito novo
+nem uma regressão introduzida pelas correções de harness da retomada. A revisão
+independente deste passe encontrou a consequência durante a checagem final de
+falhas e inicialização.
+
+Sondagem temporária em `src/App.test.ts`, dentro do describe de vetores iniciais,
+com três casos (sem chip, chip depois do boot, chip durante o boot):
+`npm test -- src/App.test.ts -t 'stage3 probe preserves initial rope readouts'`
+→ **1 failed / 2 passed / 197 skipped**, exit 1. Só o caso durante boot falhou:
+`AssertionError: expected 'leitura — cordapassos: 0velocidade: 1…' to contain 'T'`.
+Antes dessa asserção, forças permaneciam pressionadas e os spies confirmaram
+zero chamadas de `step` e `replaceScene`. O arquivo foi restaurado byte a byte
+em `finally`; `git diff --exit-code -- src/App.test.ts src/App.tsx` passou.
+
+**Restante para o stage 2:** somente esta regressão. Escrever o teste de boot
+pendente na costura de App já aprovada, em commit só de teste e vermelho; corrigir
+a interação entre Foco e a pendência do mundo sem perder as edições físicas
+durante boot. Preservar os controles sem chip/pós-boot, as leituras de vínculos,
+a sonda inicial e os bloqueios existentes. Não limpar indiscriminadamente uma
+pendência estrutural real. Nenhum critério foi reescrito nesta revisão.
+
+##### Validação independente e memória da revisão
+
+- Gate oficial completo fora do sandbox:
+  `npm test && npm run lint && npm run typecheck && npm run build`
+  → **33 arquivos / 1226 testes passed, zero skips**, lint, typecheck e build
+  **exit 0**. Vite: 52 módulos; aviso preexistente do chunk do simulador acima
+  de 500 kB (2136,71 kB). A sondagem acima demonstra uma lacuna dessa suíte verde.
+- A primeira execução no sandbox teve **1198 passed / 28 failed**, todos por
+  conexão com Chromium DevTools. A repetição integral fora dele passou sem
+  omitir testes nem alterar o harness.
+- Repetidas as três mutações documentadas na retomada, sempre em produção e
+  restauradas byte a byte em `finally`:
+
+| Teste | Mutação | Vermelho independente |
+| --- | --- | --- |
+| `PHY-78 hides force layers and spring readouts` | Prop de contatos remove `contacts` com forças desligadas | `missing input for μs — atrito estático` na comparação antes de seek, `App.test.ts:3763`; **1 failed / 196 skipped**, exit 1. |
+| Mesmo teste | Prop de contatos recebe `disabled={structuralLocked || !showForces}` | No registro zero, últimos três valores `true` em vez de `false`, `App.test.ts:3780`; **1 failed / 196 skipped**, exit 1. Na ponta o mutant continua equivalente ao bloqueio estrutural. |
+| `paints N and T at t0 and anchors T` | Escolha da sonda acoplada a `showInitialVelocity` | Depois de desligar cinemática, `expected [ 'm', 'a', 'm', 'b' ] to include 'N'`, `App.test.ts:976`; **1 failed / 196 skipped**, exit 1. |
+
+Produção restaurada: os dois casos acima passaram juntos em **2 passed /
+195 skipped**, exit 0. A revisão anterior e a evidência original por teste,
+incluindo as 22 mutações, permanecem no ticket do commit ancestral alcançável
+`906b9ae` (a referência antiga `0cdd8c0` precede o rebase). As correções e a
+evidência da retomada estão em `fa85eb6`/`23bc640`.
+
+**Chamadores, falhas e interações examinados:** codec em import/load/fallback;
+serialização em autosave/export/duplicação; blankScene/createNewScene;
+chips/editDoc/copyOpenPreset e identidade do preset; routeDocChange/applyLiveOps;
+boot/reset/syncWorld e sonda inicial, incluindo boot pendente e falha de sonda;
+captura/seek/repaint e leitura histórica; escopos global/selecionado e anel de
+força; N/T iniciais e caminho documental da corda; mola/corda frouxa;
+energia/momento do corpo e sistema; campos/bloqueios, troca/reabertura de cenas,
+histórico físico e independência dos tipos do gráfico. Fronteiras examinadas:
+focus ausente, show vazio, hidden vazio/chaves especiais, grupos do sistema
+desligados, cenas vazias/fixas e cursores zero/passado/ponta. Não houve passe
+humano independente, outros navegadores/mobile ou perfil prolongado de desempenho.
+
+**CLEAN-31** permanece como limitação já registrada, fora dos critérios: uma
+edição física desfeita/refeita pode restaurar um Foco anterior. Não foi usada
+como motivo desta reabertura.
+
+Reaberto em `to-implement` na mesma branch, sem merge e sem linha PHY-78 no ledger.
