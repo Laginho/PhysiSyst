@@ -48,6 +48,50 @@ function clone(): Record<string, unknown> {
   return JSON.parse(JSON.stringify(validJson)) as Record<string, unknown>
 }
 
+describe('scene focus (PHY-78)', () => {
+  it('canonicalizes shown groups and round-trips hidden graph curves', () => {
+    const scene = parse({
+      ...validJson, constraints: [],
+      focus: { hidden: { energy: ['E_pg'] }, show: ['energy', 'forces'] },
+    })
+    expect(scene).toHaveProperty('focus', { show: ['forces', 'energy'], hidden: { energy: ['E_pg'] } })
+    expect(Object.keys(serialize(scene) as object).slice(-2)).toEqual(['constraints', 'focus'])
+    expect(parse(serialize(scene))).toEqual(scene)
+    expect(scene.version).toBe(1)
+  })
+
+  it('preserves the exact canonical v6 bytes and absent focus', () => {
+    const bytes = '{"version":1,"constants":{"g":9.81,"particleMode":true},"bodies":[{"shape":"circle","radius":0.5,"id":"ball","fixed":false,"mass":2,"position":{"x":0,"y":1},"rotation":0,"vx":2,"vy":0}],"forces":[],"contacts":[],"pulleys":[],"constraints":[]}'
+    const scene = parse(JSON.parse(bytes))
+    expect(scene).not.toHaveProperty('focus')
+    expect(JSON.stringify(serialize(scene))).toBe(bytes)
+  })
+
+  it('accepts no shown groups and empty hidden curve lists', () => {
+    const scene = parse({ ...validJson, focus: { show: [], hidden: { energy: [] } } })
+    expect(scene).toHaveProperty('focus', { show: [], hidden: { energy: [] } })
+  })
+
+  it('keeps hidden graph names as own data keys, including __proto__', () => {
+    const focus: unknown = JSON.parse('{"show":["momentum"],"hidden":{"__proto__":["E_pg"],"constructor":["p_x"]}}')
+    const scene = parse({ ...validJson, focus })
+    expect(serialize(scene)).toHaveProperty('focus', focus)
+    expect(parse(serialize(scene))).toEqual(scene)
+  })
+
+  it.each([
+    null, [], 'forces', {},
+    { show: 'forces' }, { show: null }, { show: [1] },
+    { show: ['foo'] }, { show: ['forces', 'forces'] },
+    { show: ['forces'], extra: true },
+    { show: [], hidden: null }, { show: [], hidden: [] },
+    { show: [], hidden: 'energy' }, { show: [], hidden: { energy: 'E_pg' } },
+    { show: [], hidden: { energy: [''] } }, { show: [], hidden: { energy: [1] } },
+  ])('rejects invalid focus with a focus-specific error: %j', (focus) => {
+    expect(() => parse({ ...validJson, focus })).toThrow(/focus/)
+  })
+})
+
 describe('Contact restitution (PHY-67)', () => {
   it.each([0, 0.5, 1])('round-trips an explicit restitution of %s', (e) => {
     const json = { ...validJson, contacts: [{ ...validJson.contacts[0], e }] }
