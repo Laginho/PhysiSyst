@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-implement
+Stage: blocked
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -196,3 +196,11 @@ Sondagem temporária no teste existente: depois do passo e de desligar forças, 
 | Inserir focus quando ausente | Documento v6 ganha focus; **1 / 19**. |
 | Remover padrão de blankScene | `expected undefined to deeply equal { show: ... }`; **1 / 0**. |
 | Roteamento de focus estrutural | Esperado live sem ops, recebido structural; **1 / 0**. |
+
+#### Stage 2 — decisão de contrato pendente (2026-10-04)
+
+- Retomada na branch existente `phy/PHY-78-modelo-de-foco-e-chips`, commit `0cdd8c0`, base de sessão `sweatshop/2026-10-04-1243`. Restante: somente o critério 9 reaberto; nenhuma alteração de produção ou de testes nesta tentativa.
+- Confirmado o conflito: o critério exige contatos habilitados depois de um passo, mas a prosa e o spec preservam os campos de edição. `BodyContactsPanel` recebe `structuralLocked`; o teste anterior `locks the whole body contact fieldset after stepping and unlocks after reset` exige esse bloqueio. O teste novo de forças navega para o registro zero antes de verificar habilitação, portanto não resolve o instante exigido pelo critério.
+- Pergunta ao humano: aprova esclarecer o critério 9 para preservar as permissões existentes, verificando forças editáveis e contatos bloqueados depois de um passo, e ambos habilitados no registro zero, antes e depois de alternar o Foco? Recomendação: preservar o bloqueio, conforme o spec; habilitar contatos após um passo mudaria a edição física além do escopo de Foco.
+- Consulta ao proxy indisponível nesta tentativa: o CLI no sandbox foi encerrado sem resposta. A execução autenticada fora do sandbox, limitada a ferramentas de leitura, foi rejeitada pela revisão automática porque enviaria código, especificações e testes privados a um destino externo não verificado. Nenhuma decisão de proxy recebida; o contrato numerado permanece inalterado. Aguardando decisão direta do humano, conforme a seção `Asking the proxy` de `ticket-flow`.
+- Validação disponível: `npm test -- src/App.test.ts src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts -t 'scene focus|PHY-78'` — exit 0, 4 arquivos / 39 passed / 389 skipped (casos fora do filtro); `git diff --check` verde antes do registro do bloqueio. O gate integral não foi repetido nesta tentativa, pois não houve mudança de código.
