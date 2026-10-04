@@ -1,5 +1,5 @@
 # PHY-83: Snap de orientação de mola e corda
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -99,3 +99,60 @@ No módulo puro, mutações detectadas: inverter sinal de delta vertical/horizon
 - Ambiente: primeira execução no sandbox terminou com 29 falhas de Chromium (`Chromium disconnected` / `failed to connect to Chromium DevTools`), 1286 testes verdes. O sandbox também recusou criação de processos com erro 1909. A repetição fora do sandbox passou todos os 1315 testes, inclusive Chromium.
 - Diff final revisado contra `sweatshop/2026-10-04-1243`: somente Primary files e ticket; nenhum teste existente alterado, nenhuma mudança de produção em commits de testes e nenhum teste em commits de produção. `contactSnap.ts`, `anchorSnap.ts` e motor permanecem sem alterações. `git diff --check` passou. Sem bloqueio de validação pendente.
 - Etapa 2 encerrada em `to-review`; revisão/merge pertencem à próxima sessão.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Critérios 1–8 aprovados na revisão completa de `0ee2c04...b29744f`. Integração na sessão `sweatshop/2026-10-04-1243`, sem squash, pelo merge `9c22144`. Rebase sem alteração: a branch já estava atualizada sobre `0ee2c04`. Nenhuma correção de produção ou de testes foi necessária na Stage 3.
+
+**Standards**
+
+0 violações obrigatórias; 1 observação de manutenção. Possível Duplicated Code: `toolAnchorAt` (`src/App.tsx:1555–1564`) reconstitui as features de `src/editor/anchorSnap.ts:12–24` com `const vertices = localVertices(hit)`, centro por `reduce` e pontos médios por `map`. As duas definições podem divergir em uma alteração futura. Compartilhar o resultado/candidatos exigiria alterar `anchorSnap.ts`, que este contrato manda consumir sem alteração; registrado em CLEAN-32, sem reabrir PHY-83.
+
+Diff limitado aos Primary files e ao ticket. Os quatro commits de testes precedem a fatia correspondente de produção; nenhum commit de produção toca testes. As assertions existentes foram preservadas. Todos os nove casos novos de DOM possuem registro de mutação e saída vermelha, reproduzidos nesta revisão. CONTEXT.md corresponde à entrada aprovada.
+
+**Spec**
+
+0 violações obrigatórias; 2 observações fora dos casos numerados. Hover/click de corda: `onPointerMove` verifica corpos, enquanto `onToolClick` prioriza `pulleyAtPoint`; um eixo de polia sobre um corpo grande, fora das features de âncora, pode receber uma prévia de orientação embora o clique acrescente a polia. O roteamento existente continua correto; CLEAN-33 registra a investigação. Edição bloqueada: `drag.guide` é atribuída dentro do callback antes de `editDoc` recusar a mudança estrutural; um repaint posterior pode mostrar a guia sem mover o documento. O bloqueio de edição continua efetivo; CLEAN-34 registra a investigação. Ambas são observações de inspeção estática, sem alterar os critérios ou acrescentar testes persistidos.
+
+Chamadores e interações examinados: `snapOrientation` em `bodyOrientationSnap` e `toolAnchorAt`; clique/hover de mola, corda e polia; move/rotate/resize/alpha/forceAnchor; `paint/repaint`; undo no pointerup; cancelamento/conclusão/troca de ferramenta e cena; prioridades de contato e features; poses locais rotacionadas, pontas A/B, constraints concorrentes, escala do canvas e Foco/playback. Caminhos de falha: ausência de constraints ou corpo parceiro, mesmo corpo, segmento curto/coincidente, vínculo fora da tolerância, corda via polia e recusas do editor. Nenhum chamador alterado relevante ficou sem inspeção. Não houve passe visual manual dedicado em navegador; as novas guias foram verificadas no DOM/canvas, e os testes existentes de Chromium passaram no gate.
+
+A linha `Proxy decided` de 2026-10-04 foi revisada: corrige somente o exemplo conflitante do critério 1 para `(0.16, 0.12)`, mantendo a exclusão de segmentos curtos. Comprimento 12 px, afastamentos 9,6/7,2 px; escolha horizontal correta. Nenhuma nova decisão de proxy nesta revisão.
+
+| Critério | Resultado |
+| --- | --- |
+| 1 | ✅ Tolerância 10 px, segmentos curtos excluídos e menor afastamento; exemplos e fronteira cobertos. |
+| 2 | ✅ Pose proposta e âncoras locais, pêndulo/mola, A/B, corda via polia excluída e retorno sem candidato preservado. |
+| 3 | ✅ Pêndulo em x=6; fora da tolerância x=6,3; um undo por arrasto. |
+| 4 | ✅ Contato mantém bloco em y=0,5 e declara o par no drop; sem guia de orientação. |
+| 5 | ✅ Guia vertical de (450,0) a (450,600), cinza 1 px e [6,4]; limpa fora da tolerância e após pointerup/repaint. |
+| 6 | ✅ Mola com âncora mundo y=0,2; feature a 5 px e clique exato vencem; corda sem polia também coberta. |
+| 7 | ✅ Hover a 4 px mostra guia horizontal de (0,528) a (900,528); a 30 px e após Esc/repaint não mostra. |
+| 8 | ✅ Testes anteriores de contato, âncora, arrasto e ferramentas verdes, sem alterar suas assertions. |
+
+**Prova vermelha/verde reproduzida nesta revisão**
+
+Os 20 grupos de mutações registrados na Stage 2 foram reaplicados sequencialmente. Cada execução saiu com código 1 por assertions esperadas. Os dois arquivos de produção foram restaurados byte a byte em `finally` após cada execução; nenhum teste foi alterado.
+
+| Mutação no App / teste(s) | Vermelho observado |
+| --- | --- |
+| Ignorar orientação no move / `snaps a pendulum drag exactly` | 1 failed, 225 skipped; `expected { x: 6.08, y: 5 } to deeply equal { x: 6, y: 5 }`. |
+| Desabilitar guia em paint / `draws the vertical guide` | 1 failed, 225 skipped; `expected [] to deep equally contain [ 6, 4 ]`. |
+| Remover prioridade do contato / `gives contact snap priority` | 1 failed, 225 skipped; `expected { x: 6, y: 0.6 } to deeply equal { x: 6, y: 0.5 }`. |
+| Clique usa apenas anchorSnap / `aligns the spring tool` e `aligns the rope tool` | 2 failed, 224 skipped; ambos: `expected 0.2666666666666666 to be 0.2`. |
+| Remover guard de features / `gives anchor features priority`, offsets 5/60 e 0 | 2 failed, 224 skipped; ambos: `expected [ [ 6, 4 ] ] to deeply equal []`. |
+| Hover com guide=null / `previews the horizontal guide` | 1 failed, 225 skipped; `expected [] to deep equally contain [ 6, 4 ]`. |
+| Incluir corda via polia / `does not orient a rope routed` | 1 failed, 225 skipped; `expected [ [ 6, 4 ] ] to deeply equal []`. |
+| Não limpar dragRef no release / `draws the vertical guide` | 1 failed, 225 skipped; guia continua após pointerup. |
+| Não limpar toolGuideRef / dois `aligns ... tool` e `previews ...` | 3 failed, 223 skipped; guia continua após conclusão/Esc. |
+
+Nos 11 grupos do módulo puro, sempre sobre seus 19 casos: sinal vertical invertido **4 failed / 15 passed**; sinal horizontal **5/14**; tolerância duplicada **4/15**; segmentos curtos incluídos **3/16**; escolha do menor afastamento invertida **5/14**; fronteira excluída **1/18**; pose antiga **2/17**; âncoras locais ignoradas **2/17**; corda via polia incluída **1/18**; corpo sem candidato deslocado **6/13**; último candidato vence **1/18**. Cada um dos 19 casos puros falhou em pelo menos uma dessas mutações. Os nove casos DOM também ficaram vermelhos com as mutações listadas.
+
+**Gate e fechamento**
+
+Antes da revisão: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; **34 files passed, 1315 tests passed**, 85.76 s. Após as mutações/restauração e o rebase: o mesmo gate, exit 0; **34 files passed, 1315 tests passed**, 80.52 s. ESLint e TypeScript sem erros; Vite construiu 53 módulos. Aviso não bloqueante de chunks maiores que 500 kB; simulador/Rapier permanece no bundle separado existente. Execuções fora do sandbox devido ao erro de logon Windows 1909.
+
+Arquivos revistos: `src/editor/orientationSnap.ts`, `src/editor/orientationSnap.test.ts`, `src/App.tsx`, `src/App.test.ts`, `CONTEXT.md` e este ticket; `anchorSnap.ts` e `contactSnap.ts` somente consumidos. Revisão final do diff e `git diff --check` verdes; sem mutação residual, logs acidentais, segredos ou artefatos gerados incluídos. Fechamento inclui ledger e CLEAN-32/33/34 como needs-triage, sem implementar seus escopos.
+
+Padrões: 0 violações, 1 follow-up; especificação: 0 violações, 2 follow-ups. `Stage: done`; ledger aponta para `9c22144`. A sessão fica responsável pelo push/PR do lote.
