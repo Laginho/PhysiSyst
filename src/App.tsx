@@ -2,7 +2,7 @@ import { bodyEnergy, systemEnergy, type BodyEnergy, type SystemEnergy } from './
 import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppliedForce, Body, ConstraintEnd, Focus, FocusGroup, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
-import { bodyPointToWorld, collectWarnings, FOCUS_GROUPS, scenePath, serialize } from './scene'
+import { bodyPointToWorld, collectWarnings, FOCUS_GROUPS, localVertices, scenePath, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
@@ -51,7 +51,7 @@ import {
 import { AXLE_HIT_RADIUS_PX, bodyAtPoint, pulleyAtPoint, ropeAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
 import { anchorSnap } from './editor/anchorSnap'
 import { resolveContactSnap } from './editor/contactSnap'
-import { bodyOrientationSnap, type OrientationSnap } from './editor/orientationSnap'
+import { bodyOrientationSnap, snapOrientation, type OrientationSnap } from './editor/orientationSnap'
 import { pointInTrash, trashRect, type Rect } from './editor/trash'
 import {
   canRedo,
@@ -729,6 +729,7 @@ export default function App() {
   const [tool, setTool] = useState<Tool>(null)
   const [toolError, setToolError] = useState<string | null>(null)
   const toolRef = useRef<Tool>(tool)
+  const toolGuideRef = useRef<OrientationSnap | null>(null)
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
@@ -993,7 +994,7 @@ export default function App() {
         lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
-        guide: dragRef.current?.kind === 'move' ? dragRef.current.guide : null,
+        guide: dragRef.current?.kind === 'move' ? dragRef.current.guide : toolGuideRef.current,
       })
     }
     repaintGraph()
@@ -1058,6 +1059,7 @@ export default function App() {
   useEffect(() => {
     selectionRef.current = selection
     toolRef.current = tool
+    toolGuideRef.current = null
     repaint()
   }, [selection, tool, repaint])
 
@@ -1546,6 +1548,29 @@ export default function App() {
     return { sx: e.clientX - r.left, sy: e.clientY - r.top }
   }
 
+  /** Anchor snap wins even when a click is exactly on a feature and does not move. */
+  function toolAnchorAt(view: Scene, hit: Body, w: Vec2): { anchor: Vec2; guide: OrientationSnap | null } {
+    const anchor = anchorSnap(hit, w, transform)
+    const tool = toolRef.current
+    if (!tool?.a || (tool.kind === 'rope' && tool.via.length > 0)) return { anchor, guide: null }
+    // anchorSnap returns only coordinates, so recognize its feature points before
+    // applying orientation; comparing with the raw click misses exact feature hits.
+    const vertices = localVertices(hit)
+    const center = vertices.length === 0 ? { x: 0, y: 0 } : {
+      x: vertices.reduce((sum, point) => sum + point.x, 0) / vertices.length,
+      y: vertices.reduce((sum, point) => sum + point.y, 0) / vertices.length,
+    }
+    const features = [center, ...vertices, ...vertices.map((point, index) => {
+      const next = vertices[(index + 1) % vertices.length]!
+      return { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 }
+    })]
+    if (features.some(point => point.x === anchor.x && point.y === anchor.y)) return { anchor, guide: null }
+    const otherBody = view.bodies.find(body => body.id === tool.a!.bodyId)
+    if (!otherBody) return { anchor, guide: null }
+    const guide = snapOrientation(w, bodyPointToWorld(otherBody, tool.a.anchor), camera.pixelsPerMeter)
+    return { anchor: guide ? worldToLocal(hit, { x: w.x + guide.delta.x, y: w.y + guide.delta.y }) : anchor, guide }
+  }
+
   /**
    * Palette tool click, every body anchor through Anchor snap. Pulley: one
    * click on a body. Spring: anchor A, then anchor B. Rope: anchor A, then the
@@ -1566,7 +1591,7 @@ export default function App() {
     }
     const hit = bodyAtPoint(view.bodies, w)
     if (!hit) return
-    const anchor = anchorSnap(hit, w, transform)
+    const { anchor } = toolAnchorAt(view, hit, w)
     if (tool.kind === 'pulley') {
       finishTool(addPulley(docRef.current, hit.id, anchor))
       return
@@ -1658,8 +1683,19 @@ export default function App() {
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragRef.current
-    if (!drag) return
+    if (!drag && !toolRef.current?.a && !toolGuideRef.current) return
     const raw = eventToWorld(e)
+    if (!drag) {
+      const view = applyStates(docRef.current, statesRef.current)
+      const hit = toolRef.current?.a && bodyAtPoint(view.bodies, raw)
+      const guide = hit ? toolAnchorAt(view, hit, raw).guide : null
+      const previous = toolGuideRef.current
+      if (previous?.axis !== guide?.axis || previous?.through.x !== guide?.through.x || previous?.through.y !== guide?.through.y) {
+        toolGuideRef.current = guide
+        repaint()
+      }
+      return
+    }
 
     if (drag.kind === 'move') {
       editDoc((d) => {
