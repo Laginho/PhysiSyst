@@ -734,7 +734,7 @@ describe('initial force vectors (PHY-82)', () => {
     let current = scene
     let count = 0
     const step = vi.fn(() => { count++ })
-    const probeInitial = vi.fn((_scene: Scene): InitialProbe => {
+    const probeInitial = vi.fn<(scene: Scene) => InitialProbe>(() => {
       if (options.throws) throw new Error('probe failed')
       return probeReading()
     })
