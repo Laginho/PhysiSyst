@@ -40,6 +40,14 @@ const edit = (fn: (s: Scene) => void): Scene => {
 }
 
 describe('routeDocChange', () => {
+  it('PHY-78 focus-only view edits need no live operations or rebuild', () => {
+    const scene = base()
+    const next: Scene = { ...scene, focus: { show: ['forces'] } }
+    expect(routeDocChange(scene, next)).toStrictEqual({ kind: 'live', ops: [] })
+    expect(routeDocChange(next, { ...scene, focus: { show: [], hidden: { energy: ['E_pg'] } } })).toStrictEqual({ kind: 'live', ops: [] })
+    expect(routeDocChange(next, scene)).toStrictEqual({ kind: 'live', ops: [] })
+  })
+
   it('identical documents need no ops', () => {
     expect(routeDocChange(base(), base())).toStrictEqual({ kind: 'live', ops: [] })
   })
