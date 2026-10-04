@@ -1,5 +1,5 @@
 # PHY-74: Closeout v6: testes de E_mec, 0.6.0, FINAL_REPORT
-Stage: blocked
+Stage: to-implement
 Status: ready-for-agent
 Blocked by: PHY-69, PHY-73
 Review: human
@@ -57,3 +57,6 @@ Passe manual desktop (registrar OK/defeito por item):
 - Planner: `package.json` está em 0.4.0 e o FINAL_REPORT não tem seção v5; sobe direto para 0.6.0 e anota.
 
 - 2026-10-03 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-74-closeout-v6-asked-20261003-2134`): PHY-74 salvo como `blocked`: falta o passe desktop, pois o controle de navegador está indisponível. /  / - Testes de conservação validados por mutação. / - Versão 0.6.0 e relatório v6 preparados. / - Gate verde com dois workers: **1.094 testes**, lint sem avisos, typecheck e build. / - Commits: `8fc30c5`, `86ca45e`. /  / Para concluir, preciso de uma conexão de navegador ou dos resultados dos oito itens manuais.
+
+- 2026-10-03 Proxy decided: o passe manual desktop é executado pelo próprio stage 2 em Chromium headless, pelo harness do repo (`withBrowserSession` em `src/test/browser.ts`, carregado por Vite SSR) contra o Vite dev server da branch, com cliques reais de paleta/inspector, eventos de mouse via CDP no canvas e no gráfico, redimensionamento da janela e troca de idioma; leituras tiradas do painel/eixos e screenshots. É o mesmo procedimento do PHY-33 (FINAL_REPORT v4, "Desktop Manual Pass (1–8)", 2026-09-25) e do PHY-63 (arraste por CDP). A falta do tool `cua`/`iab` do runtime não é bloqueio: o harness sobe o Chromium por conta própria, e o gate verde (1094 testes, incl. `App.browser.test.ts`) prova que ele acha o executável nesta máquina. O script do passe e as capturas ficam fora do repo (não são Primary files), como no PHY-33. Cada item vira OK ou defeito; um defeito abre ticket `needs-triage` na v6, não um diff aqui. O critério 4 fica como está; `Review: human` garante que o humano vê o resultado no PR da sessão. — Razão: precedente aceito do repo (v4), reversível (o humano pode repetir qualquer item no PR), e um run não assistido não tem humano para fazer o passe.
+- 2026-10-03 Foreman: retomar da branch `phy/PHY-74-closeout-v6` (a `-asked-20261003-2134` renomeada; tem os commits 8fc30c5 testes e 86ca45e código — não recomeçar). Rodar os 8 itens, substituir as 8 linhas "Pending — browser connection required" do FINAL_REPORT por OK/defeito com os números medidos, reescrever o parágrafo "**Not executed.**" da seção Desktop Manual Pass descrevendo o run (Chromium headless, largura, idioma, dev server), corrigir a linha PHY-74 da tabela de escopo e o primeiro bullet de Next Steps, rodar o gate (`--maxWorkers=2`, como registrado) e commitar `Stage: to-review`.
