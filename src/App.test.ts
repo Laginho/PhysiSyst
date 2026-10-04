@@ -15,7 +15,7 @@ import { en } from './i18n/en'
 import { setLang, t } from './i18n'
 import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, INDEX_KEY, GALLERY_ACK_KEY, loadIndex, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import { DEMO_SCENE } from './scene/demo'
-import { scenePath } from './scene'
+import { bodyPointToWorld, scenePath } from './scene'
 import type { FocusGroup, Scene } from './scene/types'
 import { PRESETS, presetById } from './presets'
 import { withBrowserSession } from './test/browser'
@@ -2019,6 +2019,196 @@ describe('simulator warnings panel (PHY-53)', () => {
     await act(async () => { findButton(host, ptBR['playback.reset'])!.click() })
 
     expect(panel(host, ptBR['warnings.title'])).toBeUndefined()
+  })
+})
+
+describe('orientation snap (PHY-83)', () => {
+  beforeEach(() => setLang('pt-BR'))
+
+  function setup(scene: Scene) {
+    return setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'orientation', name: 'Orientation', updatedAt: 1 }])
+      saveScene(window.localStorage, 'orientation', scene)
+      saveCurrentSceneId(window.localStorage, 'orientation')
+    })
+  }
+
+  function saved(): Scene {
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    const scene = loadScene(window.localStorage, 'orientation')
+    if (!scene) throw new Error('missing orientation scene')
+    return scene
+  }
+
+  function pendulum(): Scene {
+    return { version: 1, constants: { g: 9.81 }, contacts: [], forces: [], bodies: [
+      { id: 'pivo', shape: 'circle', radius: 0.1, fixed: true, mass: 0, position: { x: 6, y: 7 }, rotation: 0 },
+      { id: 'bola', shape: 'circle', radius: 0.3, fixed: false, mass: 1, position: { x: 8, y: 5 }, rotation: 0 },
+    ], constraints: [{ id: 'corda', kind: 'rope', via: [],
+      a: { bodyId: 'pivo', anchor: { x: 0, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0, y: 0 } } }] }
+  }
+
+  function wallAndBlock(): Scene {
+    return { version: 1, constants: { g: 9.81 }, contacts: [], forces: [], bodies: [
+      { id: 'parede', shape: 'rectangle', width: 0.2, height: 2, fixed: true, mass: 0, position: { x: 4, y: 0.2 }, rotation: 0 },
+      { id: 'bloco', shape: 'rectangle', width: 2, height: 2, fixed: false, mass: 1, position: { x: 6, y: 0.27 }, rotation: 0 },
+    ] }
+  }
+
+  function arm(host: HTMLElement, canvas: Element, kind: 'spring' | 'rope') {
+    act(() => findButton(host, t(`palette.${kind}`))!.click())
+    click(canvas, { x: 4.1, y: 0.2 })
+  }
+
+  /** Observe the current guide at the canvas boundary; fixed-body borders also use dashes. */
+  function captureGuideFrame() {
+    const dashes: number[][] = []
+    const moves: number[][] = []
+    const lines: number[][] = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { dashes.length = 0; moves.length = 0; lines.length = 0 }
+        if (key === 'setLineDash') return (dash: number[]) => {
+          if (target.strokeStyle === '#999' && target.lineWidth === 1) dashes.push(dash)
+        }
+        if (key === 'moveTo' || key === 'lineTo') return (x: number, y: number) => {
+          if (target.strokeStyle === '#999' && target.lineWidth === 1) (key === 'moveTo' ? moves : lines).push([x, y])
+        }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    return { dashes, moves, lines }
+  }
+
+  function pointer(canvas: Element, type: string, at: { x: number; y: number }) {
+    const point = screen(at.x, at.y)
+    act(() => canvas.dispatchEvent(pointerEvent(type, point.x, point.y)))
+  }
+
+  it('snaps a pendulum drag exactly, leaves distant drags free and creates one undo per drag', async () => {
+    const { host, canvas } = setup(pendulum())
+    await settleSimImport()
+    dragTo(canvas, { x: 8, y: 5 }, { x: 6.08, y: 5 })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position).toEqual({ x: 6, y: 5 })
+    pressKey('z', { ctrlKey: true })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position).toEqual({ x: 8, y: 5 })
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+    dragTo(canvas, { x: 8, y: 5 }, { x: 6.3, y: 5 })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position.x).toBeCloseTo(6.3, 12)
+    pressKey('z', { ctrlKey: true })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position.x).toBe(8)
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('draws the vertical guide edge to edge only during an active snap', async () => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(pendulum())
+    await settleSimImport()
+    pointer(canvas, 'pointerdown', { x: 8, y: 5 })
+    pointer(canvas, 'pointermove', { x: 6.08, y: 5 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    expect(frame.moves).toContainEqual([450, 0])
+    expect(frame.lines).toContainEqual([450, 600])
+    pointer(canvas, 'pointermove', { x: 6.3, y: 5 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointermove', { x: 6.08, y: 5 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    pointer(canvas, 'pointerup', { x: 6.08, y: 5 })
+    expect(frame.dashes).toEqual([])
+    // A fresh repaint must not revive the released guide.
+    toggleFocus(host, 'forces')
+    expect(frame.dashes).toEqual([])
+  })
+
+  it('gives contact snap priority over a nearby spring axis and draws no guide', async () => {
+    const frame = captureGuideFrame()
+    const scene: Scene = { version: 1, constants: { g: 9.81 }, contacts: [], forces: [], bodies: [
+      { id: 'chao', shape: 'rectangle', width: 14, height: 1, fixed: true, mass: 0, position: { x: 7, y: -0.5 }, rotation: 0 },
+      { id: 'parede', shape: 'rectangle', width: 0.2, height: 2, fixed: true, mass: 0, position: { x: 4, y: 0.6 }, rotation: 0 },
+      { id: 'bloco', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 6, y: 3 }, rotation: 0 },
+    ], constraints: [{ id: 'mola', kind: 'spring', k: 10, x0: 2,
+      a: { bodyId: 'parede', anchor: { x: 0.1, y: 0 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0 } } }] }
+    const { canvas } = setup(scene)
+    await settleSimImport()
+    pointer(canvas, 'pointerdown', { x: 6, y: 3 })
+    pointer(canvas, 'pointermove', { x: 6, y: 0.56 })
+    expect(saved().bodies.find(b => b.id === 'bloco')!.position).toEqual({ x: 6, y: 0.5 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointerup', { x: 6, y: 0.56 })
+    expect(saved().contacts).toHaveLength(1)
+    expect(saved().contacts[0]).toMatchObject({ a: 'bloco', b: 'chao' })
+    expect(frame.dashes).toEqual([])
+  })
+
+  it.each(['spring', 'rope'] as const)('aligns the %s tool second end and clears its guide on completion', async (kind) => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(wallAndBlock())
+    await settleSimImport()
+    arm(host, canvas, kind)
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    click(canvas, { x: 6.5, y: 0.2 + 4 / 60 })
+    const scene = saved()
+    expect(scene.constraints).toHaveLength(1)
+    const end = scene.constraints![0]!.b
+    expect(end.bodyId).toBe('bloco')
+    expect(end.anchor.x).toBeCloseTo(0.5, 12)
+    expect(bodyPointToWorld(scene.bodies.find(b => b.id === 'bloco')!, end.anchor).y).toBe(0.2)
+    expect(frame.dashes).toEqual([])
+  })
+
+  it.each([5 / 60, 0])('gives anchor features priority at %s meters from the center', async (offset) => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(wallAndBlock())
+    await settleSimImport()
+    arm(host, canvas, 'spring')
+    pointer(canvas, 'pointermove', { x: 6 + offset, y: 0.27 })
+    expect(frame.dashes).toEqual([])
+    click(canvas, { x: 6 + offset, y: 0.27 })
+    expect(saved().constraints![0]!.b.anchor).toEqual({ x: 0, y: 0 })
+  })
+
+  it('previews the horizontal guide only within tolerance and clears it on Esc', async () => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(wallAndBlock())
+    await settleSimImport()
+    arm(host, canvas, 'spring')
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    expect(frame.moves).toContainEqual([0, 528])
+    expect(frame.lines).toContainEqual([900, 528])
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.7 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    pressKey('Escape')
+    expect(frame.dashes).toEqual([])
+    toggleFocus(host, 'forces')
+    expect(frame.dashes).toEqual([])
+    expect(saved().constraints ?? []).toEqual([])
+  })
+
+  it('does not orient a rope routed through a pulley', async () => {
+    const frame = captureGuideFrame()
+    const scene = wallAndBlock()
+    scene.bodies.push({ id: 'suporte', shape: 'circle', radius: 0.2, fixed: true, mass: 0,
+      position: { x: 5, y: 3 }, rotation: 0 })
+    scene.pulleys = [{ id: 'polia', bodyId: 'suporte', anchor: { x: 0, y: 0 }, radius: 0.25 }]
+    const { host, canvas } = setup(scene)
+    await settleSimImport()
+    arm(host, canvas, 'rope')
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    click(canvas, { x: 5, y: 3 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toEqual([])
+    click(canvas, { x: 6.5, y: 0.2 + 4 / 60 })
+    const rope = saved().constraints![0]!
+    expect(rope).toMatchObject({ kind: 'rope', via: ['polia'] })
+    expect(rope.b.anchor.y).toBeCloseTo(-1 / 300, 12)
   })
 })
 

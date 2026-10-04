@@ -1,5 +1,5 @@
 # PHY-83: Snap de orientação de mola e corda
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -65,3 +65,37 @@ O encaixe em contato alinha um corpo a uma superfície e o de âncora puxa um po
 - 2026-10-04 Attempt 1 stopped to ask (its commits are on branch `phy/PHY-83-snap-de-orientacao-de-mola-e-corda-asked-20261004-1630`): PHY-83 ficou `blocked`, registrado no commit `fd56c2e`. /  / O critério 1 exige snap horizontal para `(0,1; 0,05)`, mas esse segmento mede **6,71 px** e a regra exige `null` para comprimentos ≤ 10 px. /  / Recomendo trocar o exemplo por **`(0,15; 0,1)`**, que mede 10,82 px. Confirma essa correção? /  / A [skill ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) determina: “Only stage 1 does” para alterações nos critérios. O proxy configurado está indisponível neste runtime. Por isso, registrei o bloqueio; código e testes não foram alterados. `git diff --check` passou.
 - 2026-10-04 Proxy decided: manter a exclusão dos segmentos curtos (é decisão do spec: "segmentos de comprimento até a tolerância não travam") e corrigir só o exemplo de menor afastamento do critério 1, de `(0.1, 0.05)` para `(0.16, 0.12)` — com `ppm = 60`, `(0.1, 0.05)` mede 6,71 px (≤ 10 px, logo `null`), enquanto `(0.16, 0.12)` mede exatamente 12 px (0,2 m, triângulo 3-4-5), `|dx| = 9,6 px` e `|dy| = 7,2 px` cabem os dois na tolerância e o menor afastamento é o horizontal. A proposta do stage 2, `(0.15, 0.1)`, também satisfaz (10,82 px), mas fica a 0,8 px da borda; `(0.16, 0.12)` está no meio da janela válida (10 px < L ≤ 14,14 px). Nenhum outro critério tem a mesma inconsistência (2, 3, 6, 7 conferidos; 4, 5, 8 sem geometria).
 - 2026-10-04 Foreman: começar da sessão; a branch `-asked-20261004-1630` só tem o commit do ticket, nada a retomar.
+- 2026-10-04 Stage 2: costuras aprovadas: módulo puro e DOM/canvas do App. Chamadores examinados: `onPointerMove` (move, rotate, resize, alpha, forceAnchor), `onToolClick` (spring, rope, pulley), `repaint` e cancelamento/conclusão/troca de ferramenta. Entradas de fronteira: constraints ausentes, corpo sem vínculo, pontas coincidentes/curtas, tolerância inclusiva em px, âncoras locais rotacionadas, ponta A/B, vários vínculos e cordas com polia. Primeiro red: `npm test -- src/editor/orientationSnap.test.ts` falha por `Cannot find module './orientationSnap'` (1 suite failed).
+
+### Stage 2 — red/green e mutate-verify (2026-10-04)
+
+- Commits de testes separados da produção: `bb95c1d` (módulo ausente), `07be3f5` (`bodyOrientationSnap is not a function`: 11 failed / 8 passed), `685cb3f` (DOM arrasto: 2 failed / 1 passed / 217 skipped) e `58a83fb` (DOM ferramentas: 4 failed / 5 passed / 217 skipped). Todos executados antes da implementação correspondente.
+- Green focado: módulo puro, 19 passed; `App.test.ts -t 'orientation snap'`, 9 passed / 217 skipped. Os testes existentes não foram alterados.
+- O canvas também traceja contornos de corpos fixos em coordenadas locais (`[6/ppm, 4/ppm]`). O harness observa a guia de orientação (`#999`, 1 px) para não confundir esse desenho existente com os critérios 4/5/7.
+- `anchorSnap` retorna somente coordenadas locais, sem flag de feature. No App, a saída é reconhecida como centro/face/vértice antes da orientação; isso preserva inclusive cliques exatamente sobre uma feature, que uma comparação com o clique cru deixaria passar. O módulo de âncora foi consumido sem alteração.
+
+Cada mutação abaixo foi aplicada temporariamente a **src/App.tsx**, executada com `npm test -- src/App.test.ts -t <nome>` (via CLI do Vitest nas mutações), produziu exit 1 por assertion e foi restaurada antes da próxima. Nome = trecho identificador do teste novo.
+
+| Teste novo | Mutação de produção | Saída vermelha observada |
+| --- | --- | --- |
+| `snaps a pendulum drag exactly` | Ignorar `bodyOrientationSnap` no ramo move | `1 failed / 225 skipped`; `expected { x: 6.08, y: 5 } to deeply equal { x: 6, y: 5 }` |
+| `draws the vertical guide` | Desabilitar `if (opts?.guide)` em paint | `1 failed / 225 skipped`; `expected [] to deep equally contain [ 6, 4 ]` |
+| `gives contact snap priority` | Aplicar orientação mesmo com `neighborId` não nulo | `1 failed / 225 skipped`; `expected { x: 6, y: 0.6 } to deeply equal { x: 6, y: 0.5 }` |
+| `aligns the spring tool second end` | Clique usa apenas `anchorSnap`, ignorando orientação | `2 failed / 224 skipped` junto com rope; `expected 0.2666666666666666 to be 0.2` |
+| `aligns the rope tool second end` | Mesma mutação do clique acima | Mesma execução: ambos os testes identificados como `FAIL`, mesma assertion |
+| `gives anchor features priority at 0.08333333333333333` | Remover guard de features em `toolAnchorAt` | `2 failed / 224 skipped` junto com centro exato; `expected [ [ 6, 4 ] ] to deeply equal []` |
+| `gives anchor features priority at 0` | Mesma mutação do guard acima | Mesma execução: ambos os offsets identificados como `FAIL`, mesma assertion |
+| `previews the horizontal guide` | Hover devolve sempre `guide = null` | `1 failed / 225 skipped`; `expected [] to deep equally contain [ 6, 4 ]` |
+| `does not orient a rope routed` | Remover exclusão `tool.via.length > 0` | `1 failed / 225 skipped`; `expected [ [ 6, 4 ] ] to deeply equal []` |
+
+Limpeza da guia também verificada por mutação: remover `dragRef.current = null` tornou `draws the vertical guide` vermelho (1 failed); remover `toolGuideRef.current = null` tornou os dois testes `aligns ... tool` e `previews ...` vermelhos (3 failed). Todos: `expected [ [ 6, 4 ] ] to deeply equal []`.
+
+No módulo puro, mutações detectadas: inverter sinal de delta vertical/horizontal; duplicar tolerância; remover exclusão de segmento curto; inverter escolha do menor afastamento; excluir fronteira da tolerância; usar pose antiga; ignorar âncoras locais; incluir corda com polia; mover corpo no retorno sem candidato; e fazer o último candidato vencer. Todas produziram assertions vermelhas; todos os 19 casos novos aparecem entre os testes que falharam nessas execuções. Produção restaurada em `finally` em todas as mutações.
+
+### Stage 2 — handoff (2026-10-04)
+
+- Implementado: tolerância perpendicular de 10 px; segmentos curtos excluídos; escolha do menor afastamento; corpo na pose proposta com âncoras locais; mola/corda sem polia; prioridade do contato no arrasto e de features no clique/hover; guia cinza de 1 px, tracejado [6, 4], de borda a borda; limpeza ao sair da tolerância, soltar, concluir ou cancelar ferramenta. Um undo por arrasto preservado. CONTEXT.md atualizado.
+- Gate completo: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0. Vitest: **34 files passed, 1315 tests passed**, duração 78.66 s. ESLint e TypeScript sem erros; Vite: 53 módulos, build concluído. Aviso de chunk >500 kB emitido para bundles existentes, sem alteração no motor.
+- Ambiente: primeira execução no sandbox terminou com 29 falhas de Chromium (`Chromium disconnected` / `failed to connect to Chromium DevTools`), 1286 testes verdes. O sandbox também recusou criação de processos com erro 1909. A repetição fora do sandbox passou todos os 1315 testes, inclusive Chromium.
+- Diff final revisado contra `sweatshop/2026-10-04-1243`: somente Primary files e ticket; nenhum teste existente alterado, nenhuma mudança de produção em commits de testes e nenhum teste em commits de produção. `contactSnap.ts`, `anchorSnap.ts` e motor permanecem sem alterações. `git diff --check` passou. Sem bloqueio de validação pendente.
+- Etapa 2 encerrada em `to-review`; revisão/merge pertencem à próxima sessão.
