@@ -1,5 +1,5 @@
 # PHY-76: Dock sob o canvas e tamanho dos controles
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -78,3 +78,30 @@ Hoje a barra de transporte, o painel do gráfico e a paleta são irmãos da caix
 - Rodada ampliada de App/persistência/i18n: 245 passed e dois testes PHY-44 desconectados pelo sandbox. Reexecução dos mesmos dois testes com permissão para o Chromium: **2 passed, 164 skipped (166)**. As próximas verificações com browser rodam com essa permissão.
 
 - 2026-10-04 Correção do harness do teste de 402 px (commit exclusivo de testes): o seletor inicial media `button, label, input`, mas não o `span` da leitura de velocidade. Um slider inflexível de 129 px deixava esse span vazar e sobrevivia. O teste agora confirma zoom 1,6 e mede todos os descendentes. A mesma mutação na produção (`style={{ width: 129, flexShrink: 0 }}` no slider de velocidade) produz **1 failed, 23 skipped (24)**: `expected 44.609375 to be less than or equal to 1`. Mutação removida; o contrato não mudou.
+
+#### Stage 2 — evidência Chromium (2026-10-04)
+
+- Red em `410a2c4`: quatro casos lado a lado com `scrollHeight` 1096 > 1080; altura da barra com razão 3,720788 > 1,76; canvas de 696 px em caixa de 694,640625 px. O caso empilhado foi morto pelo deslocamento de 12 px do dock. Red adicional em `df3ecb7`: razão 2,545673 > 1,76 em 1280 px e overflow de 49,40625 px no canvas mínimo.
+- Ajustes de produção: `main` limitado ao viewport descontando as margens padrão do body; 3 px reservados na caixa para bordas e arredondamento do fit; sliders de velocidade/tempo em linhas próprias, com largura flexível. O dock permanece irmão da caixa que recebe só a altura restante da coluna, de modo que o próprio flex desconta sua altura antes de `fitCanvas`.
+- Green: **9 passed, 15 skipped (24)** no grupo `canvas dock geometry`. Mutação conjunta de alinhamento, altura e shrink-wrap: **8 failed, 1 passed, 15 skipped (24)**. O caso de 402 px foi morto separadamente pelo slider inflexível; tabela por teste abaixo. Todas as mutações foram removidas.
+
+| Novo teste (nome abreviado) | Mutação na produção | Saída vermelha |
+|---|---|---|
+| aligns… 1920 px, escala 1 | dock `transform: translateX(12px)` | expected 12 to be ≤ 1 |
+| aligns… 1920 px, escala 1,6 | mesma | expected 12 to be ≤ 1 |
+| aligns… 1280 px, escala 1 | mesma | expected 12 to be ≤ 1 |
+| aligns… 1280 px, escala 1,6 | mesma | expected 12 to be ≤ 1 |
+| aligns… 700 px, escala 1,6 | mesma | expected 12 to be ≤ 1 |
+| scales transport height… 1920 px | barra `minHeight: 150 / controlsScale`, fixando sua altura física | expected 1 to be ≥ 1,44 |
+| scales transport height… 1280 px | mesma | expected 1 to be ≥ 1,44 |
+| refits… within three frames | caixa medida com `flex: controlsScale === 1.6 ? '0 0 auto' : 1`, shrink-wrap do canvas | expected 636 to be less than 630; o canvas cresceu em vez de refazer o fit |
+| keeps the sizer… 402 px | slider de velocidade `width: 129, flexShrink: 0` | expected 44.609375 to be ≤ 1 |
+
+- Verificação focada final: `npm test -- src/persistence/persistence.test.ts src/App.test.ts src/App.browser.test.ts` — **3 files passed, 241 tests passed**. Inclui os testes existentes de layout, seleção, alça, gráfico e edição numérica no Chromium, além dos novos casos.
+
+#### Stage 2 — entrega (2026-10-04)
+
+- Implementados os critérios 1–11: persistência normalizada de 70–160%, dock na largura lógica do canvas com as mesmas bordas laterais, ordem transporte → paleta/dica → gráfico, botões de tamanho fora do zoom e gráfico de 180 px sem escala. A alça atualiza a largura do dock no mesmo render. O fit usa a caixa independente que recebe a altura restante depois do dock.
+- **21 casos novos** (3 persistência, 9 DOM, 9 Chromium), com testes em commits separados da produção. Mutações reais e saídas vermelhas por caso de DOM/Chromium registradas acima; o harness corrigido também tem commit próprio e prova vermelha.
+- Gate oficial `npm test && npm run lint && npm run typecheck && npm run build`: **33 arquivos, 1.140 testes passaram; lint, typecheck e build concluíram com exit 0**. O build manteve o aviso de chunk >500 kB no módulo `sim`; nenhum arquivo gerado entrou no diff.
+- Diff final limitado aos Primary files e ao ticket; `git diff --check` verde. Branch `phy/PHY-76-controls-dock`, criada da sessão `sweatshop/2026-10-04-1243`. Pronto para stage 3; `Review: human` preservado.

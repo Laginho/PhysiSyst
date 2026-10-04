@@ -1684,7 +1684,9 @@ export default function App() {
   const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 8, minHeight: '100vh', boxSizing: 'border-box', padding: 8 }}>
+    // Account for the body's two default 8px margins so the row is bounded
+    // by the viewport, including the dock and the main element's padding.
+    <main style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - 16px)', boxSizing: 'border-box', padding: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <h1 style={{ fontSize: 18, margin: 8 }}>{t('app.title')}</h1>
         <label style={{ fontSize: 12 }}>
@@ -1733,6 +1735,9 @@ export default function App() {
               flex: 1,
               minWidth: 0,
               minHeight: 0,
+              // Reserve the two border pixels and fitCanvas's possible 1px
+              // rounding up; ResizeObserver reports the remaining content box.
+              paddingBottom: 3,
               display: 'flex',
               alignItems: 'flex-start',
               // Centering split any width-floor overflow evenly left and
@@ -1858,7 +1863,7 @@ export default function App() {
           }}>
             <div style={{ display: 'flex', alignItems: 'flex-start' }}>
               <div style={{ zoom: controlsScale, width: (size.width - CONTROLS_SIZER_WIDTH) / controlsScale, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
                   <button onClick={togglePlay} style={{ minWidth: 110 }}>
                     {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
@@ -1920,13 +1925,15 @@ export default function App() {
                       </div>
                     )}
                   </span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+                  <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, flex: '1 1 100%', minWidth: 0 }}>
                     {t('playback.speedLabel')}
                     <input
                       type="range"
                       min={SPEED_MIN}
                       max={SPEED_MAX}
                       step={SPEED_STEP}
+                      style={{ flex: 1, minWidth: 0 }}
                       value={playback.speed}
                       onChange={(e) => dispatch({ type: 'setSpeed', speed: e.target.valueAsNumber })}
                     />
@@ -1934,7 +1941,7 @@ export default function App() {
                       {fmtNum(playback.speed, 2, lang)}×
                     </span>
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 100%', minWidth: 0 }}>
                     {t('playback.timeLabel')}
                     <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
                       value={playback.cursor ?? recordingLength - 1}
@@ -1944,7 +1951,6 @@ export default function App() {
                       t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
                     </span>
                   </label>
-                  <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
