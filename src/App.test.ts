@@ -842,6 +842,29 @@ describe('initial force vectors (PHY-82)', () => {
     expect(p.step).toHaveBeenCalledTimes(10)
   })
 
+  it.each(['undo', 'drag back'] as const)('refreshes initial forces when %s restores the original geometry before the first step', async (action) => {
+    const p = await setupProbe()
+    p.probeInitial.mockImplementation(scene => {
+      const reading = probeReading()
+      reading.contacts[0]!.point.x = scene.bodies.find(body => body.id === 'bola')!.position.x - 5
+      return reading
+    })
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    dragTo(p.canvas, { x: 8, y: 3 }, { x: 9, y: 3 })
+    expect(p.origin('#1565c0')).toEqual(p.point(4, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    expect(p.probeInitial).toHaveBeenCalledTimes(2)
+
+    if (action === 'undo') act(() => findButton(p.host, '↶')!.click())
+    else dragTo(p.canvas, { x: 9, y: 3 }, { x: 8, y: 3 })
+
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
+    expect(p.probeInitial).toHaveBeenCalledTimes(3)
+    expect(p.probeInitial.mock.lastCall![0].bodies.find(body => body.id === 'bola')!.position.x).toBe(8)
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
   it('keeps painting without N, T or simError when the optional probe throws', async () => {
     const p = await setupProbe({ throws: true })
     expect(p.probeInitial).toHaveBeenCalledTimes(1)

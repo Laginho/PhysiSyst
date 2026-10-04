@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -129,3 +129,9 @@ Verdict: Reopen — critério 7: a sonda fica desatualizada ao desfazer ou arras
 - Gate completo repetido fora do sandbox, após restaurar os testes: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1185 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). Permanece o aviso de chunk do simulador acima de 500 kB. A suíte atual fica verde apesar da lacuna reproduzida no critério 7.
 - Trabalho restante para stage 2: somente o ❌ do critério 7, com testes permanentes vermelhos de undo/arrasto de retorno no seam existente; atualização da sonda determinada pela mudança estrutural contra seu próprio documento, preservando zero chamadas extras por g/F, seleção, resize e `syncWorld`. Registrar mutate-verify dos novos testes de DOM, passar o gate e devolver a `to-review` na mesma branch. Critérios e Primary files não foram reescritos.
 - Sem merge na sessão e sem linha de ledger: o ticket volta a `to-implement` neste commit. A correção documental permanece na branch.
+
+#### Stage 2 — retorno estrutural ao documento original (2026-10-04)
+
+- Escopo desta retomada: somente o ❌ do critério 7. Costura já aprovada: eventos reais do App e desenho no canvas em `src/App.test.ts`, com o simulador falso pela API pública. Um cenário parametrizado cobre desfazer e arrastar de volta, antes do primeiro passo.
+- Chamadores e fronteiras reexaminados: doc effect por edição/undo/redo, seleção, visibilidade dos vetores e resize; `refreshInitialProbe` também chamado por boot e rebuild/reset; `syncWorld` continua reservado ao próximo passo. Preservar boot pendente, reset no registro 0, falha opcional da sonda e ausência de sondas extras por edição ao vivo ou após passos.
+- Vermelho permanente antes de alterar produção: `npm test -- src/App.test.ts -t 'refreshes initial forces when'` → **2 failed | 178 skipped (180)**. Ambos mostram `expected [330, 540] to deeply equal [270, 540]`: depois de voltar de `(9, 3)` para `(8, 3)`, N ainda corresponde à sonda do documento anterior. O teste também verifica T na âncora documental, uma chamada por mudança estrutural e zero passos do mundo vivo.
