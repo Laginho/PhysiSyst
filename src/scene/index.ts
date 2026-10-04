@@ -11,7 +11,8 @@
  * - SOFT — well-formed but unphysical values parse successfully; call
  *   collectWarnings(scene) to list them: g <= 0, dynamic mass <= 0 (Fixed
  *   bodies exempt — mass 0 is legitimate for them; messages name the Body
- *   by id), negative force magnitude, negative friction coefficients.
+ *   by id), negative force magnitude, negative friction coefficients, and a
+ *   coefficient of restitution outside [0, 1].
  *
  * Pulleys and rope constraints (PHY-23) HARD-reject dangling body/pulley
  * references, duplicate ids and radius <= 0, a rope with no pulley whose ends

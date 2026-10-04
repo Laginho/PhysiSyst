@@ -56,3 +56,8 @@ export function getCatalog(lang: Lang): Catalog {
 export function allKeys(): string[] {
   return Object.keys(ptBR)
 }
+
+/** Format a readout in the active UI locale with a fixed decimal precision. */
+export function fmtNum(n: number, digits: number, lang: Lang): string {
+  return n.toLocaleString(lang, { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}

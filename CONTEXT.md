@@ -39,11 +39,11 @@ The editing behavior that places a dragged body in direct contact with the neigh
 _Avoid_: grid snap, magnetic snap, magnet mode
 
 **Contact**:
-The interface between two touching bodies, carrying that pair's friction coefficients. Contacts are frictionless unless the scene states otherwise.
+The interface between two touching bodies, carrying that pair's friction coefficients and the coefficient of restitution of their collisions. Contacts are frictionless unless the scene states otherwise.
 _Avoid_: surface settings, material
 
 **Collision**:
-The impact event between two bodies, governed by restitution — distinct from an ongoing contact.
+The impact event between two bodies, governed by restitution — distinct from an ongoing contact. Its restitution is specified by the `e` of the pair's Contact (absent = 0). The simulator maps declared coefficients through per-body factors, with an approximate fallback and a warning when needed ([ADR-0005](docs/adr/0005-restitution-on-contact-pairs.md)). An undeclared pair is inelastic when either body has factor zero; two positive factors can give it nonzero restitution.
 _Avoid_: crash, bounce setting
 
 **Anchor snap**:

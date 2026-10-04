@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { en } from './en'
 import { ptBR } from './pt-BR'
-import { t, setLang, initLang, allKeys, LANG_KEY } from './index'
+import { t, setLang, initLang, allKeys, LANG_KEY, fmtNum } from './index'
 import { PRESETS, TREE } from '../presets'
 
 function memStorage() {
@@ -267,5 +267,14 @@ describe('Vector label symbols (PHY-29)', () => {
       expect((ptBR as Record<string, string>)[key], key).toBe(pt)
       expect((en as Record<string, string>)[key], key).toBe(english)
     }
+  })
+})
+
+describe('fmtNum (PHY-71)', () => {
+  it('formats precision and negative near-zero values in the requested language', () => {
+    expect(fmtNum(1.5, 2, 'pt-BR')).toBe('1,50')
+    expect(fmtNum(1.5, 2, 'en')).toBe('1.50')
+    expect(['-0,00', '0,00']).toContain(fmtNum(-0.004, 2, 'pt-BR'))
+    expect(fmtNum(0.125, 3, 'pt-BR')).toBe('0,125')
   })
 })

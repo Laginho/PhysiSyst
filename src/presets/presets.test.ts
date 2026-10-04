@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { collectWarnings, parse, serialize } from '../scene/codec'
 import { PRESETS, TREE, createPresetScene, type Preset, type TopicNode } from './index'
 import { createSimulator, TIMESTEP, type RopeState } from '../sim'
+import { systemEnergy } from '../sim/energy'
 import { setLang, t } from '../i18n'
 import { en } from '../i18n/en'
 import type { ConstraintEnd, Scene } from '../scene/types'
@@ -276,6 +277,38 @@ describe('PHY-31: presets em árvore', () => {
     }
     return out
   }
+  it('PHY-74: projectile conserves mechanical energy within 0.5% at every airborne frame up to one second', async () => {
+    const scene = byId('projectile').buildScene()
+    const sim = await load(scene)
+    const energy = () => systemEnergy(scene, sim.readStates(), sim.readConstraints(), sim.readPulleys()).Emec
+    const initial = energy()
+    expect(initial).toBeGreaterThan(0)
+    const samples = [initial]
+    let lastAirborneFrame = 0
+    for (let frame = 1; frame <= Math.round(1 / TIMESTEP); frame++) {
+      sim.step()
+      samples.push(energy())
+      if (!sim.readContacts().some((contact) => contact.aId === 'projetil' || contact.bId === 'projetil')) lastAirborneFrame = frame
+    }
+    // The launch can still report its initial ground contact on the first step.
+    expect(lastAirborneFrame).toBe(Math.round(1 / TIMESTEP))
+    for (let frame = 1; frame <= lastAirborneFrame; frame++) {
+      expect(Math.abs(samples[frame]! - initial), `frame ${frame}`).toBeLessThanOrEqual(0.005 * initial)
+    }
+  })
+
+  it('PHY-74: simple pendulum conserves mechanical energy within 2% throughout 600 steps', async () => {
+    const scene = byId('simple-pendulum').buildScene()
+    const sim = await load(scene)
+    const samples = run(sim, 600, () => systemEnergy(scene, sim.readStates(), sim.readConstraints(), sim.readPulleys()).Emec)
+    const initial = samples[0]!
+    expect(initial).toBeGreaterThan(0)
+    expect(samples).toHaveLength(601)
+    for (const [frame, energy] of samples.entries()) {
+      expect(Math.abs(energy - initial), `frame ${frame}`).toBeLessThanOrEqual(0.02 * initial)
+    }
+  })
+
   function upCrossings(samples: readonly number[], level: number): number[] {
     const out: number[] = []
     for (let i = 1; i < samples.length; i++) {
@@ -311,6 +344,8 @@ describe('PHY-31: presets em árvore', () => {
       'incline-block': { ...DYN, topic: 'atrito' },
       projectile: { ...DYN, topic: 'campo-uniforme' },
       'free-fall': { ...DYN, topic: 'campo-uniforme' },
+      'collision-elastic': { ...DYN, topic: 'colisoes' },
+      'collision-inelastic': { ...DYN, topic: 'colisoes' },
       atwood: { ...DYN, topic: 'principios' },
       'table-hanging': { ...DYN, topic: 'principios' },
       'movable-pulley': { ...DYN, topic: 'principios' },
@@ -348,8 +383,8 @@ describe('PHY-31: presets em árvore', () => {
     }
   })
 
-  it('the 12 presets parse, round-trip and simulate 2 s without an unexpected warning (5)', async () => {
-    expect(PRESETS).toHaveLength(12)
+  it('the 14 presets parse, round-trip and simulate 2 s without an unexpected warning (5)', async () => {
+    expect(PRESETS).toHaveLength(14)
     for (const p of PRESETS) {
       const scene = p.buildScene()
       expect(parse(serialize(scene)), p.id).toStrictEqual(scene)
@@ -371,6 +406,33 @@ describe('PHY-31: presets em árvore', () => {
     } finally {
       setLang('pt-BR')
     }
+  })
+
+  describe('PHY-69: collision presets', () => {
+    it('lists elastic then inelastic collisions under mechanics / dynamics', () => {
+      const node = { area: 'mecanica', part: 'dinamica', topic: 'colisoes' }
+      expect(TREE).toContainEqual(node)
+      expect(byId('collision-elastic')).toMatchObject({ ...node, position: 1 })
+      expect(byId('collision-inelastic')).toMatchObject({ ...node, position: 2 })
+    })
+
+    it.each([
+      ['collision-elastic', 0, 3],
+      ['collision-inelastic', 0.75, 2.25],
+    ] as const)('%s round-trips and preserves momentum without ground bounce at 3 s', async (id, vx1, vx2) => {
+      const scene = byId(id).buildScene()
+      expect(parse(serialize(scene))).toStrictEqual(scene)
+      const sim = await load(scene)
+      run(sim, Math.round(3 / TIMESTEP), () => sim.readStates().get('esfera-1')!.linvel.x)
+      const first = sim.readStates().get('esfera-1')!.linvel
+      const second = sim.readStates().get('esfera-2')!.linvel
+      expect(Math.abs(first.x - vx1)).toBeLessThanOrEqual(vx1 === 0 ? 0.09 : 0.03 * vx1)
+      expect(Math.abs(second.x - vx2)).toBeLessThanOrEqual(0.03 * vx2)
+      const momentum = body(scene, 'esfera-1').mass * first.x + body(scene, 'esfera-2').mass * second.x
+      expect(Math.abs(momentum - 3)).toBeLessThanOrEqual(0.09)
+      expect(Math.abs(first.y)).toBeLessThanOrEqual(0.05)
+      expect(Math.abs(second.y)).toBeLessThanOrEqual(0.05)
+    })
   })
 
   describe('each new preset reproduces its family (6)', () => {

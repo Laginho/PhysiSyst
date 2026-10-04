@@ -18,7 +18,7 @@ O projeto permite montar cenários físicos livremente, definir parâmetros num�
 - **Modo partícula vs. corpo rígido:** opção para travar rotações quando se deseja simular problemas que tratam os corpos como pontos materiais.
 - **Leitura em tempo real:** painel com passos de simulação, posição, módulo da velocidade e aceleração instantânea calculada a cada instante.
 - **Controle de tempo:** reprodução contínua, passo a passo individual, reinício e controle de velocidade da simulação (0.25x até 2x).
-- **Cenas e presets:** galeria em árvore (área → parte → tópico, seguindo o *Tópicos de Física*) com doze cenas prontas, entre elas a cunha empurrada, a máquina de Atwood, o bloco na mesa com bloco pendurado, a polia móvel, os pêndulos e três massa-mola. A galeria mostra só os nós que têm preset. Também dá para salvar, duplicar e exportar/importar cenas em JSON.
+- **Cenas e presets:** galeria em árvore (área → parte → tópico, seguindo o *Tópicos de Física*) com quatorze cenas prontas, entre elas a cunha empurrada, a máquina de Atwood, o bloco na mesa com bloco pendurado, a polia móvel, os pêndulos, três massa-mola e as colisões elástica e inelástica. A galeria mostra só os nós que têm preset. Também dá para salvar, duplicar e exportar/importar cenas em JSON.
 - **Interface bilíngue:** suporte nativo a português (pt-BR) e inglês (en-US).
 
 ## Como rodar localmente
