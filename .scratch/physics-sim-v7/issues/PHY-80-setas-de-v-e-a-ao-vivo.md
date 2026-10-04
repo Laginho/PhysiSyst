@@ -1,5 +1,5 @@
 # PHY-80: Setas de v e a ao vivo
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -211,3 +211,16 @@ P2 finding, criterion 6.
 
 - Approved seam: real App canvas labels after a structural position edit, one half-speed animation frame and pause; parameterized for global and selected-body scope. Callers inspected: both paint branches, repaint's displayed step count, syncWorld, runSteps and showFrame. A populated state map before any step is the failing boundary; live playback and recording zero remain in each regression case.
 - Before any production fix, `npm test -- src/App.test.ts -t 'PHY-80 keeps launch velocity after a zero-step rebuild'` failed in both scopes: **2 failed / 209 skipped (211)**, exit 1, `AssertionError: expected [ 'v' ] to deeply equal [ 'v₀' ]`. Both cases first confirm one rebuild and zero simulator steps. Tests and the implementing transition are committed separately from production code.
+
+#### Stage 2 criterion-6 handoff (2026-10-04)
+
+The red test-only commit is `bbaa804`. The production fix derives `velocityStates` from the displayed initial time in `paint`, passing null to the velocity producer before the first step in both scopes. Other overlay layers continue to consume their existing states. Both new tests also verify live `v` after stepping and `v₀` when seeking to recording zero. No criteria, seams or simulation code changed.
+
+| New App regression case | Production mutation after green | Observed red output |
+| --- | --- | --- |
+| `PHY-80 keeps launch velocity after a zero-step rebuild in global scope` | Replace `velocityArrows(view, velocityStates, ppm)` with `velocityArrows(view, states, ppm)` in the global layer. | `AssertionError: expected [ 'v' ] to deeply equal [ 'v₀' ]`; **1 failed / 210 skipped (211)**, exit 1. |
+| `PHY-80 keeps launch velocity after a zero-step rebuild in selected scope` | Replace `velocityArrows(selView, velocityStates, ppm)` with `velocityArrows(selView, states, ppm)` in the selection branch. | `AssertionError: expected [] to deeply equal [ 'v₀' ]`; **1 failed / 210 skipped (211)**, exit 1. The scene-wide labels still contain v₀, so the wrongly produced live arrow has no matching label. |
+
+Both temporary mutations were restored byte for byte in `finally`. After the fix, the PHY-80 canvas filter passed **7 / 204 skipped (211)**. The initial focused full-file run in the sandbox reported **268 passed / 2 failed (270)**, both failures at Chromium DevTools connection. The official gate was then run outside the sandbox without excluding tests: `npm test && npm run lint && npm run typecheck && npm run build` → **33 files / 1276 tests passed, zero skips**, lint/typecheck/build **exit 0**. Vite built 52 modules and retained the existing >500 kB simulator-chunk warning (2136.71 kB).
+
+Final diff review and `git diff --check` passed: only the approved App canvas source, its regression tests and this ticket changed in this retry; no mutations or generated artifacts remain. Tests stay in their own commit, and the production commit touches no test file. Stage 2 stops at `to-review` for an independent re-review of criterion 6; no merge was performed.

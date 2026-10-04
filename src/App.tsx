@@ -253,6 +253,8 @@ function paint(
   const shownGroups = opts?.focus?.show ?? FOCUS_GROUPS
   const showForces = shownGroups.includes('forces')
   const atInitialTime = (opts?.stepsTaken ?? 0) === 0
+  // A structural rebuild can populate states before the first timestep.
+  const velocityStates = atInitialTime ? null : states
   const showKinematics = shownGroups.includes('kinematics')
   const accelerations = opts?.accelerations ?? new Map<string, Vec2>()
   const initialProbe = atInitialTime ? opts?.initialProbe : undefined
@@ -262,7 +264,7 @@ function paint(
     : ropeReadings
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
     { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: VECTOR_COLORS.weight, widthPx: 2, headLenPx: 8 } },
-    { arrows: showKinematics ? velocityArrows(view, states, ppm) : [], style: { color: VECTOR_COLORS.velocity, widthPx: 2, headLenPx: 8 } },
+    { arrows: showKinematics ? velocityArrows(view, velocityStates, ppm) : [], style: { color: VECTOR_COLORS.velocity, widthPx: 2, headLenPx: 8 } },
     { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: VECTOR_COLORS.applied, widthPx: 2, headLenPx: 10 } },
     { arrows: showForces ? normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []) : [], style: { color: VECTOR_COLORS.normal, widthPx: 2, headLenPx: 8 } },
     { arrows: showForces ? tensionArrows(view, tensionReadings, ppm) : [], style: { color: VECTOR_COLORS.tension, widthPx: 2, headLenPx: 8 } },
@@ -277,7 +279,7 @@ function paint(
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
       if (showKinematics) {
-        for (const a of velocityArrows(selView, states, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+        for (const a of velocityArrows(selView, velocityStates, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
         for (const a of accelerationArrows(selView, accelerations, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[6]!.style, labels(a))
       }
       for (const a of showForces ? appliedArrows(selView, ppm) : []) {
