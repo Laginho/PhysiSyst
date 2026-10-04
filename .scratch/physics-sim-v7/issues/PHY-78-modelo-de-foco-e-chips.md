@@ -330,3 +330,22 @@ Vermelho antes de qualquer alteração de produção:
 falha em `App.test.ts:1101`: esperado `T: 0,00 N`, recebido
 `leitura — cordapassos: 0velocidade: 1,00×sem leitura`. Os skips são os demais
 casos fora do filtro. Este commit contém somente testes e a memória/Stage do ticket.
+
+Verificação adicional de chamador: `BodyContactsPanel` → `updateContact`
+permite editar `e` durante boot. O classificador existente de live/structural
+não compara `Contact.e`; usá-lo sozinho para limpar a pendência de boot
+perderia esse coeficiente no primeiro passo, uma regressão sobre a base.
+O guard adicional `PHY-78 preserves restitution edits during boot when focus
+changes before and after boot` edita e de 0 para 0,75, alterna chips dos dois
+lados do boot e exige a sincronização física com esse contato intacto.
+Sem expandir o escopo para `routing.ts`, a correção deve excluir somente
+`focus` da comparação entre os documentos imutáveis de boot e corrente.
+
+Mutação temporária de produção: trocar a comparação de identidade por
+`routeDocChange(bootDoc, docRef.current)`, marcando pendência somente para
+`kind === 'structural' || ops.length > 0`. Comando:
+`npm test -- src/App.test.ts -t 'PHY-78 preserves restitution edits during boot'`
+→ **1 failed / 202 skipped**, exit 1, `App.test.ts:1154`: esperado
+`sem leitura` até sincronizar a edição física, recebido `T: 0,00 N` da cena
+antiga. A mutação foi removida antes deste segundo commit só de teste;
+`src/App.tsx` voltou à comparação original, sem diff de produção.

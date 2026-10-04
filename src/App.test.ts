@@ -1138,6 +1138,32 @@ describe('initial force vectors (PHY-82)', () => {
     expect(p.probeInitial).toHaveBeenCalledTimes(1)
   })
 
+  it('PHY-78 preserves restitution edits during boot when focus changes before and after boot', async () => {
+    const scene = doc()
+    scene.contacts = [{ a: 'caixa', b: 'chao', muS: 0, muK: 0, e: 0 }]
+    const p = await setupProbe({ scene, delayedBoot: true })
+    click(p.canvas, { x: 3, y: 0.5 })
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['contacts.e']), 0.75))
+    toggleFocus(p.host, 'energy')
+    await p.resolveBoot()
+    toggleFocus(p.host, 'momentum')
+
+    click(p.canvas, { x: 8, y: 4.5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    const readout = () => panel(p.host, t('readout.title', { id: 'corda' }))!.textContent
+    expect(readout()).toContain(ptBR['readout.noData'])
+    expect(p.step).not.toHaveBeenCalled()
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+
+    await p.steps(1)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(p.sim.replaceScene).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      contacts: [{ a: 'caixa', b: 'chao', muS: 0, muK: 0, e: 0.75 }],
+    }))
+    expect(readout()).toContain('T: 9,00 N')
+    expect(readout()).not.toContain(ptBR['readout.noData'])
+  })
+
   it('paints initial vectors at the current canvas size when boot finishes after a resize', async () => {
     const p = await setupProbe({ delayedBoot: true })
     act(() => lastResizeObserverCallback?.(
