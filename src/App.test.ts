@@ -16,7 +16,7 @@ import { setLang, t } from './i18n'
 import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, INDEX_KEY, GALLERY_ACK_KEY, loadIndex, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import { DEMO_SCENE } from './scene/demo'
 import { scenePath } from './scene'
-import type { Scene } from './scene/types'
+import type { FocusGroup, Scene } from './scene/types'
 import { PRESETS, presetById } from './presets'
 import { withBrowserSession } from './test/browser'
 
@@ -137,6 +137,111 @@ async function settleSimImport(): Promise<void> {
     await vi.dynamicImportSettled()
   })
 }
+
+function focusChip(host: HTMLElement, group: FocusGroup): HTMLButtonElement {
+  const button = findButton(host, t(`focus.${group}`))
+  expect(button, `focus.${group} chip`).toBeDefined()
+  return button!
+}
+
+function toggleFocus(host: HTMLElement, ...groups: FocusGroup[]): void {
+  for (const group of groups) act(() => focusChip(host, group).click())
+}
+
+describe('scene focus chips (PHY-78)', () => {
+  beforeEach(() => setLang('pt-BR'))
+  afterEach(() => setLang('pt-BR'))
+
+  it.each([
+    ['demo', ['true', 'true', 'true', 'true']],
+    ['blank', ['true', 'false', 'true', 'true']],
+  ] as const)('puts accessible focus chips first in the inspector for %s scenes', (kind, pressed) => {
+    const host = renderApp()
+    if (kind === 'blank') act(() => findButton(host, t('scenes.new'))!.click())
+    const snap = inputForLabel(host, t('panel.contactSnap'))
+    const row = snap.closest('label')!.parentElement!.firstElementChild!
+    expect(row.textContent).toContain('mostrar:')
+    const buttons = [...row.querySelectorAll('button')]
+    expect(buttons.map(b => b.textContent)).toEqual(['forças', 'cinemática', 'energia', 'momento'])
+    expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(pressed)
+    expect(buttons.every(b => !b.disabled)).toBe(true)
+  })
+
+  it('starts with the vector scope covering all bodies', () => {
+    expect(inputForLabel(renderApp(), t('panel.showVectors')).checked).toBe(true)
+  })
+
+  it('toggles focus outside history and autosaves user view preferences with hidden curves intact', async () => {
+    vi.useFakeTimers()
+    const step = vi.fn()
+    const replaceScene = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), step, replaceScene })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    const id = sceneSelect(host).value
+    const slider = host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!
+    const cursor = slider.value
+    const rebuilds = replaceScene.mock.calls.length
+    toggleFocus(host, 'forces', 'kinematics', 'momentum')
+    expect(focusChip(host, 'forces').getAttribute('aria-pressed')).toBe('false')
+    expect(focusChip(host, 'kinematics').getAttribute('aria-pressed')).toBe('true')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    expect(findButton(host, '↷')!.disabled).toBe(true)
+    expect(step).not.toHaveBeenCalled()
+    expect(replaceScene).toHaveBeenCalledTimes(rebuilds)
+    expect(slider.value).toBe(cursor)
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, id)?.focus?.show).toEqual(['kinematics', 'energy'])
+
+    const saved = loadScene(window.localStorage, id)!
+    saved.focus!.hidden = { energy: ['E_pg'] }
+    saveScene(window.localStorage, id, saved)
+    act(() => setSelectValue(sceneSelect(host), 'cena-1'))
+    act(() => setSelectValue(sceneSelect(host), id))
+    toggleFocus(host, 'momentum')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, id)?.focus).toEqual({
+      show: ['kinematics', 'energy', 'momentum'], hidden: { energy: ['E_pg'] },
+    })
+  })
+
+  it('keeps preset focus in memory without creating a scene and restores it on reopening', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    const openPreset = () => {
+      const card = [...host.querySelectorAll('button')].find(b => b.textContent?.includes(t('preset.free-fall.name')))
+      expect(card).toBeDefined()
+      act(() => card!.click())
+    }
+    openPreset()
+    const before = loadIndex(window.localStorage)
+    toggleFocus(host, 'forces')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(sceneSelect(host).value).toBe('preset:free-fall')
+    expect(sceneSelect(host).selectedOptions[0]!.textContent).toBe(t('scenes.presetOption', { name: t('preset.free-fall.name') }))
+    expect(focusChip(host, 'forces').getAttribute('aria-pressed')).toBe('false')
+    expect(loadIndex(window.localStorage)).toEqual(before)
+    expect(window.localStorage.getItem('physics-sim:scene:preset:free-fall')).toBeNull()
+    act(() => setSelectValue(sceneSelect(host), 'cena-1'))
+    openPreset()
+    expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+      focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+    )).toEqual(['true', 'true', 'true', 'true'])
+  })
+
+  it.each([
+    ['pt-BR', ['mostrar:', 'forças', 'cinemática', 'energia', 'momento']],
+    ['en', ['show:', 'forces', 'kinematics', 'energy', 'momentum']],
+  ] as const)('localizes the focus row in %s', (lang, labels) => {
+    window.localStorage.setItem('physics-sim:lang', lang)
+    const host = renderApp()
+    const row = focusChip(host, 'forces').parentElement!
+    expect(row.textContent).toContain(labels[0])
+    expect([...row.querySelectorAll('button')].map(b => b.textContent)).toEqual(labels.slice(1))
+  })
+})
 
 describe('recording graph panel (PHY-72)', () => {
   it('toggles an accessible panel, defaults to energy and follows selection', async () => {
@@ -643,6 +748,8 @@ describe('initial velocity overlay (PHY-59)', () => {
     })
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
     const scene = blankScene()
+    // This overlay contract predates focus and explicitly exercises all groups.
+    delete scene.focus
     scene.bodies = [{ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0, vx: 2 }]
     scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 }]
     const step = vi.fn()
@@ -654,12 +761,9 @@ describe('initial velocity overlay (PHY-59)', () => {
       saveCurrentSceneId(storage, 'velocity')
     })
     await settleSimImport()
-    if (mode === 'global') {
-      const label = [...host.querySelectorAll('label')].find((el) => el.textContent?.trim() === ptBR['panel.showVectors'])!
-      act(() => label.querySelector('input')!.click())
-    } else {
-      click(canvas, { x: 6, y: 4 })
-    }
+    const scope = inputForLabel(host, ptBR['panel.showVectors'])
+    if (scope.checked !== (mode === 'global')) act(() => scope.click())
+    if (mode === 'selected') click(canvas, { x: 6, y: 4 })
     const expectOverlay = (visible: boolean) => {
       expect(strokes.includes('#43a047')).toBe(visible)
       expect(labels.filter((label) => label.color === '#43a047').map((label) => label.text)).toEqual(visible ? ['v₀'] : [])
@@ -2289,6 +2393,8 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
   // Same id and same pose in both scenes.
   const ballScene = (): Scene => ({
     ...blankScene(),
+    // Playback assertions inspect all readout groups on these legacy fixtures.
+    focus: undefined,
     bodies: [...blankScene().bodies, { shape: 'circle', radius: 0.5, id: 'bola', fixed: false, mass: 1, position: { x: 6, y: 3.5 }, rotation: 0 }],
   })
   function seed() {
