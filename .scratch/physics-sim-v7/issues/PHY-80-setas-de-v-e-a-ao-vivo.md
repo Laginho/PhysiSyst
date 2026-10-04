@@ -1,5 +1,5 @@
 # PHY-80: Setas de v e a ao vivo
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -224,3 +224,84 @@ The red test-only commit is `bbaa804`. The production fix derives `velocityState
 Both temporary mutations were restored byte for byte in `finally`. After the fix, the PHY-80 canvas filter passed **7 / 204 skipped (211)**. The initial focused full-file run in the sandbox reported **268 passed / 2 failed (270)**, both failures at Chromium DevTools connection. The official gate was then run outside the sandbox without excluding tests: `npm test && npm run lint && npm run typecheck && npm run build` → **33 files / 1276 tests passed, zero skips**, lint/typecheck/build **exit 0**. Vite built 52 modules and retained the existing >500 kB simulator-chunk warning (2136.71 kB).
 
 Final diff review and `git diff --check` passed: only the approved App canvas source, its regression tests and this ticket changed in this retry; no mutations or generated artifacts remain. Tests stay in their own commit, and the production commit touches no test file. Stage 2 stops at `to-review` for an independent re-review of criterion 6; no merge was performed.
+
+#### Resolution (2026-10-04)
+Verdict: Approve
+
+Independent stage-3 re-review of the prior criterion-6 finding and the complete
+retry diff `642e133...cd8684c`. The session base remains `a5098e17` on
+`sweatshop/2026-10-04-1243`. The previous review of the full implementation
+continues to cover unchanged code; no previous-pass miss or new finding was
+identified. Both `code-review` axes ran in separate read-only agents.
+
+##### Standards
+
+No documented Standards breach or new baseline smell observation. `bbaa804`
+changes only App tests and ticket memory; `cd8684c` changes only App production
+code and ticket memory. The tests remain in their own red commit, and the
+production commit touches no test file. The fix stays inside the approved
+`paint` seam: `velocityStates` expresses displayed initial time once and serves
+both canvas scopes. DOM mutation evidence is recorded separately for each new
+regression. README and CONTEXT still describe the resulting behavior correctly.
+
+Standards findings: **0**; worst issue: none.
+
+##### Spec
+
+The previous P2 is resolved: a state map populated by a structural rebuild no
+longer implies that a timestep has occurred. `repaint` supplies
+`cursor ?? stepsTaken`, and both velocity producers receive null states at
+displayed time zero. The new regression cases use a nonzero launch readback,
+confirm one rebuild and zero steps, then verify live v after stepping and v₀
+when seeking to record zero. No missing numbered requirement, scope creep or
+implementation contradiction was found.
+
+| Criterion | Final verdict | Re-review evidence |
+| --- | --- | --- |
+| 1 | ✅ | Null-state launch producer contract unchanged. |
+| 2 | ✅ | Live-state position, direction, scaling and omissions unchanged. |
+| 3 | ✅ | Acceleration geometry, saturation and omissions unchanged. |
+| 4 | ✅ | Single and numbered v/a labels in both languages unchanged. |
+| 5 | ✅ | Shared velocity green and distinct acceleration red unchanged. |
+| 6 | ✅ | Both zero-step rebuild scopes retain v₀; stepping gives v and record zero restores v₀. |
+| 7 | ✅ | Acceleration still consumes the displayed frame's tracker. |
+| 8 | ✅ | Both scopes retain the kinematics gate and scene-wide label keys. |
+| 9 | ✅ | Both catalog keys unchanged; parity passes in the full gate. |
+
+Spec findings: **0**; worst issue: none. No proxy decision exists for this ticket.
+
+Callers and interactions re-examined: both paint branches and their label keys;
+`repaint`, `syncWorld`, scheduler advancement, `runSteps`, `showFrame`, recording
+capture/reset, cursor-zero edits, boot and scene resets. Only velocity's input
+changes; acceleration, force layers and rendered body states retain their
+existing inputs. Manual visual inspection, other browser engines/mobile and
+prolonged performance were not examined.
+
+##### Independent red-green proof and gate
+
+Repeated the two new production mutations separately against committed tests,
+restoring original bytes in `finally` after each run:
+
+| Regression case | Production mutation | Independent red output |
+| --- | --- | --- |
+| Global zero-step rebuild | Pass `states` instead of `velocityStates` to the global velocity producer. | `expected [ 'v' ] to deeply equal [ 'v₀' ]`; **1 failed / 210 skipped (211)**, exit 1. |
+| Selected zero-step rebuild | Pass `states` instead of `velocityStates` to the selected velocity producer. | `expected [] to deeply equal [ 'v₀' ]`; **1 failed / 210 skipped (211)**, exit 1. |
+
+After restoration, `npm test -- src/App.test.ts -t PHY-80` passed
+**7 tests / 204 skipped (211)**, exit 0. `git diff --exit-code` confirmed all
+production, test, catalog and domain files unchanged from the reviewed commit;
+no residual mutation or generated artifact is tracked.
+
+The official full gate `npm test && npm run lint && npm run typecheck && npm run build`
+passed independently: **33 files / 1276 tests passed, zero skips**, lint,
+typecheck and build **exit 0**. The initial sandbox attempt had
+**1248 passed / 28 failed**, all due to Chromium DevTools connection; the complete
+rerun outside the sandbox passed without omitting tests. Vite built 52 modules
+and retained the existing >500 kB simulator-chunk warning (2136.71 kB).
+
+Rebase onto the session was a no-op: reviewed HEAD remained `cd8684c` and the
+base remained `a5098e17`. Local merge without squash: `0eed60d`.
+`git diff --exit-code cd8684c HEAD` confirmed the merged tree identical to the
+validated implementation. This resolution, `Stage: done` and the PHY-80 ledger
+line are committed together on the session. Stage 3 made no production or test
+changes.
