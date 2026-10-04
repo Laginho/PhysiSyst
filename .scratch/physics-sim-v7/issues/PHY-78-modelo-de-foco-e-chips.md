@@ -116,10 +116,47 @@ confirmou a restauração.
 
 Sem mutação, antes de integrar a sessão, os novos checks de campos passam e a
 última asserção fica vermelha: `expected [ 'm', 'F', 'N' ] to include 'P'`,
-**1 failed / 185 skipped**, exit 1. A branch ainda usa `weightArrows` sem estados
-no registro zero; o PHY-82, já na sessão, fornece esse comportamento. A integração
-da sessão é o próximo passo autorizado pelo foreman, sem nova decisão de produto.
+**1 failed / 185 skipped**, exit 1. A checagem de P no registro zero estava errada
+no harness: `weightArrows` exige estados simulados; o PHY-82 acrescenta N/T
+iniciais, sem mudar essa regra de P. Correção do harness registrada abaixo.
 
 A revisão e as 22 mutações dos demais critérios continuam disponíveis no commit
 `0cdd8c0`; a decisão do planner incorporada por `91cb99a` substituiu o corpo do
 ticket e deixou somente a pendência do critério 9.
+
+##### Integração da sessão e correções de harness
+
+- Branch atualizada por rebase sobre `b3aca92`, sessão
+  `sweatshop/2026-10-04-1243`, preservando os commits separados. O conflito de
+  `paint` foi resolvido no commit de produção reexecutado `6b39fe2`: os guardas
+  de forças abrangem os contatos/trações da sonda, mas a escolha da sonda depende
+  somente do instante zero, nunca de cinemática. `ForcesPanel` e
+  `BodyContactsPanel` permanecem sem mudança de produção.
+- Depois da resolução, typecheck passou, mas o filtro de App apresentou
+  **9 failed / 19 passed / 169 skipped**: `setupProbe` clicava incondicionalmente
+  em "mostrar todos os vetores", agora marcado por padrão, e desligava as setas.
+  O preparo agora habilita o checkbox somente se estiver desmarcado. Não muda a
+  expectativa desses testes nem o produto.
+- Correção da asserção de P: os sete campos continuam sendo verificados no
+  registro zero com forças desligadas; só depois o teste volta explicitamente
+  ao registro 1 e religa forças para exigir P. A comparação pós-passo anterior
+  ao primeiro seek permanece intacta. Essa correção de harness respeita a
+  semântica já documentada no commit test-only `f47cdd5`.
+- O teste existente `paints N and T at t0 and anchors T` também exige N/T com
+  cinemática desligada, ausência com forças desligadas e restauração ao religar
+  forças, sem novos passos nem novas sondas. Isso verifica a interação no hunk
+  de produção resolvido, no mesmo seam de DOM/canvas aprovado.
+
+Mutate-verify repetido depois do rebase e das correções, sempre restaurando
+`src/App.tsx` byte a byte. Cada execução: **1 failed / 196 skipped**, exit 1.
+
+| Teste modificado | Mutação em produção | Vermelho observado |
+| --- | --- | --- |
+| `PHY-78 hides force layers and spring readouts` | Remover os contatos pelo prop `doc` quando forças estão desligadas | `missing input for μs — atrito estático`, comparação na ponta antes de seek (`src/App.test.ts:3763`). |
+| Mesmo teste | `disabled={structuralLocked || !showForces}` no prop de contatos | No registro zero, os três últimos valores são `true`, esperados `false` (`src/App.test.ts:3780`). |
+| `paints N and T at t0 and anchors T` | `initialProbe = showInitialVelocity ? opts?.initialProbe : undefined` | Logo após desligar cinemática, `expected [ 'm', 'a', 'm', 'b' ] to include 'N'` (`src/App.test.ts:976`). |
+
+Verde com a produção restaurada: `npm test -- src/App.test.ts src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts -t 'scene focus|PHY-78|initial force vectors'`
+→ **4 arquivos / 50 passed / 389 skipped**, exit 0; os skips são os casos fora
+desse filtro. `git diff --exit-code -- src/App.tsx` confirmou que as mutações
+foram restauradas. Correções de harness e evidência ficam em commit só de teste.

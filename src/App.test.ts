@@ -946,8 +946,9 @@ describe('initial force vectors (PHY-82)', () => {
       if (options.otherScene) saveScene(window.localStorage, 'other', options.otherScene)
       saveCurrentSceneId(window.localStorage, 'probe')
     })
-    // Enable forces while boot is still pending: resolving boot itself must repaint.
-    act(() => inputForLabel(host, ptBR['panel.showVectors']).click())
+    // Request global scope while boot is pending, regardless of its initial default.
+    const allVectors = inputForLabel(host, ptBR['panel.showVectors'])
+    if (!allVectors.checked) act(() => allVectors.click())
     await settleSimImport()
     const origin = (color: string): number[] | undefined => arrows.find(arrow => arrow.color === color)?.path[0]
     const point = (x: number, y: number): number[] => { const p = screen(x, y); return [p.x, p.y] }
@@ -969,6 +970,17 @@ describe('initial force vectors (PHY-82)', () => {
     expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
     expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
     expect(p.origin('#6a1b9a')).not.toEqual(p.point(10, 4))
+    expect(p.probeInitial).toHaveBeenCalledExactlyOnceWith(doc())
+    expect(p.step).not.toHaveBeenCalled()
+    toggleFocus(p.host, 'kinematics')
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    toggleFocus(p.host, 'forces')
+    expect(p.labels).not.toContain('N')
+    expect(p.labels).not.toContain('T')
+    toggleFocus(p.host, 'forces')
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
     expect(p.probeInitial).toHaveBeenCalledExactlyOnceWith(doc())
     expect(p.step).not.toHaveBeenCalled()
   })
@@ -3766,6 +3778,8 @@ describe('recorded time player (PHY-64)', () => {
     p.seek(0)
     click(p.canvas, { x: 6, y: 0.5 })
     expect(editingFields().map(input => input.matches(':disabled'))).toEqual([false, false, false, false, false, false, false])
+    // P uses simulated states; return to the recorded tip before checking its restoration.
+    p.seek(1)
     toggleFocus(p.host, 'forces')
     expect(frame.labels.map(l => l.text)).toContain('P')
   })
