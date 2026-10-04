@@ -1,5 +1,5 @@
 # PHY-81: Legenda do gráfico clicável
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-76, PHY-78
 Review: agent
@@ -50,6 +50,9 @@ Hoje a legenda é texto pintado no canto superior direito do canvas do gráfico,
 - `src/App.browser.test.ts`: critério 9 com `withBrowserSession` e `getImageData`; vermelho hoje. Mesma regra de evidência.
 
 ## Comments
+
+- 2026-10-04 Stage 2: branch `phy/PHY-81-clickable-graph-legend` criada sobre `sweatshop/2026-10-04-1243`; PHY-76 e PHY-78 estão `done` na sessão. Costuras aprovadas: renderer público, DOM do App e canvas real via `withBrowserSession`. Consumidores examinados: `repaintGraph`, `seekGraph` (usa somente o eixo t de `graphLayout([])`), `seriesFor` e chips de Foco. Entradas degeneradas: lista vazia, todas escondidas, nome desconhecido, tipos sem corpo selecionado, energia do sistema com mola e cursor histórico. `Focus.hidden` será lido do documento atual, nunca do frame histórico.
+- Prova vermelha do renderer: `npm test -- src/render/graph.test.ts -t 'PHY-81'` — **4 failed, 7 skipped (11)**. `colorOf is not a function` e `visibleSeries is not a function`; nenhuma produção alterada. O teste de eixo vazio também fixa o [-1, 1] descrito no ticket: a implementação anterior usava [-0.05, 0.05], sem afetar a inversão do eixo t.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: depende de B e D1; legenda HTML cujas entradas ligam e desligam curvas; curvas escondidas em `focus`, por tipo de gráfico; cor por identidade da série, não por índice; auto-escala y só com as visíveis.
 - Planner: botões `aria-pressed` com amostra de cor no canto superior direito; clique pelo caminho dos chips; `drawGraph` e `graphLayout` recebem só as visíveis; `colorOf` por nome.

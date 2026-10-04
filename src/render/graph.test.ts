@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { graphLayout, indexAtX, seriesFor, type GraphFrame, type Series } from './graph'
+import { colorOf, drawGraph, graphLayout, indexAtX, seriesFor, visibleSeries, GRAPH_KINDS, type GraphFrame, type Series } from './graph'
 import type { Scene } from '../scene'
 import { initialTracker } from '../playback/accelerationTracker'
 import { bodyEnergy, systemEnergy } from '../sim/energy'
@@ -7,6 +7,74 @@ import { bodyEnergy, systemEnergy } from '../sim/energy'
 const series = (values: number[]): Series[] => [{ name: 'x', unit: 'm', points: values.map((value, t) => ({ t, value })) }]
 const scene: Scene = { version: 1, constants: { g: 10 }, bodies: [{ id: 'b', shape: 'circle', radius: 1, mass: 2, fixed: false, position: { x: 1, y: 3 }, rotation: 0 }], forces: [], contacts: [] }
 const frame: GraphFrame = { scene, states: new Map([['b', { position: { x: 1, y: 3 }, rotation: 0, linvel: { x: 3, y: 4 }, angvel: 0 }]]), constraints: [], pulleys: [], acceleration: initialTracker() }
+
+describe('visible graph curves (PHY-81)', () => {
+  const energy: Series[] = [
+    { name: 'E_c', unit: 'J', points: [{ t: 0, value: 0 }, { t: 2, value: 10 }] },
+    { name: 'E_pg', unit: 'J', points: [{ t: 0, value: 100 }, { t: 2, value: 200 }] },
+    { name: 'E_mec', unit: 'J', points: [{ t: 0, value: 5 }, { t: 2, value: 5 }] },
+  ]
+
+  it('assigns stable identity colors and distinct colors within every graph kind', () => {
+    const groups = [
+      ['x', 'v_x', 'a_x', 'E_c', 'p_x'],
+      ['y', 'v_y', 'a_y', 'E_pg', 'p_y'],
+      ['|v|', '|a|', 'E_mec', '|p|'],
+      ['E_el'],
+    ]
+    const colors = ['#2563eb', '#c2410c', '#15803d', '#9333ea']
+    groups.forEach((names, i) => names.forEach(name => expect(colorOf(name)).toBe(colors[i])))
+    const end = { bodyId: 'b', anchor: { x: 0, y: 0 } }
+    const spring: Scene = { ...scene, constraints: [{ id: 's', kind: 'spring', a: end, b: end, k: 10, x0: 1 }] }
+    for (const kind of GRAPH_KINDS) {
+      const curves = seriesFor(kind, [frame], kind === 'energy' ? null : 'b', spring)
+      expect(new Set(curves.map(s => colorOf(s.name))).size).toBe(curves.length)
+    }
+    expect(colorOf(energy[1].name)).toBe(colorOf(energy.slice(1)[0].name))
+  })
+
+  it('filters by name without changing order, samples or the input list', () => {
+    expect(visibleSeries(energy, ['E_pg'])).toEqual([energy[0], energy[2]])
+    expect(visibleSeries(energy, undefined)).toEqual(energy)
+    expect(visibleSeries(energy, ['unknown'])).toEqual(energy)
+    expect(visibleSeries(energy, energy.map(s => s.name))).toEqual([])
+    expect(visibleSeries([], ['E_pg'])).toEqual([])
+    expect(energy.map(s => s.name)).toEqual(['E_c', 'E_pg', 'E_mec'])
+  })
+
+  it('autoscales only visible samples and keeps a finite axis when all curves are hidden', () => {
+    const curves = energy.slice(0, 2)
+    expect(graphLayout(visibleSeries(curves, ['E_pg']), 2, 600, 180).ticksY).toEqual([-0.5, 0, 10.5])
+    expect(graphLayout(curves, 2, 600, 180).ticksY).toEqual([-10, 0, 210])
+    const empty = graphLayout(visibleSeries(curves, ['E_c', 'E_pg']), 2, 600, 180)
+    expect(empty.ticksY).toEqual([-1, 0, 1])
+    expect(Number.isFinite(empty.mapY(0))).toBe(true)
+  })
+
+  it('strokes only passed curves with identity colors, preserves axes/cursor and paints no legend', () => {
+    const labels: string[] = []
+    const strokes: unknown[] = []
+    const dashes: number[][] = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'fillText') return (text: string) => { labels.push(text) }
+        if (key === 'stroke') return () => { strokes.push(target.strokeStyle) }
+        if (key === 'setLineDash') return (dash: number[]) => { dashes.push(dash) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    }) as unknown as CanvasRenderingContext2D
+    for (const curves of [visibleSeries(energy, ['E_pg']), [energy[1]], []]) {
+      strokes.length = 0
+      drawGraph(ctx, graphLayout(curves, 2, 600, 180), curves, 1, 'en')
+      expect(strokes).toEqual(['#ddd', ...curves.map(s => colorOf(s.name)), '#444'])
+    }
+    expect(labels.some(text => ['E_c', 'E_pg', 'E_mec', 'E', 'c', 'pg', 'mec'].includes(text))).toBe(false)
+    expect(labels).toContain('J')
+    expect(labels).toContain('s')
+    expect(dashes).toContainEqual([3, 3])
+  })
+})
 
 describe('graph seek index (PHY-73)', () => {
   it('rounds to the nearest recorded frame and clamps plot margins', () => {
