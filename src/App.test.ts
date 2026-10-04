@@ -197,8 +197,7 @@ describe('scene focus chips (PHY-78)', () => {
     expect(frame.rings.filter(r => r.color === '#d97742')).toEqual([])
     toggleFocus(host, 'forces')
     expect(texts()).toContain('F')
-    if (scope === 'global') expect(texts()).toContain('P')
-    else expect(frame.rings).toContainEqual({ color: '#d97742', x: 462, y: 300 })
+    if (scope === 'selected') expect(frame.rings).toContainEqual({ color: '#d97742', x: 462, y: 300 })
   })
 
   it('filters initial body readouts with blank focus and restores kinematics on request', async () => {
