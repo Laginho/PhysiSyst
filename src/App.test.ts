@@ -2123,7 +2123,7 @@ describe('falhas de edição e troca de cena sem carry (CLEAN-16)', () => {
     expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5,00 m/s')
   })
 
-  it('uma troca de cena cujo replaceScene falha não mostra poses ou velocidades da cena anterior, nem após o retry', async () => {
+  it('CLEAN-30 uma troca de cena cujo replaceScene falha não mostra leituras da cena anterior, nem após o retry', async () => {
     const sim = fakeSimulator(scene())
     const replace = vi.spyOn(sim, 'replaceScene')
     replace.mockImplementationOnce(() => { throw new Error('falha ao trocar cena') })
@@ -2138,12 +2138,148 @@ describe('falhas de edição e troca de cena sem carry (CLEAN-16)', () => {
     expect(text).toContain('passos: 0')
     expect(text).toContain('posição: (6,00, 3,50) m')
     expect(text).toContain('velocidade: 2,00 m/s')
+    expect(text).toContain('E_c: 2,00 J')
+    expect(text).toContain('|p|: 2,00 kg·m/s')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 2,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('|p|: 2,00 kg·m/s')
 
     await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
     await act(async () => { await vi.advanceTimersByTimeAsync(120) })
     expect(panel(host, 'leitura — bola')!.textContent).toContain('passos: 1')
     expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9,00, 6,00) m')
     expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 7,00 m/s')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('E_c: 24,50 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 24,50 J')
+  })
+
+  it('CLEAN-30 a failed reset reads the document until a successful retry', async () => {
+    const sim = fakeSimulator(scene())
+    const { host } = await setup(sim)
+    vi.spyOn(sim, 'replaceScene').mockImplementationOnce(() => { throw new Error('reset failed') })
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, ptBR['simError.title'])?.textContent).toContain('reset failed')
+    expect(panel(host, 'leitura — bola')?.textContent).toContain('E_c: 0,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 0,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('|p|: 0,00 kg·m/s')
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, 'sistema')?.textContent).toContain('E_c: 12,50 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('|p|: 5,00 kg·m/s')
+  })
+})
+
+describe('CLEAN-30 document energy during boot', () => {
+  it('uses document spring strain and zero chain/pulley kinetic energy without publishing constraint readings', async () => {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const scene: Scene = {
+      version: 1, constants: { g: 10 }, forces: [], contacts: [],
+      bodies: [
+        { id: 'wall', shape: 'circle', radius: 0.2, mass: 0, fixed: true, position: { x: 2, y: 4 }, rotation: 0 },
+        { id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0 },
+      ],
+      constraints: [{ id: 'spring', kind: 'spring', a: { bodyId: 'wall', anchor: { x: 0, y: 0 } },
+        b: { bodyId: 'ball', anchor: { x: 0, y: 0 } }, k: 10, x0: 3, mass: 1 }],
+      pulleys: [{ id: 'disk', bodyId: 'wall', anchor: { x: 0, y: 0 }, radius: 1, mass: 2 }],
+    }
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(),
+      readStates: () => new Map(scene.bodies.map(b => [b.id, {
+        position: b.position, rotation: b.rotation, linvel: { x: 0, y: 0 }, angvel: 0,
+      }])),
+      readConstraints: () => [{ id: 'spring', kind: 'spring', dx: 1, force: { a: 10, b: 10 }, chainKinetic: 7 }],
+      readPulleys: () => [{ id: 'disk', angvel: 3 }],
+    })
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'spring-energy', name: 'Spring energy', updatedAt: 1 }])
+      saveScene(storage, 'spring-energy', scene)
+      saveCurrentSceneId(storage, 'spring-energy')
+    })
+    await settleSimImport()
+    const poll = () => act(() => { vi.advanceTimersByTime(100) })
+    const system = () => panel(host, 'sistema')?.textContent ?? ''
+    poll()
+    // The previous frame deliberately has moving chain nodes and a spinning disk.
+    expect(system()).toContain('E_c: 11,50 J')
+    click(canvas, { x: 4, y: 4 })
+    expect(panel(host, 'spring')).toBeDefined()
+    act(() => setNativeInputValue(inputForLabel(panel(host, 'spring')!, ptBR['spring.x0']), 2))
+    poll()
+    expect(system()).toContain('E_c: 0,00 J')
+    expect(system()).toContain('E_el: 20,00 J')
+    expect(system()).toContain('E_mec: 60,00 J')
+    expect(panel(host, 'leitura — spring')?.textContent).toContain(ptBR['readout.noData'])
+  })
+
+  it('reads initial velocity and rotated triangle centroid before boot and after an edit during boot', async () => {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let resolveBoot!: (sim: Simulator) => void
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise(resolve => { resolveBoot = resolve }))
+    const scene: Scene = {
+      version: 1, constants: { g: 3 }, forces: [], contacts: [],
+      bodies: [{ id: 'triangle', shape: 'triangle', base: 3, alpha: 45, mass: 2, fixed: false,
+        position: { x: 6, y: 4 }, rotation: Math.PI / 2, vx: 3, vy: 4 }],
+    }
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'boot-energy', name: 'Boot energy', updatedAt: 1 }])
+      saveScene(storage, 'boot-energy', scene)
+      saveCurrentSceneId(storage, 'boot-energy')
+    })
+    await settleSimImport()
+    click(canvas, { x: 5, y: 6 })
+    const poll = () => act(() => { vi.advanceTimersByTime(100) })
+    poll()
+    const body = () => panel(host, 'leitura — triangle')?.textContent ?? ''
+    expect(body()).toContain('E_c: 25,00 J')
+    expect(body()).toContain('E_pg: 36,00 J')
+    expect(body()).toContain('|p|: 10,00 kg·m/s')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 61,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('p_x: 6,00 kg·m/s')
+    expect(panel(host, 'sistema')?.textContent).toContain('p_y: 8,00 kg·m/s')
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['properties.posY']), 5))
+    poll()
+    expect(body()).toContain('E_pg: 42,00 J')
+    let current = scene
+    const replaceScene = vi.fn((doc: Scene) => { current = doc })
+    await act(async () => {
+      resolveBoot({ ...makeFakeSimulator(), replaceScene,
+        readStates: () => new Map(current.bodies.map(b => [b.id, {
+          position: b.position, rotation: b.rotation, linvel: { x: b.vx ?? 0, y: b.vy ?? 0 }, angvel: 0,
+        }])),
+      })
+    })
+    poll()
+    expect(loadingOverlay(host)).toBeUndefined()
+    expect(replaceScene).not.toHaveBeenCalled()
+    expect(body()).toContain('E_pg: 42,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 67,00 J')
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    poll()
+    expect(replaceScene).toHaveBeenCalledTimes(1)
+    expect(body()).toContain('E_pg: 42,00 J')
+  })
+
+  it.each(['fixed', 'empty'] as const)('has no system reading during boot for a %s document', async (bodies) => {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise(() => {}))
+    const scene: Scene = { version: 1, constants: { g: 10 }, forces: [], contacts: [], bodies: bodies === 'empty' ? [] : [
+      { id: 'fixed', shape: 'circle', radius: 1, mass: 2, fixed: true, position: { x: 6, y: 4 }, rotation: 0 },
+    ] }
+    const { host } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'no-energy', name: 'No energy', updatedAt: 1 }])
+      saveScene(storage, 'no-energy', scene)
+      saveCurrentSceneId(storage, 'no-energy')
+    })
+    await settleSimImport()
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(panel(host, 'sistema')?.textContent).toContain(ptBR['readout.noData'])
+    expect(panel(host, 'sistema')?.textContent).not.toContain('E_mec')
   })
 })
 
