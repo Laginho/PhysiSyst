@@ -47,6 +47,12 @@ export function graphLayout(series: Series[], tMax: number, width: number, heigh
   }
 }
 
+/** Invert the displayed time axis, bounded by the actual recording duration. */
+export function indexAtX(layout: Layout, x: number, tMax: number): number {
+  const time = (x - layout.mapT(0)) / (layout.mapT(1) - layout.mapT(0))
+  return Math.round(Math.max(0, Math.min(tMax, time)) / TIMESTEP)
+}
+
 /** Each sample uses its own document: live edits must not rewrite history. */
 export function seriesFor(kind: GraphKind, frames: readonly GraphFrame[], bodyId: string | null, scene: Scene): Series[] {
   if (bodyId !== null && !scene.bodies.some(b => b.id === bodyId)) return []

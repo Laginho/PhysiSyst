@@ -2809,6 +2809,88 @@ describe('recorded time player (PHY-64)', () => {
     }
   }
 
+  async function setupGraph() {
+    const p = await setupRecording()
+    act(() => findButton(p.host, ptBR['graph.toggle'])!.click())
+    const graph = p.host.querySelector<HTMLCanvasElement>('#recording-graph canvas')!
+    const select = p.host.querySelector<HTMLSelectElement>('#recording-graph select')!
+    // Offset and CSS scaling deliberately differ from the logical 900px canvas.
+    graph.getBoundingClientRect = () => ({ left: 100, top: 700, width: 450, height: 90 } as DOMRect)
+    const capture = vi.spyOn(graph, 'setPointerCapture')
+    const pointer = (type: string, x: number, buttons = 1) => {
+      const event = new MouseEvent(type, { bubbles: true, clientX: 100 + x / 2, clientY: 740, buttons })
+      Object.defineProperty(event, 'pointerId', { value: 7 })
+      act(() => graph.dispatchEvent(event))
+      p.poll()
+    }
+    return { ...p, graph, select, pointer, capture }
+  }
+
+  it('PHY-73 seeks the midpoint to frame 30 and returns to the live tip at the right margin', async () => {
+    const p = await setupGraph()
+    p.pointer('pointerdown', 900)
+    expect(p.slider().value).toBe('0')
+    await p.steps(60)
+    expect(p.slider().max).toBe('60')
+    p.pointer('pointerdown', 470)
+    expect(p.slider().value).toBe('30')
+    expect(p.host.textContent).toContain('t = 0,50 s')
+    expect(p.capture).toHaveBeenCalledWith(7)
+    p.pointer('pointerdown', -100)
+    expect(p.slider().value).toBe('0')
+    p.pointer('pointerdown', 1000)
+    expect(p.slider().value).toBe('60')
+    await p.steps(1)
+    expect(p.slider().value).toBe('61')
+    expect(p.step).toHaveBeenCalledTimes(61)
+  })
+
+  it('PHY-73 pauses playing on graph press and stays paused after release', async () => {
+    const p = await setupGraph()
+    await p.steps(60)
+    await p.play()
+    expect(findButton(p.host, ptBR['playback.pause'])).toBeDefined()
+    p.pointer('pointerdown', 470)
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    p.pointer('pointerup', 470, 0)
+    p.frame()
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    expect(p.slider().value).toBe('30')
+    expect(p.step).toHaveBeenCalledTimes(60)
+  })
+
+  it('PHY-73 drags through successive indices only while the primary button is held', async () => {
+    const p = await setupGraph()
+    await p.steps(60)
+    p.pointer('pointerdown', 64)
+    p.pointer('pointermove', 267)
+    expect(p.slider().value).toBe('15')
+    p.pointer('pointermove', 673)
+    expect(p.slider().value).toBe('45')
+    p.pointer('pointerup', 673, 0)
+    p.pointer('pointermove', 470, 0)
+    expect(p.slider().value).toBe('45')
+  })
+
+  it('PHY-73 disables kinematics without a body and keeps energy when a body is reselected', async () => {
+    const p = await setupGraph()
+    const disabled = () => [...p.select.options].map(o => o.disabled)
+    expect(disabled()).toEqual([true, true, true, false, false])
+    click(p.canvas, { x: 6, y: 4 })
+    expect(disabled()).toEqual([false, false, false, false, false])
+    expect(p.select.value).toBe('energy')
+    act(() => setSelectValue(p.select, 'velocity'))
+    click(p.canvas, { x: 0, y: 8 })
+    expect(p.select.value).toBe('energy')
+    expect(disabled()).toEqual([true, true, true, false, false])
+    click(p.canvas, { x: 6, y: 4 })
+    expect(p.select.value).toBe('energy')
+    act(() => setSelectValue(p.select, 'momentum'))
+    click(p.canvas, { x: 0, y: 8 })
+    click(p.canvas, { x: 6, y: 4 })
+    expect(p.select.value).toBe('momentum')
+  })
+
   it.each(['fixed', 'empty'] as const)('PHY-71 shows no data for a %s system', async (bodies) => {
     const p = await setupRecording(undefined, bodies)
     p.poll()
