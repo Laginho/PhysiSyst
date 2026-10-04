@@ -1,5 +1,5 @@
 # PHY-77: Pausar quando a gravação enche
-Stage: reviewing
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -81,4 +81,58 @@ No App: `togglePlay` e `stepOnce` passam `recordingRef.current!.length`; os bot�
 - Gate final: `npm test && npm run lint && npm run typecheck && npm run build` — **33 arquivos, 1171 testes passaram**, lint e typecheck sem erros; Vite construiu 52 módulos com sucesso. Paridade i18n incluída no gate.
 - Handoff: App sincroniza status/cursor do scheduler e interrompe rAF ao pausar; 599 passos e `t = 9,98 s` na ponta cheia, controles/atalhos sem passos extras, aviso localizado, navegação/replay e reset preservados. `stepOnce` já passava length no App. Diff limitado a Primary files e ao ticket; commits de implementação não alteram testes. Stage 2 concluída; revisão e merge ficam para Stage 3.
 
-- 2026-10-04 Stage 3, S1 (Standards): o coment?rio de m?dulo do scheduler ainda prometia `floor(N * speed)` sem considerar o limite e o descarte de cr?dito. Corrigido somente o coment?rio para descrever a pausa na ponta cheia; nenhuma altera??o de comportamento ou teste novo. Corre??o pequena dentro de Primary files, conforme `ticket-flow`. Spec: dez crit?rios atendidos, sem finding. As nove execu??es das muta??es registradas foram repetidas e verificadas; produ??o restaurada byte a byte antes desta corre??o.
+- 2026-10-04 Stage 3, S1 (Standards): o comentário de módulo do scheduler ainda prometia `floor(N * speed)` sem considerar o limite e o descarte de crédito. Corrigido somente o comentário para descrever a pausa na ponta cheia; nenhuma alteração de comportamento ou teste novo. Correção pequena dentro de Primary files, conforme `ticket-flow`. Spec: dez critérios atendidos, sem finding. As nove execuções das mutações registradas foram repetidas e verificadas; produção restaurada byte a byte antes desta correção.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Revisão independente do diff completo `0108bf0...1de642f` contra este ticket e o spec v7, com Standards e Spec em sub-agentes separados. O revisor principal conferiu os chamadores, os commits, o gate e as mutações. Contrato, critérios e Primary files preservados; única correção permanente da etapa: comentário de módulo do scheduler, commit `2cd5a4d`, sem mudança de comportamento ou testes.
+
+##### Standards
+
+- S1 corrigido: o comentário ainda prometia consumir `floor(N * speed)` sem considerar o limite. Agora explica a capacidade restante, a pausa na ponta cheia e o descarte de crédito. Correção documental pequena, conforme a regra de documentação tornada obsoleta de `ticket-flow` e o quality gate de Engenharia, item 5.
+- Nenhuma outra violação ou smell acionável. Os commits `99a1d23`, `e23b63c`, `7263303` e `8bba124` alteram somente testes/ticket; `57e7c4a` e `1de642f` alteram somente produção/ticket. A correção documental também não toca testes. Costuras de produção reais e evidência de mutação por teste DOM; aviso localizado com `role="status"`. Sem refactor ou artefato gerado no diff. Nenhuma linha `Proxy decided` neste ticket.
+
+##### Spec
+
+Nenhum finding de Spec, scope creep ou regressão introduzida identificado.
+
+| Critério | Parecer |
+| --- | --- |
+| 1 | ✅ Frame limita passos às vagas restantes e pausa com acc 0 ao encher; casos 597–601, 1×/2× e crédito fracionário cobertos. |
+| 2 | ✅ Play recusa a ponta cheia, permite length 599 e preserva a chamada sem length. |
+| 3 | ✅ StepOnce na ponta cheia devolve zero passos e o mesmo estado, incluindo status, acc e stepsTaken. |
+| 4 | ✅ Replay cheio termina com cursor null, paused e zero passos físicos; sobra a 2× descartada, replay intermediário preservado. |
+| 5 | ✅ Compatibilidade abaixo da transição para o cap e dos chamadores sem length; testes anteriores do scheduler preservados. |
+| 6 | ✅ App: 599 chamadas em 610 quadros, slider 599/599, botão reproduzir, aviso, passos 599 e t = 9,98 s. |
+| 7 | ✅ Botões e atalhos na ponta não executam passos; voltar e slider continuam habilitados e exibem os registros 598/10. |
+| 8 | ✅ Replay a partir de 590 chega a 599 e pausa novamente sem novas chamadas físicas. |
+| 9 | ✅ Reset remove aviso, zera slider e habilita reprodução; quadro seguinte executa novo passo. |
+| 10 | ✅ Avisos pt-BR/en, paridade no gate, troca real de idioma no DOM e comentário de RECORDING_CAP atualizado. |
+
+Consumidores e interações examinados: `advance`/`advanceCursor`; dispatch, rAF, runSteps, showFrame e poll do App; play/step assíncronos e roteamento de teclado; reset, reconstrução e troca de cena; edição ao vivo/estrutural e travas; seek pelo slider/gráfico, voltar, replay, leituras de aceleração/energia e relógio; transportes de integração, aceleração e overlay que omitem length. Fronteiras e falhas examinadas: gravação inicial, crédito zero/fracionário, uma/duas vagas, length acima do cap, replay com sobra, ponta cheia em ambos os status, boot/rebuild/step com erro e reset depois do cap. Não houve novo probe manual de física, comparação visual ou validação em outros navegadores; motor e mecanismos de layout não foram alterados.
+
+##### Prova vermelho/verde repetida
+
+Todas as mutações registradas em stage 2 foram repetidas, com restauração byte a byte em `finally` e relatório de cada execução. M1 (cap infinito no scheduler): **22 failed, 10 passed, 222 skipped (254)** no filtro combinado; **6 failed, 163 skipped (169)** no filtro só DOM. Os 16 casos de scheduler que exigem o limite ficaram vermelhos. Cada uma das sete execuções adicionais abaixo teve **1 failed, 168 skipped (169)**.
+
+| Teste DOM (prefixo PHY-77) | Mutação repetida | Saída vermelha observada nesta revisão |
+| --- | --- | --- |
+| capped replay pauses at the last recorded pose via play | M1 | `expected "vi.fn()" to be called 599 times, but got 610 times` |
+| capped replay pauses at the last recorded pose via step | M1 | Mesma saída: 610 chamadas em vez de 599. |
+| pauses when full with the slider, clock and step count at the last record | M1; aviso apenas com length > cap; aviso en incorreto | M1: 610 chamadas; aviso: `to contain 'gravação cheia (10 s) — reinicie'`; en: `to contain 'recording full (10 s) — reset'`. |
+| blocks full-tip buttons and keyboard steps while keeping recorded navigation available | Omitir length de play; omitir length de stepOnce; forçar disabled false (execuções separadas) | Play: `expected undefined to be true`; step: 600 chamadas em vez de 599; disabled: `expected false to be true`. |
+| replays a full recording from 590 and pauses again without new physics steps | M1; sincronizar playback só em mudança de status | M1: botão reproduzir ausente (`Cannot read properties of undefined (reading 'disabled')`); cursor: `expected '590' to be '591'`. |
+| reset clears the full warning and enables recording a new run | M1; suprimir resetRecording no dispatch cheio | M1: 610 chamadas; reset: `not to contain 'gravação cheia (10 s) — reinicie'`. |
+
+A primeira execução do runner temporário por cmd selecionou 31 casos; a chamada foi corrigida para a CLI direta do Vitest, que selecionou os 32 casos esperados e reproduziu os números acima. Nenhum teste ou produção foi alterado para corrigir o runner. As nove execuções finais foram verificadas; `summary.json` registra `restored: true`. Logs por mutação e runner: `%TEMP%/phy77-review-0d12911ed3ae43bdb446da22ffde799d/`. A evidência essencial permanece neste ticket.
+
+##### Gate e fechamento
+
+- Gate oficial independente antes da revisão: **33 arquivos e 1171 testes passed, sem skips**; lint/typecheck/build exit 0. A tentativa inicial no sandbox teve 28 falhas de conexão com Chromium e 1143 testes passed; executar fora do sandbox resolveu as conexões sem mudança de código.
+- Gate oficial final depois das mutações restauradas e da correção documental: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0; 33 arquivos e 1171 testes passed, sem skips**; lint/typecheck/build exit 0; Vite: 52 módulos. Aviso de chunk sim >500 kB já existente (2136,50 kB).
+- `git rebase sweatshop/2026-10-04-1243` confirmou a branch atualizada. Merge sem squash **cc2f7e0** na sessão; `git diff --exit-code 2cd5a4d HEAD` confirmou a mesma árvore validada, antes do fechamento documental. Sem PR ou push nesta etapa, conforme o fluxo de sessão.
+- `Stage: done`, este Resolution e a linha de ledger são registrados juntos no commit de fechamento sobre a sessão. `Review: agent` preservado.
+
+Totais por eixo: Standards — 1 finding documental corrigido, 0 pendentes, 0 smells acionáveis; Spec — 0 findings, dez critérios atendidos.
