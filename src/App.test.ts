@@ -869,6 +869,19 @@ describe('initial force vectors (PHY-82)', () => {
     expect(p.probeInitial).toHaveBeenCalledTimes(1)
   })
 
+  it('paints initial vectors at the current canvas size when boot finishes after a resize', async () => {
+    const p = await setupProbe({ delayedBoot: true })
+    act(() => lastResizeObserverCallback?.(
+      [{ contentRect: { width: 600, height: 400 } } as ResizeObserverEntry], null as unknown as ResizeObserver,
+    ))
+    expect(p.canvas.style.width).toBe('600px')
+    await p.resolveBoot()
+    expect(p.origin('#1565c0')).toEqual([180, 360])
+    expect(p.origin('#6a1b9a')).toEqual([380, 232])
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
   it('refreshes on scene switching and on editing the initial recorded document', async () => {
     const next = doc()
     next.bodies = next.bodies.map(body => body.id === 'bola' ? { ...body, position: { x: 9, y: 3 } } : body)
