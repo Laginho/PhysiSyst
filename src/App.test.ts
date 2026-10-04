@@ -38,6 +38,7 @@ function makeFakeSimulator(): Simulator {
     readStates: () => new Map(),
     readContacts: () => [],
     readConstraints: () => [],
+    readPulleys: () => [],
     setForceMagnitude: () => {},
     setGravity: () => {},
     setForceDirection: () => {},
@@ -136,6 +137,32 @@ async function settleSimImport(): Promise<void> {
     await vi.dynamicImportSettled()
   })
 }
+
+describe('recording graph panel (PHY-72)', () => {
+  it('toggles an accessible panel, defaults to energy and follows selection', async () => {
+    const host = renderApp()
+    await settleSimImport()
+    const toggle = findButton(host, 'gráfico')
+    expect(toggle).toBeDefined()
+    expect(toggle!.getAttribute('aria-pressed')).toBe('false')
+    const id = toggle!.getAttribute('aria-controls')!
+    expect(host.querySelector(`#${id}`)).toBeNull()
+    act(() => toggle!.click())
+    expect(toggle!.getAttribute('aria-pressed')).toBe('true')
+    const panel = host.querySelector(`#${id}`)!
+    const select = panel.querySelector('select')!
+    expect(select.value).toBe('energy')
+    expect(panel.querySelector('canvas[role="img"]')!.getAttribute('aria-label')).toContain(t('readout.system'))
+    click(host.querySelector('canvas')!, { x: 9, y: 3 })
+    expect(panel.querySelector('canvas')!.getAttribute('aria-label')).toContain('caixa')
+    act(() => setSelectValue(select, 'velocity'))
+    expect(select.value).toBe('velocity')
+    click(host.querySelector('canvas')!, { x: 0, y: 8 })
+    expect(select.value).toBe('energy')
+    act(() => toggle!.click())
+    expect(host.querySelector(`#${id}`)).toBeNull()
+  })
+})
 
 function inputForLabel(panel: Element, labelText: string): HTMLInputElement {
   const label = [...panel.querySelectorAll('label')].find((candidate) => candidate.textContent?.trim() === labelText)
@@ -244,6 +271,43 @@ function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasEle
   if (!canvas) throw new Error('missing canvas')
   return { host, canvas }
 }
+
+describe('Contact restitution editor (PHY-67)', () => {
+  it('shows restitution after kinetic friction for each pair and persists edits without clamping', () => {
+    vi.useFakeTimers()
+    const storage = window.localStorage as unknown as PersistStorage
+    const scene: Scene = {
+      ...DEMO_SCENE,
+      contacts: [
+        { ...DEMO_SCENE.contacts[0], e: 0.5 },
+        { a: 'rampa', b: 'chao', muS: 0, muK: 0 },
+      ],
+    }
+    expect(scene.contacts.length).toBeGreaterThan(1)
+    const { host } = setupWith(() => {
+      saveIndex(storage, [{ id: 'restitution', name: 'Restitution', updatedAt: 1 }])
+      saveScene(storage, 'restitution', scene)
+      saveCurrentSceneId(storage, 'restitution')
+    })
+    const contacts = panel(host, ptBR['contacts.title'])!
+    const fields = [...contacts.querySelectorAll('input')]
+    expect(fields).toHaveLength(scene.contacts.length * 3)
+    for (let i = 0; i < scene.contacts.length; i++) {
+      const labels = fields.slice(i * 3, i * 3 + 3).map((input) => input.closest('label')?.textContent?.trim())
+      expect(labels).toEqual([ptBR['contacts.muS'], ptBR['contacts.muK'], 'e — restituição'])
+      expect(fields[i * 3 + 2].value).toBe(i === 0 ? '0.5' : '0')
+      expect(fields[i * 3 + 2].step).toBe('0.05')
+    }
+    for (const e of [0.8, -0.1, 1.5]) {
+      act(() => setNativeInputValue(fields[2], e))
+      act(() => { window.dispatchEvent(new Event('pagehide')) })
+      const saved = loadScene(storage, 'restitution')!
+      expect(saved.contacts[0]).toEqual({ ...scene.contacts[0], e })
+      expect(saved.contacts.slice(1)).toEqual(scene.contacts.slice(1))
+      expect(fields[2].value).toBe(String(e))
+    }
+  })
+})
 
 // The loading overlay is the canvas's only sibling in its box — whatever it
 // renders (joke badge or error panel) sits right next to <canvas> in the DOM.
@@ -1182,8 +1246,8 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
       })
     }
 
-    expect(readout()).toContain('F_el: 2.00 N')
-    expect(readout()).toContain('Δx: -0.100 m')
+    expect(readout()).toContain('F_el: 2,00 N')
+    expect(readout()).toContain('Δx: -0,100 m')
   }, 10000)
 
   it('inspetor edita a massa mₛ da mola (PHY-30); negativa não entra e avisa', () => {
@@ -1227,12 +1291,12 @@ describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', (
     }
 
     // The same labels as the arrows, in the order of the ends (CLEAN-10).
-    expect(readout()).toContain('F_el,1: 2.00 N')
-    expect(readout()).toContain('F_el,2: 2.50 N')
+    expect(readout()).toContain('F_el,1: 2,00 N')
+    expect(readout()).toContain('F_el,2: 2,50 N')
     expect(readout().indexOf('F_el,1')).toBeLessThan(readout().indexOf('F_el,2'))
     expect(readout()).not.toContain('F_el em')
     expect(readout()).not.toContain('F_el: ')
-    expect(readout()).toContain('Δx: 0.100 m')
+    expect(readout()).toContain('Δx: 0,100 m')
   }, 10000)
 
   it('arrastar o ponto de aplicação de uma força move a âncora com Anchor snap, em um passo de undo', () => {
@@ -1307,7 +1371,7 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     click(canvas, B2_CLICK)
   }
 
-  const lengthText = (r: number) => `L: ${(2 * 3.55 + Math.PI * r).toFixed(3)} m`
+  const lengthText = (r: number) => `L: ${(2 * 3.55 + Math.PI * r).toFixed(3).replace('.', ',')} m`
 
   it('Polia: um clique num corpo monta a polia na âncora do Anchor snap e a seleciona; clique fora de corpo é ignorado', () => {
     const { host, canvas } = setup()
@@ -1582,13 +1646,13 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     buildAtwood(host, canvas)
 
     const taut = await playAndRead(host, 'T:')
-    expect(taut).toContain('T: 13.08 N')
+    expect(taut).toContain('T: 13,08 N')
     expect(taut).not.toContain('T₁')
     expect(taut).not.toContain('frouxa')
 
     state = { ...state, tension: 0, slack: true, segments: [0, 0] }
     const slack = await playAndRead(host, 'frouxa')
-    expect(slack).toContain('T: 0.00 N')
+    expect(slack).toContain('T: 0,00 N')
     expect(slack).toContain('frouxa')
   }, 10000)
 
@@ -1605,8 +1669,8 @@ describe('ferramentas Polia e Corda (PHY-28)', () => {
     click(canvas, LEFT_LEG)
 
     const readout = await playAndRead(host, 'T₂')
-    expect(readout).toContain('T₁: 12.00 N')
-    expect(readout).toContain('T₂: 13.00 N')
+    expect(readout).toContain('T₁: 12,00 N')
+    expect(readout).toContain('T₂: 13,00 N')
     expect(readout).not.toContain('T: ')
   }, 10000)
 })
@@ -1815,6 +1879,7 @@ describe('galeria em árvore (PHY-31)', () => {
       { node: 'Mecânica / Dinâmica / Atrito entre sólidos', presets: names('incline-block') },
       { node: 'Mecânica / Dinâmica / Resultantes tangencial e centrípeta', presets: names('loop-pendulum') },
       { node: 'Mecânica / Dinâmica / Movimentos em campo gravitacional uniforme', presets: names('free-fall', 'projectile') },
+      { node: 'Mecânica / Dinâmica / Colisões', presets: names('collision-elastic', 'collision-inelastic') },
       { node: 'Ondulatória / MHS', presets: names('spring-horizontal', 'spring-vertical', 'simple-pendulum', 'spring-damped') },
     ])
   })
@@ -1976,15 +2041,15 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
     // Clicking the document pose finds the body, and it reads the document's state.
     click(canvas, { x: 6, y: 3.5 })
     await wait(150)
-    expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (6.00, 3.50) m`)
-    expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 0.00 m/s`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (6,00, 3,50) m`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 0,00 m/s`)
 
     // Read the next simulated state, so clearing the UI refs alone cannot pass.
     act(() => findButton(host, ptBR['playback.step'])?.click())
     await wait(150)
     expect(readoutText(host)).toContain(`${ptBR['readout.steps']}: 1`)
-    expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (9.00, 6.00) m`)
-    expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 5.00 m/s`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.position']}: (9,00, 6,00) m`)
+    expect(readoutText(host)).toContain(`${ptBR['readout.velocityMagnitude']}: 5,00 m/s`)
   }, 10000)
 })
 
@@ -2032,8 +2097,8 @@ describe('falhas de edição e troca de cena sem carry (CLEAN-16)', () => {
     await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
     click(canvas, { x: 9, y: 6 })
     await act(async () => { await vi.advanceTimersByTimeAsync(120) })
-    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9.00, 6.00) m')
-    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5.00 m/s')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9,00, 6,00) m')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5,00 m/s')
     return { host, canvas }
   }
 
@@ -2049,16 +2114,16 @@ describe('falhas de edição e troca de cena sem carry (CLEAN-16)', () => {
     expect(findButton(host, ptBR['playback.play'])).toBeDefined()
     const text = panel(host, 'leitura — bola')!.textContent
     expect(text).toContain('passos: 0')
-    expect(text).toContain('posição: (6.00, 3.50) m')
-    expect(text).toContain('velocidade: 0.00 m/s')
+    expect(text).toContain('posição: (6,00, 3,50) m')
+    expect(text).toContain('velocidade: 0,00 m/s')
     // A resumed step also starts in the rebuilt world, rather than old UI refs.
     await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
     await act(async () => { await vi.advanceTimersByTimeAsync(120) })
-    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9.00, 6.00) m')
-    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5.00 m/s')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9,00, 6,00) m')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 5,00 m/s')
   })
 
-  it('uma troca de cena cujo replaceScene falha não mostra poses ou velocidades da cena anterior, nem após o retry', async () => {
+  it('CLEAN-30 uma troca de cena cujo replaceScene falha não mostra leituras da cena anterior, nem após o retry', async () => {
     const sim = fakeSimulator(scene())
     const replace = vi.spyOn(sim, 'replaceScene')
     replace.mockImplementationOnce(() => { throw new Error('falha ao trocar cena') })
@@ -2071,14 +2136,150 @@ describe('falhas de edição e troca de cena sem carry (CLEAN-16)', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(120) })
     const text = panel(host, 'leitura — bola')!.textContent
     expect(text).toContain('passos: 0')
-    expect(text).toContain('posição: (6.00, 3.50) m')
-    expect(text).toContain('velocidade: 2.00 m/s')
+    expect(text).toContain('posição: (6,00, 3,50) m')
+    expect(text).toContain('velocidade: 2,00 m/s')
+    expect(text).toContain('E_c: 2,00 J')
+    expect(text).toContain('|p|: 2,00 kg·m/s')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 2,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('|p|: 2,00 kg·m/s')
 
     await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
     await act(async () => { await vi.advanceTimersByTimeAsync(120) })
     expect(panel(host, 'leitura — bola')!.textContent).toContain('passos: 1')
-    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9.00, 6.00) m')
-    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 7.00 m/s')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('posição: (9,00, 6,00) m')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('velocidade: 7,00 m/s')
+    expect(panel(host, 'leitura — bola')!.textContent).toContain('E_c: 24,50 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 24,50 J')
+  })
+
+  it('CLEAN-30 a failed reset reads the document until a successful retry', async () => {
+    const sim = fakeSimulator(scene())
+    const { host } = await setup(sim)
+    vi.spyOn(sim, 'replaceScene').mockImplementationOnce(() => { throw new Error('reset failed') })
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, ptBR['simError.title'])?.textContent).toContain('reset failed')
+    expect(panel(host, 'leitura — bola')?.textContent).toContain('E_c: 0,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 0,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('|p|: 0,00 kg·m/s')
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(120) })
+    expect(panel(host, 'sistema')?.textContent).toContain('E_c: 12,50 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('|p|: 5,00 kg·m/s')
+  })
+})
+
+describe('CLEAN-30 document energy during boot', () => {
+  it('uses document spring strain and zero chain/pulley kinetic energy without publishing constraint readings', async () => {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const scene: Scene = {
+      version: 1, constants: { g: 10 }, forces: [], contacts: [],
+      bodies: [
+        { id: 'wall', shape: 'circle', radius: 0.2, mass: 0, fixed: true, position: { x: 2, y: 4 }, rotation: 0 },
+        { id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0 },
+      ],
+      constraints: [{ id: 'spring', kind: 'spring', a: { bodyId: 'wall', anchor: { x: 0, y: 0 } },
+        b: { bodyId: 'ball', anchor: { x: 0, y: 0 } }, k: 10, x0: 3, mass: 1 }],
+      pulleys: [{ id: 'disk', bodyId: 'wall', anchor: { x: 0, y: 0 }, radius: 1, mass: 2 }],
+    }
+    vi.mocked(createSimulator).mockResolvedValue({
+      ...makeFakeSimulator(),
+      readStates: () => new Map(scene.bodies.map(b => [b.id, {
+        position: b.position, rotation: b.rotation, linvel: { x: 0, y: 0 }, angvel: 0,
+      }])),
+      readConstraints: () => [{ id: 'spring', kind: 'spring', dx: 1, force: { a: 10, b: 10 }, chainKinetic: 7 }],
+      readPulleys: () => [{ id: 'disk', angvel: 3 }],
+    })
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'spring-energy', name: 'Spring energy', updatedAt: 1 }])
+      saveScene(storage, 'spring-energy', scene)
+      saveCurrentSceneId(storage, 'spring-energy')
+    })
+    await settleSimImport()
+    const poll = () => act(() => { vi.advanceTimersByTime(100) })
+    const system = () => panel(host, 'sistema')?.textContent ?? ''
+    poll()
+    // The previous frame deliberately has moving chain nodes and a spinning disk.
+    expect(system()).toContain('E_c: 11,50 J')
+    click(canvas, { x: 4, y: 4 })
+    expect(panel(host, 'spring')).toBeDefined()
+    act(() => setNativeInputValue(inputForLabel(panel(host, 'spring')!, ptBR['spring.x0']), 2))
+    poll()
+    expect(system()).toContain('E_c: 0,00 J')
+    expect(system()).toContain('E_el: 20,00 J')
+    expect(system()).toContain('E_mec: 60,00 J')
+    expect(panel(host, 'leitura — spring')?.textContent).toContain(ptBR['readout.noData'])
+  })
+
+  it('reads initial velocity and rotated triangle centroid before boot and after an edit during boot', async () => {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let resolveBoot!: (sim: Simulator) => void
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise(resolve => { resolveBoot = resolve }))
+    const scene: Scene = {
+      version: 1, constants: { g: 3 }, forces: [], contacts: [],
+      bodies: [{ id: 'triangle', shape: 'triangle', base: 3, alpha: 45, mass: 2, fixed: false,
+        position: { x: 6, y: 4 }, rotation: Math.PI / 2, vx: 3, vy: 4 }],
+    }
+    const { host, canvas } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'boot-energy', name: 'Boot energy', updatedAt: 1 }])
+      saveScene(storage, 'boot-energy', scene)
+      saveCurrentSceneId(storage, 'boot-energy')
+    })
+    await settleSimImport()
+    click(canvas, { x: 5, y: 6 })
+    const poll = () => act(() => { vi.advanceTimersByTime(100) })
+    poll()
+    const body = () => panel(host, 'leitura — triangle')?.textContent ?? ''
+    expect(body()).toContain('E_c: 25,00 J')
+    expect(body()).toContain('E_pg: 36,00 J')
+    expect(body()).toContain('|p|: 10,00 kg·m/s')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 61,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('p_x: 6,00 kg·m/s')
+    expect(panel(host, 'sistema')?.textContent).toContain('p_y: 8,00 kg·m/s')
+    act(() => setNativeInputValue(inputForLabel(host, ptBR['properties.posY']), 5))
+    poll()
+    expect(body()).toContain('E_pg: 42,00 J')
+    let current = scene
+    const replaceScene = vi.fn((doc: Scene) => { current = doc })
+    await act(async () => {
+      resolveBoot({ ...makeFakeSimulator(), replaceScene,
+        readStates: () => new Map(current.bodies.map(b => [b.id, {
+          position: b.position, rotation: b.rotation, linvel: { x: b.vx ?? 0, y: b.vy ?? 0 }, angvel: 0,
+        }])),
+      })
+    })
+    poll()
+    expect(loadingOverlay(host)).toBeUndefined()
+    expect(replaceScene).not.toHaveBeenCalled()
+    expect(body()).toContain('E_pg: 42,00 J')
+    expect(panel(host, 'sistema')?.textContent).toContain('E_mec: 67,00 J')
+    await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    poll()
+    expect(replaceScene).toHaveBeenCalledTimes(1)
+    expect(body()).toContain('E_pg: 42,00 J')
+  })
+
+  it.each(['fixed', 'empty'] as const)('has no system reading during boot for a %s document', async (bodies) => {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    vi.mocked(createSimulator).mockImplementationOnce(() => new Promise(() => {}))
+    const scene: Scene = { version: 1, constants: { g: 10 }, forces: [], contacts: [], bodies: bodies === 'empty' ? [] : [
+      { id: 'fixed', shape: 'circle', radius: 1, mass: 2, fixed: true, position: { x: 6, y: 4 }, rotation: 0 },
+    ] }
+    const { host } = setupWith(() => {
+      const storage = window.localStorage as unknown as PersistStorage
+      saveIndex(storage, [{ id: 'no-energy', name: 'No energy', updatedAt: 1 }])
+      saveScene(storage, 'no-energy', scene)
+      saveCurrentSceneId(storage, 'no-energy')
+    })
+    await settleSimImport()
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(panel(host, 'sistema')?.textContent).toContain(ptBR['readout.noData'])
+    expect(panel(host, 'sistema')?.textContent).not.toContain('E_mec')
   })
 })
 
@@ -2290,7 +2491,7 @@ describe('edição estrutural só em t0 (PHY-39)', () => {
     expect(rope.slack).toBe(false)
     click(canvas, { x: 5.75, y: 5 })
     act(() => { vi.advanceTimersByTime(100) })
-    expect(panel(host, 'leitura — corda')!.textContent).toContain('T: 23.54 N')
+    expect(panel(host, 'leitura — corda')!.textContent).toContain('T: 23,54 N')
   })
 })
 
@@ -2682,7 +2883,7 @@ describe('galeria de um clique (PHY-62)', () => {
 
 
 describe('recorded time player (PHY-64)', () => {
-  async function setupRecording(kind?: 'spring' | 'rope') {
+  async function setupRecording(kind?: 'spring' | 'rope', bodies: 'dynamic' | 'fixed' | 'empty' = 'dynamic') {
     setLang('pt-BR')
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let frame!: FrameRequestCallback
@@ -2704,6 +2905,8 @@ describe('recorded time player (PHY-64)', () => {
         ? [{ id: 'link', kind, ...ends, k: 10, x0: 4, c: 0 }]
         : [{ id: 'link', kind, ...ends, via: [] }]
     }
+    if (bodies === 'empty') { scene.bodies = []; scene.forces = [] }
+    if (bodies === 'fixed') scene.bodies.forEach(b => { b.fixed = true })
     let current = scene
     const step = vi.fn(() => { count++ })
     const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })
@@ -2741,6 +2944,171 @@ describe('recorded time player (PHY-64)', () => {
       readout: () => panel(host, t('readout.title', { id: 'ball' }))?.textContent ?? '',
     }
   }
+
+  async function setupGraph() {
+    const p = await setupRecording()
+    act(() => findButton(p.host, ptBR['graph.toggle'])!.click())
+    const graph = p.host.querySelector<HTMLCanvasElement>('#recording-graph canvas')!
+    const select = p.host.querySelector<HTMLSelectElement>('#recording-graph select')!
+    // Offset and CSS scaling deliberately differ from the logical 900px canvas.
+    graph.getBoundingClientRect = () => ({ left: 100, top: 700, width: 450, height: 90 } as DOMRect)
+    const capture = vi.spyOn(graph, 'setPointerCapture')
+    const pointer = (type: string, x: number, buttons = 1) => {
+      const event = new MouseEvent(type, { bubbles: true, clientX: 100 + x / 2, clientY: 740, buttons })
+      Object.defineProperty(event, 'pointerId', { value: 7 })
+      act(() => graph.dispatchEvent(event))
+      p.poll()
+    }
+    return { ...p, graph, select, pointer, capture }
+  }
+
+  it('PHY-73 seeks the midpoint to frame 30 and returns to the live tip at the right margin', async () => {
+    const p = await setupGraph()
+    p.pointer('pointerdown', 900)
+    expect(p.slider().value).toBe('0')
+    await p.steps(60)
+    expect(p.slider().max).toBe('60')
+    p.pointer('pointerdown', 470)
+    expect(p.slider().value).toBe('30')
+    expect(p.host.textContent).toContain('t = 0,50 s')
+    expect(p.capture).toHaveBeenCalledWith(7)
+    p.pointer('pointerdown', -100)
+    expect(p.slider().value).toBe('0')
+    p.pointer('pointerdown', 1000)
+    expect(p.slider().value).toBe('60')
+    await p.steps(1)
+    expect(p.slider().value).toBe('61')
+    expect(p.step).toHaveBeenCalledTimes(61)
+  })
+
+  it('PHY-73 pauses playing on graph press and stays paused after release', async () => {
+    const p = await setupGraph()
+    await p.steps(60)
+    await p.play()
+    expect(findButton(p.host, ptBR['playback.pause'])).toBeDefined()
+    p.pointer('pointerdown', 470)
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    p.pointer('pointerup', 470, 0)
+    p.frame()
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    expect(p.slider().value).toBe('30')
+    expect(p.step).toHaveBeenCalledTimes(60)
+  })
+
+  it('PHY-73 drags through successive indices only while the primary button is held', async () => {
+    const p = await setupGraph()
+    await p.steps(60)
+    p.pointer('pointerdown', 64)
+    p.pointer('pointermove', 267)
+    expect(p.slider().value).toBe('15')
+    p.pointer('pointermove', 673)
+    expect(p.slider().value).toBe('45')
+    p.pointer('pointerup', 673, 0)
+    p.pointer('pointermove', 470, 0)
+    expect(p.slider().value).toBe('45')
+  })
+
+  it('PHY-73 disables kinematics without a body and keeps energy when a body is reselected', async () => {
+    const p = await setupGraph()
+    const disabled = () => [...p.select.options].map(o => o.disabled)
+    expect(disabled()).toEqual([true, true, true, false, false])
+    click(p.canvas, { x: 6, y: 4 })
+    expect(disabled()).toEqual([false, false, false, false, false])
+    expect(p.select.value).toBe('energy')
+    act(() => setSelectValue(p.select, 'velocity'))
+    click(p.canvas, { x: 0, y: 8 })
+    expect(p.select.value).toBe('energy')
+    expect(disabled()).toEqual([true, true, true, false, false])
+    click(p.canvas, { x: 6, y: 4 })
+    expect(p.select.value).toBe('energy')
+    act(() => setSelectValue(p.select, 'momentum'))
+    click(p.canvas, { x: 0, y: 8 })
+    click(p.canvas, { x: 6, y: 4 })
+    expect(p.select.value).toBe('momentum')
+  })
+
+  it.each(['fixed', 'empty'] as const)('PHY-71 shows no data for a %s system', async (bodies) => {
+    const p = await setupRecording(undefined, bodies)
+    p.poll()
+    expect(panel(p.host, 'sistema')?.textContent).toContain(ptBR['readout.noData'])
+    expect(panel(p.host, 'sistema')?.textContent).not.toContain('E_mec')
+  })
+
+  it('CLEAN-30 reads document energy while a t0 structural edit awaits its rebuild', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    p.poll()
+    expect(p.readout()).toContain('E_pg: 40,00 J')
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['properties.posY']), 5))
+    p.poll()
+    expect(p.readout()).toContain('posição: (6,00, 5,00) m')
+    expect(p.readout()).toContain('E_pg: 50,00 J')
+    expect(panel(p.host, 'sistema')?.textContent).toContain('E_mec: 50,00 J')
+    expect(p.replaceScene).not.toHaveBeenCalled()
+    await p.steps(1)
+    expect(p.readout()).toContain('E_pg: 50,00 J')
+  })
+
+  it('PHY-71 localizes body, component and speed readings when language changes', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(10)
+    expect(p.readout()).toContain('(6,10, 4,00) m')
+    expect(p.readout()).toContain('(1,67, 0,00) m/s')
+    expect(p.readout()).toContain('(19,00, 0,00) m/s²')
+    expect(p.readout()).toContain('1,00×')
+    expect(p.readout()).not.toMatch(/\d\.\d/)
+    const language = [...p.host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, 'en'))
+    expect(p.readout()).toContain('(6.10, 4.00) m')
+    expect(p.readout()).toContain('(1.67, 0.00) m/s')
+    expect(p.readout()).toContain('(19.00, 0.00) m/s²')
+    expect(p.readout()).toContain('1.00×')
+    expect(p.readout()).not.toMatch(/\d,\d/)
+  })
+
+  it('PHY-71 shows body energy inside more and system energy without selection', async () => {
+    const p = await setupRecording()
+    await p.steps(10)
+    const system = panel(p.host, 'sistema')!
+    expect(system).toBeDefined()
+    expect(system.textContent).toContain('E_c: 1,39 J')
+    expect(system.textContent).toContain('E_pg: 40,00 J')
+    expect(system.textContent).toContain('E_mec: 41,39 J')
+    expect(system.querySelector('strong')?.textContent).toContain('E_mec: 41,39 J')
+    expect(system.textContent).toContain('|p|: 1,67 kg·m/s')
+    expect(system.textContent).not.toContain('E_el')
+    expect(system.querySelector('details')?.textContent).toContain('p_x: 1,67 kg·m/s')
+    expect(system.querySelector('details')?.textContent).toContain('p_y: 0,00 kg·m/s')
+    click(p.canvas, { x: 6.1, y: 4 })
+    p.poll()
+    const more = panel(p.host, 'leitura — ball')!.querySelector('details')!
+    expect(more.textContent).toContain('E_c: 1,39 J')
+    expect(more.textContent).toContain('E_pg: 40,00 J')
+    expect(more.textContent).toContain('|p|: 1,67 kg·m/s')
+    const language = [...p.host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, 'en'))
+    expect(panel(p.host, 'system')?.textContent).toContain('E_mec: 41.39 J')
+  })
+
+  it('PHY-71 uses recorded body and spring energy while paused, including frame zero', async () => {
+    const p = await setupRecording('spring')
+    await p.steps(10)
+    const reading = () => panel(p.host, 'sistema')?.textContent ?? ''
+    expect(reading()).toContain('E_el: 0,05 J')
+    expect(reading()).toContain('E_mec: 41,44 J')
+    p.seek(4)
+    expect(reading()).toContain('E_c: 0,04 J')
+    expect(reading()).toContain('E_el: 0,01 J')
+    expect(reading()).toContain('E_mec: 40,04 J')
+    expect(reading()).toContain('|p|: 0,27 kg·m/s')
+    p.seek(0)
+    expect(reading()).toContain('E_c: 0,00 J')
+    expect(reading()).toContain('E_mec: 40,00 J')
+    p.seek(10)
+    expect(reading()).toContain('E_mec: 41,44 J')
+    expect(p.step).toHaveBeenCalledTimes(10)
+  })
 
   it('dragging a historical force handle at cursor zero edits the anchor and resets the recording', async () => {
     const p = await setupRecording()
@@ -2788,7 +3156,7 @@ describe('recorded time player (PHY-64)', () => {
     back()
     expect(p.slider().value).toBe('3')
     expect(p.host.textContent).toContain('t = 0,05 s')
-    expect(p.readout()).toContain('(6.03, 4.00) m')
+    expect(p.readout()).toContain('(6,03, 4,00) m')
     expect(p.readout()).toContain('passos: 3')
     p.frame()
     expect(translations).toContainEqual([expect.closeTo(451.8, 8), 300])
@@ -2832,12 +3200,12 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.slider().max).toBe('202')
     p.seek(10)
     expect(p.readout()).toContain('passos: 10')
-    expect(p.readout()).toContain('(6.10, 4.00) m')
-    expect(p.readout()).toContain('(1.67, 0.00) m/s')
-    expect(p.readout()).toContain('(19.00, 0.00) m/s²')
+    expect(p.readout()).toContain('(6,10, 4,00) m')
+    expect(p.readout()).toContain('(1,67, 0,00) m/s')
+    expect(p.readout()).toContain('(19,00, 0,00) m/s²')
     p.seek(200)
-    expect(p.readout()).toContain('(8.00, 4.00) m')
-    expect(p.readout()).toContain('(399.00, 0.00) m/s²')
+    expect(p.readout()).toContain('(8,00, 4,00) m')
+    expect(p.readout()).toContain('(399,00, 0,00) m/s²')
     expect(p.host.textContent).toContain('t = 3,33 s')
     // Hit-testing uses the same projected bodies as paint; the historical pose is selectable.
     click(p.canvas, { x: 11, y: 7 })
@@ -2848,7 +3216,7 @@ describe('recorded time player (PHY-64)', () => {
     expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
     p.seek(0)
     p.seek(202)
-    expect(p.readout()).toContain('(8.02, 4.00) m')
+    expect(p.readout()).toContain('(8,02, 4,00) m')
     expect(p.slider().max).toBe('202')
     expect(p.replaceScene).not.toHaveBeenCalled()
     p.seek(10)
@@ -2892,7 +3260,7 @@ describe('recorded time player (PHY-64)', () => {
       expect(p.slider().value).toBe(String(index))
       expect(p.slider().max).toBe('4')
       expect(p.step).toHaveBeenCalledTimes(4)
-      expect(p.readout()).toContain(index === 1 ? '(6.01, 4.00) m' : '(6.02, 4.00) m')
+      expect(p.readout()).toContain(index === 1 ? '(6,01, 4,00) m' : '(6,02, 4,00) m')
       expect(p.host.textContent).toContain(index === 1 ? 't = 0,02 s' : 't = 0,03 s')
       expect(translations).toContainEqual([expect.closeTo(index === 1 ? 450.6 : 451.2, 8), 300])
     }
@@ -2905,14 +3273,14 @@ describe('recorded time player (PHY-64)', () => {
     for (let i = 0; i < 2 / speed; i++) p.frame()
     p.poll()
     expect(p.slider().value).toBe('4')
-    expect(p.readout()).toContain('(6.04, 4.00) m')
+    expect(p.readout()).toContain('(6,04, 4,00) m')
     expect(p.step).toHaveBeenCalledTimes(4)
     for (let i = 0; i < 1 / speed; i++) p.frame()
     p.poll()
     expect(p.slider().max).toBe('5')
     expect(p.slider().value).toBe('5')
-    expect(p.readout()).toContain('(6.05, 4.00) m')
-    expect(p.readout()).toContain('(9.00, 0.00) m/s²')
+    expect(p.readout()).toContain('(6,05, 4,00) m')
+    expect(p.readout()).toContain('(9,00, 0,00) m/s²')
     expect(p.step).toHaveBeenCalledTimes(5)
     expect(p.replaceScene).not.toHaveBeenCalled()
   })
@@ -2929,12 +3297,12 @@ describe('recorded time player (PHY-64)', () => {
     const force = () => inputForLabel(panel(p.host, t('forces.title', { id: 'ball' }))!, ptBR['forces.magnitude'])
     await p.steps(1)
     expect(p.slider().value).toBe('2')
-    expect(p.readout()).toContain('(6.02, 4.00) m')
+    expect(p.readout()).toContain('(6,02, 4,00) m')
     expect(p.step).toHaveBeenCalledTimes(3)
     for (const control of [gravity(), force(), findButton(p.host, '↶')!, findButton(p.host, '↷')!]) expect(control.disabled).toBe(true)
     await p.steps(1)
     expect(p.slider().value).toBe('3')
-    expect(p.readout()).toContain('(6.03, 4.00) m')
+    expect(p.readout()).toContain('(6,03, 4,00) m')
     expect(p.step).toHaveBeenCalledTimes(3)
     for (const control of [gravity(), force(), findButton(p.host, '↶')!, findButton(p.host, '↷')!]) expect(control.disabled).toBe(false)
     // The frame path must update React locks too, without a discrete action at the tip.
@@ -2958,8 +3326,8 @@ describe('recorded time player (PHY-64)', () => {
     p.poll()
     expect(p.step).toHaveBeenCalledTimes(5)
     expect(p.slider().value).toBe('5')
-    expect(p.readout()).toContain('(6.05, 4.00) m')
-    expect(p.readout()).toContain('(9.00, 0.00) m/s²')
+    expect(p.readout()).toContain('(6,05, 4,00) m')
+    expect(p.readout()).toContain('(9,00, 0,00) m/s²')
   })
 
   it.each(['play', 'step'] as const)('PHY-65 capped replay reaches the current live world via %s', async (mode) => {
@@ -2972,13 +3340,13 @@ describe('recorded time player (PHY-64)', () => {
     if (mode === 'play') { await p.play(); p.frame(); p.poll() }
     else await p.steps(1)
     expect(p.slider().value).toBe('598')
-    expect(p.readout()).toContain('(11.98, 4.00) m')
+    expect(p.readout()).toContain('(11,98, 4,00) m')
     expect(p.step).toHaveBeenCalledTimes(610)
     if (mode === 'play') { p.frame(); p.poll() }
     else await p.steps(1)
     expect(p.slider().value).toBe('599')
     expect(p.slider().max).toBe('599')
-    expect(p.readout()).toContain('(12.10, 4.00) m')
+    expect(p.readout()).toContain('(12,10, 4,00) m')
     expect(p.readout()).toContain('passos: 610')
     expect(p.host.textContent).toContain('t = 10,17 s')
     expect(p.step).toHaveBeenCalledTimes(610)
@@ -2992,9 +3360,9 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.slider().max).toBe('599')
     expect(p.readout()).toContain('passos: 610')
     p.seek(10)
-    expect(p.readout()).toContain('(6.10, 4.00) m')
+    expect(p.readout()).toContain('(6,10, 4,00) m')
     p.seek(599)
-    expect(p.readout()).toContain('(12.10, 4.00) m')
+    expect(p.readout()).toContain('(12,10, 4,00) m')
     expect(p.readout()).toContain('passos: 610')
     expect(p.step).toHaveBeenCalledTimes(610)
   })
@@ -3055,7 +3423,7 @@ describe('recorded time player (PHY-64)', () => {
     dragTo(p.canvas, { x: 6.2, y: 4.2 }, { x: 7.2, y: 4.2 })
     await p.steps(2)
     p.seek(0)
-    expect(p.readout()).toContain('(7.00, 4.00) m')
+    expect(p.readout()).toContain('(7,00, 4,00) m')
     act(() => findButton(p.host, ptBR['playback.reset'])!.click())
     p.poll()
     expect(p.slider().max).toBe('0')
@@ -3076,10 +3444,10 @@ describe('recorded time player (PHY-64)', () => {
     click(p.canvas, { x: 4, y: 4 })
     p.poll()
     const reading = () => panel(p.host, t('readout.title', { id: 'link' }))?.textContent ?? ''
-    expect(reading()).toContain(kind === 'spring' ? 'F_el: 1.00 N' : 'T: 1.00 N')
-    if (kind === 'spring') expect(reading()).toContain('Δx: 0.010 m')
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 1,00 N' : 'T: 1,00 N')
+    if (kind === 'spring') expect(reading()).toContain('Δx: 0,010 m')
     p.seek(4)
-    expect(reading()).toContain(kind === 'spring' ? 'F_el: 4.00 N' : 'T: 4.00 N')
+    expect(reading()).toContain(kind === 'spring' ? 'F_el: 4,00 N' : 'T: 4,00 N')
   })
 
   it('paints the historical body pose and localizes the time label', async () => {

@@ -154,7 +154,7 @@ export interface ContactAddResult {
 }
 
 /** Idealized default for a newly added pair (ADR-0002: realism is opt-in). */
-export const CONTACT_DEFAULTS = { muS: 0, muK: 0 } as const
+export const CONTACT_DEFAULTS = { muS: 0, muK: 0, e: 0 } as const
 
 /**
  * Adds a contact pair under the same HARD rules as the codec, so the UI can
@@ -185,7 +185,7 @@ export function updateContact(
   doc: Scene,
   a: string,
   b: string,
-  patch: Partial<Pick<Contact, 'muS' | 'muK'>>,
+  patch: Partial<Pick<Contact, 'muS' | 'muK' | 'e'>>,
 ): Scene {
   const i = findContact(doc, a, b)
   if (i < 0) return doc

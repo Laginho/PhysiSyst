@@ -1,3 +1,4 @@
+import { presetById } from '../presets'
 import { describe, expect, it } from 'vitest'
 import { createSimulator, TIMESTEP } from './index'
 import { assignPairFrictions } from './simulator'
@@ -664,4 +665,49 @@ describe('Initial velocity (ticket 04)', () => {
     })
   })
 
+})
+
+describe('energy readouts (PHY-70)', () => {
+  it('reads only massive pulleys in document order and snapshots their evolving spin', async () => {
+    const scene = presetById('movable-pulley')!.buildScene()
+    scene.pulleys![0].mass = 2
+    const sim = await createSimulator(scene)
+    const initial = sim.readPulleys()
+    expect(initial).toEqual([{ id: 'movel', angvel: 0 }])
+    for (let i = 0; i < 60; i++) sim.step()
+    const current = sim.readPulleys()
+    expect(current.map((p) => p.id)).toEqual(['movel'])
+    expect(Number.isFinite(current[0].angvel)).toBe(true)
+    expect(Math.abs(current[0].angvel)).toBeGreaterThan(0.01)
+    expect(initial).toEqual([{ id: 'movel', angvel: 0 }])
+    scene.pulleys![1].mass = 1
+    scene.pulleys!.reverse()
+    sim.replaceScene(scene)
+    expect(sim.readPulleys()).toEqual([{ id: 'fixa', angvel: 0 }, { id: 'movel', angvel: 0 }])
+    sim.replaceScene(fallingRectScene())
+    expect(sim.readPulleys()).toEqual([])
+  })
+
+  it('reports finite chain kinetic energy only for springs with mass', async () => {
+    const scene = presetById('spring-horizontal')!.buildScene()
+    const spring = scene.constraints![0]
+    if (spring.kind !== 'spring') throw new Error('Expected spring preset')
+    const ideal = await createSimulator(scene)
+    expect(ideal.readConstraints()[0]).not.toHaveProperty('chainKinetic')
+    spring.mass = 0.3
+    const sim = await createSimulator(scene)
+    const initial = sim.readConstraints()[0]
+    expect(initial).toHaveProperty('chainKinetic', 0)
+    for (let i = 0; i < 10; i++) sim.step()
+    const moving = sim.readConstraints()[0]
+    if (moving.kind !== 'spring') throw new Error('Expected spring readout')
+    expect(Number.isFinite(moving.chainKinetic)).toBe(true)
+    expect(moving.chainKinetic).toBeGreaterThan(0)
+    expect(initial).toHaveProperty('chainKinetic', 0)
+    sim.replaceScene(scene)
+    expect(sim.readConstraints()[0]).toHaveProperty('chainKinetic', 0)
+    spring.mass = 0
+    sim.replaceScene(scene)
+    expect(sim.readConstraints()[0]).not.toHaveProperty('chainKinetic')
+  })
 })

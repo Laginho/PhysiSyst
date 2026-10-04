@@ -48,6 +48,42 @@ function clone(): Record<string, unknown> {
   return JSON.parse(JSON.stringify(validJson)) as Record<string, unknown>
 }
 
+describe('Contact restitution (PHY-67)', () => {
+  it.each([0, 0.5, 1])('round-trips an explicit restitution of %s', (e) => {
+    const json = { ...validJson, contacts: [{ ...validJson.contacts[0], e }] }
+    const scene = parse(json)
+    expect(scene.contacts[0].e).toBe(e)
+    expect(serialize(scene)).toHaveProperty('contacts.0.e', e)
+    expect(parse(serialize(scene)).contacts[0].e).toBe(e)
+  })
+
+  it('preserves absent restitution and the exact stored v5 bytes', () => {
+    // Canonical stored key order, captured before restitution was introduced.
+    const bytes = '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"circle","radius":0.5,"id":"a","fixed":false,"mass":2,"position":{"x":0,"y":1},"rotation":0},{"shape":"circle","radius":0.5,"id":"b","fixed":true,"mass":2,"position":{"x":0,"y":0},"rotation":0}],"forces":[],"contacts":[{"a":"a","b":"b","muS":0.4,"muK":0.3}]}'
+    const scene = parse(JSON.parse(bytes))
+    expect(scene.contacts[0].e).toBeUndefined()
+    expect(scene.contacts[0]).not.toHaveProperty('e')
+    expect(JSON.stringify(serialize(scene))).toBe(bytes)
+    expect(scene.version).toBe(1)
+  })
+
+  it.each(['0.5', null, true, undefined, NaN, Infinity, -Infinity])('rejects non-finite or non-numeric restitution %s at the contact', (e) => {
+    const json = { ...validJson, contacts: [{ ...validJson.contacts[0], e }] }
+    expect(() => parse(json)).toThrow('contacts[0]: e must be a finite number')
+  })
+
+  it.each([-0.1, 1.5])('warns without clamping restitution %s', (e) => {
+    const scene: Scene = { ...parse(validJson), contacts: [{ ...validJson.contacts[0], e }] }
+    expect(collectWarnings(scene)).toEqual(['contacts[0]: e should be between 0 and 1'])
+    expect(parse(serialize(scene)).contacts[0].e).toBe(e)
+  })
+
+  it.each([0, 1, undefined])('does not warn for restitution %s', (e) => {
+    const scene: Scene = { ...parse(validJson), contacts: [{ ...validJson.contacts[0], e }] }
+    expect(collectWarnings(scene)).toEqual([])
+  })
+})
+
 describe('valid scenes', () => {
   it('parses the full example scene', () => {
     const scene = parse(validJson)

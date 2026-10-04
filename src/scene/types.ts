@@ -72,6 +72,8 @@ export interface Contact {
   b: string
   muS: number
   muK: number
+  /** Coefficient of restitution; absent means 0. */
+  e?: number
 }
 
 /**

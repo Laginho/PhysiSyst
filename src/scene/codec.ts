@@ -156,7 +156,7 @@ function parseForce(raw: unknown, i: number, bodyIds: ReadonlySet<string>): Appl
   }
 }
 
-const CONTACT_KEYS = ['a', 'b', 'muS', 'muK'] as const
+const CONTACT_KEYS = ['a', 'b', 'muS', 'muK', 'e'] as const
 
 function pairKey(a: string, b: string): string {
   return a < b ? `'${a}', '${b}'` : `'${b}', '${a}'`
@@ -181,7 +181,9 @@ function parseContact(
   }
   if (seen.has(pairKey(a, b))) fail(`${where}: duplicate contact pair (${pairKey(a, b)})`)
 
-  return { a, b, muS: reqFinite(c, 'muS', where), muK: reqFinite(c, 'muK', where) }
+  const contact: Contact = { a, b, muS: reqFinite(c, 'muS', where), muK: reqFinite(c, 'muK', where) }
+  if ('e' in c) contact.e = reqFinite(c, 'e', where)
+  return contact
 }
 
 const PULLEY_KEYS = ['id', 'bodyId', 'anchor', 'radius', 'mass'] as const
@@ -374,6 +376,7 @@ export function collectWarnings(scene: Scene): string[] {
   scene.contacts.forEach((c, i) => {
     if (c.muS < 0) warnings.push(`contacts[${i}]: muS should be a non-negative number`)
     if (c.muK < 0) warnings.push(`contacts[${i}]: muK should be a non-negative number`)
+    if (c.e !== undefined && (c.e < 0 || c.e > 1)) warnings.push(`contacts[${i}]: e should be between 0 and 1`)
   })
   return warnings
 }

@@ -16,6 +16,7 @@ export const TREE: readonly TopicNode[] = [
   { area: 'mecanica', part: 'dinamica', topic: 'atrito' },
   { area: 'mecanica', part: 'dinamica', topic: 'resultantes' },
   { area: 'mecanica', part: 'dinamica', topic: 'campo-uniforme' },
+  { area: 'mecanica', part: 'dinamica', topic: 'colisoes' },
   { area: 'ondulatoria', topic: 'mhs' },
 ]
 
@@ -132,6 +133,20 @@ function projectileLaunch(): Scene {
     ],
     forces: [],
     contacts: [],
+  }
+}
+
+function collision(e: number): Scene {
+  return {
+    version: 1,
+    constants: { g: 9.81 },
+    bodies: [
+      groundBody(),
+      { id: 'esfera-1', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 3, y: 0.5 }, rotation: 0, vx: 3 },
+      { id: 'esfera-2', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 8, y: 0.5 }, rotation: 0 },
+    ],
+    forces: [],
+    contacts: [{ a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e }],
   }
 }
 
@@ -289,6 +304,8 @@ export const PRESETS: Preset[] = [
   { id: 'incline-block', ...DYN, topic: 'atrito', position: 1, buildScene: inclineBlock },
   { id: 'projectile', ...DYN, topic: 'campo-uniforme', position: 2, buildScene: projectileLaunch },
   { id: 'free-fall', ...DYN, topic: 'campo-uniforme', position: 1, buildScene: freeFall },
+  { id: 'collision-elastic', ...DYN, topic: 'colisoes', position: 1, buildScene: () => collision(1) },
+  { id: 'collision-inelastic', ...DYN, topic: 'colisoes', position: 2, buildScene: () => collision(0.5) },
   { id: 'atwood', ...DYN, topic: 'principios', position: 1, buildScene: atwood },
   { id: 'table-hanging', ...DYN, topic: 'principios', position: 2, buildScene: tableHanging },
   { id: 'movable-pulley', ...DYN, topic: 'principios', position: 3, buildScene: movablePulley },
