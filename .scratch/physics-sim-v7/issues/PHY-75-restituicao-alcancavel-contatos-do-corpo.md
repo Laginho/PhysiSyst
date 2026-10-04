@@ -1,5 +1,5 @@
 # PHY-75: Restituição alcançável e contatos no painel do corpo
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -49,6 +49,9 @@ Nenhum `e` padrão por cena. O simulador não muda.
 - `src/App.test.ts`: critérios 4 a 8 com o simulador falso; vermelhos hoje (o painel global existe e o do corpo não). Os testes atuais do `ContactsPanel` (ex.: `shows restitution after kinetic friction for each pair…`) são reescritos para a costura nova no mesmo commit. Costura de DOM: registrar no ticket, por teste novo, a mutação aplicada e a saída vermelha.
 
 ## Comments
+
+- 2026-10-04 Stage 2: branch criada sobre `sweatshop/2026-10-04-1243`. Costuras aprovadas: builders/createSimulator/updateContact e DOM do App. Callers examinados: abertura/cópia/persistência de presets, snap de contato, update/remove com identidade ordenada, massLabels no desenho; casos de fronteira: nenhum corpo/parceiro, todos pareados, seleção no lado b, seleção fixa, troca de corpo e parceiro removido. `editor/doc.ts` e `render/draw.ts` serão apenas consumidos.
+- Red dos presets: `npm test -- src/presets/presets.test.ts -t 'reachable ground restitution'`: 5 failed, 4 passed, 30 skipped (39). Quatro falhas por pares com chão ausentes; quique: `expected 0 to be greater than or equal to 9.025222778320312`.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: retrofit dos presets com o par com o chão (μ = 0, e = 0), comportamento igual; `ContactsPanel` sai; seção "contatos de m_a" no painel do corpo, par alcançável dos dois lados; parceiro em `<select>` (dinâmicos pelo rótulo de massa, fixos como "fixo: retângulo 1"); sem `e` padrão por cena.
 - Planner: rótulo fixo sempre numerado, `n` entre os fixos da mesma forma na ordem do documento, forma pelas strings da paleta; `<select>` só com parceiros ainda não pareados. O "≈" na aceleração analítica de queda livre e projétil antes do primeiro passo é consequência de `isHeld` e fica.
