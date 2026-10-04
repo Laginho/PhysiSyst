@@ -3871,7 +3871,8 @@ describe('recorded time player (PHY-64)', () => {
     })
     if (time === 'live') await p.steps(2)
     const velocitySymbol = time === 'initial' ? 'v₀' : 'v'
-    const symbols = () => frame.labels.map(l => l.text).filter(text => ['v₀', 'v', 'a'].includes(text))
+    const symbols = () => frame.labels.filter(l => l.color === '#43a047' || l.color === '#c62828')
+      .map(l => l.text).filter(text => ['v₀', 'v', 'a'].includes(text))
     expect(symbols()).toEqual([velocitySymbol, velocitySymbol, 'a', 'a'])
     act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
     expect(symbols()).toEqual([])
