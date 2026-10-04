@@ -1,5 +1,5 @@
 # PHY-75: Restituição alcançável e contatos no painel do corpo
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -92,6 +92,14 @@ Nova prova vermelha, após as correções do harness (mutações sempre restaura
 Uma tentativa de mutar `switchToScene` sobre o teste de cópia de preset sobreviveu (1 passed, 156 skipped): equivalente para esse cenário, pois duplicar um preset chama `copyOpenPreset`, rebind da identidade que preserva o documento, sem passar por `switchToScene`. A mutação foi descartada e a prova passou a atingir `openGalleryPreset`, que efetivamente determina o documento exibido nesse teste.
 
 Green com harness corrigido e produção restaurada: `npm test -- src/App.test.ts src/presets/presets.test.ts`: 2 arquivos passed; 196 passed (196), sem skips.
+
+#### Stage 2 — handoff (2026-10-04)
+
+- Implementado: quatro presets com contatos de chão μs = μk = e = 0; painel global removido; `BodyContactsPanel` abaixo das forças do corpo selecionado, pares acessíveis por a/b com ordem original preservada; rótulos de massa/fixos e traduções pt-BR/en; parceiros só não pareados, escolha válida após alterações, controles desabilitados sem parceiro e fieldset bloqueado pelo structuralLocked.
+- Testes separados da produção: `7ebb83e` (presets, red), `920aa9f` (painel, red), `b96de57` (harness corrigido, nova prova red por mutação). Commit de produção dos presets: `e3a7a05`. Nenhum commit de produção altera testes.
+- Gate completo `npm test && npm run lint && npm run typecheck && npm run build`, executado sequencialmente com parada na primeira falha: **33 arquivos passed (33), 1119 passed (1119), sem skips**; lint e typecheck exit 0; build exit 0 (52 módulos). Testes de Chromium incluídos. Build mantém aviso de chunk maior que 500 kB (chunk `sim`, 2136,50 kB).
+- Diff final revisado: apenas Primary files e este ticket; simulador, editor/doc e render/draw não alterados; nenhuma dependência, versão de cena ou regra de restituição nova. `git diff --check` passou.
+- Consequência prevista mantida: marcador ≈ na aceleração analítica inicial de queda livre/projétil, conforme contrato e débito PHY-86. Etapa 3 ainda pendente; sem merge ou push nesta etapa.
 
 - Red do DOM: `npm test -- src/App.test.ts -t 'selected Body contacts'` (fora do sandbox após timeout de inicialização do worker): 11 failed, 146 skipped (157). Sem seleção: `expected <fieldset …> to be undefined`; leitura/edição/parceiros/fixos/bloqueio: `missing contacts of m_a/m_b/m`; catálogo: `expected undefined to be truthy` para `contacts.of`.
 

@@ -72,7 +72,7 @@ import {
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
-import { drawArrow, drawGrid, drawScene, selectedOf, type ArrowStyle, type Selection } from './render/draw'
+import { drawArrow, drawGrid, drawScene, massLabels, selectedOf, type ArrowStyle, type Selection } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import {
@@ -463,31 +463,45 @@ function ForcesPanel({
   )
 }
 
-/** Scene-level auditable contact list; add via two body dropdowns. */
-function ContactsPanel({
+/** Each pair is editable from either body, retaining its stored endpoint order. */
+function BodyContactsPanel({
   doc,
+  bodyId,
   disabled,
   onAdd,
   onPatch,
   onRemove,
 }: {
   doc: Scene
+  bodyId: string
   disabled: boolean
   onAdd: (a: string, b: string) => string | null
   onPatch: (a: string, b: string, patch: { muS?: number; muK?: number; e?: number }) => void
   onRemove: (a: string, b: string) => void
 }) {
-  const [newA, setNewA] = useState(doc.bodies[0]?.id ?? '')
-  const [newB, setNewB] = useState(doc.bodies[1]?.id ?? '')
+  const contacts = doc.contacts.filter(c => c.a === bodyId || c.b === bodyId)
+  const paired = new Set(contacts.map(c => c.a === bodyId ? c.b : c.a))
+  const partners = doc.bodies.filter(b => b.id !== bodyId && !paired.has(b.id))
+  const [chosenPartner, setChosenPartner] = useState('')
+  // A successful add, deletion or scene edit can invalidate the previous choice.
+  const partnerId = partners.some(b => b.id === chosenPartner) ? chosenPartner : partners[0]?.id ?? ''
   const [error, setError] = useState<string | null>(null)
+  const labels = massLabels(doc)
+  const fixedCounts = new Map<Body['shape'], number>()
+  for (const body of doc.bodies) {
+    if (!body.fixed) continue
+    const n = (fixedCounts.get(body.shape) ?? 0) + 1
+    fixedCounts.set(body.shape, n)
+    labels.set(body.id, t('contacts.fixedLabel', { shape: t(`palette.${body.shape}`), n }))
+  }
   return (
     <fieldset disabled={disabled} style={{ width: 220 }}>
-      <legend>{t('contacts.title')}</legend>
-      {doc.contacts.length === 0 && <div style={{ fontSize: 12, color: '#777' }}>{t('contacts.empty')}</div>}
-      {doc.contacts.map((c) => (
+      <legend>{t('contacts.of', { label: labels.get(bodyId) ?? bodyId })}</legend>
+      {contacts.length === 0 && <div style={{ fontSize: 12, color: '#777' }}>{t('contacts.empty')}</div>}
+      {contacts.map((c) => (
         <div key={`${c.a}|${c.b}`} style={{ borderBottom: '1px solid #ddd', paddingBottom: 4, marginBottom: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-            <span>{c.a} ↔ {c.b}</span>
+            <span>{labels.get(c.a === bodyId ? c.b : c.a)}</span>
             <button onClick={() => onRemove(c.a, c.b)} title={t('contacts.removeTitle')}>✕</button>
           </div>
           <NumField label={t('contacts.muS')} value={c.muS} step={0.05} onChange={(v) => onPatch(c.a, c.b, { muS: v })} />
@@ -496,16 +510,14 @@ function ContactsPanel({
         </div>
       ))}
       <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-        <select value={newA} onChange={(e) => setNewA(e.target.value)} style={{ minWidth: 70 }}>
-          {doc.bodies.map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}
-        </select>
-        <select value={newB} onChange={(e) => setNewB(e.target.value)} style={{ minWidth: 70 }}>
-          {doc.bodies.map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}
+        <select aria-label={t('contacts.add')} disabled={partners.length === 0} value={partnerId} onChange={(e) => setChosenPartner(e.target.value)} style={{ minWidth: 70 }}>
+          {partners.map((b) => <option key={b.id} value={b.id}>{labels.get(b.id)}</option>)}
         </select>
       </div>
       <button
+        disabled={partners.length === 0}
         style={{ marginTop: 4 }}
-        onClick={() => setError(onAdd(newA, newB))}
+        onClick={() => setError(onAdd(bodyId, partnerId))}
       >
         {t('contacts.add')}
       </button>
@@ -2255,6 +2267,19 @@ export default function App() {
                 onPatch={(id, patch) => commitDoc((d) => updateForce(d, id, patch))}
                 onRemove={(id) => commitDoc((d) => removeForce(d, id))}
               />
+              <BodyContactsPanel
+                key={selected.id}
+                bodyId={selected.id}
+                doc={doc}
+                disabled={structuralLocked}
+                onAdd={(a, b) => {
+                  const res = addContact(doc, a, b)
+                  commitDoc(res.doc)
+                  return res.error
+                }}
+                onPatch={(a, b, patch) => commitDoc((d) => updateContact(d, a, b, patch))}
+                onRemove={(a, b) => commitDoc((d) => removeContact(d, a, b))}
+              />
             </>
           )}
           {selectedSpring && (
@@ -2271,17 +2296,6 @@ export default function App() {
           {selectedPulley && (
             <PulleyPanel pulley={selectedPulley} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
           )}
-          <ContactsPanel
-            doc={doc}
-            disabled={structuralLocked}
-            onAdd={(a, b) => {
-              const res = addContact(doc, a, b)
-              commitDoc(res.doc)
-              return res.error
-            }}
-            onPatch={(a, b, patch) => commitDoc((d) => updateContact(d, a, b, patch))}
-            onRemove={(a, b) => commitDoc((d) => removeContact(d, a, b))}
-          />
           {simError && (
             <fieldset style={{ width: 220, borderColor: '#b00' }}>
               <legend>{t('simError.title')}</legend>
