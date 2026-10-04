@@ -80,6 +80,8 @@ Ficam sempre: "passos", "velocidade" (da reprodução), a legenda da leitura, "s
 
 ## Comments
 
+- Stage 2, harness de canvas: `drawArrow` separa `F_el` em chamadas `fillText('F')` e `fillText('el')`; o teste verifica esses dois textos na cor elástica, com presença positiva antes de desligar forças. Corrigida a expectativa de P no caso de v₀ em t=0: `weightArrows` só desenha com estados simulados (vetores iniciais são PHY-82); o teste de forças após um passo cobre P e N. Campos de contatos mantêm o bloqueio estrutural após um passo e são verificados habilitados no registro zero, sem o Foco alterar esse bloqueio.
+
 - Stage 2, ajuste de harness: o teste de tradução alterava o storage depois de o módulo i18n já ter hidratado seu idioma. Agora troca o idioma pelo `<select>` público do App; não exige comportamento novo. Verificado vermelho novamente com `focus.show` em inglês mutado para `mutant` (esperado `show:`, recebido `mutantforceskinematicsenergymomentum`).
 
 - 2026-10-04 Stage 2: costuras confirmadas pelo contrato: codec público, persistência pública, `routeDocChange` e App no DOM/canvas com simulador falso. Chamadores examinados antes dos testes: `parse` em `loadScene`, `loadSceneOrBlank` e `classifyImport`; `serialize` no autosave, exportação, comparação de payload e cópia de cenas; `blankScene` em criação e fallback de carga; `paint` no `repaint`, inclusive registro histórico. Fronteiras a preservar: `focus` ausente, `show: []`, `hidden` vazio/chaves arbitrárias, ambos energia/momento desligados, cenas sem corpos, cursor zero/passado/ponta, preset e campos de edição.
