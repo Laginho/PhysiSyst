@@ -89,7 +89,7 @@ import {
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
 import { fmtNum, getLang, setLang as persistLang, t, type Lang } from './i18n'
-import { drawGraph, graphLayout, seriesFor, GRAPH_KINDS, type GraphKind } from './render/graph'
+import { drawGraph, graphLayout, indexAtX, seriesFor, GRAPH_KINDS, type GraphKind } from './render/graph'
 import {
   AUTOSAVE_DELAY_MS,
   DebouncedSaver,
@@ -730,6 +730,7 @@ export default function App() {
   const graphKindRef = useRef<GraphKind>('energy')
   const graphBodyId = selectedOf(selection, 'body')
   const effectiveGraphKind = graphBodyId === null && graphKind !== 'energy' && graphKind !== 'momentum' ? 'energy' : graphKind
+  if (graphKind !== effectiveGraphKind) setGraphKind(effectiveGraphKind)
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
@@ -1132,6 +1133,16 @@ export default function App() {
     },
     [repaint, runSteps, showFrame, resetRecording],
   )
+
+  function seekGraph(canvas: HTMLCanvasElement, clientX: number) {
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0) return
+    const length = recordingRef.current!.length
+    const tMax = (length - 1) * TIMESTEP
+    const layout = graphLayout([], tMax, size.width, 180)
+    const x = (clientX - rect.left) * size.width / rect.width
+    dispatch({ type: 'seek', index: indexAtX(layout, x, tMax), length })
+  }
 
   useEffect(() => {
     docRef.current = doc
@@ -1899,10 +1910,19 @@ export default function App() {
           {graphOpen && <div id="recording-graph" style={{ position: 'relative', width: size.width, height: 180 }}>
             <select aria-label={t('graph.kindLabel')} value={effectiveGraphKind}
               onChange={e => setGraphKind(e.target.value as GraphKind)} style={{ position: 'absolute', top: 0, left: 0 }}>
-              {GRAPH_KINDS.map(kind => <option key={kind} value={kind}>{t(`graph.kind.${kind}`)}</option>)}
+              {GRAPH_KINDS.map(kind => <option key={kind} value={kind}
+                disabled={graphBodyId === null && kind !== 'energy' && kind !== 'momentum'}>{t(`graph.kind.${kind}`)}</option>)}
             </select>
             <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
-              style={{ display: 'block', width: size.width, height: 180 }} />
+              onPointerDown={e => {
+                if (e.button !== 0) return
+                e.currentTarget.setPointerCapture(e.pointerId)
+                seekGraph(e.currentTarget, e.clientX)
+              }}
+              onPointerMove={e => {
+                if (e.buttons & 1) seekGraph(e.currentTarget, e.clientX)
+              }}
+              style={{ display: 'block', width: size.width, height: 180, touchAction: 'none' }} />
           </div>}
           <div style={{ display: 'flex', gap: 6 }}>
             <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
