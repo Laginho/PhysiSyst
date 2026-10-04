@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { withBrowserSession } from './test/browser'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld } from './render/transform'
+import { ptBR } from './i18n/pt-BR'
+
+it('PHY-73 seeks from a real graph click to the expected slider index', async () => {
+  await withBrowserSession(1920, 25000, async session => {
+    await session.reset()
+    await session.evaluate(`(() => {
+      const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text);
+      button(${JSON.stringify(ptBR['graph.toggle'])}).click();
+      for (let i = 0; i < 60; i++) button(${JSON.stringify(ptBR['playback.step'])}).click();
+    })()`)
+    await session.evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    const slider = () => session.evaluate<string>('document.querySelector(\'input[type="range"][min="0"]\').value')
+    expect(await slider()).toBe('60')
+    const graph = await session.evaluate<{ left: number; top: number; width: number }>('document.querySelector("#recording-graph canvas").getBoundingClientRect().toJSON()')
+    const scene = await session.rect()
+    const transform = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: pixelsPerMeterForWidth(scene.width - 2) }, scene.width - 2, scene.height - 2)
+    // Axis margins are 64px left and 24px right; click halfway through the actual plot.
+    const point = screenToWorld(transform, graph.left + 64 + (graph.width - 88) / 2 - scene.left, graph.top + 90 - scene.top)
+    await session.select(point.x, point.y)
+    expect(await slider()).toBe('30')
+  })
+}, 30000)
 
 describe('selection keeps the canvas stationary (PHY-18)', () => {
   it.each([1280, 1920])('keeps the same 3:2 rectangle through all selections in Chromium at viewport width %i', async (width) => {
