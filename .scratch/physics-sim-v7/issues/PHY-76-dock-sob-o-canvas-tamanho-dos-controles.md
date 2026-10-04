@@ -1,5 +1,5 @@
 # PHY-76: Dock sob o canvas e tamanho dos controles
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -179,3 +179,41 @@ Totais por eixo: Standards — 1 observação de metadados, 0 bloqueantes, 0 sme
 - Comando da mutação: `npm test -- src/App.browser.test.ts -t 'scales preset transport height'` — **2 failed, 24 skipped (26)**. O arquivo de produção foi restaurado byte a byte em `finally`; nenhuma mutação fica no diff.
 - Gate oficial após a restauração: `npm test && npm run lint && npm run typecheck && npm run build` — **33 arquivos passed, 1.142 testes passed, sem skips**; lint, typecheck e build concluídos com exit 0. Build: 52 módulos, chunk `sim` mantido em 2.136,50 kB. Nenhum artefato gerado entrou no diff.
 - Entrega da retomada: F8 coberto em dois casos reais de Chromium e corrigido com duas regras locais de layout, sem alterar as funções consumidoras. Testes no commit vermelho `fb5fa6d`; o commit de produção não toca testes. `git diff --check` verde e diff limitado aos Primary files e ao ticket. `Stage: to-review`, pronto para re-revisão do finding F8; `Review: human` preservado, sem merge nesta etapa.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Re-revisão independente de F8 e do diff `9c3f609...24b6a28`, sobre a base da sessão `758d59a`. Standards e Spec executados em sub-agentes separados; gate, mutação e medições adicionais conferidos pelo revisor principal. Contrato, critérios e Primary files preservados. Nenhuma correção permanente de produção ou testes nesta etapa.
+
+##### Standards
+
+- **0 novas violações e 0 smells acionáveis.** As duas regras locais em `src/App.tsx` mantêm a correção dentro do escopo, sem abstrações ou refactors adicionais. Os casos Chromium reutilizam os helpers existentes e exercitam a interface real.
+- `fb5fa6d` altera somente testes/ticket; `24b6a28` altera somente produção/ticket. A evidência por teste registra mutação e saída vermelha; os dois commits têm motivo e PHY-76 no corpo. A observação de metadados da primeira revisão permanece histórica e não se repete. Nenhuma linha `Proxy decided` ou nova falha da revisão anterior identificada.
+
+##### Spec
+
+- **0 novos findings; F8 resolvido. Critério 8: ✅.** O hint ocupa uma linha própria nas duas escalas e o gap de 4 px evita a quebra adicional dos botões. Nas medições independentes do preset Máquina de Atwood, com gráfico aberto, a barra passou de **92 px para 149,734375 px**, razão **1,6275475543**, dentro de [1,44; 1,76]. Resultado igual em **1920 e 1280 px, pt-BR e en**, após exatamente três `requestAnimationFrame`.
+- Nos quatro cenários, as alturas de `+`/`−` não mudaram, o gráfico continuou em 180 px, o dock permaneceu alinhado à esquerda e à largura do canvas (±1 px), o conjunto coube na coluna sem rolagem vertical e três retângulos consecutivos do canvas foram iguais, dentro da caixa independente. **Critérios 1–7 e 9–11 continuam ✅**, conforme a primeira revisão e o gate completo repetido.
+- Consumidores/interações examinados nesta retomada: abertura/reabertura, cópia e troca de presets; reprodução, undo/redo, ajuda e sliders; zoom, sizer, paleta e gráfico; observer e alça de fit. A mudança não altera handlers, persistência ou a caixa medida. Não foram reavaliados o protótipo visual, outros navegadores ou o motor físico. Nenhum scope creep confirmado.
+
+##### Prova vermelho/verde repetida
+
+Mutação exata registrada em stage 2: restaurar `gap: 6` na barra e remover `flexBasis: '100%'` do hint. Comando: `npm test -- src/App.browser.test.ts -t 'scales preset transport height'`.
+
+| Novo teste Chromium | Resultado com a mutação |
+| --- | --- |
+| scales preset transport height… at 1920px | ❌ `expected 2.2569901315789473 to be less than or equal to 1.76` |
+| scales preset transport height… at 1280px | ❌ `expected 2.2569901315789473 to be less than or equal to 1.76` |
+
+- Red: **2 failed, 24 skipped (26)**. Produção restaurada byte a byte em `finally`; `git diff --exit-code -- src/App.tsx src/App.browser.test.ts` verde. Green após restauração: grupo `canvas dock geometry`, **11 passed, 15 skipped (26)**.
+- A medição adicional inicialmente falhou na estabilização do harness e depois no script de revisão, que assumia a galeria fechada. Corrigida somente essa suposição no script temporário; os quatro cenários acima passaram. Nenhum teste ou arquivo de produção foi alterado para o probe.
+- Runner, relatórios por teste, `summary.json` com `restored: true` e `geometry-proof.json`: `%TEMP%/phy76-rereview-5b5998d1e4fe45818353c7e9b4f82712/`. A evidência essencial permanece neste ticket.
+
+##### Gate e fechamento
+
+- Gate oficial independente: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0; 33 arquivos e 1.142 testes passed, sem skips**; lint, typecheck e build exit 0, 52 módulos no build. Chunk `sim` continua em 2.136,50 kB. A tentativa inicial no sandbox teve 28 falhas de conexão com Chromium e 1.114 testes passed; a execução com permissão de browser resolveu todas sem alteração de código.
+- `git rebase sweatshop/2026-10-04-1243` confirmou a branch atualizada, sem mudança no HEAD validado. Merge **sem squash**, `f1b36ea`, na sessão `sweatshop/2026-10-04-1243`; `git diff --exit-code 24b6a28 HEAD` confirmou a mesma árvore revisada. Nenhum arquivo gerado entrou no diff.
+- `Stage: done` e linha de ledger registrados juntos no commit de fechamento sobre a sessão. `Review: human` preservado; dentro de sessão não retém o ticket, conforme `ticket-flow`. Sem PR ou push nesta etapa.
+
+Totais por eixo: Standards — 0 novos findings, 0 bloqueantes; Spec — 0 novos findings, F8 corrigido.
