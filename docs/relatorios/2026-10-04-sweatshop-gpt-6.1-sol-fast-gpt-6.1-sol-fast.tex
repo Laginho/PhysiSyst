@@ -1,0 +1,681 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs,array,tabularx}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=1.4em}
+\emergencystretch=2em
+
+\definecolor{impl}{HTML}{3B6EA8}
+\definecolor{rev}{HTML}{E0A030}
+
+\title{Sweatshop no PhysiSyst: v7, Foco, vetores e snap\\\large GPT-6.1 Sol no modo fast: high no stage 2, max no hard e no stage 3}
+\author{Foreman, sessão \texttt{sweatshop/2026-10-04-1243}}
+\date{4 de outubro de 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Resumo}
+
+Run do dia em três lançamentos na mesma sessão, todos com
+\texttt{-Models 'stage 2 gpt-6.1-sol high fast, hard gpt-6.1-sol max fast,
+stage 3 gpt-6.1-sol max fast'}, só para este run. O sufixo \texttt{fast} manda
+\texttt{service\_tier=fast} ao Codex, que o cliente traduz para o tier
+\texttt{priority}: o dobro do preço, e o primeiro run do PhysiSyst nele. Todos
+os lançamentos foram processos separados (\texttt{Start-Process}). Os dois
+relançamentos foram para respostas do proxy.
+
+\begin{itemize}
+  \item \textbf{Produzido:} 9 tickets da v7 mergeados na sessão, PHY-75 a
+        PHY-83. \textbf{Cinco reaberturas} (PHY-76, PHY-78 duas vezes, PHY-82,
+        PHY-80) e \textbf{duas perguntas} no stage 2 (PHY-78 e PHY-83), as duas
+        respondidas pelo proxy sem escalar. As revisões abriram 4 tickets de
+        acompanhamento, todos \texttt{blocked} para o stage 1: CLEAN-31 a
+        CLEAN-34. PR de sessão:
+        \href{https://github.com/Laginho/PhysiSyst/pull/17}{\#17}, 10 linhas,
+        todas Approve. PHY-68 e PHY-76 vêm como \texttt{Review: human}. O PHY-68
+        entrou porque a revisão do PHY-75 anotou nele um defeito da v6
+        (seção~4).
+  \item \textbf{Custo:} \textbf{\$67,70} a preço de lista nos 30 estágios,
+        todos com preço, já no tier fast (2$\times$):
+        \texttt{gpt-6.1-sol-fast high} \$16,79 (8 implementações),
+        \texttt{gpt-6.1-sol-fast max} \$23,08 (8 implementações hard) e \$27,83
+        (14 revisões). 362 min de estágio, 105,2\,M tokens de entrada (96,7\,\%
+        em cache) e 643\,k de saída. \$7,52 por ticket mergeado; no tier normal
+        seriam \$3,76.
+  \item \textbf{O que deu errado:} dois erros de ferramenta, um do driver e um
+        do foreman. O driver leu o \texttt{Stage: blocked} do branch guardado do
+        PHY-83 depois da resposta do proxy e encerrou com ``Nothing runnable''.
+        O foreman, ao copiar o ticket do PHY-78 para o branch dele, apagou 118
+        linhas, entre elas a primeira revisão com \texttt{Verdict: Reopen}. Por
+        isso o driver contou um reopen só e não parou o PHY-78 para diagnóstico
+        no segundo. As duas falhas foram corrigidas sem perda de código.
+  \item \textbf{Veredito provisório sobre o fast:} vale pelo tempo, não pelo
+        dinheiro. A geração de tokens ficou 1,8$\times$ mais rápida, e o
+        estágio, 30 a 40\,\% mais curto por milhão de tokens de entrada. Mas as
+        ferramentas (testes, gate, Chromium) não aceleram. Estimativa para
+        este run: 357 min no fast contra cerca de 560 no tier normal, ou
+        3\,h20 a menos por \$34 a mais (seção~3).
+\end{itemize}
+
+\section{Linha do tempo}
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+12:43 & Lançamento 1, sessão nova \texttt{sweatshop/2026-10-04-1243}. O custo
+        do tier fast ainda sai \texttt{?}: o driver não tinha o preço.\\
+13:03 & PHY-75 (restituição alcançável, contatos do corpo) em
+        \texttt{to-review} em 20 min. 13:17: mergeado. A revisão anota no PHY-68
+        da v6 que editar só o \texttt{e} não reconstrói o mundo.\\
+13:12 & O Bruno diz que o fast custa o dobro e pergunta se o tier é mesmo
+        aplicado. O foreman confirma por telemetria (\texttt{service\_tier=
+        "priority"}) e mede 50 contra 22--29 tokens/s. O driver passa a cobrar
+        2$\times$ (Agent-Skills \texttt{dc530fb}). O Bruno mantém o fast e pede a
+        comparação neste relatório.\\
+13:47 & PHY-76 (dock sob o canvas, hard) em 30 min. 13:59: reaberto
+        (critério 8, barra de transporte cresce 2,26$\times$ em presets).
+        14:13: corrigido em 13 min. 14:25: mergeado.\\
+14:43 & PHY-77 (pausar quando a gravação enche) em 18 min. 15:01:
+        mergeado.\\
+15:24 & PHY-78 (modelo de Foco e chips, hard) em 23 min. 15:38: reaberto
+        (critério 9 contra o bloqueio de contatos do PHY-39). 15:44: o stage 2
+        pergunta; a revisão automática do Codex recusou a consulta ao proxy.
+        15:55: proxy decide.\\
+16:07 & PHY-82 (vetores no instante inicial, hard) em 22 min. 16:15:
+        reaberto (critério 7, sonda velha depois de desfazer). 16:22:
+        corrigido em 7 min. 16:28: mergeado.\\
+16:30 & PHY-83 (snap de orientação) pergunta em 2 min: o exemplo do critério 1
+        mede 6,71\,px, abaixo do mínimo de 10\,px. ``Nothing runnable'', PR
+        \#17 aberto. Proxy decide às 16:38.\\
+16:35 & O classificador do modo automático nega o checkout da sessão. O
+        foreman pede ao Bruno, que autoriza às 16:39.\\
+16:39 & Decisões gravadas (\texttt{ecb7404}, \texttt{b3aca92}). Ticket do
+        PHY-78 copiado para o branch dele (\texttt{8b85173}, a cópia que apagou
+        a revisão 1). Lançamento 2.\\
+16:52 & PHY-78 retomado em 12 min, com a integração do PHY-82 resolvida.
+        17:00: reaberto de novo (Foco durante o boot apaga a leitura de T).
+        17:11: corrigido. 17:18: mergeado.\\
+17:25 & PHY-79 (Foco por tópico nos presets) em 7 min. 17:35: mergeado.\\
+17:45 & PHY-80 (setas de $v$ e $a$ ao vivo) em 10 min. 17:58: reaberto
+        (critério 6, $v_0$ trocado por $v$ sem passo). 18:03: corrigido em
+        5 min. 18:10: mergeado.\\
+18:21 & PHY-81 (legenda clicável) em 11 min. 18:32: mergeado. 18:33:
+        ``Nothing runnable'', com o PHY-83 já em \texttt{to-implement} na
+        sessão.\\
+18:34 & Branch guardado do PHY-83 renomeado para \texttt{asked/...}.
+        Lançamento 3.\\
+18:47 & PHY-83 em 12 min. 18:58: mergeado, com 20 mutações e 3 tickets de
+        acompanhamento (CLEAN-32 a CLEAN-34). PR \#17 com 10 linhas.\\
+\bottomrule
+\end{tabularx}
+
+\section{Métricas por estágio}
+
+As 30 linhas de \texttt{.scratch/run-log.md} da sessão
+\texttt{sweatshop/2026-10-04-1243}. As 16 primeiras saíram com custo
+\texttt{?}, porque o driver ainda não tinha o preço do tier fast. O foreman as
+recalculou dos tokens de cada estágio, a 2$\times$ o preço do
+\texttt{gpt-6.1-sol}. A fórmula reproduz os \$1,749 que o driver gravou
+para a revisão do PHY-78 às 17:00. Implementação: \texttt{high}, ou \texttt{max}
+nos hard (PHY-76, PHY-78, PHY-82). Revisão: \texttt{max}.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l l r r r r r X@{}}
+\toprule
+Estágio & Esforço & Min & Entrada & Cache & Saída & Custo & Desfecho\\
+\midrule
+P75 impl.        & high & 20 & 6,60\,M & 98\,\% & 31\,k & 3,810 & to-review\\
+P75 revisão      & max  & 14 & 3,10\,M & 95\,\% & 27\,k & 2,327 & mergeado\\
+P76 impl.        & max  & 30 & 6,80\,M & 97\,\% & 51\,k & 4,473 & to-review\\
+P76 revisão      & max  & 12 & 4,00\,M & 97\,\% & 21\,k & 2,495 & reaberto\\
+P76 impl.\ 2     & max  & 13 & 2,90\,M & 96\,\% & 19\,k & 1,912 & to-review\\
+P76 revisão 2    & max  & 12 & 2,90\,M & 97\,\% & 19\,k & 1,864 & mergeado\\
+P77 impl.        & high & 18 & 5,50\,M & 98\,\% & 25\,k & 3,101 & to-review\\
+P77 revisão      & max  & 17 & 4,20\,M & 97\,\% & 31\,k & 2,812 & mergeado\\
+P78 impl.        & max  & 23 & 7,10\,M & 97\,\% & 44\,k & 4,425 & to-review\\
+P78 revisão      & max  & 14 & 3,60\,M & 97\,\% & 26\,k & 2,390 & reaberto\\
+P78 impl.\ 2     & max  & 7  & 2,10\,M & 95\,\% & 11\,k & 1,409 & perguntou\\
+P82 impl.        & max  & 22 & 7,60\,M & 98\,\% & 42\,k & 4,551 & to-review\\
+P82 revisão      & max  & 8  & 3,40\,M & 97\,\% & 15\,k & 2,021 & reaberto\\
+P82 impl.\ 2     & max  & 7  & 2,40\,M & 97\,\% & 10\,k & 1,448 & to-review\\
+P82 revisão 2    & max  & 7  & 1,60\,M & 95\,\% & 12\,k & 1,184 & mergeado\\
+P83 impl.        & high & 2  & 0,32\,M & 90\,\% & 2\,k  & 0,291 & perguntou\\
+P78 impl.\ 3     & max  & 12 & 4,50\,M & 97\,\% & 23\,k & 2,720 & to-review\\
+P78 revisão 2    & max  & 9  & 2,60\,M & 96\,\% & 17\,k & 1,749 & reaberto\\
+P78 impl.\ 4     & max  & 11 & 3,20\,M & 96\,\% & 21\,k & 2,144 & to-review\\
+P78 revisão 3    & max  & 7  & 2,00\,M & 96\,\% & 13\,k & 1,399 & mergeado\\
+P79 impl.        & high & 7  & 2,50\,M & 96\,\% & 12\,k & 1,616 & to-review\\
+P79 revisão      & max  & 10 & 2,80\,M & 96\,\% & 21\,k & 1,921 & mergeado\\
+P80 impl.        & high & 10 & 2,70\,M & 96\,\% & 17\,k & 1,868 & to-review\\
+P80 revisão      & max  & 13 & 3,60\,M & 96\,\% & 28\,k & 2,456 & reaberto\\
+P80 impl.\ 2     & high & 5  & 1,90\,M & 96\,\% & 6\,k  & 1,133 & to-review\\
+P80 revisão 2    & max  & 7  & 2,00\,M & 96\,\% & 12\,k & 1,356 & mergeado\\
+P81 impl.        & high & 11 & 3,50\,M & 97\,\% & 20\,k & 2,226 & to-review\\
+P81 revisão      & max  & 11 & 2,80\,M & 96\,\% & 20\,k & 1,862 & mergeado\\
+P83 impl.\ 2     & high & 12 & 4,40\,M & 97\,\% & 25\,k & 2,743 & to-review\\
+P83 revisão      & max  & 11 & 2,60\,M & 95\,\% & 22\,k & 1,996 & mergeado\\
+\midrule
+\multicolumn{2}{@{}l}{Total} & 362 & 105,22\,M & 96,7\,\% & 643\,k & 67,702 & 30 de 30 com preço\\
+\multicolumn{2}{@{}l}{Implementação} & 210 & 64,02\,M & & & 39,870 & 16 estágios\\
+\multicolumn{2}{@{}l}{Revisão} & 152 & 41,20\,M & & & 27,832 & 14 estágios\\
+\multicolumn{2}{@{}l}{Retrabalho} & 90 & 26,00\,M & & & 16,909 & 5 reaberturas, impl.\ e revisão seguintes\\
+\multicolumn{2}{@{}l}{Perguntas} & 9 & 2,42\,M & & & 1,700 & 2 estágios que pararam\\
+\bottomrule
+\end{tabularx}}
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked, bar width=16pt, width=\linewidth, height=6.5cm,
+  ylabel={Tokens de entrada (M)}, ymin=0,
+  symbolic x coords={PHY-75,PHY-76,PHY-77,PHY-78,PHY-79,PHY-80,PHY-81,PHY-82,PHY-83},
+  xtick=data, x tick label style={font=\small},
+  legend style={at={(0.98,0.97)},anchor=north east,draw=none,font=\small},
+  axis lines*=left, ymajorgrids, grid style={gray!25}]
+\addplot[fill=impl,draw=none] coordinates
+  {(PHY-75,6.60) (PHY-76,9.70) (PHY-77,5.50) (PHY-78,16.90) (PHY-79,2.50) (PHY-80,4.60) (PHY-81,3.50) (PHY-82,10.00) (PHY-83,4.72)};
+\addplot[fill=rev,draw=none] coordinates
+  {(PHY-75,3.10) (PHY-76,6.90) (PHY-77,4.20) (PHY-78,8.20) (PHY-79,2.80) (PHY-80,5.60) (PHY-81,2.80) (PHY-82,5.00) (PHY-83,2.60)};
+\legend{implementação, revisão}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Onde foi o custo.} Por ticket: PHY-78 \$16,24 (83 min, duas
+reaberturas e uma pergunta), PHY-76 \$10,74 (67 min), PHY-82 \$9,20 (44 min),
+PHY-80 \$6,81, PHY-75 \$6,14, PHY-77 \$5,91, PHY-83 \$5,03, PHY-81 \$4,09,
+PHY-79 \$3,54. Os três hard com reabertura somaram 53\,\% do custo. A
+implementação levou 59\,\% do custo e 61\,\% da entrada.
+
+\paragraph{O que se perdeu.} As cinco reaberturas custaram \$16,91 e 90 min de
+retrabalho: implementação e revisão seguintes. A segunda do PHY-78 sozinha
+custou \$3,54, e veio de uma regressão na integração com o PHY-82 (seção~4).
+As duas perguntas custaram \$1,70. A do PHY-78 deixou só a pergunta; a do PHY-83
+parou em 2 min, antes de escrever código. Nenhum estágio perdido por falha. Em
+relógio, a sessão ficou parada de 16:31 a 16:39, esperando a autorização do
+checkout, e por 1 min às 18:33, com o bug do branch guardado.
+
+\section{Fast contra tier normal}
+
+O Bruno pediu esta comparação ao decidir manter o fast. Os tickets da v7 não
+são os da v6, então a comparação normaliza pelo tamanho do trabalho: minutos
+por milhão de tokens de entrada e por 10\,k tokens de saída. O lado normal são
+os estágios \texttt{gpt-6.1-sol high} e \texttt{max} de 01 a 03/10 com o
+\emph{rollout} do Codex ainda em disco (\path{~/.codex/sessions}). O lado fast
+são os 30 estágios deste run. O tempo de ferramenta é a soma, sem
+sobreposição, dos intervalos entre cada chamada e a sua saída no rollout:
+comandos, testes, gate, Chromium e espera por subagentes. O resto é tempo de
+modelo.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r@{}}
+\toprule
+& \multicolumn{2}{c}{Implementação} & \multicolumn{2}{c}{Revisão}\\
+\cmidrule(lr){2-3}\cmidrule(l){4-5}
+& normal & fast & normal & fast\\
+\midrule
+Estágios medidos & 7 & 16 & 26 & 14\\
+Entrada mediana por estágio & 1,80\,M & 3,35\,M & 1,80\,M & 2,85\,M\\
+Duração mediana do estágio & 8,1 min & 11,6 min & 11,8 min & 10,8 min\\
+Tokens de saída por segundo de modelo (mediana) & 24,5 & 44,0 & 23,2 & 40,8\\
+\textbf{Minutos por M de entrada} (mediana) & \textbf{4,36} & \textbf{3,11} & \textbf{6,25} & \textbf{3,70}\\
+Minutos por 10\,k de saída (mediana) & 9,9 & 5,8 & 8,3 & 5,3\\
+Minutos de modelo por 10\,k de saída & 6,8 & 3,8 & 7,2 & 4,1\\
+Ferramentas, \% do tempo total & 29\,\% & 34\,\% & 13\,\% & 25\,\%\\
+US\$ por M de entrada (mediana) & 0,32 & 0,63 & 0,37 & 0,68\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\begin{itemize}
+  \item \textbf{O tier é aplicado.} A telemetria do cliente
+        (\texttt{RUST\_LOG=codex\_otel=info}) registra
+        \texttt{service\_tier="priority"}. O eco do servidor diz
+        \texttt{default} sempre, e um valor inválido é ignorado sem erro. A
+        prova é a velocidade: o modelo gera 1,8$\times$ mais tokens por segundo.
+  \item \textbf{O estágio não fica 1,8$\times$ mais curto.} Por milhão de
+        tokens de entrada, a implementação ficou 29\,\% mais curta e a revisão
+        41\,\%. As ferramentas não aceleram: a fatia delas subiu de 29 para
+        34\,\% na implementação e de 13 para 25\,\% na revisão. É o teto do
+        ganho: quanto mais o estágio roda teste e Chromium, menos o fast ajuda.
+  \item \textbf{A duração mediana ficou parecida} (11,6 contra 8,1 min na
+        implementação, 10,8 contra 11,8 na revisão). Os tickets da v7 pediram
+        1,6 a 1,9$\times$ mais entrada por estágio. Sem normalizar, parecia que
+        o fast não fazia nada, e foi o que o Bruno notou às 13:12.
+  \item \textbf{O custo dobra exatamente:} US\$ por milhão de entrada vai de
+        0,32--0,37 a 0,63--0,68. A saída por milhão de entrada ficou parecida
+        (5,6 contra 4,5\,k na implementação, 7,1 contra 7,4\,k na revisão), então
+        o fast não fez o modelo pensar mais nem menos.
+  \item \textbf{Neste run:} 357 min de rollout, dos quais 106 de ferramenta e
+        251 de modelo. No tier normal, o modelo levaria cerca de
+        251 $\times$ 1,8 = 454 min, e o run cerca de 560 min. O fast economizou
+        umas 3\,h20 de relógio por \$33,85 a mais (\$67,70 contra \$33,85).
+  \item \textbf{Limites:} 7 implementações normais é amostra pequena; o lado
+        fast mistura \texttt{high} e \texttt{max} na implementação (as
+        medianas são 10,2 e 12,5 min, a 44,8 e 44,0 tokens/s); e tickets
+        diferentes não normalizam tudo. A conclusão de direção é firme (o
+        modelo dobra a velocidade, o estágio não); os números exatos, não.
+\end{itemize}
+
+\section{Atribuição das reaberturas}
+
+Cinco rodadas \texttt{reopened} neste run. O revisor foi
+\texttt{gpt-6.1-sol-fast max}, não o modelo do foreman (Opus), então o foreman
+rotulou. As linhas foram para \path{.scratch/reopen-attribution.md}, na tabela
+de 12 colunas.
+
+\medskip
+\noindent{\small
+\begin{tabularx}{\linewidth}{@{}l c l X@{}}
+\toprule
+Ticket & Rodada & Rótulo & Achado e porquê\\
+\midrule
+PHY-76 & 1 & S2-explícito/código & Critério 8: em presets (Atwood com gráfico,
+  1280 e 1920\,px) a barra de transporte cresce 2,257$\times$ de escala 1 para
+  1,6, fora de 1,6$\times$ $\pm$10\,\%. A largura inversa ao zoom com
+  \texttt{flexWrap} e o hint de preset jogam a barra para uma linha extra. Os
+  testes de proporção só montavam a cena inicial.\\
+PHY-78 & 1 & S1 & Critério 9 exigia contatos habilitados depois de um passo; a
+  implementação preservava o bloqueio do PHY-39. O critério contradizia o
+  PHY-39 e a prosa do próprio ticket; só uma decisão resolvia, e o proxy
+  reescreveu o critério.\\
+PHY-78 & 2 & S2-implícito & Clicar num chip de Foco durante o boot apaga a
+  leitura inicial de T: \texttt{toggleFocusGroup} troca a identidade de
+  \texttt{docRef}, \texttt{ensureSim} marca \texttt{pendingRebuildRef} e o
+  polling descarta a leitura. Regressão da integração com o PHY-82 que o stage
+  2 fez na retomada.\\
+PHY-82 & 1 & S2-explícito/código & Critério 7: a sonda fica velha ao desfazer ou
+  arrastar de volta à geometria do mundo vivo antes do primeiro passo. Os
+  testes só arrastavam para posições novas.\\
+PHY-80 & 1 & S2-explícito/código & Critério 6: depois de uma edição estrutural,
+  um quadro a 0,5$\times$ reconstrói o mundo sem passo, e a pintura troca
+  $v_0$ por $v$ com zero passos. A escolha vinha da presença no mapa de
+  estados, que \texttt{syncWorld} preenche antes de qualquer passo.\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+Totais: 3 S2-explícito/código, 1 S2-implícito, 1 S1; nenhum S2-explícito/teste
+nem S3. Todos os achados vieram com reprodução e foram corrigidos com teste e
+mutação. Não há \emph{churn}: nenhuma regressão veio de conselho de revisão
+anterior.
+
+\paragraph{Falha anterior da revisão, em disputa.} O revisor da segunda rodada
+do PHY-78 escreveu que o achado era ``uma omissão'' da primeira revisão, porque
+o caminho do boot já existia no código revisado. O foreman discorda: antes do
+PHY-82 não havia leitura de T em $t = 0$ para perder, e o PHY-82 entrou na
+sessão depois da primeira revisão. A linha ficou com \texttt{Review miss:
+unknown}, não \texttt{yes}.
+
+\paragraph{Consertos da própria revisão (rodada 0).} Nenhum. As revisões que
+mergearam fizeram consertos só de documentação: um comentário no
+\texttt{scheduler.ts} (PHY-77), o README (PHY-80), a ordem dos comentários
+(PHY-81) e um comentário no \texttt{overlay.ts} (PHY-82). Nenhum acrescentou
+teste, critério ou vermelho.
+
+\paragraph{Achado depois da aprovação.} A revisão do PHY-75 achou um defeito na
+v6, já aprovada: \texttt{routeDocChange} compara $\mu_s$/$\mu_k$, mas não o
+\texttt{e}. Então editar só a restituição de um par não reconstrói o mundo, e a
+sonda devolveu uma rota \texttt{live} sem operações. Ficou como nota no PHY-68,
+com o PR \#16 ainda aberto (mergeado às 13:56), e não virou ticket. Linha
+\texttt{session-review}, \texttt{unclassified}, origem \texttt{unknown}: a
+consequência no App foi inferida por leitura, não reproduzida no DOM.
+
+\section{Scoreboard}
+
+Saída de \path{sweatshop/scripts/scoreboard.ps1} sobre PhysiSyst, SIGAA-ME,
+slip, \textbf{SynchroNice e ClassyCall}. No relatório anterior os dois últimos
+ficaram de fora porque os drivers deles rodavam; hoje nenhum driver estava
+ativo. Por isso várias linhas mudaram sem que este run as tocasse.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador & Estágios & To review & Falhou & Perguntou & Mediana até review & Custo\\
+\midrule
+sonnet & 121 & 75 & 31 & 15 & 7m & \$10.53 (4/121)\\
+opus-5.5 & 35 & 31 & 4 & 0 & 6m & \$0.72 (1/35)\\
+gpt-6.1-sol high & 38 & 33 & 0 & 5 & 8m & \$29.32 (38/38)\\
+sonnet-5.5 high & 16 & 15 & 1 & 0 & 7m & \$28.15 (16/16)\\
+sonnet-5.5 xhigh & 9 & 8 & 1 & 0 & 25m & \$35.54 (9/9)\\
+opus-5.5 high & 2 & 2 & 0 & 0 & 9m & \$2.31 (2/2)\\
+gpt-6-astra medium & 57 & 47 & 1 & 9 & 10m & \$162.72 (57/57)\\
+gpt-6.1-sol-fast high & 18 & 16 & 0 & 2 & 10m & \$21.98 (15/18)\\
+gpt-6.1-sol-fast max & 14 & 12 & 0 & 2 & 12m & \$31.19 (14/14)\\
+fable & 5 & 5 & 0 & 0 & 3m & ?\\
+gpt-6-luna & 23 & 11 & 10 & 2 & 26m & ?\\
+gpt-6-sol & 6 & 5 & 1 & 0 & 17m & ?\\
+gpt-5.6-sol & 5 & 4 & 1 & 0 & 17m & ?\\
+gpt-6-astra & 18 & 11 & 6 & 1 & 8m & ?\\
+sonnet-5 xhigh & 11 & 6 & 2 & 3 & 8m & \$18.09 (11/11)\\
+gpt-6-astra low & 2 & 2 & 0 & 0 & 30m & \$19.03 (2/2)\\
+gpt-6.1-sol max & 3 & 1 & 2 & 0 & 17m & \$1.44 (1/3)\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}l X r r r r r r r@{}}
+\toprule
+Implementador & Revisor & Reviews & Reab. & Taxa & Por S2 & Taxa S2 & Sem rót. & Cons.\ S2\\
+\midrule
+sonnet & opus & 68 & 20 & 29\,\% & 1 & $\geq$1\,\% & 19 & 0\\
+? & opus & 4 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+opus-5.5 & fable-5.1 & 30 & 1 & 3\,\% & 0 & $\geq$0\,\% & 1 & 0\\
+gpt-6.1-sol high & gpt-6.1-sol max & 32 & 8 & 25\,\% & 7 & 22\,\% & 0 & 0\\
+sonnet-5.5 high & gpt-6.1-sol max & 12 & 3 & 25\,\% & 3 & 25\,\% & 0 & 0\\
+sonnet-5.5 xhigh & gpt-6.1-sol max & 7 & 3 & 43\,\% & 3 & 43\,\% & 0 & 0\\
+opus-5.5 high & fable-5.1 high & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+opus-5.5 high & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+sonnet-5.5 high & opus-5.5 xhigh & 3 & 0 & 0\,\% & 0 & 0\,\% & 0 & 3\\
+sonnet-5.5 xhigh & opus-5.5 xhigh & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+gpt-6-astra medium & gpt-6-astra xhigh & 10 & 1 & 10\,\% & 1 & 10\,\% & 0 & 0\\
+gpt-6-astra medium & gpt-6.1-sol max & 37 & 7 & 19\,\% & 6 & 16\,\% & 0 & 1\\
+gpt-6.1-sol-fast high & gpt-6.1-sol-fast max & 16 & 2 & 12\,\% & 2 & 12\,\% & 0 & 0\\
+gpt-6.1-sol-fast max & gpt-6.1-sol-fast max & 12 & 6 & 50\,\% & 5 & 42\,\% & 0 & 0\\
+sonnet & fable & 1 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+fable & fable & 4 & 1 & 25\,\% & 0 & $\geq$0\,\% & 1 & 0\\
+gpt-6-luna & gpt-6-sol & 11 & 7 & 64\,\% & 0 & $\geq$0\,\% & 7 & 0\\
+gpt-6-sol & gpt-5.6-sol & 5 & 4 & 80\,\% & 0 & $\geq$0\,\% & 4 & 0\\
+gpt-5.6-sol & gpt-6-astra & 4 & 3 & 75\,\% & 0 & $\geq$0\,\% & 3 & 0\\
+gpt-6-astra & gpt-5.6-sol & 11 & 5 & 45\,\% & 0 & $\geq$0\,\% & 5 & 0\\
+sonnet-5 xhigh & opus-5.5 xhigh & 5 & 0 & 0\,\% & 0 & 0\,\% & 0 & 0\\
+gpt-6-astra low & gpt-6.1-sol max & 2 & 1 & 50\,\% & 1 & 50\,\% & 0 & 0\\
+gpt-6.1-sol max & gpt-6.1-sol max & 1 & 1 & 100\,\% & 1 & 100\,\% & 0 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r r r@{}}
+\toprule
+Implementador $\to$ Revisor & Rodadas & S2 expl.\ código & S2 expl.\ teste & S2 implícito & S1 & S3 ruído\\
+\midrule
+gpt-6.1-sol high $\to$ gpt-6.1-sol max & 9 & 5 & 0 & 9 & 1 & 0\\
+sonnet-5.5 high $\to$ gpt-6.1-sol max & 3 & 5 & 0 & 2 & 3 & 0\\
+sonnet-5.5 xhigh $\to$ gpt-6.1-sol max & 3 & 7 & 0 & 3 & 2 & 0\\
+sonnet-5.5 high $\to$ opus-5.5 xhigh & 3 & 1 & 2 & 0 & 0 & 0\\
+gpt-6-astra medium $\to$ gpt-6-astra xhigh & 1 & 1 & 0 & 0 & 0 & 0\\
+gpt-6-astra medium $\to$ gpt-6.1-sol max & 8 & 11 & 1 & 4 & 1 & 0\\
+gpt-6.1-sol-fast max $\to$ gpt-6.1-sol-fast max & 6 & 2 & 0 & 3 & 1 & 0\\
+gpt-6.1-sol-fast high $\to$ gpt-6.1-sol-fast max & 2 & 2 & 0 & 0 & 0 & 0\\
+sonnet $\to$ opus & 1 & 1 & 1 & 0 & 0 & 0\\
+gpt-6-astra low $\to$ gpt-6.1-sol max & 1 & 2 & 0 & 1 & 0 & 0\\
+gpt-6.1-sol max $\to$ gpt-6.1-sol max & 1 & 4 & 0 & 1 & 0 & 0\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r@{}}
+\toprule
+Descoberta & Achados & Falha anterior da revisão (sim / conh.) & Churn (sim / conh.)\\
+\midrule
+ticket-review & 76 & 0 / 17 & 0 / 18\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+\noindent{\footnotesize Cobertura: flags antigas e registros ausentes contam
+como desconhecido, não como zero. Do fim do runtime à saída do processo:
+204,9\,s em 138 estágios medidos, 549 sem medida. Intervenções registradas:
+\texttt{automatic-recovery} 7, \texttt{proxy-decision} 13,
+\texttt{human-rescue} 2. A linha \texttt{session-review} do PHY-68 ainda não
+aparece: o scoreboard foi rodado antes dela ser gravada.}
+
+\paragraph{O que mudou desde o relatório anterior.}
+\begin{itemize}
+  \item \textbf{Escopo maior:} SynchroNice e ClassyCall entraram. Daí vêm as
+        linhas novas de \texttt{gpt-6-luna}, \texttt{gpt-6-sol},
+        \texttt{gpt-5.6-sol}, \texttt{gpt-6-astra} sem esforço,
+        \texttt{sonnet-5 xhigh} e \texttt{gpt-6-astra low}, e o crescimento de
+        \texttt{sonnet} (83 $\to$ 121) e de \texttt{gpt-6-astra medium}
+        (28 $\to$ 57).
+  \item \textbf{Linhas novas, do fast:} high com 18 implementações, 8 deste
+        run, e max com 14, 8 deste run. As outras vêm de um run fast do
+        SynchroNice, e os três \texttt{?} da linha high também.
+  \item \textbf{Pares fast:} high $\to$ max com 16 revisões e 12\,\% de
+        reabertura, toda por S2; neste run, 7 revisões e 1 reabertura
+        (PHY-80). Max (hard) $\to$ max com 12 revisões e 50\,\% de reabertura,
+        42\,\% por S2; neste run, 7 revisões e 4 reaberturas (PHY-76, PHY-78
+        duas vezes, PHY-82).
+  \item \textbf{\texttt{gpt-6.1-sol high} $\to$ \texttt{max} (normal):} de 22
+        para 32 revisões e de 14 para 22\,\% de taxa S2, só pelo escopo maior.
+\end{itemize}
+
+\paragraph{Como ler.}
+\begin{itemize}
+  \item \textbf{Fast e normal são o mesmo modelo.} O tier muda a velocidade,
+        não os pesos, então \texttt{gpt-6.1-sol-fast high} $\to$
+        \texttt{max} (12\,\%, 16) e \texttt{gpt-6.1-sol high} $\to$
+        \texttt{max} (22\,\%, 32) medem o mesmo par em tickets diferentes. A
+        diferença está dentro do ruído de 16 revisões.
+  \item \textbf{O hard \texttt{max} reabre mais porque recebe o pior.} 42\,\%
+        de taxa S2 em 12 revisões, contra 12\,\% do high. Neste run, os hard
+        (PHY-76, PHY-78, PHY-82) foram os maiores e os que mais cruzaram com
+        outros tickets da sessão. Com 12 revisões é anedota, e não diz que o
+        \texttt{max} implementa pior que o \texttt{high}.
+  \item \textbf{O Sol max não consertou no lugar de reabrir:} 0 na coluna de
+        consertos nos dois pares fast.
+\end{itemize}
+
+\section{Comparação}
+
+Os runs anteriores do PhysiSyst com preço, mais este. O de 02/10 tarde tem o
+mesmo modelo nos dois stages, no tier normal.
+
+\medskip
+\noindent{\footnotesize
+\begin{tabularx}{\linewidth}{@{}X r r r r@{}}
+\toprule
+& 02/10 tarde & 03/10 madr. & 03/10 tarde & Este run\\
+\midrule
+Implementador & sol high & astra med. & astra med. & sol-fast high/max\\
+Revisor & sol max & astra xhigh & sol max & sol-fast max\\
+Estágios registrados & 5 & 23 & 25 & 30\\
+Tickets mergeados & 2 & 9 & 8 & 9\\
+Reaberturas & 0 & 1 & 2 & 5\\
+Impl.: falhou ou perguntou & 1 de 3 & 3 de 13 & 5 de 15 & 2 de 16\\
+Mediana da implementação & 7 min & 8 min & 9 min & 11,5 min\\
+Custo médio por impl. & \$0,60 & \$2,86 & \$2,36 & \$2,49\\
+Mediana da revisão & 9,5 min & 7,5 min & 11,5 min & 11 min\\
+Custo médio por revisão & \$0,58 & \$2,62 & \$0,78 & \$1,99\\
+Estágios perdidos (\texttt{?}) & 0 & 0 & 0 & 0\\
+Custo registrado & \$2,96 & \$63,37 & \$43,15 & \$67,70\\
+Custo por ticket mergeado & \$1,48 & \$7,04 & \$5,39 & \$7,52\\
+\bottomrule
+\end{tabularx}}
+
+\medskip
+O custo por ticket (\$7,52) é o mais alto da tabela, acima do run com o
+Astra nos dois stages. Metade disso é o tier: no tier normal seriam \$3,76,
+abaixo dos runs com Astra. A outra parte são os tickets da v7, maiores (3,5\,M de
+entrada por estágio contra 1,7\,M em 03/10), e as cinco reaberturas. A revisão
+custou 2,5$\times$ a de 03/10 tarde (\$1,99 contra \$0,78) com o mesmo
+modelo e esforço: 2$\times$ pelo tier, o resto por revisões maiores.
+
+\section{Observações sobre os modelos}
+
+\subsection*{GPT-6.1 Sol fast (high, e max no hard), implementação}
+\begin{itemize}
+  \item \textbf{9 de 9 tickets mergeados, 14 de 16 estágios em
+        \texttt{to-review}.} 2 a 30 min, \$0,29 a \$4,55. Nenhuma falha.
+  \item \textbf{Mutação registrada em todos os tickets}, com a saída vermelha
+        por teste nas costuras de DOM e de browser. O PHY-83 fechou com 20
+        mutações, e o PHY-81 com 12.
+  \item \textbf{As duas perguntas foram contrato, não permissão.} O critério 9
+        do PHY-78 contradizia o PHY-39, e o exemplo do critério 1 do PHY-83
+        contradizia a própria regra de 10\,px. Nenhuma pergunta de
+        \texttt{Primary files}, o padrão que marcou os runs de 03/10.
+  \item \textbf{Integrou a sessão no meio do ticket.} O PHY-78 foi retomado
+        num branch anterior ao PHY-82, com conflito em \texttt{src/App.tsx}. O
+        stage 2 resolveu o conflito, mas a integração trouxe a regressão da
+        segunda reabertura.
+  \item \textbf{O gate rodou fora do sandbox em vários estágios}: o Chromium
+        não conecta dentro do sandbox do Codex. O PHY-83 o registrou no
+        \texttt{.final}.
+\end{itemize}
+
+\subsection*{GPT-6.1 Sol fast (max), revisão}
+\begin{itemize}
+  \item \textbf{9 mergeados, 5 reabertos, 7 a 17 min, \$1,18 a \$2,81.}
+        Reproduziu as mutações e rodou o gate antes de cada merge.
+  \item \textbf{Quatro achados de código reais, todos com reprodução}: barra de
+        transporte em presets (PHY-76), sonda velha depois de desfazer (PHY-82),
+        $v_0$ trocado sem passo (PHY-80) e leitura de T perdida no boot
+        (PHY-78). Todos eram casos de borda de critério explícito ou de
+        integração.
+  \item \textbf{Mandou para o stage 2 uma lacuna de contrato.} Na primeira
+        revisão do PHY-78, ele escreveu que o critério 9 precisava de decisão
+        do stage 1 ou do proxy, mas pôs \texttt{to-implement}. O stage 2 só
+        pôde perguntar, e um estágio (\$1,41) foi gasto para isso.
+  \item \textbf{Registrou o que achou fora do ticket} em vez de reabrir: o
+        Foco no undo/redo (CLEAN-31), três follow-ups do snap (CLEAN-32 a 34) e
+        a restituição do PHY-68 (só nota, sem ticket).
+\end{itemize}
+
+\section{Driver e runtime}
+\begin{itemize}
+  \item \textbf{Preço do tier fast:} o driver registrava \texttt{?} para os
+        modelos \texttt{-fast}. Desde \texttt{dc530fb} (Agent-Skills) ele cobra
+        2$\times$ o preço base, com self-check e mutação. As 16 linhas
+        anteriores foram recalculadas para este relatório.
+  \item \textbf{O branch guardado continua casando com a busca do driver}
+        (recomendação 3 do relatório anterior, ainda aberta). Desta vez custou
+        um relançamento: \texttt{Ticket()} procura \texttt{refs/heads/*/PHY-83-*},
+        achou \texttt{phy/PHY-83-...-asked-20261004-1630}, com
+        \texttt{Stage: blocked}, e o driver terminou com o PHY-83 pronto na
+        sessão. O foreman renomeou o branch para \texttt{asked/phy83-...} e
+        relançou. Um conserto do driver ficou sugerido como tarefa separada.
+  \item \textbf{A revisão automática do Codex recusou a consulta ao proxy} no
+        stage 2 do PHY-78 (``envio de código privado a destino externo''). O
+        stage parou e perguntou, como manda o \texttt{ticket-flow}.
+  \item \textbf{Sandbox do Codex:} Chromium sem conexão ao DevTools e
+        \texttt{CreateProcessWithLogonW 1909}. Os estágios rodaram o gate fora
+        do sandbox.
+  \item \textbf{O classificador do modo automático do Claude Code negou o
+        checkout da sessão} pelo foreman, por interferência com uma carga de
+        trabalho. O Bruno autorizou; 8 min parados.
+  \item \textbf{PR de sessão sem \texttt{--draft}:} o \#17 foi aberto pronto
+        para revisão (recomendação antiga, ainda aberta).
+\end{itemize}
+
+\section{Erro do foreman}
+
+Para retomar o PHY-78, o foreman copiou o ticket da sessão (com a decisão do
+proxy) por cima do ticket do branch \texttt{phy/PHY-78}, em vez de mergear,
+porque o merge conflitava em \texttt{src/App.tsx}. O ticket da sessão não tinha
+o histórico do branch: a cópia (\texttt{8b85173}) apagou 118 linhas. Eram as
+notas de mutação do primeiro stage 2, a primeira revisão inteira e a nota da
+pergunta. Com o \texttt{Verdict: Reopen} da primeira revisão apagado, o driver
+contou um reopen só e não parou o ticket no segundo. O diagnóstico obrigatório
+da seção ``segundo reopen'' da skill \texttt{foreman} não aconteceu antes da
+nova implementação; ela acertou, mas por sorte. As linhas foram restauradas do
+\texttt{8b85173\^{}} no fechamento, com o diagnóstico registrado depois do merge.
+Regra para o próximo run: na retomada, levar ao branch só as linhas novas do
+ticket (proxy, foreman), nunca o arquivo inteiro.
+
+\section{Recomendações}
+\begin{enumerate}
+  \item \textbf{Manter o fast quando o relógio importa.} Ele corta cerca de
+        um terço do tempo de cada estágio pelo dobro do preço. Para um run
+        noturno sem ninguém esperando, o tier normal faz o mesmo trabalho pela
+        metade.
+  \item \textbf{Abrir um ticket para o \texttt{e} no \texttt{routeDocChange}}
+        (achado da revisão do PHY-75). Hoje é só uma nota no PHY-68, e o
+        defeito está na \texttt{main} desde o merge do PR \#16.
+  \item \textbf{Driver: nome do branch guardado fora do glob do ticket.}
+        Terceira vez (PHY-72 e PHY-74 em 03/10, PHY-83 hoje). Tarefa sugerida
+        nesta sessão.
+  \item \textbf{Revisor: lacuna de contrato vai para \texttt{blocked}, não para
+        \texttt{to-implement}.} A primeira revisão do PHY-78 sabia que
+        precisava de decisão e mandou para o stage 2 assim mesmo. Uma linha no
+        \texttt{ticket-flow} evitaria o estágio gasto só para perguntar.
+  \item \textbf{Proxy para o stage 2 no Codex} (recomendação antiga). Agora a
+        revisão automática do Codex bloqueia a consulta; sem o foreman, as duas
+        perguntas teriam parado a fila.
+  \item \textbf{Stage 1: conferir os exemplos numéricos contra as próprias
+        regras.} O critério 1 do PHY-83 tinha um exemplo abaixo do mínimo de
+        10\,px; o stage 2 pegou em 2 min, mas parou a fila.
+  \item \textbf{Triagem dos CLEAN-31 a CLEAN-34} no planner. O CLEAN-31 (Foco
+        restaurado pelo undo/redo) é o que mais afeta o usuário.
+  \item \textbf{Revisão humana:} PHY-76 (hard, \texttt{Review: human}, dock e
+        zoom) e PHY-68 (só a nota nova), nessa ordem; depois o PHY-78 (hard,
+        duas reaberturas, toca o \texttt{App.tsx} inteiro).
+\end{enumerate}
+
+Do relatório anterior: as recomendações 3 (branch guardado), 6 (proxy no
+Codex) e o PR draft continuam abertas. A 2 (\texttt{Primary files}) não se
+repetiu neste run.
+
+\section{Decisões do proxy}
+
+As 2 linhas \texttt{Proxy decided} dos tickets deste run, as duas no stage 2.
+Nenhuma linha \texttt{Proxy escalated}. Ficam em \texttt{\#\# Comments} de cada
+ticket; aqui, citadas na íntegra.
+
+{\small\sloppy
+\subsection*{PHY-78 (1)}
+\begin{enumerate}
+  \item \textbf{(stage 2, 04/10)} manter o bloqueio estrutural (PHY-39,
+  ADR-0004) e reescrever o critério 9: o Foco não pode esconder nem mudar a
+  habilitação de campo nenhum, verificado no mesmo instante; contatos
+  desabilitados após um passo é o PHY-39, não o PHY-78 --- a regra do spec
+  (``campos de edição nunca são filtrados'') é sobre o Foco, não sobre os outros
+  bloqueios, e o critério como escrito pedia que este ticket desfizesse o
+  PHY-39, o que ninguém decidiu. Nenhuma mudança de produção; só o teste do
+  critério 9 (commit test-only) e o texto do critério. O que o teste deve
+  asserir: (a) após \texttt{p.steps(1)}, selecionar o corpo e capturar
+  \texttt{disabled} de cada input de forças e de
+  \texttt{contacts.muS/muK/e} com forças ligadas; (b)
+  \texttt{toggleFocus('forces')} e asserir que os mesmos inputs seguem no DOM
+  com \texttt{disabled} igual ao capturado --- forças \texttt{false}, contatos
+  \texttt{true} --- sem \texttt{seek(0)} antes; (c) só então
+  \texttt{p.seek(0)} e asserir todos \texttt{false}, ainda com forças
+  desligadas; (d) religar forças e asserir \texttt{P}. Mutate-verify: a
+  mutação ``fieldset de contatos recebe \texttt{disabled=\{disabled ||
+  !showForces\}}'' (ou \texttt{hidden} nos campos com forças desligadas) deve
+  ficar vermelha em (b); registrar a saída no ticket. Retomar da branch
+  \texttt{phy/PHY-78-modelo-de-foco-e-chips} (\texttt{fb7bb72}): os outros
+  critérios passaram com 22 mutações; \texttt{src/App.tsx} não muda.
+\end{enumerate}
+\subsection*{PHY-83 (1)}
+\begin{enumerate}
+  \item \textbf{(stage 2, 04/10)} manter a exclusão dos segmentos curtos (é
+  decisão do spec: ``segmentos de comprimento até a tolerância não travam'') e
+  corrigir só o exemplo de menor afastamento do critério 1, de
+  \texttt{(0.1, 0.05)} para \texttt{(0.16, 0.12)} --- com \texttt{ppm = 60},
+  \texttt{(0.1, 0.05)} mede 6,71\,px ($\leq$ 10\,px, logo \texttt{null}),
+  enquanto \texttt{(0.16, 0.12)} mede exatamente 12\,px (0,2\,m, triângulo
+  3-4-5), $|dx| = 9{,}6$\,px e $|dy| = 7{,}2$\,px cabem os dois na tolerância e
+  o menor afastamento é o horizontal. A proposta do stage 2,
+  \texttt{(0.15, 0.1)}, também satisfaz (10,82\,px), mas fica a 0,8\,px da
+  borda; \texttt{(0.16, 0.12)} está no meio da janela válida
+  (10\,px $<$ L $\leq$ 14,14\,px). Nenhum outro critério tem a mesma
+  inconsistência (2, 3, 6, 7 conferidos; 4, 5, 8 sem geometria).
+\end{enumerate}
+}
+
+\section{Débito humano}
+
+Nenhuma linha \texttt{Débito humano:} nos nove tickets nem nos CLEAN-31 a
+CLEAN-34, e nenhum \texttt{Proxy escalated}. O PR
+\href{https://github.com/Laginho/PhysiSyst/pull/17}{\#17} lista PHY-68 e PHY-76
+como \texttt{Review: human} --- Approve, no topo; os outros oito como
+\texttt{Review: agent} --- Approve. Os CLEAN-31 a CLEAN-34 ficam
+\texttt{blocked} esperando o stage 1 (planner), e o achado do \texttt{e} no
+PHY-68 espera um ticket.
+
+\end{document}
