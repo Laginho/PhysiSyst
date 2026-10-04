@@ -21,6 +21,7 @@ export const en = {
   'playback.reset': '⟲ reset',
   'playback.resetTitle': 'return to initial document state',
   'playback.timeLabel': 'Time',
+  'playback.recordingFull': 'recording full (10 s) — reset',
   'playback.scrubbedEditHint': 'Return to the end of the recording to edit',
   'playback.speedLabel': 'speed',
   'playback.undoTitle': 'undo (Ctrl+Z)',

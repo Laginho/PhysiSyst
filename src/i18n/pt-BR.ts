@@ -21,6 +21,7 @@ export const ptBR = {
   'playback.reset': '⟲ reiniciar',
   'playback.resetTitle': 'volta ao estado inicial do documento',
   'playback.timeLabel': 'Tempo',
+  'playback.recordingFull': 'gravação cheia (10 s) — reinicie',
   'playback.scrubbedEditHint': 'Volte ao fim da gravação para editar',
   'playback.speedLabel': 'velocidade',
   'playback.undoTitle': 'desfazer (Ctrl+Z)',
