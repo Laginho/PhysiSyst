@@ -1,5 +1,5 @@
 # PHY-80: Setas de v e a ao vivo
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -49,6 +49,8 @@ Hoje o canvas desenha v₀ só antes do primeiro passo e nunca desenha a acelera
 - `src/App.test.ts`: critérios 6 a 8 com o simulador falso e o mock de canvas (`fillText`, `lineTo`); vermelhos hoje. Costura de DOM: registrar a mutação aplicada e a saída vermelha por teste novo.
 
 ## Comments
+
+- Stage 2: the approved seams are the overlay producers/labels and App's canvas after transport/focus interactions. Callers inspected: paint's global and selected branches, vectorLabels, existing initial-velocity tests, repaint/showFrame, and getAcceleration's panel consumer. Empty/missing state maps, zero vectors, fixed bodies and the recording cursor at zero are covered. PHY-78 is done on the active session base.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: depende de D1; v ao vivo usa o verde de v₀ e a substitui depois do primeiro passo; a ganha uma cor nova escolhida pelo implementador e lê a aceleração gravada, sem saída nova do motor; mesma regra 20·√módulo, mesmo clamp e mesmo escopo das setas de força.
 - Planner: `velocityArrows(view, states, ppm)` generaliza `initialVelocityArrows`; `accelerationArrows` recebe um mapa pronto para evitar import circular; `VECTOR_COLORS` em `overlay.ts` torna a distinção da cor testável.
