@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -155,3 +155,44 @@ Mutação temporária em `src/App.tsx`: recolocar a chamada de `refreshInitialPr
 - Testes permanentes vermelhos no commit `4874118`; correção e handoff em commit separado sem alterações em testes. As duas evidências de mutate-verify estão registradas acima.
 - Gate completo fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1187 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). Permanece somente o aviso já existente de chunk do simulador acima de 500 kB; nenhuma validação pendente.
 - Diff desta retomada revisado contra `feeb4eb`: apenas `src/App.tsx`, `src/App.test.ts` e este ticket; sem alterações de solver, API, gravação, painel ou artefatos gerados. Stage 2 devolvido a `to-review` na mesma branch; sem revisão stage 3 ou merge nesta sessão.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Revisão da retomada `feeb4eb...557a265`, com Standards e Spec em sub-agentes separados. O escopo foi o ❌ do critério 7 e o diff desde a primeira revisão, conforme `ticket-flow`; os critérios já aprovados não foram renegociados. Nenhuma correção permanente de produção ou teste foi necessária nesta etapa.
+
+##### Standards
+
+- Nenhuma violação documentada ou smell acionável. O diff da retomada fica em `src/App.tsx`, `src/App.test.ts` e neste ticket, dentro do escopo aprovado. O comentário explica por que a verificação da sonda precisa ficar independente do roteamento do mundo vivo.
+- `4874118` contém somente testes e documentação do ticket; `557a265` contém somente produção e documentação do ticket. A evidência DOM registra a mutação de produção e o vermelho por teste. A parametrização exerce undo e arrasto de retorno pelos eventos reais do App e observa N/T no canvas, cadência da sonda e ausência de passos vivos.
+- A correção documental anterior em `src/render/overlay.ts` permanece como já revisada. Sem refactor, arquivos gerados ou linha `Proxy decided`.
+
+##### Spec
+
+- Nenhum requisito ausente ou parcial, desvio de escopo ou comportamento incorreto identificado na retomada.
+- **Critério 7: ✅** `initialProbeDocRef` é comparado independentemente de `builtDocRef`, antes do repaint. Undo que restaura a referência original e arrasto de volta à geometria construída atualizam a sonda exatamente uma vez, reposicionam N e mantêm T na âncora documental.
+- Boot e reset atualizam a referência da sonda e não duplicam a chamada no doc effect; g/F continuam como edições ao vivo; seleção, visibilidade e resize não invalidam a estrutura. `syncWorld` não sonda e, depois do primeiro passo, a condição impede novas chamadas. Critérios **1–6 e 8–9: ✅**, preservados desde a primeira revisão e cobertos pelo gate completo.
+
+Chamadores e interações reexaminados: doc effect, `refreshInitialProbe`, `routeDocChange`/`applyLiveOps`, edição/undo/redo, boot pendente e `ensureSim`, `dispatch(reset)`/rebuild, `syncWorld`/`runSteps`, pintura, registro 0 e registros posteriores. Os limites da primeira revisão permanecem: integrações com PHY-78–81 ainda não mesclados e perfil prolongado de memória não foram acrescentados a esta retomada.
+
+##### Prova vermelho/verde repetida
+
+O revisor principal substituiu temporariamente apenas `src/App.tsx` pela versão anterior à correção (`feeb4eb`), preservando os testes permanentes de `4874118`. Isso recoloca o refresh dentro do ramo estrutural contra `builtDocRef`. Execução: `node node_modules/vitest/vitest.mjs run src/App.test.ts -t 'refreshes initial forces when'`.
+
+| Teste novo | Vermelho observado nesta revisão |
+| --- | --- |
+| `refreshes initial forces when undo restores the original geometry before the first step` | `expected [330, 540] to deeply equal [270, 540]` na origem de N. |
+| `refreshes initial forces when drag back restores the original geometry before the first step` | A mesma falha na origem de N. |
+
+- Mutação: **2 failed | 178 skipped (180)**, exit 1 do Vitest, pelos dois motivos esperados. Produção restaurada byte a byte em `finally`; `git diff --exit-code HEAD -- src/App.tsx src/App.test.ts` confirmou restauração e testes intactos.
+- Código corrigido: `npm test -- src/App.test.ts -t 'initial force vectors'` → **11 passed | 169 skipped (180)**, incluindo os dois retornos estruturais. Depois da mutação restaurada, ambos também passaram no gate sem filtro.
+
+##### Gate e fechamento
+
+- `git rebase sweatshop/2026-10-04-1243` confirmou a branch atualizada, sem conflitos.
+- Gate independente, com Chromium fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0; 33 arquivos / 1187 testes passaram, sem skips**; lint e typecheck sem erros; Vite construiu 52 módulos. Permanece o aviso existente de chunk do simulador acima de 500 kB (2136,71 kB); nenhuma validação pendente.
+- Merge sem squash **66fdfa6** em `sweatshop/2026-10-04-1243`. `git diff --exit-code 557a265 HEAD` confirmou que a árvore mesclada é a mesma validada antes do fechamento documental.
+- `Stage: done`, esta resolução e a linha do ledger são registrados juntos no commit de fechamento sobre a sessão.
+
+Totais por eixo nesta retomada: **Standards — 0 findings, 0 smells acionáveis; Spec — 0 findings**. Os nove critérios estão aprovados.
