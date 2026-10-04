@@ -93,7 +93,10 @@ export function groundBody(): Body {
 }
 
 export function blankScene(): Scene {
-  return { version: 1, constants: { g: 9.81 }, bodies: [groundBody()], forces: [], contacts: [] }
+  return {
+    version: 1, constants: { g: 9.81 }, bodies: [groundBody()], forces: [], contacts: [],
+    focus: { show: ['forces', 'energy', 'momentum'] },
+  }
 }
 
 export type IndexLoadResult =

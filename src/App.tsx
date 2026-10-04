@@ -1,8 +1,8 @@
 import { bodyEnergy, systemEnergy, type BodyEnergy, type SystemEnergy } from './sim/energy'
 import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
-import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
+import type { AppliedForce, Body, ConstraintEnd, Focus, FocusGroup, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
+import { bodyPointToWorld, collectWarnings, FOCUS_GROUPS, scenePath, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
@@ -194,6 +194,8 @@ function paint(
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: {
     showGlobal: boolean
+    /** Current document preferences, even when doc is a historical scene. */
+    focus?: Focus
     stepsTaken: number
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
@@ -245,19 +247,22 @@ function paint(
   // reads the same letter it has in global mode.
   const ppm = camera.pixelsPerMeter
   const constraints = opts?.constraints ?? []
-  const showInitialVelocity = (opts?.stepsTaken ?? 0) === 0
-  const initialProbe = showInitialVelocity ? opts?.initialProbe : undefined
+  const shownGroups = opts?.focus?.show ?? FOCUS_GROUPS
+  const showForces = shownGroups.includes('forces')
+  const atInitialTime = (opts?.stepsTaken ?? 0) === 0
+  const showInitialVelocity = shownGroups.includes('kinematics') && atInitialTime
+  const initialProbe = atInitialTime ? opts?.initialProbe : undefined
   // Only forces come from the disposable step; its moved rope path must not reach the editor.
   const tensionReadings = initialProbe
     ? initialProbe.constraints.map(state => state.kind === 'rope' ? { ...state, path: undefined } : state)
     : ropeReadings
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
-    { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
     { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
-    { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
-    { arrows: normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
-    { arrows: tensionArrows(view, tensionReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
-    { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
+    { arrows: showForces ? normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []) : [], style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? tensionArrows(view, tensionReadings, ppm) : [], style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? elasticArrows(view, constraints, ppm) : [], style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
@@ -269,7 +274,7 @@ function paint(
       if (showInitialVelocity) {
         for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
       }
-      for (const a of appliedArrows(selView, ppm)) {
+      for (const a of showForces ? appliedArrows(selView, ppm) : []) {
         drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
         // The application point is draggable (PHY-27): a ring marks the grip.
         screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
@@ -703,7 +708,7 @@ export default function App() {
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
-  const [showGlobal, setShowGlobal] = useState(false)
+  const [showGlobal, setShowGlobal] = useState(true)
   const [storageWarning, setStorageWarning] = useState<string | null>(initialSeedWarning)
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -869,6 +874,16 @@ export default function App() {
   // Discrete edits push once here; drags push their initial doc on pointer-up.
   const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
 
+  /** Focus edits change only the view, including on presets and historical frames. */
+  const toggleFocusGroup = useCallback((group: FocusGroup) => {
+    const current = docRef.current
+    const shown = current.focus?.show ?? FOCUS_GROUPS
+    const show = FOCUS_GROUPS.filter((g) => g === group ? !shown.includes(g) : shown.includes(g))
+    const next: Scene = { ...current, focus: { ...current.focus, show } }
+    docRef.current = next
+    setDoc(next)
+  }, [])
+
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
     const sel = selectionRef.current
@@ -926,6 +941,7 @@ export default function App() {
     if (ctx)
       paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
+        focus: docRef.current.focus,
         stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
@@ -1296,8 +1312,11 @@ export default function App() {
           constraintsRef.current = sim.readConstraints()
           refreshInitialProbe()
           resetRecording()
-          // Edits made while WASM was booting land at the next frame boundary.
-          pendingRebuildRef.current = docRef.current !== bootDoc
+          // Scene patches are immutable. Only changes outside focus can make
+          // the booted world stale and require the next frame boundary.
+          const currentDoc = docRef.current
+          const docKeys = Object.keys({ ...bootDoc, ...currentDoc }) as (keyof Scene)[]
+          pendingRebuildRef.current = docKeys.some(key => key !== 'focus' && bootDoc[key] !== currentDoc[key])
           setSimError(null)
           setBootState('ready')
           return sim
@@ -1712,6 +1731,11 @@ export default function App() {
   const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
   const selectedConstraint = selectedSpring ?? selectedRope
   const selectedItem = selected ?? selectedConstraint ?? selectedPulley
+  const shownGroups = docRef.current.focus?.show ?? FOCUS_GROUPS
+  const showForces = shownGroups.includes('forces')
+  const showKinematics = shownGroups.includes('kinematics')
+  const showEnergy = shownGroups.includes('energy')
+  const showMomentum = shownGroups.includes('momentum')
   const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
@@ -2033,6 +2057,16 @@ export default function App() {
             selection and the canvas rectangle must not follow it: without it the
             canvas narrows 15 px at 1280 on selection and the PHY-18 tests fail. */}
         <div style={{ display: 'grid', gap: 8, width: stacked ? '100%' : INSPECTOR_WIDTH, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
+            <span>{t('focus.show')}</span>
+            {FOCUS_GROUPS.map((group) => (
+              <button type="button" key={group} aria-pressed={shownGroups.includes(group)} onClick={() => toggleFocusGroup(group)}
+                style={{ fontSize: 12, padding: '2px 4px', border: '1px solid #888', borderRadius: 12,
+                  background: shownGroups.includes(group) ? '#e3effc' : '#fff' }}>
+                {t(`focus.${group}`)}
+              </button>
+            ))}
+          </div>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
@@ -2228,33 +2262,39 @@ export default function App() {
               <div>{t('readout.speed')}: {fmtNum(playback.speed, 2, lang)}×</div>
               {selected && readout && (
                 <>
-                  <div>
-                    {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
-                  </div>
-                  <details>
+                  {showKinematics && <>
+                    <div>
+                      {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
+                    </div>
+                  </>}
+                  {(showKinematics || showEnergy || showMomentum) && <details>
                     <summary>{t('readout.more')}</summary>
-                    <div>
-                      {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
-                    </div>
-                    <div>
-                      {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
-                    </div>
-                    {energyReadout.body && <>
+                    {showKinematics && <>
+                      <div>
+                        {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
+                      </div>
+                      <div>
+                        {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
+                      </div>
+                    </>}
+                    {showEnergy && energyReadout.body && <>
                       <div>{t('readout.kinetic')}: {fmtNum(energyReadout.body.Ec, 2, lang)} J</div>
                       <div>{t('readout.potential')}: {fmtNum(energyReadout.body.Epg, 2, lang)} J</div>
-                      <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s</div>
                     </>}
-                  </details>
+                    {showMomentum && energyReadout.body && <div>
+                      {t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s
+                    </div>}
+                  </details>}
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {selectedSpring && constraintReadout?.kind === 'spring' && (
+              {showForces && selectedSpring && constraintReadout?.kind === 'spring' && (
                 <>
                   {/* F_el differs per end only on a spring with mass (PHY-30), labelled as its arrows. */}
                   {(selectedSpring.mass ?? 0) > 0 ? (
@@ -2273,7 +2313,7 @@ export default function App() {
                   </div>
                 </>
               )}
-              {selectedRope && constraintReadout?.kind === 'rope' && (
+              {showForces && selectedRope && constraintReadout?.kind === 'rope' && (
                 <>
                   {(ropePerLeg ? constraintReadout.segments : [constraintReadout.tension]).map((T, i) => (
                     <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
@@ -2289,23 +2329,27 @@ export default function App() {
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <fieldset style={{ width: 220 }}>
+          {(showEnergy || showMomentum) && <fieldset style={{ width: 220 }}>
             <legend>{t('readout.system')}</legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               {energyReadout.system ? <>
-                <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
-                <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
-                {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
-                <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
-                <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
-                <details>
-                  <summary>{t('readout.more')}</summary>
-                  <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
-                  <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
-                </details>
+                {showEnergy && <>
+                  <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
+                  <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
+                  {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
+                  <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
+                </>}
+                {showMomentum && <>
+                  <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
+                  <details>
+                    <summary>{t('readout.more')}</summary>
+                    <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
+                    <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
+                  </details>
+                </>}
               </> : <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
             </div>
-          </fieldset>
+          </fieldset>}
           <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input

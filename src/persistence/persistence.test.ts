@@ -107,6 +107,17 @@ describe('controls scale preference (PHY-76)', () => {
 })
 
 describe('ticket 03: blank scene starts grounded', () => {
+  it('PHY-78 persists the explicit blank focus and preserves canonical payload bytes', () => {
+    const scene = blankScene()
+    expect(scene.focus).toEqual({ show: ['forces', 'energy', 'momentum'] })
+    const storage = memStorage()
+    const result = createNewScene(storage, 1)
+    expect(result).not.toHaveProperty('reason')
+    if ('reason' in result) throw new Error(result.reason)
+    expect(loadScene(storage, result.entry.id)?.focus).toEqual({ show: ['forces', 'energy', 'momentum'] })
+    expect(JSON.stringify(serialize(parse(serialize(scene))))).toBe(JSON.stringify(serialize(scene)))
+  })
+
   it('contains the fixed hatched ground (same recipe as presets), parses clean with zero warnings', () => {
     const scene = blankScene()
     expect(scene.bodies).toHaveLength(1)

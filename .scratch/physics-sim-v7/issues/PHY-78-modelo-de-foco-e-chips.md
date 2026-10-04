@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-implement
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -86,3 +86,318 @@ Ficam sempre: "passos", "velocidade" (da reprodução), a legenda da leitura, "s
 - 2026-10-04 Attempt 1 stopped to ask: PHY-78 ficou `blocked`, registrado no commit `58c5ac4`. O critério 9 exige contatos habilitados após um passo, contrariando o bloqueio existente e o spec. /  / 39 testes focados passaram; 389 ficaram fora do filtro. Apenas o ticket mudou. /  / Aprova preservar contatos bloqueados após um passo e habilitados no registro zero, ajustando o critério e seu teste? O [ticket-flow](C:/Users/Lage/.agents/skills/ticket-flow/SKILL.md) exige: “a session without a proxy asks by stopping”. /  / A revisão automática rejeitou a consulta ao Claude por envolver envio de código privado a um destino externo não verificado. Sua decisão direta resolve essa pendência.
 - 2026-10-04 Proxy decided: manter o bloqueio estrutural (PHY-39, ADR-0004) e reescrever o critério 9: o Foco não pode esconder nem mudar a habilitação de campo nenhum, verificado no mesmo instante; contatos desabilitados após um passo é o PHY-39, não o PHY-78 — a regra do spec ("campos de edição nunca são filtrados") é sobre o Foco, não sobre os outros bloqueios, e o critério como escrito pedia que este ticket desfizesse o PHY-39, o que ninguém decidiu. Nenhuma mudança de produção; só o teste do critério 9 (commit test-only) e o texto do critério. O que o teste deve asserir: (a) após `p.steps(1)`, selecionar o corpo e capturar `disabled` de cada input de forças e de `contacts.muS/muK/e` com forças ligadas; (b) `toggleFocus('forces')` e asserir que os mesmos inputs seguem no DOM com `disabled` igual ao capturado — forças `false`, contatos `true` — sem `seek(0)` antes; (c) só então `p.seek(0)` e asserir todos `false`, ainda com forças desligadas; (d) religar forças e asserir `P`. Mutate-verify: a mutação "fieldset de contatos recebe `disabled={disabled || !showForces}`" (ou `hidden` nos campos com forças desligadas) deve ficar vermelha em (b); registrar a saída no ticket. Retomar da branch `phy/PHY-78-modelo-de-foco-e-chips` (fb7bb72): os outros critérios passaram com 22 mutações; `src/App.tsx` não muda.
 - 2026-10-04 Foreman: retomar da branch `phy/PHY-78-modelo-de-foco-e-chips` (código revisado em `fb7bb72`; a sessão ainda não foi mergeada nela e `src/App.tsx` conflita com o PHY-82, já na sessão: integrar a sessão faz parte da retomada); falta só o commit test-only do critério 9 com a mutação registrada.
+
+#### Stage 2 resume (2026-10-04)
+
+Somente o teste do critério 9 foi reforçado, conforme a decisão do proxy acima.
+No mesmo instante após um passo, seleciona o corpo, captura os quatro campos de
+força habilitados e os três de contato bloqueados, desliga forças e exige os
+mesmos campos e bloqueios. Só depois navega ao registro zero e exige os sete
+campos habilitados, ainda com forças desligadas. Religar forças deve restaurar P.
+
+Costura: DOM e canvas reais do App com o simulador falso já aprovado no ticket.
+`ForcesPanel` e `BodyContactsPanel` são chamados apenas pelo ramo do corpo
+selecionado. Foram examinados `liveLocked`, `structuralLocked`, `showFrame`,
+`seek(0)` e o caminho dos chips fora de `editDoc`; nenhuma alteração de produção
+é necessária para os bloqueios. O caso distingue a ponta após um passo do
+registro zero, evitando a navegação que ocultava a lacuna do teste anterior.
+
+##### Mutate-verify do teste do critério 9
+
+Comando por mutação: `npm test -- src/App.test.ts -t 'PHY-78 hides force layers and spring readouts'`.
+As mutações abaixo foram aplicadas temporariamente ao App de produção e
+restauradas byte a byte em `finally`; `git diff --exit-code -- src/App.tsx`
+confirmou a restauração.
+
+| Mutação em produção | Vermelho observado |
+| --- | --- |
+| Prop de `BodyContactsPanel`: `doc={showForces ? doc : { ...doc, contacts: [] }}`, removendo os campos de contato quando forças estão desligadas | `Error: missing input for μs — atrito estático`, na comparação imediatamente após desligar forças, antes de `seek(0)` (`src/App.test.ts:3492`). **1 failed / 185 skipped**, exit 1. |
+| Prop de `BodyContactsPanel`: `disabled={structuralLocked || !showForces}` | No registro zero, esperado `[false, false, false, false, false, false, false]`, recebido `[false, false, false, false, true, true, true]` (`src/App.test.ts:3509`). **1 failed / 185 skipped**, exit 1. Na ponta esta mutação é equivalente ao bloqueio estrutural; a primeira mutação prova a comparação antes do seek. |
+
+Sem mutação, antes de integrar a sessão, os novos checks de campos passam e a
+última asserção fica vermelha: `expected [ 'm', 'F', 'N' ] to include 'P'`,
+**1 failed / 185 skipped**, exit 1. A checagem de P no registro zero estava errada
+no harness: `weightArrows` exige estados simulados; o PHY-82 acrescenta N/T
+iniciais, sem mudar essa regra de P. Correção do harness registrada abaixo.
+
+A revisão e as 22 mutações dos demais critérios continuam disponíveis no commit
+`0cdd8c0`; a decisão do planner incorporada por `91cb99a` substituiu o corpo do
+ticket e deixou somente a pendência do critério 9.
+
+##### Integração da sessão e correções de harness
+
+- Branch atualizada por rebase sobre `b3aca92`, sessão
+  `sweatshop/2026-10-04-1243`, preservando os commits separados. O conflito de
+  `paint` foi resolvido no commit de produção reexecutado `6b39fe2`: os guardas
+  de forças abrangem os contatos/trações da sonda, mas a escolha da sonda depende
+  somente do instante zero, nunca de cinemática. `ForcesPanel` e
+  `BodyContactsPanel` permanecem sem mudança de produção.
+- Depois da resolução, typecheck passou, mas o filtro de App apresentou
+  **9 failed / 19 passed / 169 skipped**: `setupProbe` clicava incondicionalmente
+  em "mostrar todos os vetores", agora marcado por padrão, e desligava as setas.
+  O preparo agora habilita o checkbox somente se estiver desmarcado. Não muda a
+  expectativa desses testes nem o produto.
+- Correção da asserção de P: os sete campos continuam sendo verificados no
+  registro zero com forças desligadas; só depois o teste volta explicitamente
+  ao registro 1 e religa forças para exigir P. A comparação pós-passo anterior
+  ao primeiro seek permanece intacta. Essa correção de harness respeita a
+  semântica já documentada no commit test-only `f47cdd5`.
+- O teste existente `paints N and T at t0 and anchors T` também exige N/T com
+  cinemática desligada, ausência com forças desligadas e restauração ao religar
+  forças, sem novos passos nem novas sondas. Isso verifica a interação no hunk
+  de produção resolvido, no mesmo seam de DOM/canvas aprovado.
+
+Mutate-verify repetido depois do rebase e das correções, sempre restaurando
+`src/App.tsx` byte a byte. Cada execução: **1 failed / 196 skipped**, exit 1.
+
+| Teste modificado | Mutação em produção | Vermelho observado |
+| --- | --- | --- |
+| `PHY-78 hides force layers and spring readouts` | Remover os contatos pelo prop `doc` quando forças estão desligadas | `missing input for μs — atrito estático`, comparação na ponta antes de seek (`src/App.test.ts:3763`). |
+| Mesmo teste | `disabled={structuralLocked || !showForces}` no prop de contatos | No registro zero, os três últimos valores são `true`, esperados `false` (`src/App.test.ts:3780`). |
+| `paints N and T at t0 and anchors T` | `initialProbe = showInitialVelocity ? opts?.initialProbe : undefined` | Logo após desligar cinemática, `expected [ 'm', 'a', 'm', 'b' ] to include 'N'` (`src/App.test.ts:976`). |
+
+Verde com a produção restaurada: `npm test -- src/App.test.ts src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts -t 'scene focus|PHY-78|initial force vectors'`
+→ **4 arquivos / 50 passed / 389 skipped**, exit 0; os skips são os casos fora
+desse filtro. `git diff --exit-code -- src/App.tsx` confirmou que as mutações
+foram restauradas. Correções de harness e evidência ficam em commit só de teste.
+
+#### Stage 2 handoff (2026-10-04)
+
+- Pendência do critério 9 resolvida pelos commits só de teste `fa85eb6` e
+  `23bc640`: comparação dos sete campos na ponta antes/depois do chip,
+  habilitação no registro zero com forças desligadas e restauração de P no
+  registro simulado. As mutações e seus vermelhos estão registrados acima.
+- Integração com o PHY-82 concluída sobre a sessão `b3aca92`. O conflito de
+  `paint` preserva as sondas iniciais, o caminho documental de T e os grupos
+  independentes do Foco; a regressão dessa independência está coberta por teste
+  com mutação. A retomada não altera a produção de campos de forças/contatos.
+- Verificação focada completa fora do sandbox, permitindo Chromium:
+  `npm test -- src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts src/App.test.ts`
+  → **4 arquivos / 439 testes passed, zero skips**, exit 0.
+- Gate oficial completo fora do sandbox:
+  `npm test && npm run lint && npm run typecheck && npm run build`
+  → **33 arquivos / 1226 testes passed, zero skips**, lint, typecheck e build
+  **exit 0**. Vite: 52 módulos; aviso preexistente do chunk do simulador acima
+  de 500 kB (2136,71 kB). Nenhuma validação pendente.
+- Diff revisado contra `b3aca92`, incluindo a resolução do conflito. Commits de
+  produção não alteram testes; retomada limitada a `App.test.ts`, ao ticket e à
+  resolução de `paint` durante o rebase. `git diff --check` verde, mutações
+  restauradas e artefatos de build fora do diff.
+- Limitação já registrada pela revisão anterior: desfazer/refazer uma edição
+  física pode restaurar um Foco anterior; o contrato adicional permanece em
+  `CLEAN-31`, que esta retomada preserva sem modificar.
+
+Etapa 2 encerrada em `to-review`, pronta para a revisão independente do stage 3.
+
+#### Stage 3 re-review (2026-10-04)
+
+Verdict: Reopen — regression: changing focus during simulator boot suppresses the initial constraint readout after boot succeeds.
+
+- **Standards:** 0 violações documentadas e 0 smells acionáveis. Diff completo
+  de 13 arquivos e os 18 commits examinados contra a base fixada `b3aca92`
+  (`sweatshop/2026-10-04-1243`), HEAD revisado `e20f60e`. Primary files
+  respeitados; produção e testes permanecem em commits separados. Nenhuma
+  correção de produção ou teste novo persistido nesta revisão.
+- **Spec:** os critérios numerados 1–15 passam, incluindo a pendência anterior
+  do critério 9. Há **1 regressão**, descrita abaixo; ela exige teste novo,
+  portanto retorna mecanicamente ao stage 2. O rebuild redundante antes do
+  primeiro passo, isoladamente, não reprova o critério 11.
+- **Decisão do proxy examinada:** a linha `Proxy decided` que preserva o
+  bloqueio estrutural de PHY-39/ADR-0004 está incorporada ao critério 9. O teste
+  agora compara os sete campos na mesma ponta, antes de seek; contatos seguem
+  bloqueados ali e todos os campos ficam habilitados no registro zero. A
+  integração de PHY-82 mantém N/T independentes de cinemática e não dá novos
+  passos nem novas sondas por um clique nos chips.
+
+##### ❌ Regressão: leitura inicial perdida por uma edição de visualização durante boot
+
+Reprodução no DOM do App, com o simulador falso e a costura de boot já existentes:
+
+1. Carregar a cena de `setupProbe({ delayedBoot: true })`, que tem a corda
+   `corda`, mantendo a construção do simulador pendente.
+2. Clicar no chip **energia**, sem desligar forças, antes de resolver o boot.
+3. Resolver o boot com sucesso, selecionar a corda no canvas em `(8, 4.5)` e
+   avançar o polling de leitura em 100 ms, sem executar nenhum passo.
+4. A leitura mostra `leitura — cordapassos: 0velocidade: 1,00×sem leitura`.
+   Sem o clique, ou com o mesmo clique depois do boot, ela contém `T` como
+   antes. O teste existente de PHY-82 também exige `T: 0,00 N` em t = 0.
+
+Causa: `toggleFocusGroup` muda a identidade de `docRef.current`
+(`src/App.tsx:883`). Ao concluir o boot, `ensureSim` marca
+`pendingRebuildRef.current = docRef.current !== bootDoc` (`:1316`), mesmo sendo
+uma diferença só de Foco. O efeito classifica a edição como live sem ops e
+atualiza `builtDocRef` (`:1224-1232`), mas não limpa essa pendência. O polling
+usa o flag para descartar a leitura válida em `constraintsRef` (`:1055`). O
+primeiro passo/rebuild pode liberar a leitura, mas uma edição de visualização
+não deve invalidar a leitura de um mundo que já corresponde à mesma física.
+
+Este caminho de boot já estava no código examinado pela revisão anterior
+`906b9ae`; o achado é **uma omissão daquela revisão**, e não um requisito novo
+nem uma regressão introduzida pelas correções de harness da retomada. A revisão
+independente deste passe encontrou a consequência durante a checagem final de
+falhas e inicialização.
+
+Sondagem temporária em `src/App.test.ts`, dentro do describe de vetores iniciais,
+com três casos (sem chip, chip depois do boot, chip durante o boot):
+`npm test -- src/App.test.ts -t 'stage3 probe preserves initial rope readouts'`
+→ **1 failed / 2 passed / 197 skipped**, exit 1. Só o caso durante boot falhou:
+`AssertionError: expected 'leitura — cordapassos: 0velocidade: 1…' to contain 'T'`.
+Antes dessa asserção, forças permaneciam pressionadas e os spies confirmaram
+zero chamadas de `step` e `replaceScene`. O arquivo foi restaurado byte a byte
+em `finally`; `git diff --exit-code -- src/App.test.ts src/App.tsx` passou.
+
+**Restante para o stage 2:** somente esta regressão. Escrever o teste de boot
+pendente na costura de App já aprovada, em commit só de teste e vermelho; corrigir
+a interação entre Foco e a pendência do mundo sem perder as edições físicas
+durante boot. Preservar os controles sem chip/pós-boot, as leituras de vínculos,
+a sonda inicial e os bloqueios existentes. Não limpar indiscriminadamente uma
+pendência estrutural real. Nenhum critério foi reescrito nesta revisão.
+
+##### Validação independente e memória da revisão
+
+- Gate oficial completo fora do sandbox:
+  `npm test && npm run lint && npm run typecheck && npm run build`
+  → **33 arquivos / 1226 testes passed, zero skips**, lint, typecheck e build
+  **exit 0**. Vite: 52 módulos; aviso preexistente do chunk do simulador acima
+  de 500 kB (2136,71 kB). A sondagem acima demonstra uma lacuna dessa suíte verde.
+- A primeira execução no sandbox teve **1198 passed / 28 failed**, todos por
+  conexão com Chromium DevTools. A repetição integral fora dele passou sem
+  omitir testes nem alterar o harness.
+- Repetidas as três mutações documentadas na retomada, sempre em produção e
+  restauradas byte a byte em `finally`:
+
+| Teste | Mutação | Vermelho independente |
+| --- | --- | --- |
+| `PHY-78 hides force layers and spring readouts` | Prop de contatos remove `contacts` com forças desligadas | `missing input for μs — atrito estático` na comparação antes de seek, `App.test.ts:3763`; **1 failed / 196 skipped**, exit 1. |
+| Mesmo teste | Prop de contatos recebe `disabled={structuralLocked || !showForces}` | No registro zero, últimos três valores `true` em vez de `false`, `App.test.ts:3780`; **1 failed / 196 skipped**, exit 1. Na ponta o mutant continua equivalente ao bloqueio estrutural. |
+| `paints N and T at t0 and anchors T` | Escolha da sonda acoplada a `showInitialVelocity` | Depois de desligar cinemática, `expected [ 'm', 'a', 'm', 'b' ] to include 'N'`, `App.test.ts:976`; **1 failed / 196 skipped**, exit 1. |
+
+Produção restaurada: os dois casos acima passaram juntos em **2 passed /
+195 skipped**, exit 0. A revisão anterior e a evidência original por teste,
+incluindo as 22 mutações, permanecem no ticket do commit ancestral alcançável
+`906b9ae` (a referência antiga `0cdd8c0` precede o rebase). As correções e a
+evidência da retomada estão em `fa85eb6`/`23bc640`.
+
+**Chamadores, falhas e interações examinados:** codec em import/load/fallback;
+serialização em autosave/export/duplicação; blankScene/createNewScene;
+chips/editDoc/copyOpenPreset e identidade do preset; routeDocChange/applyLiveOps;
+boot/reset/syncWorld e sonda inicial, incluindo boot pendente e falha de sonda;
+captura/seek/repaint e leitura histórica; escopos global/selecionado e anel de
+força; N/T iniciais e caminho documental da corda; mola/corda frouxa;
+energia/momento do corpo e sistema; campos/bloqueios, troca/reabertura de cenas,
+histórico físico e independência dos tipos do gráfico. Fronteiras examinadas:
+focus ausente, show vazio, hidden vazio/chaves especiais, grupos do sistema
+desligados, cenas vazias/fixas e cursores zero/passado/ponta. Não houve passe
+humano independente, outros navegadores/mobile ou perfil prolongado de desempenho.
+
+**CLEAN-31** permanece como limitação já registrada, fora dos critérios: uma
+edição física desfeita/refeita pode restaurar um Foco anterior. Não foi usada
+como motivo desta reabertura.
+
+Reaberto em `to-implement` na mesma branch, sem merge e sem linha PHY-78 no ledger.
+
+#### Stage 2: boot readout regression (2026-10-04)
+
+Retomada limitada à regressão da última revisão, na costura aprovada de
+DOM/canvas do App com `setupProbe({ delayedBoot: true })`. Não altera critérios,
+campos de edição, histórico físico nem o contrato pendente de CLEAN-31.
+
+Leitura ao redor da mudança, antes do teste vermelho: `ensureSim` atende mount,
+retry, play e step; seu flag de rebuild é consumido pelo polling de vínculos e
+energia e por `syncWorld`, chamado por `runSteps` e pelo loop de reprodução.
+Foram examinados o efeito de `doc`/`bootState`, `routeDocChange`/`applyLiveOps`,
+reset/troca de cena, `refreshInitialProbe`, `toggleFocusGroup` e `editDoc`.
+Fronteiras: mudança só de Foco (live sem ops), nenhuma mudança de documento,
+chip pós-boot, edição estrutural de posição durante boot e chip enquanto essa
+edição física ainda aguarda sincronização. Operações live de física e falhas
+de boot/reset continuam com seus caminhos existentes.
+
+Teste novo parametrizado `PHY-78 preserves initial rope readouts with a focus
+edit %s`: controles sem chip e com chip após boot; regressão com energia
+alternada durante boot, forças ligadas, leitura `T: 0,00 N`, N/T iniciais e
+nenhum passo/rebuild de visualização. O primeiro passo também não deve causar
+um rebuild redundante por essa mudança de Foco.
+
+Teste novo parametrizado `PHY-78 keeps physical boot edits pending when focus
+changes %s`: mover a bola de x = 8 para x = 9 durante boot e alternar energia
+durante/depois do boot. A sonda desenha a geometria atual, a leitura antiga
+fica indisponível até a sincronização, e o primeiro passo aplica exatamente uma
+reconstrução com a posição editada e restaura `T: 9,00 N`.
+
+Vermelho antes de qualquer alteração de produção:
+`npm test -- src/App.test.ts -t 'PHY-78.*boot|PHY-78 preserves initial rope readouts'`
+→ **1 failed / 4 passed / 197 skipped**, exit 1. Só o caso de chip durante boot
+falha em `App.test.ts:1101`: esperado `T: 0,00 N`, recebido
+`leitura — cordapassos: 0velocidade: 1,00×sem leitura`. Os skips são os demais
+casos fora do filtro. Este commit contém somente testes e a memória/Stage do ticket.
+
+Verificação adicional de chamador: `BodyContactsPanel` → `updateContact`
+permite editar `e` durante boot. O classificador existente de live/structural
+não compara `Contact.e`; usá-lo sozinho para limpar a pendência de boot
+perderia esse coeficiente no primeiro passo, uma regressão sobre a base.
+O guard adicional `PHY-78 preserves restitution edits during boot when focus
+changes before and after boot` edita e de 0 para 0,75, alterna chips dos dois
+lados do boot e exige a sincronização física com esse contato intacto.
+Sem expandir o escopo para `routing.ts`, a correção deve excluir somente
+`focus` da comparação entre os documentos imutáveis de boot e corrente.
+
+Mutação temporária de produção: trocar a comparação de identidade por
+`routeDocChange(bootDoc, docRef.current)`, marcando pendência somente para
+`kind === 'structural' || ops.length > 0`. Comando:
+`npm test -- src/App.test.ts -t 'PHY-78 preserves restitution edits during boot'`
+→ **1 failed / 202 skipped**, exit 1, `App.test.ts:1154`: esperado
+`sem leitura` até sincronizar a edição física, recebido `T: 0,00 N` da cena
+antiga. A mutação foi removida antes deste segundo commit só de teste;
+`src/App.tsx` voltou à comparação original, sem diff de produção.
+
+##### Correção e mutate-verify desta regressão
+
+Na conclusão de `ensureSim`, comparar a união das chaves dos documentos
+imutáveis de boot e corrente, ignorando somente `focus`. Um chip preserva as
+referências de todos os campos físicos e não cria pendência; patches físicos
+continuam marcando o mundo como pendente, inclusive restituição de contatos.
+Nenhuma alteração em roteamento, polling, sonda inicial ou setters de chips.
+
+Commits só de teste anteriores à produção: `94818aa` (regressão e controles)
+e `6446948` (guard de restituição). Mutate-verify na produção corrigida:
+cada mutação foi removida em `finally`, com restauração e comparação dos bytes
+originais de `App.tsx`. As execuções do Vitest abaixo terminaram com exit 1.
+
+| Caso novo na costura DOM/canvas | Mutação em produção | Vermelho observado |
+| --- | --- | --- |
+| Leitura inicial com chip `during boot` | Restaurar `pendingRebuildRef.current = docRef.current !== bootDoc` no boot | `App.test.ts:1101`: esperado `T: 0,00 N`, recebido `leitura — cordapassos: 0velocidade: 1,00×sem leitura`. **1 failed / 2 passed / 200 skipped** no filtro `PHY-78 preserves initial rope readouts`. |
+| Controles de leitura inicial `none`, `during boot` e `after boot` | Polling de vínculo sempre publica `setConstraintReadout(null)` | Os três casos falham em `App.test.ts:1101`, esperado `T: 0,00 N`, recebido `sem leitura`. **3 failed / 200 skipped**, mesmo filtro. |
+| Edição de posição pendente com chip `during boot` e `after boot` | Ramo estrutural do efeito de doc escreve `pendingRebuildRef.current = false` | Os dois casos falham em `App.test.ts:1127`: esperado `sem leitura` até sincronizar o mundo, recebido `T: 0,00 N` da cena antiga. **2 failed / 201 skipped** no filtro `PHY-78 keeps physical boot edits pending`. |
+| Edição de restituição durante boot, com chips antes/depois do boot | Substituir a comparação por classificação `structural || ops.length > 0` | `App.test.ts:1154`: esperado `sem leitura`, recebido `T: 0,00 N` da cena antiga. **1 failed / 202 skipped** no filtro `PHY-78 preserves restitution edits during boot`. |
+
+Produção restaurada, verde:
+`npm test -- src/App.test.ts -t 'PHY-78.*boot|PHY-78 preserves initial rope readouts'`
+→ **6 passed / 197 skipped**, exit 0. Cada um dos seis casos novos tem vermelho
+por mutação registrado acima; todos os skips são casos fora dos filtros.
+
+##### Stage 2 handoff da regressão de boot (2026-10-04)
+
+- Regressão da última revisão corrigida: alternar somente Foco durante boot
+  mantém a leitura inicial da corda, N/T da sonda e o mundo sem rebuild
+  redundante. Edições físicas durante boot seguem pendentes e são aplicadas
+  no primeiro passo, incluindo posição e restituição de contatos.
+- Os seis casos novos de App estão nos commits só de teste `94818aa` e
+  `6446948`; a correção de produção não modifica testes. Evidência vermelha
+  antes da correção e mutate-verify por caso estão registrados acima.
+- Verificação focada completa, fora do sandbox para permitir Chromium:
+  `npm test -- src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts src/App.test.ts`
+  → **4 arquivos / 445 testes passed, zero skips**, exit 0.
+- Gate oficial completo, também fora do sandbox:
+  `npm test && npm run lint && npm run typecheck && npm run build`
+  → **33 arquivos / 1232 testes passed, zero skips**, lint, typecheck e build
+  **exit 0**. Vite: 52 módulos; aviso preexistente do chunk do simulador acima
+  de 500 kB (2136,71 kB). Nenhuma validação pendente.
+- Diff da retomada revisado contra `95c7332`: somente `App.test.ts`,
+  `App.tsx` (comparação ao concluir boot) e este ticket, todos dentro da
+  costura/Primary files aprovados. `git diff --check` verde, produção
+  restaurada após cada mutação e nenhum artefato de build no diff.
+- CLEAN-31 continua sendo a limitação já registrada de Foco no histórico
+  físico; esta correção não altera undo/redo. Revisão independente, outros
+  navegadores/mobile e perfil prolongado de desempenho ficam fora deste passe.
+
+Etapa 2 encerrada em `to-review`; branch preservada para o stage 3, sem merge.

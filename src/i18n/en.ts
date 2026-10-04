@@ -1,4 +1,9 @@
 export const en = {
+  'focus.show': 'show:',
+  'focus.forces': 'forces',
+  'focus.kinematics': 'kinematics',
+  'focus.energy': 'energy',
+  'focus.momentum': 'momentum',
   'graph.toggle': 'graph',
   'graph.kindLabel': 'Graph quantity',
   'graph.kind.position': 'position',
