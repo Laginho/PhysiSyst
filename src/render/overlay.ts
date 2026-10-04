@@ -35,7 +35,7 @@ export function vectorArrowLengthPx(magnitude: number): number {
   return Math.min(ARROW_MAX_PX, Math.max(ARROW_MIN_PX, ARROW_SCALE_PX * Math.sqrt(magnitude)))
 }
 
-export type ArrowKind = 'weight' | 'applied' | 'normal' | 'initial-velocity' | 'tension' | 'elastic'
+export type ArrowKind = 'weight' | 'applied' | 'normal' | 'initial-velocity' | 'velocity' | 'tension' | 'elastic'
 
 export interface OverlayArrow {
   from: { x: number; y: number }
@@ -78,20 +78,22 @@ export function appliedArrows(view: Scene, pixelsPerMeter: number): OverlayArrow
   return out
 }
 
-export function initialVelocityArrows(view: Scene, pixelsPerMeter: number): OverlayArrow[] {
+export function velocityArrows(view: Scene, states: ReadonlyMap<string, BodyState> | null, pixelsPerMeter: number): OverlayArrow[] {
   const out: OverlayArrow[] = []
   for (const body of view.bodies) {
     if (body.fixed) continue
-    const vx = body.vx ?? 0
-    const vy = body.vy ?? 0
+    const state = states?.get(body.id)
+    if (states !== null && !state) continue
+    const vx = state ? state.linvel.x : body.vx ?? 0
+    const vy = state ? state.linvel.y : body.vy ?? 0
     const magnitude = Math.hypot(vx, vy)
     if (magnitude === 0) continue
     const lenM = vectorArrowLengthPx(magnitude) / pixelsPerMeter
     out.push({
-      from: { x: body.position.x, y: body.position.y },
+      from: { ...(state?.position ?? body.position) },
       vec: { x: (lenM * vx) / magnitude, y: (lenM * vy) / magnitude },
-      kind: 'initial-velocity',
-      key: `initial-velocity:${body.id}`,
+      kind: states === null ? 'initial-velocity' : 'velocity',
+      key: `${states === null ? 'initial-velocity' : 'velocity'}:${body.id}`,
     })
   }
   return out
@@ -229,6 +231,7 @@ const SYMBOL_KEY: Record<ArrowKind, I18nKey> = {
   tension: 'vector.tension',
   elastic: 'vector.elastic',
   'initial-velocity': 'vector.initialVelocity',
+  velocity: 'vector.velocity',
 }
 
 /** The n-th of a symbol: `,n` after a subscript already open (`F_el,2`), else `_n` (`T_2`). */

@@ -206,6 +206,7 @@ export const en = {
   'vector.tension': 'T',
   'vector.elastic': 'F_s',
   'vector.initialVelocity': 'v₀',
+  'vector.velocity': 'v',
   'lang.label': 'language',
   'lang.pt-BR': 'português',
   'lang.en': 'english',

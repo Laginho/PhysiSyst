@@ -79,7 +79,7 @@ import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import {
   appliedArrows,
   elasticArrows,
-  initialVelocityArrows,
+  velocityArrows,
   normalArrows,
   numberedSymbol,
   tensionArrows,
@@ -258,7 +258,7 @@ function paint(
     : ropeReadings
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
     { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
-    { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
+    { arrows: showInitialVelocity ? velocityArrows(view, null, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
     { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
     { arrows: showForces ? normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []) : [], style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
     { arrows: showForces ? tensionArrows(view, tensionReadings, ppm) : [], style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
@@ -272,7 +272,7 @@ function paint(
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
       if (showInitialVelocity) {
-        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+        for (const a of velocityArrows(selView, null, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
       }
       for (const a of showForces ? appliedArrows(selView, ppm) : []) {
         drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
