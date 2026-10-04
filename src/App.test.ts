@@ -846,7 +846,7 @@ describe('initial force vectors (PHY-82)', () => {
   it('keeps painting without N, T or simError when the optional probe throws', async () => {
     const p = await setupProbe({ throws: true })
     expect(p.probeInitial).toHaveBeenCalledTimes(1)
-    expect(p.labels).toContain('P')
+    expect(p.labels).toContain('m')
     expect(p.labels).not.toContain('N')
     expect(p.labels).not.toContain('T')
     expect(loadingOverlay(p.host)).toBeUndefined()
