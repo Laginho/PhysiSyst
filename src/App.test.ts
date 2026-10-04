@@ -310,6 +310,7 @@ describe('scene focus chips (PHY-78)', () => {
   })
 
   it('PHY-79 opens elastic collisions from the gallery with kinematics and momentum readouts', async () => {
+    vi.useFakeTimers()
     const host = renderApp()
     await settleSimImport()
     const gallery = panel(host, t('gallery.title'))!
@@ -318,6 +319,7 @@ describe('scene focus chips (PHY-78)', () => {
     )
     expect(card).toBeDefined()
     act(() => card!.click())
+    act(() => { vi.advanceTimersByTime(100) })
     expect(sceneSelect(host).value).toBe('preset:collision-elastic')
     expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
       focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
