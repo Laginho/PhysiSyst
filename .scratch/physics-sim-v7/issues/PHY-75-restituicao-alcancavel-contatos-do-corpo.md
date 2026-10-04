@@ -1,5 +1,5 @@
 # PHY-75: Restituição alcançável e contatos no painel do corpo
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -109,3 +109,72 @@ Green com harness corrigido e produção restaurada: `npm test -- src/App.test.t
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: retrofit dos presets com o par com o chão (μ = 0, e = 0), comportamento igual; `ContactsPanel` sai; seção "contatos de m_a" no painel do corpo, par alcançável dos dois lados; parceiro em `<select>` (dinâmicos pelo rótulo de massa, fixos como "fixo: retângulo 1"); sem `e` padrão por cena.
 - Planner: rótulo fixo sempre numerado, `n` entre os fixos da mesma forma na ordem do documento, forma pelas strings da paleta; `<select>` só com parceiros ainda não pareados. O "≈" na aceleração analítica de queda livre e projétil antes do primeiro passo é consequência de `isHeld` e fica.
 - 2026-10-04 O "≈" antes do primeiro passo fica neste ticket; a correção é débito em PHY-86.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Primeira revisão de `4edff74444d08c0d527c3b6eba3d864bcaec6a18...763a3eb`, base da sessão `sweatshop/2026-10-04-1243`. Standards e Spec executados em sub-agentes independentes; gate e mutações repetidos pelo revisor principal. Os nove critérios estão atendidos. Nenhuma alteração permanente de produção ou teste em stage 3.
+
+##### Standards
+
+- Um achado de metadados não bloqueante: a seção Commits and closing de `ticket-flow` pede motivo e ID no corpo do commit. `7ebb83e`, `e3a7a05`, `920aa9f`, `b96de57` e `763a3eb` explicam o motivo, mas citam PHY-75 apenas no assunto. Histórico preservado; isto não quebra Primary files, test-first nem comportamento existente.
+- Zero violações de código e zero smells acionáveis. Mudança local, com reutilização de `massLabels` e das operações do documento; identidade ordenada do par, vocabulário do domínio, acessibilidade do seletor e ADRs 0002/0003/0005 preservados.
+- Separação conferida nos stats de cada commit: `7ebb83e`, `920aa9f` e `b96de57` alteram testes/ticket; `e3a7a05` e `763a3eb` alteram produção/ticket, sem tocar testes. Diff dentro dos Primary files e do próprio ticket. Não há linhas `Proxy decided` neste ticket.
+
+##### Spec
+
+Zero achados contra o contrato escrito, sem requisito parcial ou ampliação de escopo.
+
+| Critério | Parecer |
+| --- | --- |
+| 1 | ✅ Pares exatos com chão nos quatro presets, par existente das esferas preservado e `collectWarnings` vazio. |
+| 2 | ✅ Simulador real compara posição, rotação, velocidades e todos os corpos em cada um dos 120 passos, tolerância 1e-9 e avisos vazios. |
+| 3 | ✅ `updateContact` seguido de `createSimulator` produz o quique exigido em até 2 s; o teste falha ao retirar o par. |
+| 4 | ✅ Painel global removido e nenhum campo de coeficiente sem corpo selecionado. |
+| 5 | ✅ Pares pelos dois endpoints, rótulos dos parceiros, três campos numéricos e ✕ abaixo de `ForcesPanel`. |
+| 6 | ✅ Edição e remoção pelo endpoint b preservam a/b, coeficientes não editados e os demais pares; valores sem clamp. |
+| 7 | ✅ Seletor exclui o próprio corpo e parceiros pareados, desabilita quando esgotado e adiciona o par ordenado com defaults. |
+| 8 | ✅ Fieldset inteiro segue `structuralLocked`; passo bloqueia, reset libera. |
+| 9 | ✅ Chaves novas nos dois idiomas, `contacts.title` removida e paridade dos catálogos verde. |
+
+Consumidores e interações examinados: abertura, cópia e persistência de presets; autosave/pagehide e recarga da cena escolhida; seleção, mudança/remoção de parceiros, cenas vazias, corpo único e parceiros esgotados; snap/drop, duplicação de par e remoção de dependentes; identidade ordenada de add/update/remove; `massLabels`, fixos por forma/ordem e troca de idioma; transporte, cursor, bloqueio e reset; solves Average/Multiply e marcador inicial ≈ aceito pelo contrato. Caminhos de falha lidos: recusas de `addContact`, documento inválido na persistência, boot/rebuild e guards de edição. Não houve passe visual manual específico do novo painel, repetição em outros navegadores ou novo experimento de restituição positiva com cordas/molas; a suíte geral cobre as costuras existentes.
+
+Achado anterior à base: `src/playback/routing.ts` compara μs/μk, mas omite e. Probe de produção com e: 0 → 1 retorna `{ kind: 'live', ops: [] }`. Pela leitura do App, uma edição só de e após o boot pode manter o fator antigo no mundo até Reiniciar ou reconstruir a cena. O arquivo não muda neste diff; o critério 3 especifica construção direta do simulador e o 6 especifica gravação no documento. A pendência de integração foi registrada sob Comments de PHY-68, para o planner tratar em ticket próprio.
+
+##### Prova vermelho/verde
+
+As 18 mutações registradas foram repetidas isoladamente. Cada arquivo foi restaurado byte a byte em `finally`; `git diff --exit-code -- src/App.tsx src/presets/index.ts` passou depois da execução. Os 17 mutantes distinguíveis falharam pelos motivos registrados em stage 2; o equivalente permaneceu verde pelo mesmo motivo já documentado.
+
+| Mutação repetida | Resultado focal | Evidência vermelha |
+| --- | --- | --- |
+| Reintroduzir fieldset global | 2 failed / 155 skipped (157) | `expected <fieldset>… to be undefined`, nos casos populated e empty. |
+| Listar apenas endpoint a | 1 failed / 156 skipped (157) | Recebido `[ 'm_b' ]`, esperado `[ 'fixo: retângulo 1', 'm_b' ]`. |
+| Inverter a/b em updateContact | 2 failed / 155 skipped (157) | Documento divergente nas edições de e e dos coeficientes de atrito. |
+| Inverter a/b em removeContact | 1 failed / 156 skipped (157) | O par não é removido do documento salvo. |
+| Oferecer parceiros já pareados | 1 failed / 156 skipped (157) | Seletor deveria ter 0 opções, recebeu 2. |
+| Ignorar parceiro escolhido | 1 failed / 156 skipped (157) | Criado bola ↔ chao, esperado bola ↔ bloco. |
+| Numerar todo fixo como 1 | 1 failed / 156 skipped (157) | Parede aparece como retângulo 1 em vez de 2. |
+| Habilitar seletor/botão sem parceiros | 1 failed / 156 skipped (157) | `expected false to be true` no disabled do corpo único. |
+| Ignorar structuralLocked no fieldset | 2 failed / 155 skipped (157) | `expected false to be true` no teste novo e no teste estrutural adaptado. |
+| Usar id bruto do fixo | 1 failed / 156 skipped (157) | `contacts of m_achao…` não contém `fixed: rectangle 1`. |
+| Omitir addContact no pointer-up | 4 failed / 1 passed / 152 skipped (157) | `expected 1 to be 2`; falta `caixa ↔ chao` em re-snap, afastamento e lixo. |
+| Declarar contato no pointer-move | 1 failed / 156 skipped (157) | Par extra `caixa ↔ chao` no teste de contato durante arrasto. |
+| Inicialização lê cena-1 | 2 failed / 155 skipped (157) | Inspetores marca-cena-3 e marca-cena-2 ausentes. |
+| Galeria abre DEMO_SCENE | 1 failed / 156 skipped (157) | Inspetor bloco-1 ausente ao copiar Atwood. |
+| Retirar as quatro declarações de chão | 4 failed / 35 skipped (39) | As quatro listas de contatos divergem do contrato. |
+| Retirar apenas o par da queda livre | 1 failed / 38 skipped (39) | Quique 0, esperado pelo menos 9.025222778320312. |
+| Trocar e do chão de 0 para 1 | 4 failed / 35 skipped (39) | Erros de trajetória nos passos 70/74/82/81: 11.28152847290039, 5.935490608215332, 0.16350001096725464 e 5.960464477539063e-8, todos > 1e-9. |
+| Mutar switchToScene no teste de cópia de preset | 1 passed / 156 skipped (157) | Equivalente: cópia usa copyOpenPreset, sem chamar switchToScene. |
+
+Runner temporário: `%TEMP%/phy75-review-runner-2c4d75965fed4205afdb83e368b44198/verify-mutations.mjs`; relatórios por mutante e `summary.json`: `%TEMP%/phy75-review-mutations-qlQRhr/`. Evidência essencial preservada na tabela acima.
+
+##### Gate e integração
+
+- Gate independente antes da revisão: **33 arquivos passed (33), 1119 passed (1119), sem skips**; lint/typecheck/build exit 0. A tentativa no sandbox teve 17 falhas de conexão com Chromium e 1102 aprovados; o gate fora do sandbox resolveu as conexões sem mudança de código.
+- Rebase sobre a sessão retornou up to date. Gate completo repetido após restaurar todas as mutações: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; **33 arquivos passed (33), 1119 passed (1119), sem skips**; lint/typecheck/build exit 0, build com 52 módulos. Chunk sim continua com 2136,50 kB, observação já existente no build.
+- Arquivos de produção: presets, App e catálogos; testes: presets e App. Simulador, editor/doc, render/draw e routing permanecem intactos. Diff revisado e `git diff --check` limpo; nenhum segredo, dependência ou artefato gerado incluído.
+- Integrado sem squash em `sweatshop/2026-10-04-1243`, merge `5f858c9`. `Stage: done`, este parecer e ledger registrados juntos no fechamento local. A sessão continua responsável pela publicação da PR.
+- Limitações conhecidas: marcador ≈ inicial em PHY-86 e pendência pré-existente de aplicar edição de e ao mundo, anotada em PHY-68. Nenhuma altera os nove pareceres de aceitação acima.
+
+Totais por eixo: Standards — 1 observação de metadados, 0 achados bloqueantes e 0 smells acionáveis; Spec — 0 achados, critérios 1–9 aprovados.

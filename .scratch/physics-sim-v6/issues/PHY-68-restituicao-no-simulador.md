@@ -147,3 +147,10 @@ Re-revisão de R1 e do delta `5cd4de3..c911516`, com o diff completo contra a ba
 - Limitação prevista: fallback é aproximado e pode alterar pares declarados com zero; pares não declarados entre dois fatores positivos podem herdar restituição, conforme ADR-0005.
 
 Totais por eixo: Standards — 1 achado documental corrigido, 2 observações de metadados não bloqueantes, 0 smells acionáveis; Spec — 0 achados atuais, R1 resolvido.
+
+#### Achado de integração — edição de e (2026-10-04, review de PHY-75)
+
+- `src/playback/routing.ts` compara a identidade do par e μs/μk, mas não e. Probe somente de leitura, chamando `routeDocChange` de produção com uma cena de chão/bola cujo único delta é e: 0 → 1, retornou `{"kind":"live","ops":[]}`.
+- Pela leitura de `editDoc`, do efeito de documento e de `syncWorld` no App, após boot e antes do primeiro passo na ponta com cursor null, essa rota atualiza o documento sem reconstruir ou alterar os fatores do mundo. Reiniciar/reabrir a cena ou outra reconstrução aplica o e salvo. A inferência de UI não foi repetida manualmente no navegador nesta revisão.
+- O código de routing é idêntico na base `4edff74` e na PHY-75 `763a3eb`. A PHY-75 passou seus nove critérios: o quique é contratado por `updateContact → createSimulator` direto, e o DOM contrata salvar o valor no documento. A integração da edição com o mundo existente permanece uma pendência do mecanismo de restituição.
+- Encaminhamento ao planner: transformar esta nota em ticket próprio para a classificação da edição de e e sua prova pelo App. Este registro fica em Comments; o contrato e a resolução anterior de PHY-68 permanecem como publicados.
