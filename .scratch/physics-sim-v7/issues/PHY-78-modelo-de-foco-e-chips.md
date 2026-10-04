@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -401,3 +401,89 @@ por mutação registrado acima; todos os skips são casos fora dos filtros.
   navegadores/mobile e perfil prolongado de desempenho ficam fora deste passe.
 
 Etapa 2 encerrada em `to-review`; branch preservada para o stage 3, sem merge.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+- **Standards:** 0 violações documentadas e 0 smells acionáveis. Revisão
+  independente do eixo de padrões, diff completo da retomada
+  `95c7332...ebf2f64` e separação de commits examinados: `94818aa` e `6446948`
+  contêm testes e memória do ticket; `ebf2f64` contém a correção de produção e
+  memória do ticket, sem alterar testes. A mudança respeita os Primary files.
+- **Spec:** 0 achados. Revisão independente do eixo de especificação confirma
+  a correção do único ❌ da última revisão: um chip durante boot preserva a
+  leitura inicial da corda e N/T, sem criar reconstrução redundante; edições
+  físicas continuam pendentes até o primeiro passo, inclusive `contacts.e`.
+  Comparar as referências dos campos imutáveis e ignorar somente `focus`
+  atende ao recorte aprovado, sem depender de lacunas do classificador live.
+- **Decisão do proxy examinada:** a linha `Proxy decided` que preserva o
+  bloqueio estrutural de PHY-39/ADR-0004 continua incorporada ao critério 9 e
+  coberta pela comparação dos mesmos sete campos antes/depois do chip na
+  ponta, seguida da habilitação no registro zero. Nenhuma decisão nova.
+
+Os critérios 1–15 já aprovados na revisão anterior foram conferidos contra a
+retomada e a suíte completa atual; registro final de aceitação:
+
+| Critério | Veredito | Evidência |
+| --- | --- | --- |
+| 1 | ✅ | Canonização de show, hidden e ausência de focus. |
+| 2 | ✅ | Grupos/tipos/chaves inválidos rejeitados com erro de focus. |
+| 3 | ✅ | Bytes v6 preservados e focus após constraints no round-trip. |
+| 4 | ✅ | Padrão de blankScene, criação/carga e bytes canônicos. |
+| 5 | ✅ | Diferença só em focus roteada live sem ops. |
+| 6 | ✅ | Primeira fileira, quatro chips acessíveis e padrões demo/blank. |
+| 7 | ✅ | Leituras e detalhes cinemáticos respondem ao chip. |
+| 8 | ✅ | Energia/momento independentes no corpo e sistema. |
+| 9 | ✅ | Camadas/leitura de forças e campos/bloqueios no instante aprovado. |
+| 10 | ✅ | v₀ filtrado nos escopos; campos vx/vy preservados. |
+| 11 | ✅ | Edição de visualização preserva histórico/playback e cursor passado; boot corrigido. |
+| 12 | ✅ | Preset conserva identidade/índice e reabertura restaura seu padrão. |
+| 13 | ✅ | Autosave da cena do usuário preserva focus. |
+| 14 | ✅ | Escopo global marcado ao montar. |
+| 15 | ✅ | Traduções pt-BR/en e paridade. |
+
+##### Prova independente red-green e gate
+
+Repetidas duas mutações temporárias na comparação de boot em `src/App.tsx`,
+com restauração byte a byte em `finally` depois de cada execução:
+
+| Mutação | Teste e vermelho independente |
+| --- | --- |
+| Restaurar `pendingRebuildRef.current = docRef.current !== bootDoc` | `PHY-78 preserves initial rope readouts`, caso `during boot`: `App.test.ts:1101`, esperado `T: 0,00 N`, recebido `leitura — cordapassos: 0velocidade: 1,00×sem leitura`; **1 failed / 2 passed / 200 skipped**, exit 1. |
+| Marcar pendência somente para `routeDocChange` structural ou com ops | `PHY-78 preserves restitution edits during boot`: `App.test.ts:1154`, esperado `sem leitura`, recebido `leitura — cordapassos: 0velocidade: 1,00×T: 0,00 N`; **1 failed / 202 skipped**, exit 1. |
+
+Produção restaurada: `npm test -- src/App.test.ts -t 'PHY-78.*boot|PHY-78 preserves initial rope readouts'`
+→ **6 passed / 197 skipped**, exit 0. Os skips são casos fora dos filtros.
+`git diff --exit-code -- src/App.tsx src/App.test.ts` confirmou a restauração.
+A evidência de mutação por cada um dos seis casos novos está registrada no
+handoff acima; testes precedem a produção nos commits `94818aa`/`6446948`.
+
+Gate oficial independente, completo fora do sandbox:
+`npm test && npm run lint && npm run typecheck && npm run build`
+→ **33 arquivos / 1232 testes passed, zero skips**, lint, typecheck e build
+**exit 0**. A primeira execução no sandbox teve **1204 passed / 28 failed**,
+todos por conexão/desconexão do Chromium DevTools; a repetição integral fora
+dele passou sem alterar o harness ou omitir testes. Vite: 52 módulos; aviso
+preexistente do chunk do simulador acima de 500 kB (2136,71 kB).
+
+**Chamadores, falhas e interações da retomada examinados:** ensureSim em
+mount/play/step/retry e boot compartilhado; conclusão/falha de boot;
+toggleFocusGroup/editDoc e patches imutáveis de corpo, força, contatos,
+constantes, vínculos e polias; efeito de doc/bootState, builtDocRef e
+pendingRebuildRef; polling de vínculos/energia; syncWorld/runSteps;
+reset/troca de cena e sonda inicial. Fronteiras: sem chip, chip durante/depois
+do boot, edição de posição pendente nos dois instantes e restituição com
+chips antes/depois do boot. Os demais caminhos e fronteiras estão registrados
+na revisão anterior. Não examinados outros navegadores/mobile ou perfil
+prolongado de desempenho.
+
+**Limitação preservada:** CLEAN-31 registra que undo/redo de edição física
+pode restaurar um Foco anterior; permanece em triagem fora destes critérios.
+
+Rebase sobre `sweatshop/2026-10-04-1243` confirmou a base atual `b3aca92`, sem
+reexecutar commits. Merge local sem squash `5252fcf`; a árvore mergeada é
+idêntica à implementação validada `ebf2f64` (`git diff --exit-code ebf2f64 HEAD`
+verde). Diff final sem artefatos gerados ou mudanças de produção da revisão;
+`git diff --check` verde. `Stage: done` e a linha PHY-78 no ledger são gravados
+no mesmo commit de encerramento da sessão.
