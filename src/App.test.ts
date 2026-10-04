@@ -236,8 +236,9 @@ describe('scene focus chips (PHY-78)', () => {
     ['pt-BR', ['mostrar:', 'forças', 'cinemática', 'energia', 'momento']],
     ['en', ['show:', 'forces', 'kinematics', 'energy', 'momentum']],
   ] as const)('localizes the focus row in %s', (lang, labels) => {
-    window.localStorage.setItem('physics-sim:lang', lang)
     const host = renderApp()
+    const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, lang))
     const row = focusChip(host, 'forces').parentElement!
     expect(row.textContent).toContain(labels[0])
     expect([...row.querySelectorAll('button')].map(b => b.textContent)).toEqual(labels.slice(1))

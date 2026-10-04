@@ -80,6 +80,8 @@ Ficam sempre: "passos", "velocidade" (da reprodução), a legenda da leitura, "s
 
 ## Comments
 
+- Stage 2, ajuste de harness: o teste de tradução alterava o storage depois de o módulo i18n já ter hidratado seu idioma. Agora troca o idioma pelo `<select>` público do App; não exige comportamento novo. Verificado vermelho novamente com `focus.show` em inglês mutado para `mutant` (esperado `show:`, recebido `mutantforceskinematicsenergymomentum`).
+
 - 2026-10-04 Stage 2: costuras confirmadas pelo contrato: codec público, persistência pública, `routeDocChange` e App no DOM/canvas com simulador falso. Chamadores examinados antes dos testes: `parse` em `loadScene`, `loadSceneOrBlank` e `classifyImport`; `serialize` no autosave, exportação, comparação de payload e cópia de cenas; `blankScene` em criação e fallback de carga; `paint` no `repaint`, inclusive registro histórico. Fronteiras a preservar: `focus` ausente, `show: []`, `hidden` vazio/chaves arbitrárias, ambos energia/momento desligados, cenas sem corpos, cursor zero/passado/ponta, preset e campos de edição.
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: `focus` opcional na `Scene`, ausente = tudo ligado, cena em branco com forças + energia + momento; fileira "mostrar: forças · cinemática · energia · momento" no topo do painel direito; forças = setas de força + leituras de força, cinemática = setas v/a + leituras cinemáticas, energia e momento só painel; setas independentes; "mostrar todos os vetores" vira escopo e nasce ligado; grupos valem para leitura do corpo e sistema, edição nunca filtrada; chips fora do undo e sem reset, salvos em cenas do usuário e só da sessão em presets; chips não filtram tipos do gráfico.
