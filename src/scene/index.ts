@@ -22,7 +22,7 @@
 export { collectWarnings, parse, serialize, SceneParseError } from './codec'
 export { bodyPointToWorld, constraintTouchesBody, currentPath, localVertices, ropePath, scenePath, triangleHeight, wrapAngle } from './ropePath'
 export type { PathPulley, RopeArc, RopePath, RopeSegment } from './ropePath'
-export { SCENE_VERSION } from './types'
+export { FOCUS_GROUPS, SCENE_VERSION } from './types'
 export type {
   AppliedForce,
   Body,
@@ -30,6 +30,8 @@ export type {
   Constraint,
   ConstraintEnd,
   Contact,
+  Focus,
+  FocusGroup,
   Geometry,
   Pulley,
   RectangleGeometry,
