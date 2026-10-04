@@ -100,6 +100,7 @@ Quem decidiu: **Bruno** (o humano, no grilling de 2026-10-04), **planner** (cons
 ## Fora de escopo
 
 - Leitura de T da corda em t = 0 (a sonda do PHY-82 alimenta só as setas; débito em PHY-85).
+- "≈" na aceleração analítica de queda livre e projétil antes do primeiro passo, causado pelo par com o chão do PHY-75 (débito em PHY-86).
 - Snap de orientação para pernas de corda sobre polia; snap de grade.
 - `e` padrão por cena; restituição por corpo (material).
 - Chips filtrando os tipos do gráfico.
