@@ -71,7 +71,7 @@ export interface Simulator {
   readContacts(): ContactPoint[]
   /** One entry per document constraint, in document order (PHY-23). */
   readConstraints(): ConstraintState[]
-  /** Read initial forces after one disposable step, without advancing the live world. */
+  /** Read contacts and constraints after one disposable step; invalid builds return empty readings. The live world is untouched. */
   probeInitial(scene: Scene): InitialProbe
   /** One entry per pulley with mass, in document order. */
   readPulleys(): PulleyState[]

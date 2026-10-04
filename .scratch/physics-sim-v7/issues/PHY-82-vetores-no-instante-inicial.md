@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -81,3 +81,11 @@ Cada linha corresponde a um teste novo de `describe('initial force vectors (PHY-
 - Validação focada completa inicial: **192 passed | 2 failed (194)**. Os dois erros são testes existentes do Chromium (`PHY-44`), com `failed to connect to Chromium DevTools` no sandbox; repetir fora dele, sem alterar o harness.
 - Regressão encontrada antes do commit do App: chamar `repaint` diretamente na resolução assíncrona usa o tamanho capturado no início do boot. Novo teste no mesmo seam DOM/canvas: boot pendente, resize 900 → 600 px, resolver boot; vermelho **1 failed | 177 skipped (178)**, `expected [270, 540] to deeply equal [180, 360]`. A pintura deve acompanhar o render que observa `bootState: ready`, usando a geometria atual.
 - Validação focada fora do sandbox: **195 passed (195), 2 arquivos**, incluindo Chromium. Primeiro gate completo: **1185 passed (1185), 33 arquivos**, seguido de uma falha de lint no parâmetro não usado `_scene` do falso. Correção só de tipagem do harness: `vi.fn<(scene: Scene) => InitialProbe>(() => …)` mantém os argumentos observáveis sem declarar um argumento ocioso. Vermelho reconfirmado com a sonda no documento antigo: **1 failed | 177 skipped (178)** (`expected vi.fn() to be called 1 times, but got 2 times`); após restaurar, **9 passed | 169 skipped (178)** e lint verde.
+
+#### Handoff stage 2 (2026-10-04)
+
+- Critérios 1–9 implementados. `probeInitial` constrói outro `RapierSimulator`, executa um passo, lê contatos/vínculos e libera seu mundo no `finally`; falha de construção retorna leituras vazias. Nenhum campo do mundo vivo é substituído pela sonda.
+- O App guarda a sonda separada das leituras/gravação. Atualiza no boot, reset/transição de cena e mudança estrutural em t = 0; compara a estrutura com o documento da última sonda para não sondar novamente por g, seleção ou repaint enquanto o rebuild vivo ainda está pendente. No instante 0, T descarta o caminho da sonda. O desenho da corda segue o documento, e F_el e painel T continuam usando as leituras vivas. Depois do primeiro passo e em registros posteriores, N/T vêm das leituras gravadas.
+- A pintura ao terminar o boot passa pelo doc effect que observa `bootState`, usando o tamanho atual do canvas. **14 testes novos**: 5 na API real e 9 no App. Testes vermelhos/correções de harness ficaram em commits próprios; commits de produção não alteram testes.
+- Gate final fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1185 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). O build emite o aviso de chunk acima de 500 kB no bundle do simulador; sem falha de build. Nenhuma validação pendente.
+- Diff final restrito aos cinco Primary files e ao próprio ticket; sem alterações em `syncWorld`, painel T, solver existente ou artefatos gerados. Stage 2 encerrado em `to-review`; sem review ou merge nesta sessão.
