@@ -1,5 +1,5 @@
 # PHY-80: Setas de v e a ao vivo
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -56,3 +56,27 @@ Hoje o canvas desenha v₀ só antes do primeiro passo e nunca desenha a acelera
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: depende de D1; v ao vivo usa o verde de v₀ e a substitui depois do primeiro passo; a ganha uma cor nova escolhida pelo implementador e lê a aceleração gravada, sem saída nova do motor; mesma regra 20·√módulo, mesmo clamp e mesmo escopo das setas de força.
 - Planner: `velocityArrows(view, states, ppm)` generaliza `initialVelocityArrows`; `accelerationArrows` recebe um mapa pronto para evitar import circular; `VECTOR_COLORS` em `overlay.ts` torna a distinção da cor testável.
+
+#### Stage 2 mutation evidence (2026-10-04)
+
+The new tests observe the real overlay producers and `drawArrow`; only the simulator, time and canvas platform are faked. Every temporary production mutation was restored before validation.
+
+| New App test | Production mutation | Observed red output |
+| --- | --- | --- |
+| `PHY-80 replaces launch velocity with live velocity after stepping and restores it at record zero` | In the global velocity layer, replace `velocityArrows(view, states, ppm)` with `velocityArrows(view, null, ppm)`. | `AssertionError: expected [ 'v₀' ] to deeply equal [ 'v' ]`; **1 failed, 208 skipped**. |
+| `PHY-80 paints analytic acceleration at initial time and restores it when seeking to zero` | Build the acceleration map using `getAcceleration(initialTracker(), ...)` instead of the displayed `accelRef.current`. | After two steps, `AssertionError: expected 360 to be 300`; **1 failed, 208 skipped**. |
+| `PHY-80 paints acceleration from the displayed recording instead of the live tip` | Build the acceleration map using `liveFrameRef.current.acceleration` instead of `accelRef.current`. | At record 1, expected arrow-tip x `474.6`, received `485.24101615137755`; **1 failed, 208 skipped**. |
+| `PHY-80 composes initial kinematic vectors with global scope, selection and focus` | In the selection branch, pass an empty acceleration map. Separately, replace the `showKinematics` focus check with `true`. | Selection mutant: `expected [ 'v₀' ] to deeply equal [ 'v₀', 'a' ]`. Focus mutant: `expected [ 'v₀', 'a' ] to deeply equal []`. Each run: **2 failed, 207 skipped**, including the live case. |
+| `PHY-80 composes live kinematic vectors with global scope, selection and focus` | Same selection and focus mutations, at live time. | Selection mutant: `expected [ 'v' ] to deeply equal [ 'v', 'a' ]`. Focus mutant: `expected [ 'v', 'a' ] to deeply equal []`. Each run: **2 failed, 207 skipped**, including the initial case. |
+
+Direct-producer mutation checks: returning `[]` from `velocityArrows` fails both new velocity cases (**2 failed, 52 skipped**); returning `[]` from `accelerationArrows` fails both geometry cases and both localized-label cases (**4 failed, 55 skipped**); setting acceleration's color to velocity's `#43a047` fails the color contract (**1 failed, 58 skipped**). Initial red commits: `7d78a24` (velocity), `b5e4e5f` (acceleration/labels/colors), `0bae6b8` (App), with the test-only mass-label harness correction in `3dae2b6`.
+
+Implementation: `velocityArrows` uses null states for v₀ and simulated states for v; `accelerationArrows` consumes a prepared map without importing the tracker. The App uses the displayed frame's tracker, preserves scene-wide numbering under selection, and gates all three kinematic arrows on current focus. Acceleration uses red `#c62828`; previous layer colors are retained in `VECTOR_COLORS`. Both language catalogs and the Vector label domain entry are updated.
+
+#### Stage 2 handoff (2026-10-04)
+
+- Branch: `phy/PHY-80-setas-de-v-e-a-ao-vivo`, based on `sweatshop/2026-10-04-1243`. All nine numbered criteria implemented; no tracker or simulator changes. Only Primary files and this ticket changed.
+- Added 12 test cases: seven overlay cases and five App canvas cases. After restoring mutations, overlay **59 passed (59)** and the PHY-80 App filter **5 passed, 204 skipped (209)**.
+- Full gate `npm test && npm run lint && npm run typecheck && npm run build`: **exit 0**. Vitest: **33 files passed (33), 1274 tests passed (1274)**, including Chromium layout checks; ESLint and TypeScript passed; Vite built **52 modules**. Vite warns about chunks over 500 kB (the simulator chunk is 2,136.71 kB); this does not fail the build.
+- `git diff --check` passed. Final diff inspected for scope, regressions, temporary mutations and generated artifacts; `dist` is not tracked. Tests remain in their own commits; production commits do not touch test files.
+- Stage 2 stops at `to-review`; stage 3 reviews and integrates the branch into the session base.
