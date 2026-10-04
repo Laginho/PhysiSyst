@@ -1,5 +1,5 @@
 # PHY-76: Dock sob o canvas e tamanho dos controles
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -162,3 +162,9 @@ Runner, relatórios por mutação, `summary.json`, reprodução independente e `
 - `Stage: to-implement` na branch existente `phy/PHY-76-controls-dock`; sem merge na sessão. Nenhuma linha de ledger havia sido criada para remover. `Review: human` preservado.
 
 Totais por eixo: Standards — 1 observação de metadados, 0 bloqueantes, 0 smells acionáveis; Spec — 1 finding bloqueante (F8, critério 8).
+
+#### Stage 2 — correção de F8 (2026-10-04)
+
+- Retomada na branch existente, limitada ao finding F8 do critério 8. Costura já aprovada: geometria real do App em `withBrowserSession`, com o preset Máquina de Atwood aberto pela galeria, gráfico aberto e medições após exatamente três `requestAnimationFrame` ao aumentar a escala. Nenhum critério ou Primary file alterado.
+- Consumidores examinados antes do teste vermelho: cena inicial e cenas salvas sem hint; abertura/reabertura de presets e criação de cópia; barra de reprodução, ajuda de atalhos e sliders; zoom, sizer e gráfico; os caminhos de fit na montagem, observer e alça. A alteração planejada é local à distribuição do hint, sem modificar essas funções. Fronteiras consideradas: hint ausente/presente em pt-BR/en, largura inversa ao zoom, escala 1/1,6, canvas preferido mínimo e layout empilhado. Testes anteriores preservam essas interações; o novo caso reproduz o consumidor de preset que faltava em 1920 e 1280 px.
+- Prova vermelha antes da produção: `npm test -- src/App.browser.test.ts -t 'scales preset transport height'` — **2 failed, 24 skipped (26)**. Nos dois casos (1920 e 1280 px): `expected 2.2569901315789473 to be less than or equal to 1.76`. O teste abre o preset pela interface, confirma o hint e zoom 1/1,6, e verifica também alturas invariáveis do sizer e do gráfico. Commit exclusivo de testes e registro do ticket, com `Stage: implementing`; a produção continua inalterada.

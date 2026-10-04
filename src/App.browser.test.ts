@@ -80,6 +80,31 @@ describe('canvas dock geometry (PHY-76)', () => {
     })
   }, 30000)
 
+  it.each([1920, 1280])('scales preset transport height by 1.6 without changing the sizer or graph at %ipx', async width => {
+    await withBrowserSession(width, 25000, async session => {
+      await session.reset()
+      await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['scenes.galleryOpen'])})?.click()`)
+      await session.evaluate(`(() => {
+        const card = [...document.querySelectorAll('button')].find(b => b.querySelector('strong')?.textContent.trim() === ${JSON.stringify(ptBR['preset.atwood.name'])});
+        if (!card) throw new Error('missing Atwood preset');
+        card.click();
+      })()`)
+      await openGraph(session)
+      const before = await measure(session)
+      await enlarge(session)
+      const after = await measure(session)
+      expect(await session.evaluate<boolean>(`[...document.querySelectorAll('span')].some(el => el.textContent.trim() === ${JSON.stringify(ptBR['preset.readOnlyHint'])})`)).toBe(true)
+      expect(before.zoom).toBe(1)
+      expect(after.zoom).toBe(1.6)
+      expect(after.transport.height / before.transport.height).toBeGreaterThanOrEqual(1.44)
+      expect(after.transport.height / before.transport.height).toBeLessThanOrEqual(1.76)
+      expect(after.bigger.height).toBe(before.bigger.height)
+      expect(after.smaller.height).toBe(before.smaller.height)
+      expect(before.graph.height).toBe(180)
+      expect(after.graph.height).toBe(180)
+    })
+  }, 30000)
+
   it('keeps the sizer and scaled controls inside a 402px preferred canvas at scale 1.6', async () => {
     await withBrowserSession(1920, 25000, async session => {
       await session.reset()
