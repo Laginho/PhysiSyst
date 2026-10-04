@@ -1,8 +1,8 @@
 import { bodyEnergy, systemEnergy, type BodyEnergy, type SystemEnergy } from './sim/energy'
 import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
-import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
+import type { AppliedForce, Body, ConstraintEnd, FocusGroup, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
+import { bodyPointToWorld, collectWarnings, FOCUS_GROUPS, scenePath, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
@@ -697,7 +697,7 @@ export default function App() {
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
-  const [showGlobal, setShowGlobal] = useState(false)
+  const [showGlobal, setShowGlobal] = useState(true)
   const [storageWarning, setStorageWarning] = useState<string | null>(initialSeedWarning)
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -849,6 +849,16 @@ export default function App() {
 
   // Discrete edits push once here; drags push their initial doc on pointer-up.
   const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
+
+  /** Focus edits change only the view, including on presets and historical frames. */
+  const toggleFocusGroup = useCallback((group: FocusGroup) => {
+    const current = docRef.current
+    const shown = current.focus?.show ?? FOCUS_GROUPS
+    const show = FOCUS_GROUPS.filter((g) => g === group ? !shown.includes(g) : shown.includes(g))
+    const next: Scene = { ...current, focus: { ...current.focus, show } }
+    docRef.current = next
+    setDoc(next)
+  }, [])
 
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
@@ -1686,6 +1696,7 @@ export default function App() {
   const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
   const selectedConstraint = selectedSpring ?? selectedRope
   const selectedItem = selected ?? selectedConstraint ?? selectedPulley
+  const shownGroups = docRef.current.focus?.show ?? FOCUS_GROUPS
   const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
@@ -2007,6 +2018,16 @@ export default function App() {
             selection and the canvas rectangle must not follow it: without it the
             canvas narrows 15 px at 1280 on selection and the PHY-18 tests fail. */}
         <div style={{ display: 'grid', gap: 8, width: stacked ? '100%' : INSPECTOR_WIDTH, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
+            <span>{t('focus.show')}</span>
+            {FOCUS_GROUPS.map((group) => (
+              <button type="button" key={group} aria-pressed={shownGroups.includes(group)} onClick={() => toggleFocusGroup(group)}
+                style={{ fontSize: 12, padding: '2px 4px', border: '1px solid #888', borderRadius: 12,
+                  background: shownGroups.includes(group) ? '#e3effc' : '#fff' }}>
+                {t(`focus.${group}`)}
+              </button>
+            ))}
+          </div>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"

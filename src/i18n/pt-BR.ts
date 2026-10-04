@@ -1,4 +1,9 @@
 export const ptBR = {
+  'focus.show': 'mostrar:',
+  'focus.forces': 'forças',
+  'focus.kinematics': 'cinemática',
+  'focus.energy': 'energia',
+  'focus.momentum': 'momento',
   'graph.toggle': 'gráfico',
   'graph.kindLabel': 'Grandeza do gráfico',
   'graph.kind.position': 'posição',
