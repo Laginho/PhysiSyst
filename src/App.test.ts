@@ -1086,6 +1086,58 @@ describe('initial force vectors (PHY-82)', () => {
     expect(p.probeInitial).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['none', 'during boot', 'after boot'] as const)('PHY-78 preserves initial rope readouts with a focus edit %s', async (timing) => {
+    const p = await setupProbe({ delayedBoot: true })
+    expect(loadingOverlay(p.host)).toBeDefined()
+    if (timing === 'during boot') toggleFocus(p.host, 'energy')
+    await p.resolveBoot()
+    if (timing === 'after boot') toggleFocus(p.host, 'energy')
+
+    expect(loadingOverlay(p.host)).toBeUndefined()
+    expect(focusChip(p.host, 'forces').getAttribute('aria-pressed')).toBe('true')
+    click(p.canvas, { x: 8, y: 4.5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    const readout = panel(p.host, t('readout.title', { id: 'corda' }))!
+    expect(readout.textContent).toContain('T: 0,00 N')
+    expect(readout.textContent).not.toContain(ptBR['readout.noData'])
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+
+    await p.steps(1)
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it.each(['during boot', 'after boot'] as const)('PHY-78 keeps physical boot edits pending when focus changes %s', async (timing) => {
+    const p = await setupProbe({ delayedBoot: true })
+    dragTo(p.canvas, { x: 8, y: 3 }, { x: 9, y: 3 })
+    if (timing === 'during boot') toggleFocus(p.host, 'energy')
+    await p.resolveBoot()
+    if (timing === 'after boot') toggleFocus(p.host, 'energy')
+
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+    click(p.canvas, { x: 8.5, y: 4.6 })
+    act(() => { vi.advanceTimersByTime(100) })
+    const readout = () => panel(p.host, t('readout.title', { id: 'corda' }))!.textContent
+    expect(readout()).toContain(ptBR['readout.noData'])
+
+    await p.steps(1)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(p.sim.replaceScene).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      bodies: expect.arrayContaining([expect.objectContaining({ id: 'bola', position: { x: 9, y: 3 } })]),
+      focus: { show: ['forces', 'kinematics', 'momentum'] },
+    }))
+    expect(p.step).toHaveBeenCalledTimes(1)
+    expect(readout()).toContain('T: 9,00 N')
+    expect(readout()).not.toContain(ptBR['readout.noData'])
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+  })
+
   it('paints initial vectors at the current canvas size when boot finishes after a resize', async () => {
     const p = await setupProbe({ delayedBoot: true })
     act(() => lastResizeObserverCallback?.(

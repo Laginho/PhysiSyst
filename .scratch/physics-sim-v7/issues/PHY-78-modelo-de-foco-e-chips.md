@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: to-implement
+Stage: implementing
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -295,3 +295,38 @@ edição física desfeita/refeita pode restaurar um Foco anterior. Não foi usad
 como motivo desta reabertura.
 
 Reaberto em `to-implement` na mesma branch, sem merge e sem linha PHY-78 no ledger.
+
+#### Stage 2: boot readout regression (2026-10-04)
+
+Retomada limitada à regressão da última revisão, na costura aprovada de
+DOM/canvas do App com `setupProbe({ delayedBoot: true })`. Não altera critérios,
+campos de edição, histórico físico nem o contrato pendente de CLEAN-31.
+
+Leitura ao redor da mudança, antes do teste vermelho: `ensureSim` atende mount,
+retry, play e step; seu flag de rebuild é consumido pelo polling de vínculos e
+energia e por `syncWorld`, chamado por `runSteps` e pelo loop de reprodução.
+Foram examinados o efeito de `doc`/`bootState`, `routeDocChange`/`applyLiveOps`,
+reset/troca de cena, `refreshInitialProbe`, `toggleFocusGroup` e `editDoc`.
+Fronteiras: mudança só de Foco (live sem ops), nenhuma mudança de documento,
+chip pós-boot, edição estrutural de posição durante boot e chip enquanto essa
+edição física ainda aguarda sincronização. Operações live de física e falhas
+de boot/reset continuam com seus caminhos existentes.
+
+Teste novo parametrizado `PHY-78 preserves initial rope readouts with a focus
+edit %s`: controles sem chip e com chip após boot; regressão com energia
+alternada durante boot, forças ligadas, leitura `T: 0,00 N`, N/T iniciais e
+nenhum passo/rebuild de visualização. O primeiro passo também não deve causar
+um rebuild redundante por essa mudança de Foco.
+
+Teste novo parametrizado `PHY-78 keeps physical boot edits pending when focus
+changes %s`: mover a bola de x = 8 para x = 9 durante boot e alternar energia
+durante/depois do boot. A sonda desenha a geometria atual, a leitura antiga
+fica indisponível até a sincronização, e o primeiro passo aplica exatamente uma
+reconstrução com a posição editada e restaura `T: 9,00 N`.
+
+Vermelho antes de qualquer alteração de produção:
+`npm test -- src/App.test.ts -t 'PHY-78.*boot|PHY-78 preserves initial rope readouts'`
+→ **1 failed / 4 passed / 197 skipped**, exit 1. Só o caso de chip durante boot
+falha em `App.test.ts:1101`: esperado `T: 0,00 N`, recebido
+`leitura — cordapassos: 0velocidade: 1,00×sem leitura`. Os skips são os demais
+casos fora do filtro. Este commit contém somente testes e a memória/Stage do ticket.
