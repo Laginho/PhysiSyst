@@ -22,7 +22,7 @@ import { DEMO_SCENE } from './scene/demo'
 import { createPresetScene, galleryGroups, nodeLabelKeys, presetById, type Preset } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
-import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
+import type { BodyState, ConstraintState, ContactPoint, InitialProbe, Simulator } from './sim'
 import {
   addContact,
   addForce,
@@ -180,8 +180,8 @@ function screenCircle(ctx: CanvasRenderingContext2D, at: { x: number; y: number 
   ctx.restore()
 }
 
-// In the editor the readings go stale (refreshed only at boot, reset and rebuild): the rope there follows the
-// document, and only a simulated frame's readings shape its drawing and its T arrows (PHY-56) and click (CLEAN-27).
+// The editor's rope drawing and hit test follow the document; simulated frames follow their readings
+// (PHY-56, CLEAN-27). The initial force probe supplies T arrows separately, on the document path.
 function ropeReadingsOf(states: ReadonlyMap<string, BodyState> | null, readings: readonly ConstraintState[]): readonly ConstraintState[] {
   return states !== null ? readings : []
 }
@@ -197,6 +197,7 @@ function paint(
     stepsTaken: number
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
+    initialProbe?: InitialProbe
     lang?: Lang
     draggingBody?: boolean
     /** The spring or rope tool's first anchor, until the tool finishes. */
@@ -245,12 +246,17 @@ function paint(
   const ppm = camera.pixelsPerMeter
   const constraints = opts?.constraints ?? []
   const showInitialVelocity = (opts?.stepsTaken ?? 0) === 0
+  const initialProbe = showInitialVelocity ? opts?.initialProbe : undefined
+  // Only forces come from the disposable step; its moved rope path must not reach the editor.
+  const tensionReadings = initialProbe
+    ? initialProbe.constraints.map(state => state.kind === 'rope' ? { ...state, path: undefined } : state)
+    : ropeReadings
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
     { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
     { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
     { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
-    { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
-    { arrows: tensionArrows(view, ropeReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
+    { arrows: normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
+    { arrows: tensionArrows(view, tensionReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
     { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
@@ -753,6 +759,19 @@ export default function App() {
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
+  const initialProbeRef = useRef<InitialProbe>({ contacts: [], constraints: [] })
+  // The live build can lag behind edits; compare against the probe's document for refresh cadence.
+  const initialProbeDocRef = useRef<Scene>(doc)
+  const refreshInitialProbe = useCallback(() => {
+    const scene = docRef.current
+    initialProbeDocRef.current = scene
+    try {
+      initialProbeRef.current = simRef.current?.probeInitial(scene) ?? { contacts: [], constraints: [] }
+    } catch {
+      // Optional overlay failure must not replace the live simulator's error handling.
+      initialProbeRef.current = { contacts: [], constraints: [] }
+    }
+  }, [])
   const captureFrame = useCallback((): RecordedFrame => ({
     scene: docRef.current,
     states: statesRef.current ?? simRef.current?.readStates() ?? null,
@@ -910,6 +929,7 @@ export default function App() {
         stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
+        initialProbe: initialProbeRef.current,
         lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
@@ -1156,13 +1176,14 @@ export default function App() {
           setSimError(messageOf(e))
           pendingRebuildRef.current = true
         }
+        refreshInitialProbe()
         resetRecording()
       }
       repaint()
       if (t.steps > 0) runSteps(t.steps)
       setRecordingLength(recordingRef.current!.length)
     },
-    [repaint, runSteps, showFrame, resetRecording],
+    [repaint, runSteps, showFrame, resetRecording, refreshInitialProbe],
   )
 
   function seekGraph(canvas: HTMLCanvasElement, clientX: number) {
@@ -1199,8 +1220,12 @@ export default function App() {
         }
       }
     }
+    // Returning to the live world's geometry can still invalidate the probe.
+    if (simRef.current && playbackRef.current.stepsTaken === 0 && routeDocChange(initialProbeDocRef.current, doc).kind === 'structural') {
+      refreshInitialProbe()
+    }
     repaint()
-  }, [doc, showGlobal, repaint, dispatch, resetRecording])
+  }, [doc, showGlobal, bootState, repaint, dispatch, resetRecording, refreshInitialProbe])
 
   const switchToScene = useCallback(
     (id: string) => {
@@ -1269,6 +1294,7 @@ export default function App() {
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
+          refreshInitialProbe()
           resetRecording()
           // Edits made while WASM was booting land at the next frame boundary.
           pendingRebuildRef.current = docRef.current !== bootDoc
@@ -1287,7 +1313,7 @@ export default function App() {
       )
     }
     return simBootRef.current
-  }, [resetRecording])
+  }, [resetRecording, refreshInitialProbe])
 
   /** Retries a failed boot, restarting the joke rotation from the top. */
   const retryBoot = useCallback(() => {

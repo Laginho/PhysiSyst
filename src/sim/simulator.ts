@@ -53,6 +53,11 @@ export interface SpringState {
 
 export type ConstraintState = RopeState | SpringState
 
+export interface InitialProbe {
+  contacts: ContactPoint[]
+  constraints: ConstraintState[]
+}
+
 export interface PulleyState {
   id: string
   /** Angular velocity of the massive disk, rad/s. */
@@ -66,6 +71,8 @@ export interface Simulator {
   readContacts(): ContactPoint[]
   /** One entry per document constraint, in document order (PHY-23). */
   readConstraints(): ConstraintState[]
+  /** Read contacts and constraints after one disposable step; invalid builds return empty readings. The live world is untouched. */
+  probeInitial(scene: Scene): InitialProbe
   /** One entry per pulley with mass, in document order. */
   readPulleys(): PulleyState[]
   setForceMagnitude(forceId: string, magnitude: number): void
@@ -924,6 +931,26 @@ class RapierSimulator implements Simulator {
 
   get warnings(): readonly string[] {
     return this._warnings
+  }
+
+  dispose(): void {
+    this.world.free()
+  }
+
+  probeInitial(scene: Scene): InitialProbe {
+    let probe: RapierSimulator
+    try {
+      probe = new RapierSimulator(scene)
+    } catch {
+      // The live build/reset path reports invalid documents; the overlay stays optional.
+      return { contacts: [], constraints: [] }
+    }
+    try {
+      probe.step()
+      return { contacts: probe.readContacts(), constraints: probe.readConstraints() }
+    } finally {
+      probe.dispose()
+    }
   }
 
   // Builds everything into LOCAL maps so a mid-build throw (e.g. mass<=0)

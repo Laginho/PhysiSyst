@@ -164,8 +164,8 @@ export function tensionArrows(view: Scene, constraints: readonly ConstraintState
     const last = path.segments.length - 1
     if (bodies.get(rope.a.bodyId)?.fixed === false) push(first.from, first.to, 0)
     rope.via.forEach((id, i) => {
-      // A path resolved, so every pulley and mount does: the document path checks them, and a reading's path comes from the
-      // world built from this document (paint passes readings only during playback, PHY-56).
+      // A resolved document path validates every pulley and mount. A simulated reading's path comes from the world
+      // built from this document (PHY-56); initial probe readings discard that path and use the document path (PHY-82).
       const pulley = pulleys.get(id)!
       const mount = bodies.get(pulley.bodyId)!
       // A rope loose from the pulley (sweep < 0, PHY-54) does not pull its mount.
