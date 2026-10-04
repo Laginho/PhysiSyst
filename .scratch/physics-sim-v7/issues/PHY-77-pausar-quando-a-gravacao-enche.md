@@ -57,3 +57,22 @@ No App: `togglePlay` e `stepOnce` passam `recordingRef.current!.length`; os bot�
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: ao encher, pausar no último passo com o aviso "gravação cheia (10 s) — reinicie"; na ponta cheia reproduzir e passo não fazem nada, slider e voltar um passo navegam, replay pausa de novo no fim, reiniciar apaga tudo; altera o critério 14 do PHY-64 e corrige o bug do slider em 10 s com a ponta em 15 s.
 - Planner: a regra fica em `advance` (puro), com `play` recebendo `length` opcional; o App só passa `length` e desabilita os dois botões na ponta cheia.
+
+#### Stage 2 — provas red/green e mutate-verify (2026-10-04)
+
+- Scheduler: commit vermelho `99a1d23` (16 falhas, 69 passes); implementação `57e7c4a` (85 passes). Nenhum teste existente foi alterado. Os novos casos cobrem critérios 1–5, inclusive stepOnce que enche, replay com sobra a 2×, crédito fracionário e comprimento acima do limite.
+- DOM: commit vermelho `e23b63c`, harness corrigido em `7263303`; seis casos vermelhos contra o App antigo (botão ainda em pausar, controles habilitados e aviso ausente). Depois da implementação: filtro `PHY-77|full recording` com 32 passes, 222 ignorados.
+- Mutação M1: substituir temporariamente o import de `RECORDING_CAP` no scheduler por `const RECORDING_CAP = Number.POSITIVE_INFINITY`. Filtro combinado: **22 falhas, 10 passes, 222 ignorados** (16 scheduler + seis DOM). Filtro só DOM: **seis falhas, 163 ignorados**. Mutação restaurada antes das verificações verdes.
+
+| Teste DOM (prefixo PHY-77) | Mutação aplicada | Saída vermelha observada |
+| --- | --- | --- |
+| capped replay pauses at the last recorded pose via play | M1 | `expected "vi.fn()" to be called 599 times, but got 610 times` |
+| capped replay pauses at the last recorded pose via step | M1 | `expected "vi.fn()" to be called 599 times, but got 610 times` |
+| pauses when full with the slider, clock and step count at the last record | M1; adicional: renderizar aviso só com `recordingLength > RECORDING_CAP` | M1: 610 chamadas em vez de 599; aviso: `expected 'physics-simidioma portuguêsenglish◢▶ …' to contain 'gravação cheia (10 s) — reinicie'` |
+| blocks full-tip buttons and keyboard steps while keeping recorded navigation available | Omitir `length` de play; omitir `length` de stepOnce; forçar ambos `disabled={false}` (três execuções independentes) | Play: `expected undefined to be true`; stepOnce: 600 chamadas em vez de 599; disabled: `expected false to be true`. Uma falha, 168 ignorados em cada execução |
+| replays a full recording from 590 and pauses again without new physics steps | M1 | Caso vermelho: o transporte continua em pausar ao chegar ao fim em vez de voltar a reproduzir |
+| reset clears the full warning and enables recording a new run | M1; adicional: suprimir `resetRecording()` no dispatch quando length é 600 | M1: 610 chamadas em vez de 599; reset: `expected 'physics-simidioma portuguêsenglish◢▶ …' not to contain 'gravação cheia (10 s) — reinicie'` (uma falha, 168 ignorados) |
+
+- Todas as mutações foram removidas. A troca para inglês usa o select real do App e verifica o aviso inglês no DOM. O aviso tem `role="status"`; nenhuma chamada à física ocorre em replay cheio.
+- Correção de harness após typecheck: o teste de compatibilidade passa a ação com `length` numa variável, respeitando a checagem de propriedades extras do TypeScript para pause/reset/setSpeed, sem mudar as ações públicas. Commit separado só de teste/documentação; red novamente com M1.
+- Verificação focada sem filtro: 252 passes, duas falhas de infraestrutura em testes Chromium PHY-44 (`Chromium disconnected`), sem falha dos testes PHY-77. Gate completo executado fora do sandbox para verificar o navegador.

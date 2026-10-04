@@ -355,7 +355,10 @@ describe('full recording pauses transport (PHY-77)', () => {
         { type: 'play' }, { type: 'pause' }, { type: 'reset' }, { type: 'frame' },
         { type: 'stepOnce' }, { type: 'setSpeed', speed: 1.5 },
       ] as const
-      for (const action of actions) expect(advance(state, { ...action, length })).toEqual(advance(state, action))
+      for (const action of actions) {
+        const withLength = { ...action, length }
+        expect(advance(state, withLength)).toEqual(advance(state, action))
+      }
       expect(advance(state, { type: 'seek', index: length - 1, length })).toEqual({
         state: { ...state, status: 'paused', acc: 0 }, steps: 0, rebuild: false,
       })
