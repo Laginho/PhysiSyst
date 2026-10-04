@@ -3,6 +3,103 @@ import { withBrowserSession } from './test/browser'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld } from './render/transform'
 import { ptBR } from './i18n/pt-BR'
 
+describe('canvas dock geometry (PHY-76)', () => {
+  type Session = import('./test/browser').BrowserSession
+  type Rect = import('./test/browser').Rect
+  type Geometry = {
+    canvas: Rect; box: Rect; column: Rect; dock: Rect; transport: Rect
+    bigger: Rect; smaller: Rect; graph: Rect; scaled: Rect; sizer: Rect
+    direction: string; zoom: number; scrollHeight: number; viewportHeight: number
+  }
+  const frames = (session: Session, count = 3) => session.evaluate<void>(`new Promise(resolve => {
+    let remaining = ${count}; const tick = () => --remaining === 0 ? resolve() : requestAnimationFrame(tick);
+    requestAnimationFrame(tick);
+  })`)
+  const openGraph = async (session: Session) => {
+    await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['graph.toggle'])}).click()`)
+    await frames(session)
+  }
+  const enlarge = async (session: Session) => {
+    await session.evaluate(`(() => {
+      const button = document.querySelector('[aria-label="${ptBR['controls.bigger']}"]');
+      if (!button) throw new Error('missing controls sizer');
+      for (let i = 0; i < 6; i++) button.click();
+    })()`)
+    await frames(session)
+  }
+  const measure = (session: Session) => session.evaluate<Geometry>(`(() => {
+    const canvas = document.querySelector('canvas'), box = canvas.parentElement, column = box.parentElement;
+    const transport = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['playback.play'])}).parentElement;
+    const bigger = document.querySelector('[aria-label="${ptBR['controls.bigger']}"]');
+    const smaller = document.querySelector('[aria-label="${ptBR['controls.smaller']}"]');
+    const scaled = [...document.querySelectorAll('div')].find(el => el.style.zoom);
+    const rect = el => el.getBoundingClientRect().toJSON();
+    return { canvas: rect(canvas), box: rect(box), column: rect(column), dock: rect(box.nextElementSibling),
+      transport: rect(transport), bigger: rect(bigger), smaller: rect(smaller),
+      graph: rect(document.querySelector('#recording-graph canvas')), scaled: rect(scaled), sizer: rect(bigger.parentElement),
+      direction: column.parentElement.style.flexDirection, zoom: Number(scaled.style.zoom),
+      scrollHeight: document.documentElement.scrollHeight, viewportHeight: innerHeight };
+  })()`)
+
+  it.each([
+    [1920, 1], [1920, 1.6], [1280, 1], [1280, 1.6], [700, 1.6],
+  ] as const)('aligns the dock to the canvas and fits the viewport at %ipx and scale %s', async (width, scale) => {
+    await withBrowserSession(width, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      if (scale === 1.6) await enlarge(session)
+      const g = await measure(session)
+      expect(g.zoom).toBe(scale)
+      expect(Math.abs(g.dock.left - g.canvas.left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(g.dock.width - g.canvas.width)).toBeLessThanOrEqual(1)
+      expect(g.dock.top).toBeGreaterThanOrEqual(g.canvas.bottom)
+      expect(g.scaled.width + g.sizer.width).toBeCloseTo(g.canvas.width - 2, 0)
+      expect(g.graph.height).toBe(180)
+      if (width >= 1280) {
+        expect(g.direction).toBe('row')
+        expect(g.canvas.bottom + g.dock.height).toBeLessThanOrEqual(g.column.bottom)
+        expect(g.scrollHeight).toBeLessThanOrEqual(g.viewportHeight)
+      } else expect(g.direction).toBe('column')
+    })
+  }, 30000)
+
+  it('scales transport height by 1.6 while sizer buttons and graph keep their height', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      const before = await measure(session)
+      await enlarge(session)
+      const after = await measure(session)
+      expect(after.zoom).toBe(1.6)
+      expect(after.transport.height / before.transport.height).toBeGreaterThanOrEqual(1.44)
+      expect(after.transport.height / before.transport.height).toBeLessThanOrEqual(1.76)
+      expect(after.bigger.height).toBe(before.bigger.height)
+      expect(after.smaller.height).toBe(before.smaller.height)
+      expect(before.graph.height).toBe(180)
+      expect(after.graph.height).toBe(180)
+    })
+  }, 30000)
+
+  it('refits for the taller dock within three frames and stays inside its independent box', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      const before = await measure(session)
+      await enlarge(session)
+      const samples: Geometry[] = []
+      for (let i = 0; i < 3; i++) {
+        samples.push(await measure(session))
+        await frames(session, 1)
+      }
+      expect(samples[0].zoom).toBe(1.6)
+      expect(samples[0].canvas.height).toBeLessThan(before.canvas.height)
+      expect(samples[1].canvas).toEqual(samples[0].canvas)
+      expect(samples[2].canvas).toEqual(samples[0].canvas)
+      for (const g of samples) expect(g.canvas.height).toBeLessThanOrEqual(g.box.height)
+    })
+  }, 30000)
+})
+
 it('PHY-73 seeks from a real graph click to the expected slider index', async () => {
   await withBrowserSession(1920, 25000, async session => {
     await session.reset()
