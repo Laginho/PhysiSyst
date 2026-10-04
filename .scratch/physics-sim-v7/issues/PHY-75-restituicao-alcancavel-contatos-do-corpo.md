@@ -50,6 +50,8 @@ Nenhum `e` padrão por cena. O simulador não muda.
 
 ## Comments
 
+- Red do DOM: `npm test -- src/App.test.ts -t 'selected Body contacts'` (fora do sandbox após timeout de inicialização do worker): 11 failed, 146 skipped (157). Sem seleção: `expected <fieldset …> to be undefined`; leitura/edição/parceiros/fixos/bloqueio: `missing contacts of m_a/m_b/m`; catálogo: `expected undefined to be truthy` para `contacts.of`.
+
 - 2026-10-04 Stage 2: branch criada sobre `sweatshop/2026-10-04-1243`. Costuras aprovadas: builders/createSimulator/updateContact e DOM do App. Callers examinados: abertura/cópia/persistência de presets, snap de contato, update/remove com identidade ordenada, massLabels no desenho; casos de fronteira: nenhum corpo/parceiro, todos pareados, seleção no lado b, seleção fixa, troca de corpo e parceiro removido. `editor/doc.ts` e `render/draw.ts` serão apenas consumidos.
 - Red dos presets: `npm test -- src/presets/presets.test.ts -t 'reachable ground restitution'`: 5 failed, 4 passed, 30 skipped (39). Quatro falhas por pares com chão ausentes; quique: `expected 0 to be greater than or equal to 9.025222778320312`.
 

@@ -188,9 +188,12 @@ function screen(wx: number, wy: number) {
 }
 
 function contactPairs(host: HTMLElement): string[] {
-  const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
-  if (!fieldset) return []
-  return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
+  // Snap no longer has a global contact list. Observe its persisted document
+  // through the same public save/load path the user uses when leaving the app.
+  act(() => window.dispatchEvent(new Event('pagehide')))
+  const scene = loadScene(window.localStorage, sceneSelect(host).value)
+  if (!scene) throw new Error('missing persisted scene')
+  return scene.contacts.map(c => `${c.a} ↔ ${c.b}`)
 }
 
 // The scene picker's own <select> — the app renders more than one <select>
@@ -272,40 +275,200 @@ function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasEle
   return { host, canvas }
 }
 
-describe('Contact restitution editor (PHY-67)', () => {
-  it('shows restitution after kinetic friction for each pair and persists edits without clamping', () => {
-    vi.useFakeTimers()
-    const storage = window.localStorage as unknown as PersistStorage
-    const scene: Scene = {
-      ...DEMO_SCENE,
+describe('selected Body contacts (PHY-75)', () => {
+  function contactScene(): Scene {
+    return {
+      version: 1, constants: { g: 0 }, forces: [],
+      bodies: [
+        { id: 'chao', shape: 'rectangle', width: 14, height: 1, fixed: true, mass: 0, position: { x: 7, y: -0.5 }, rotation: 0 },
+        { id: 'bloco', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 2, position: { x: 4, y: 3 }, rotation: 0 },
+        { id: 'bola', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 8, y: 3 }, rotation: 0 },
+      ],
       contacts: [
-        { ...DEMO_SCENE.contacts[0], e: 0.5 },
-        { a: 'rampa', b: 'chao', muS: 0, muK: 0 },
+        { a: 'chao', b: 'bloco', muS: 0.3, muK: 0.2, e: 0.5 },
+        { a: 'bloco', b: 'bola', muS: 0.7, muK: 0.6 },
       ],
     }
-    expect(scene.contacts.length).toBeGreaterThan(1)
-    const { host } = setupWith(() => {
-      saveIndex(storage, [{ id: 'restitution', name: 'Restitution', updatedAt: 1 }])
-      saveScene(storage, 'restitution', scene)
-      saveCurrentSceneId(storage, 'restitution')
+  }
+  function setup(scene = contactScene()) {
+    vi.useFakeTimers()
+    return setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'restitution', name: 'Restitution', updatedAt: 1 }])
+      saveScene(window.localStorage, 'restitution', scene)
+      saveCurrentSceneId(window.localStorage, 'restitution')
     })
-    const contacts = panel(host, ptBR['contacts.title'])!
-    const fields = [...contacts.querySelectorAll('input')]
-    expect(fields).toHaveLength(scene.contacts.length * 3)
-    for (let i = 0; i < scene.contacts.length; i++) {
-      const labels = fields.slice(i * 3, i * 3 + 3).map((input) => input.closest('label')?.textContent?.trim())
-      expect(labels).toEqual([ptBR['contacts.muS'], ptBR['contacts.muK'], 'e — restituição'])
-      expect(fields[i * 3 + 2].value).toBe(i === 0 ? '0.5' : '0')
-      expect(fields[i * 3 + 2].step).toBe('0.05')
+  }
+  function contactsOf(host: HTMLElement, label: string): HTMLFieldSetElement {
+    const fieldset = panel(host, `contatos de ${label}`)
+    if (!fieldset) throw new Error(`missing contacts of ${label}`)
+    return fieldset
+  }
+  function rows(fieldset: Element): Element[] {
+    return [...fieldset.querySelectorAll('span')].map(span => span.parentElement!.parentElement!)
+  }
+  function saved(): Scene {
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    return loadScene(window.localStorage, 'restitution')!
+  }
+
+  it.each(['populated', 'empty'] as const)('has no global contact panel or coefficients without selection: %s', (kind) => {
+    const scene = kind === 'populated' ? contactScene() : { ...contactScene(), bodies: [], contacts: [] }
+    const { host } = setup(scene)
+    expect(panel(host, 'contatos')).toBeUndefined()
+    expect([...host.querySelectorAll('label')].some(label => label.textContent?.trim() === ptBR['contacts.muS'])).toBe(false)
+  })
+
+  it('shows all and only selected-body pairs from either endpoint with partner labels and coefficient fields', () => {
+    const { host, canvas } = setup()
+    click(canvas, { x: 4, y: 3 })
+    const contacts = contactsOf(host, 'm_a')
+    expect([...contacts.querySelectorAll('span')].map(span => span.textContent)).toEqual(['fixo: retângulo 1', 'm_b'])
+    expect(contacts.previousElementSibling?.querySelector('legend')?.textContent).toBe('forças de bloco')
+    expect(rows(contacts)).toHaveLength(2)
+    for (const [i, row] of rows(contacts).entries()) {
+      const inputs = [...row.querySelectorAll('input[type="number"]')]
+      expect(inputs).toHaveLength(3)
+      expect(inputs.map(input => input.closest('label')?.textContent?.trim())).toEqual([ptBR['contacts.muS'], ptBR['contacts.muK'], ptBR['contacts.e']])
+      expect(inputs.every(input => (input as HTMLInputElement).step === '0.05')).toBe(true)
+      expect((inputs[2] as HTMLInputElement).value).toBe(i === 0 ? '0.5' : '0')
+      expect(row.querySelector('button')?.textContent).toBe('✕')
     }
+    click(canvas, { x: 8, y: 3 })
+    expect(panel(host, 'contatos de m_a')).toBeUndefined()
+    expect([...contactsOf(host, 'm_b').querySelectorAll('span')].map(span => span.textContent)).toEqual(['m_a'])
+  })
+
+  it('edits restitution from endpoint b without clamping or changing pair order or friction, then removes only that pair', () => {
+    const scene = contactScene()
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm_b')
+    const restitution = inputForLabel(contacts, ptBR['contacts.e'])
     for (const e of [0.8, -0.1, 1.5]) {
-      act(() => setNativeInputValue(fields[2], e))
-      act(() => { window.dispatchEvent(new Event('pagehide')) })
-      const saved = loadScene(storage, 'restitution')!
-      expect(saved.contacts[0]).toEqual({ ...scene.contacts[0], e })
-      expect(saved.contacts.slice(1)).toEqual(scene.contacts.slice(1))
-      expect(fields[2].value).toBe(String(e))
+      act(() => setNativeInputValue(restitution, e))
+      expect(saved().contacts).toEqual([scene.contacts[0], { ...scene.contacts[1], e }])
+      expect(restitution.value).toBe(String(e))
     }
+    act(() => contacts.querySelector('button')!.click())
+    expect(saved().contacts).toEqual([scene.contacts[0]])
+    expect(contacts.textContent).toContain(ptBR['contacts.empty'])
+    expect(contacts.querySelector('input')).toBeNull()
+  })
+
+  it('edits both friction coefficients independently from endpoint b', () => {
+    const scene = contactScene()
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm_b')
+    act(() => setNativeInputValue(inputForLabel(contacts, ptBR['contacts.muS']), -0.2))
+    expect(saved().contacts).toEqual([scene.contacts[0], { ...scene.contacts[1], muS: -0.2 }])
+    act(() => setNativeInputValue(inputForLabel(contacts, ptBR['contacts.muK']), 1.2))
+    expect(saved().contacts).toEqual([scene.contacts[0], { ...scene.contacts[1], muS: -0.2, muK: 1.2 }])
+  })
+
+  it('disables an exhausted partner picker and adds only the unpaired partner with default coefficients', () => {
+    const scene = contactScene()
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 4, y: 3 })
+    const block = contactsOf(host, 'm_a')
+    expect(block.querySelector('select')!.options).toHaveLength(0)
+    expect(block.querySelector('select')!.matches(':disabled')).toBe(true)
+    expect(findButton(host, ptBR['contacts.add'])!.matches(':disabled')).toBe(true)
+    click(canvas, { x: 8, y: 3 })
+    const ball = contactsOf(host, 'm_b')
+    const select = ball.querySelector('select')!
+    expect([...select.options].map(o => [o.value, o.text])).toEqual([['chao', 'fixo: retângulo 1']])
+    expect(select.matches(':disabled')).toBe(false)
+    act(() => findButton(host, ptBR['contacts.add'])!.click())
+    expect(saved().contacts).toEqual([...scene.contacts, { a: 'bola', b: 'chao', muS: 0, muK: 0, e: 0 }])
+    expect([...ball.querySelectorAll('span')].map(span => span.textContent)).toEqual(['m_a', 'fixo: retângulo 1'])
+    expect(select.options).toHaveLength(0)
+    expect(select.matches(':disabled')).toBe(true)
+    expect(findButton(host, ptBR['contacts.add'])!.matches(':disabled')).toBe(true)
+  })
+
+  it('keeps partner choice valid after adding, removing, and switching selected bodies', () => {
+    const scene = { ...contactScene(), contacts: [] }
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    let contacts = contactsOf(host, 'm_b')
+    let select = contacts.querySelector('select')!
+    expect([...select.options].map(o => o.text)).toEqual(['fixo: retângulo 1', 'm_a'])
+    act(() => setSelectValue(select, 'bloco'))
+    act(() => findButton(host, ptBR['contacts.add'])!.click())
+    expect(saved().contacts).toEqual([{ a: 'bola', b: 'bloco', muS: 0, muK: 0, e: 0 }])
+    expect(select.value).toBe('chao')
+    act(() => contacts.querySelector('button')!.click())
+    expect(saved().contacts).toEqual([])
+    click(canvas, { x: 4, y: 3 })
+    contacts = contactsOf(host, 'm_a')
+    select = contacts.querySelector('select')!
+    expect([...select.options].map(o => o.value)).toEqual(['chao', 'bola'])
+    expect(select.value).toBe('chao')
+    act(() => findButton(host, ptBR['contacts.add'])!.click())
+    expect(saved().contacts).toEqual([{ a: 'bloco', b: 'chao', muS: 0, muK: 0, e: 0 }])
+  })
+
+  it('numbers fixed partners by shape in document order and uses the same labels for fixed selection', () => {
+    const scene = contactScene()
+    scene.bodies.push(
+      { id: 'parede', shape: 'rectangle', width: 1, height: 1, fixed: true, mass: 0, position: { x: 2, y: 6 }, rotation: 0 },
+      { id: 'apoio', shape: 'circle', radius: 0.4, fixed: true, mass: 0, position: { x: 6, y: 6 }, rotation: 0 },
+      { id: 'rampa', shape: 'triangle', base: 1, alpha: 45, fixed: true, mass: 0, position: { x: 9, y: 6 }, rotation: 0 },
+    )
+    scene.contacts = []
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    expect([...contactsOf(host, 'm_b').querySelector('select')!.options].map(o => o.text)).toEqual([
+      'fixo: retângulo 1', 'm_a', 'fixo: retângulo 2', 'fixo: bola 1', 'fixo: cunha 1',
+    ])
+    click(canvas, { x: 2, y: 6 })
+    const fixed = contactsOf(host, 'fixo: retângulo 2')
+    expect(fixed.textContent).toContain(ptBR['contacts.empty'])
+    expect([...fixed.querySelector('select')!.options].map(o => o.value)).not.toContain('parede')
+  })
+
+  it('shows an empty, disabled partner picker for a lone selected body', () => {
+    const scene = contactScene()
+    scene.bodies = [scene.bodies[2]]
+    scene.contacts = []
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm')
+    expect(contacts.textContent).toContain(ptBR['contacts.empty'])
+    expect(contacts.querySelector('select')!.options).toHaveLength(0)
+    expect(contacts.querySelector('select')!.matches(':disabled')).toBe(true)
+    expect(findButton(host, ptBR['contacts.add'])!.matches(':disabled')).toBe(true)
+  })
+
+  it('locks the whole body contact fieldset after stepping and unlocks after reset', async () => {
+    const { host, canvas } = setup()
+    await settleSimImport()
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm_b')
+    expect(contacts.disabled).toBe(false)
+    await act(async () => findButton(host, ptBR['playback.step'])!.click())
+    expect(contacts.disabled).toBe(true)
+    expect([...contacts.querySelectorAll('input, select, button')].every(el => el.matches(':disabled'))).toBe(true)
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    expect(contacts.disabled).toBe(false)
+    expect([...contacts.querySelectorAll('input, select, button')].every(el => !el.matches(':disabled'))).toBe(true)
+  })
+
+  it('localizes body and fixed contact labels with matching catalogs and removes contacts.title', () => {
+    for (const catalog of [ptBR, en] as Record<string, string>[]) {
+      expect(catalog['contacts.of']).toBeTruthy()
+      expect(catalog['contacts.fixedLabel']).toBeTruthy()
+      expect(catalog).not.toHaveProperty('contacts.title')
+    }
+    expect(Object.keys(ptBR).sort()).toEqual(Object.keys(en).sort())
+    const { host, canvas } = setup()
+    click(canvas, { x: 4, y: 3 })
+    const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, 'en'))
+    expect(panel(host, 'contacts of m_a')?.textContent).toContain('fixed: rectangle 1')
+    click(canvas, { x: 1, y: -0.5 })
+    expect(panel(host, 'contacts of fixed: rectangle 1')).toBeDefined()
   })
 })
 
@@ -2386,7 +2549,7 @@ describe('edição estrutural só em t0 (PHY-39)', () => {
     }
     expect(panel(host, ptBR['forces.title'].replace('{id}', 'bloco'))!.querySelector('button')!.matches(':disabled')).toBe(true)
     expect(inputForLabel(host, ptBR['panel.particleMode']).matches(':disabled')).toBe(true)
-    expect([...panel(host, ptBR['contacts.title'])!.querySelectorAll('input, select, button')].every((el) => el.matches(':disabled'))).toBe(true)
+    expect([...panel(host, 'contatos de m')!.querySelectorAll('input, select, button')].every((el) => el.matches(':disabled'))).toBe(true)
     act(() => findButton(host, ptBR['playback.reset'])!.click())
     expect(structural.every((el) => !el.matches(':disabled'))).toBe(true)
     expect(findButton(host, 'mola')!.disabled).toBe(false)
