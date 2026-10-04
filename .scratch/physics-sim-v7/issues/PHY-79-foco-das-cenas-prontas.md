@@ -1,5 +1,5 @@
 # PHY-79: Foco das cenas prontas
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: PHY-78
 Review: agent
@@ -75,3 +75,81 @@ Todas as mutações foram temporárias, com restauração em `finally` antes do 
 - Critérios 1–5 cobertos por tabela exata, snapshots, round-trip com Foco e simulação existente de 2 s, abertura de colisão com momento sem energia, e reabertura de queda livre restaurando seu padrão sem criar uma cena.
 - Gate executado em primeiro plano, fora do sandbox após falhas de conexão DevTools no sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **33 test files passed, 1262 tests passed**, lint e typecheck sem erros, build verde (52 módulos). Aviso existente de chunk acima de 500 kB, sem falha do build. Nenhuma validação pendente.
 - Diff final verificado com `git diff --check`: somente os três Primary files e este ticket; sem mutações residuais ou artefatos temporários. `CONTEXT.md` e o spec já descrevem o comportamento; `hidden.energy = ['E_pg']` continua inerte no gráfico até PHY-81, conforme o contrato.
+
+#### Resolution (2026-10-04)
+Verdict: Approve
+
+##### Standards
+
+0 violações documentadas; 1 julgamento não bloqueante de possível duplicação
+em `src/App.test.ts:307,322`: as duas asserções repetem a leitura dos quatro
+chips abaixo. Um helper seria opcional; a revisão mantém os testes como estão.
+
+```ts
+['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+  focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+)
+```
+
+Diff completo `ae93388...be51d11` e os três commits examinados em revisão
+independente. `d4be120` e `4bfb212` contêm somente testes e memória do ticket;
+`be51d11` contém produção e memória, sem tocar testes. Os 11 acréscimos de
+produção ficam nos builders existentes, com preferências novas por construção.
+Os snapshots independentes seguem o contrato; não compartilham fixtures com
+a produção. Nenhuma correção de código ou novo teste nesta etapa.
+
+##### Spec
+
+0 achados em revisão independente: sem requisito ausente, parcial ou incorreto,
+e sem comportamento acrescentado fora do escopo. Registro de aceitação:
+
+| Critério | Veredito | Evidência |
+| --- | --- | --- |
+| 1 | ✅ | Os 14 objetos da tabela são exatos e canônicos; `hidden` aparece somente nas duas molas horizontais. Builders compartilhados de colisão, mola e pêndulo conferidos. |
+| 2 | ✅ | Diff de produção acrescenta apenas `focus`; 14 snapshots do base com `toStrictEqual` e `JSON.stringify` preservam todos os dados físicos e sua ordem. |
+| 3 | ✅ | Round-trip com Foco, avisos vazios e teste existente dos 14 presets por 120 passos (2 s) passaram. |
+| 4 | ✅ | Colisão elástica aberta pela galeria: chips `false,true,false,true`, `|p|` no sistema e ausência de energia mecânica após o polling. |
+| 5 | ✅ | Forças ligadas em queda livre, troca para `cena-1` e reabertura restauram `false,true,true,false`, sem persistir nem materializar o preset. |
+
+**Chamadores, falhas e interações examinados:** montagem/reload com preset
+salvo e fallback de ID inválido; `openGalleryPreset`, troca de cena e
+`toggleFocusGroup`; exclusão de presets do autosave; cópia por
+`createPresetScene`, erros de payload/índice e rollback; codec, canonização e
+avisos; atualização periódica de leituras do corpo/sistema e rebuild;
+presets com/sem contatos, polias e vínculos, incluindo variantes dos builders
+compartilhados. Preferências de visualização continuam separadas da física;
+`hidden.energy` permanece inerte no gráfico até PHY-81, conforme o contrato.
+Não há decisão de proxy neste ticket. Não examinados outros navegadores/mobile,
+inspeção visual manual ou desempenho prolongado.
+
+##### Prova independente red-green e gate
+
+Repetidas todas as mutações registradas no handoff, uma por vez, com
+restauração byte a byte em `finally` depois de cada execução:
+
+| Mutação repetida | Vermelho independente observado |
+| --- | --- |
+| Restaurar `src/presets/index.ts` a `ae93388`, sem Foco | **16 failed / 15 passed / 241 skipped**, exit 1: 14 objetos receberam `undefined`; colisão recebeu quatro chips `true` (`App.test.ts:326`); forças de queda livre ficaram `false` após o clique (`App.test.ts:302`). |
+| Somar 1 a `constants.g` de todos os builders, mantendo Foco | **14 failed / 54 skipped**, exit 1: cada snapshot recebeu `g: 10.81` em vez de `9.81` (`presets.test.ts:67`). |
+| Remover `spring-damped` de `PRESETS` | **1 failed / 67 skipped**, exit 1: `expected [...] to have a length of 14 but got 13` (`presets.test.ts:32`). |
+| Trocar somente a condição do momento do sistema por `false` no App | **1 failed / 203 skipped**, exit 1: `expected 'sistema' to contain '|p|'` (`App.test.ts:329`); chips corretos. |
+| Ligar forças somente na segunda construção de `freeFall()` | **1 failed / 203 skipped**, exit 1: recebido `true,true,true,false`, esperado `false,true,true,false` na reabertura (`App.test.ts:309`). |
+
+Produção restaurada: `npm test -- src/presets/presets.test.ts src/App.test.ts`
+→ **2 arquivos / 272 testes passed, zero skips**, exit 0.
+`git diff --exit-code` confirmou os quatro arquivos de código/testes idênticos
+a `be51d11`; não houve mutação residual nem alteração do harness.
+
+Gate oficial independente, completo fora do sandbox:
+`npm test && npm run lint && npm run typecheck && npm run build`
+→ **33 arquivos / 1262 testes passed, zero skips**, lint, typecheck e build
+**exit 0**. A primeira execução no sandbox teve **1234 passed / 28 failed**,
+todos por conexão/desconexão do Chromium DevTools; a repetição integral fora
+dele passou sem omitir testes. Vite: 52 módulos; aviso preexistente do chunk
+do simulador acima de 500 kB (2136,71 kB).
+
+Rebase sobre `sweatshop/2026-10-04-1243` confirmou a base atual `ae93388`, sem
+alterar commits. Merge local sem squash `926a46b`; a árvore mergeada é idêntica
+à implementação validada `be51d11` (`git diff --exit-code be51d11 HEAD` verde).
+`Stage: done`, esta resolução e a linha PHY-79 no ledger são gravados juntos
+no commit de encerramento da sessão.
