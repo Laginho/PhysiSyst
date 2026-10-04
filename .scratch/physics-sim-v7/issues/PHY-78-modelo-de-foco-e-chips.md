@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -79,6 +79,42 @@ Ficam sempre: "passos", "velocidade" (da reprodução), a legenda da leitura, "s
 - `src/App.test.ts`: critérios 6 a 14 com o simulador falso e o mock de canvas que o arquivo já usa (os rótulos passam por `fillText`); vermelhos hoje (não há chips, `showGlobal` começa desligado). Costura de DOM: registrar a mutação aplicada e a saída vermelha por teste novo.
 
 ## Comments
+
+#### Stage 2 — red/green e mutate-verify (2026-10-04)
+
+- Codec: 20 casos novos na costura pública. Antes da implementação: 3 falhas `unknown key 'focus' at scene root`, 17 verdes. Depois: 151/151 no arquivo. Mutações temporárias: `parseFocus` sem validação/canonização → 17 falhas; descartar o foco validado → 3 falhas; inserir padrão na ausência → 2 falhas. Todos os arquivos restaurados após cada execução.
+- Persistência: teste direto vermelho `expected undefined to deeply equal { show: ['forces', 'energy', 'momentum'] }`; remover o padrão da produção já implementada repetiu essa falha (1 falha, 51 ignorados), com restauração em `finally`. Codec + persistência + roteamento verdes em 242/242. Roteamento: mutação temporária classificando foco como estrutural → 1 falha no teste novo; `routing.ts` permanece sem alteração.
+- App: ciclos separados de testes antes de produção (7, depois 4, depois 6 casos vermelhos). Verde após as respectivas implementações: 17/17 casos novos. O simulador é o falso existente; produtores de vetores, `drawArrow`, codec e persistência são reais.
+
+Evidência por teste novo de DOM/canvas (cada mutação foi aplicada ao código de produção, executada e restaurada):
+
+| Teste (`src/App.test.ts`) | Mutação aplicada | Saída vermelha observada |
+| --- | --- | --- |
+| `puts accessible focus chips first ... demo scenes` | `aria-pressed={false}` | `expected ['false','false','false','false'] to deeply equal ['true','true','true','true']` (4 falhas na execução, 3 verdes). |
+| `puts accessible focus chips first ... blank scenes` | `aria-pressed={false}` | `expected ['false','false','false','false'] to deeply equal ['true','false','true','true']` (mesma execução). |
+| `starts with the vector scope covering all bodies` | `showGlobal` inicia `false` | `expected false to be true` (1 falha, 6 verdes). |
+| `toggles focus outside history and autosaves ... hidden curves intact` | chip chama `commitDoc(next)` | undo: `expected false to be true` (2 falhas, 5 verdes). Remover `...current.focus` também falhou: foco salvo sem `hidden` não igual ao esperado (1 falha, 6 verdes). |
+| `keeps preset focus in memory ... reopening` | chip chama `commitDoc(next)` | `expected 'cena-2' to be 'preset:free-fall'` (2 falhas, 5 verdes). |
+| `localizes the focus row in pt-BR` | `focus.show` pt-BR = `mutant` | `expected 'mutantforçascinemáticaenergiamomento' to contain 'mostrar:'` (3 falhas, 4 verdes). |
+| `localizes the focus row in en` | `focus.show` en = `mutant` | `expected 'mutantforceskinematicsenergymomentum' to contain 'show:'` (1 falha, 6 verdes). |
+| `filters initial body readouts with blank focus ...` | `showKinematics = true` | `expected 'leitura — bolapassos: 0velocidade: 1,…' not to contain 'posição'` (2 falhas, 9 verdes). |
+| `PHY-78 filters body and spring system energy independently from momentum` | `showEnergy = true` | `expected 'sistemaE_c: 0,00 JE_pg: 40,00 JE_el: …' not to contain 'E_c'` (2 falhas, 9 verdes). |
+| `PHY-78 edits the current focus at record five ...` | foco do painel vem de `displayedScene()` | chip: `expected 'true' to be 'false'` (2 falhas, 9 verdes). `showKinematics = true` também falhou por ainda conter posição. |
+| `PHY-78 preserves the recording ... record zero` | chip chama `commitDoc(next)` | slider: `expected '0' to be '8'` (4 falhas, 7 verdes). |
+| `composes focus with global vector scope ...` | remover o grupo de cinemática da condição de v₀ | `expected ['m','v₀','F'] to not include 'v₀'` (2 falhas, 15 verdes). Forças sempre ligadas também falhou por incluir `F`. |
+| `composes focus with selected vector scope ...` | remover o grupo de cinemática da condição de v₀ | mesma falha de v₀. Remover o guard de forças do ramo selecionado também falhou no anel: `expected [Array(1)] to deeply equal []` (1 falha, 16 verdes). |
+| `PHY-78 hides force layers and spring readouts ...` | forças sempre ligadas no canvas | `expected ['m','P','F','N','F','el'] to not include 'P'` (6 falhas, 11 verdes). N sem guard: `expected ['m','N'] to not include 'N'`; F_el sem guard: `expected […(2)] to deeply equal []`; leitura da mola sem guard: `expected 'leitura — linkpassos: 1velocidade: 1,…' not to contain 'F_el'` (cada uma: 1 falha, 16 verdes). |
+| `PHY-78 hides rope tension ... slack=false` | leitura da corda ignora forças | `expected 'leitura — linkpassos: 1velocidade: 1,…' not to contain 'T'` (2 falhas, 15 verdes). Canvas sempre ligado também falhou por incluir `T`. |
+| `PHY-78 hides rope tension ... slack=true` | leitura da corda ignora forças | mesma falha de `T` (mesma execução); a asserção de frouxa permanece no caso. |
+| `PHY-78 uses current focus when painting recorded force vectors` | `paint` recebe `displayedScene().focus` | `expected ['m','P','F'] to not include 'P'` (1 falha, 16 verdes). |
+
+##### Gate e handoff
+
+- Gate oficial `npm test && npm run lint && npm run typecheck && npm run build`: **exit 0**, **33 arquivos / 1210 testes passed, sem skips**; lint, typecheck e build exit 0. Vite transformou 52 módulos; aviso pré-existente de chunk sim >500 kB (2136,50 kB).
+- A tentativa focada inicial teve 426 testes passed e 2 falhas de conexão com Chromium; uma repetição fora do sandbox teve 1 caso passed e 1 falha de assentamento inicial de geometria. O gate completo final fora do sandbox passou todos os testes de Chromium/layout, sem alterar o harness nem omitir testes.
+- 39 testes novos: 20 codec, 1 persistência, 1 roteamento, 17 App. Commits de testes separados dos commits de produção; correções de harness em seus próprios commits, novamente vermelhas. Evidência de mutações por teste acima.
+- Diff final revisado: apenas Primary files e o próprio ticket; sem alteração em `routing.ts`, motor, presets ou tipos do gráfico, sem artefatos gerados ou segredos. Forma do domínio continua a já documentada em CONTEXT.md. Branch `phy/PHY-78-modelo-de-foco-e-chips`, base de sessão `sweatshop/2026-10-04-1243`.
+- Stage 2 entregue em `to-review`; revisão e merge pertencem à próxima sessão.
 
 - Stage 2, harness de canvas: `drawArrow` separa `F_el` em chamadas `fillText('F')` e `fillText('el')`; o teste verifica esses dois textos na cor elástica, com presença positiva antes de desligar forças. Corrigida a expectativa de P no caso de v₀ em t=0: `weightArrows` só desenha com estados simulados (vetores iniciais são PHY-82); o teste de forças após um passo cobre P e N. Campos de contatos mantêm o bloqueio estrutural após um passo e são verificados habilitados no registro zero, sem o Foco alterar esse bloqueio.
 

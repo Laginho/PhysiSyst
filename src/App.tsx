@@ -1,7 +1,7 @@
 import { bodyEnergy, systemEnergy, type BodyEnergy, type SystemEnergy } from './sim/energy'
 import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, ConstraintEnd, FocusGroup, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
+import type { AppliedForce, Body, ConstraintEnd, Focus, FocusGroup, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
 import { bodyPointToWorld, collectWarnings, FOCUS_GROUPS, scenePath, serialize } from './scene'
 import {
   advance,
@@ -194,6 +194,8 @@ function paint(
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: {
     showGlobal: boolean
+    /** Current document preferences, even when doc is a historical scene. */
+    focus?: Focus
     stepsTaken: number
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
@@ -244,14 +246,16 @@ function paint(
   // reads the same letter it has in global mode.
   const ppm = camera.pixelsPerMeter
   const constraints = opts?.constraints ?? []
-  const showInitialVelocity = (opts?.stepsTaken ?? 0) === 0
+  const shownGroups = opts?.focus?.show ?? FOCUS_GROUPS
+  const showForces = shownGroups.includes('forces')
+  const showInitialVelocity = shownGroups.includes('kinematics') && (opts?.stepsTaken ?? 0) === 0
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
-    { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
     { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
-    { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
-    { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
-    { arrows: tensionArrows(view, ropeReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
-    { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
+    { arrows: showForces ? normalArrows(opts?.contacts ?? []) : [], style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? tensionArrows(view, ropeReadings, ppm) : [], style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? elasticArrows(view, constraints, ppm) : [], style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
@@ -263,7 +267,7 @@ function paint(
       if (showInitialVelocity) {
         for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
       }
-      for (const a of appliedArrows(selView, ppm)) {
+      for (const a of showForces ? appliedArrows(selView, ppm) : []) {
         drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
         // The application point is draggable (PHY-27): a ring marks the grip.
         screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
@@ -917,6 +921,7 @@ export default function App() {
     if (ctx)
       paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
+        focus: docRef.current.focus,
         stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
@@ -1697,6 +1702,7 @@ export default function App() {
   const selectedConstraint = selectedSpring ?? selectedRope
   const selectedItem = selected ?? selectedConstraint ?? selectedPulley
   const shownGroups = docRef.current.focus?.show ?? FOCUS_GROUPS
+  const showForces = shownGroups.includes('forces')
   const showKinematics = shownGroups.includes('kinematics')
   const showEnergy = shownGroups.includes('energy')
   const showMomentum = shownGroups.includes('momentum')
@@ -2227,25 +2233,25 @@ export default function App() {
               {selected && readout && (
                 <>
                   {showKinematics && <>
-                  <div>
-                    {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
-                  </div>
+                    <div>
+                      {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
+                    </div>
                   </>}
                   {(showKinematics || showEnergy || showMomentum) && <details>
                     <summary>{t('readout.more')}</summary>
                     {showKinematics && <>
-                    <div>
-                      {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
-                    </div>
-                    <div>
-                      {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
-                    </div>
+                      <div>
+                        {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
+                      </div>
+                      <div>
+                        {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
+                      </div>
                     </>}
                     {showEnergy && energyReadout.body && <>
                       <div>{t('readout.kinetic')}: {fmtNum(energyReadout.body.Ec, 2, lang)} J</div>
@@ -2258,7 +2264,7 @@ export default function App() {
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {selectedSpring && constraintReadout?.kind === 'spring' && (
+              {showForces && selectedSpring && constraintReadout?.kind === 'spring' && (
                 <>
                   {/* F_el differs per end only on a spring with mass (PHY-30), labelled as its arrows. */}
                   {(selectedSpring.mass ?? 0) > 0 ? (
@@ -2277,7 +2283,7 @@ export default function App() {
                   </div>
                 </>
               )}
-              {selectedRope && constraintReadout?.kind === 'rope' && (
+              {showForces && selectedRope && constraintReadout?.kind === 'rope' && (
                 <>
                   {(ropePerLeg ? constraintReadout.segments : [constraintReadout.tension]).map((T, i) => (
                     <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
@@ -2298,18 +2304,18 @@ export default function App() {
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               {energyReadout.system ? <>
                 {showEnergy && <>
-                <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
-                <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
-                {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
-                <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
+                  <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
+                  <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
+                  {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
+                  <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
                 </>}
                 {showMomentum && <>
-                <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
-                <details>
-                  <summary>{t('readout.more')}</summary>
-                  <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
-                  <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
-                </details>
+                  <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
+                  <details>
+                    <summary>{t('readout.more')}</summary>
+                    <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
+                    <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
+                  </details>
                 </>}
               </> : <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
             </div>
