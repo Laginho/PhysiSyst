@@ -148,9 +148,58 @@ function toggleFocus(host: HTMLElement, ...groups: FocusGroup[]): void {
   for (const group of groups) act(() => focusChip(host, group).click())
 }
 
+/** Observe the current frame at the canvas boundary; keep the real vector producers and drawArrow. */
+function captureVectorFrame() {
+  const labels: Array<{ color: unknown; text: string }> = []
+  const rings: Array<{ color: unknown; x: number; y: number }> = []
+  const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+    get(target, key) {
+      if (key === 'clearRect') return () => { labels.length = 0; rings.length = 0 }
+      if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
+      if (key === 'arc') return (x: number, y: number) => { rings.push({ color: target.strokeStyle, x, y }) }
+      if (key === 'measureText') return () => ({ width: 10 })
+      return target[key] ?? (() => {})
+    },
+  })
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+  return { labels, rings }
+}
+
 describe('scene focus chips (PHY-78)', () => {
   beforeEach(() => setLang('pt-BR'))
   afterEach(() => setLang('pt-BR'))
+
+  it.each(['global', 'selected'] as const)('composes focus with %s vector scope without hiding initial velocity fields', async (scope) => {
+    const frame = captureVectorFrame()
+    const scene = blankScene()
+    scene.bodies.push({ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false,
+      position: { x: 6, y: 4 }, rotation: 0, vx: 2 })
+    scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0.2, y: 0 }, magnitude: 3, direction: 0 }]
+    const { host, canvas } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'focused', name: 'Focused', updatedAt: 1 }])
+      saveScene(window.localStorage, 'focused', scene)
+      saveCurrentSceneId(window.localStorage, 'focused')
+    })
+    await settleSimImport()
+    const allVectors = inputForLabel(host, t('panel.showVectors'))
+    if (allVectors.checked !== (scope === 'global')) act(() => allVectors.click())
+    click(canvas, { x: 6, y: 4 })
+    const texts = () => frame.labels.map(l => l.text)
+    expect(texts()).not.toContain('v₀')
+    expect(texts()).toContain('F')
+    for (const key of ['vx', 'vy']) expect(inputForLabel(panel(host, 'ball')!, t(`properties.${key}`)).matches(':disabled')).toBe(false)
+    toggleFocus(host, 'kinematics')
+    expect(texts()).toContain('v₀')
+    toggleFocus(host, 'forces')
+    expect(texts()).not.toContain('F')
+    expect(texts()).not.toContain('P')
+    expect(texts()).toContain('v₀')
+    expect(frame.rings.filter(r => r.color === '#d97742')).toEqual([])
+    toggleFocus(host, 'forces')
+    expect(texts()).toContain('F')
+    if (scope === 'global') expect(texts()).toContain('P')
+    else expect(frame.rings).toContainEqual({ color: '#d97742', x: 462, y: 300 })
+  })
 
   it('filters initial body readouts with blank focus and restores kinematics on request', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
@@ -3325,7 +3374,11 @@ describe('galeria de um clique (PHY-62)', () => {
 
 
 describe('recorded time player (PHY-64)', () => {
-  async function setupRecording(kind?: 'spring' | 'rope', bodies: 'dynamic' | 'fixed' | 'empty' = 'dynamic') {
+  async function setupRecording(kind?: 'spring' | 'rope', bodies: 'dynamic' | 'fixed' | 'empty' = 'dynamic', options: {
+    configure?: (scene: Scene) => void
+    contacts?: ReturnType<Simulator['readContacts']>
+    slack?: boolean
+  } = {}) {
     setLang('pt-BR')
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let frame!: FrameRequestCallback
@@ -3349,14 +3402,16 @@ describe('recorded time player (PHY-64)', () => {
     }
     if (bodies === 'empty') { scene.bodies = []; scene.forces = [] }
     if (bodies === 'fixed') scene.bodies.forEach(b => { b.fixed = true })
+    options.configure?.(scene)
     let current = scene
     const step = vi.fn(() => { count++ })
     const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })
     vi.mocked(createSimulator).mockResolvedValue({
       ...makeFakeSimulator(), step, replaceScene,
+      readContacts: () => options.contacts ?? [],
       readConstraints: () => kind === 'spring'
         ? [{ id: 'link', kind, dx: count / 100, force: { a: count, b: count } }]
-        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: false, segments: [count] }] : [],
+        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: options.slack ?? false, segments: [count] }] : [],
       readStates: () => new Map(current.bodies.map((b) => [b.id, {
         position: { x: b.position.x + (b.fixed ? 0 : count / 100), y: b.position.y },
         rotation: b.rotation, linvel: { x: b.fixed ? 0 : count * count / 60, y: 0 }, angvel: 0,
@@ -3403,6 +3458,75 @@ describe('recorded time player (PHY-64)', () => {
     }
     return { ...p, graph, select, pointer, capture }
   }
+
+  it('PHY-78 hides force layers and spring readouts while preserving editable force and contact fields', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording('spring', 'dynamic', {
+      configure: scene => {
+        scene.bodies.push(blankScene().bodies[0]!)
+        scene.bodies.find(b => b.id === 'ball')!.position.y = 0.5
+        scene.contacts = [{ a: 'ball', b: 'chao', muS: 0.3, muK: 0.2 }]
+      },
+      contacts: [{ aId: 'ball', bId: 'chao', point: { x: 6, y: 0 }, normal: { x: 0, y: 1 } }],
+    })
+    await p.steps(1)
+    expect(frame.labels.map(l => l.text)).toContain('P')
+    expect(frame.labels.map(l => l.text)).toContain('N')
+    // F_el is drawn as separate base/subscript fillText calls, not the literal "F_el".
+    expect(frame.labels.filter(l => l.color === '#00838f').map(l => l.text)).toEqual(['F', 'el'])
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).not.toContain('P')
+    expect(frame.labels.map(l => l.text)).not.toContain('N')
+    expect(frame.labels.filter(l => l.color === '#00838f' || l.color === '#d97742')).toEqual([])
+    click(p.canvas, { x: 4, y: 2.25 })
+    p.poll()
+    const reading = panel(p.host, t('readout.title', { id: 'link' }))!
+    expect(reading.textContent).not.toContain(t('readout.springForce'))
+    expect(reading.textContent).not.toContain(t('readout.springDx'))
+    expect(reading.textContent).toContain(t('readout.steps'))
+    toggleFocus(p.host, 'forces')
+    expect(reading.textContent).toContain(t('readout.springForce'))
+    expect(frame.labels.map(l => l.text)).toContain('P')
+    toggleFocus(p.host, 'forces')
+    // Existing structural locks still apply after stepping; record zero permits editing.
+    p.seek(0)
+    click(p.canvas, { x: 6, y: 0.5 })
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    for (const input of forces.querySelectorAll('input')) expect(input.matches(':disabled')).toBe(false)
+    for (const key of ['muS', 'muK', 'e']) expect(inputForLabel(p.host, t(`contacts.${key}`)).matches(':disabled')).toBe(false)
+  })
+
+  it.each([false, true])('PHY-78 hides rope tension and slack readouts with forces off (slack=%s)', async (slack) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording('rope', 'dynamic', { slack })
+    await p.steps(1)
+    expect(frame.labels.map(l => l.text)).toContain('T')
+    click(p.canvas, { x: 4, y: 4 })
+    p.poll()
+    const reading = panel(p.host, t('readout.title', { id: 'link' }))!
+    expect(reading.textContent).toContain(t('readout.ropeTension'))
+    if (slack) expect(reading.textContent).toContain(t('readout.ropeSlack'))
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).not.toContain('T')
+    expect(reading.textContent).not.toContain(t('readout.ropeTension'))
+    expect(reading.textContent).not.toContain(t('readout.ropeSlack'))
+    expect(reading.textContent).toContain(t('readout.steps'))
+  })
+
+  it('PHY-78 uses current focus when painting recorded force vectors', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording()
+    await p.steps(8)
+    p.seek(5)
+    expect(frame.labels.map(l => l.text)).toContain('P')
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).not.toContain('P')
+    expect(frame.labels.map(l => l.text)).not.toContain('F')
+    expect(p.slider().value).toBe('5')
+    expect(p.step).toHaveBeenCalledTimes(8)
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).toContain('P')
+  })
 
   it('PHY-78 filters body and spring system energy independently from momentum', async () => {
     const p = await setupRecording('spring')
