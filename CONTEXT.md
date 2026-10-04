@@ -70,6 +70,10 @@ _Avoid_: `L₀` for the natural length, elastic
 The letter drawn beside every vector arrow (`P`, `N`, `F`, `T`, `F_el`, `v₀` in pt-BR; `W` and `F_s` in en-US), numbered only when two of the same kind exist. Derived from the scene, never stored; never shows a value.
 _Avoid_: arrow name, tag
 
+**Foco** (focus):
+The per-scene choice of what to show: the chips forças, cinemática, energia and momento, plus the hidden graph curves. Stored on the scene as `focus`; absent means everything is shown. Forças covers the force arrows and the force readouts, cinemática the v/a arrows and the kinematic readouts, energia and momento the panel only; editing fields are never affected. A view edit: outside undo, never resets the simulation, saved in user scenes and session-only in presets.
+_Avoid_: modo, filtro (mode, filter)
+
 ### Physics stance
 
 **Idealized default**:
