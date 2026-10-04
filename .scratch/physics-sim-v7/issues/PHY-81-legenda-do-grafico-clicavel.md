@@ -51,6 +51,9 @@ Hoje a legenda é texto pintado no canto superior direito do canvas do gráfico,
 
 ## Comments
 
+- Segunda fatia, DOM: `npm test -- src/App.test.ts -t 'PHY-81'` — **6 failed, 211 skipped (217)**, todos com `HTML graph legend: expected null not to be null`. Dois casos de localização, isolamento por tipo/autosave/restauração, reabertura de curvas salvas/composição com chips, preset sem cópia e cursor 5/0 sem undo/step/reset. Testes chamam a interface do App e a persistência real; o simulador é o falso já usado pelo harness. Produção do App ainda inalterada neste commit.
+- Renderer restaurado após quatro mutações: cor de `E_pg` igual à de `E_c` → `expected '#2563eb' to be '#c2410c'`; filtro removido → lista com 3 em vez de 2 e escala [-10, 0, 210] em vez de [-0.5, 0, 10.5]; eixo vazio anterior → [-0.05, 0, 0.05] em vez de [-1, 0, 1]; legenda `fillText('E_pg')` recolocada → `expected true to be false`. Verde: **11 passed (11)** em `src/render/graph.test.ts`.
+
 - 2026-10-04 Stage 2: branch `phy/PHY-81-clickable-graph-legend` criada sobre `sweatshop/2026-10-04-1243`; PHY-76 e PHY-78 estão `done` na sessão. Costuras aprovadas: renderer público, DOM do App e canvas real via `withBrowserSession`. Consumidores examinados: `repaintGraph`, `seekGraph` (usa somente o eixo t de `graphLayout([])`), `seriesFor` e chips de Foco. Entradas degeneradas: lista vazia, todas escondidas, nome desconhecido, tipos sem corpo selecionado, energia do sistema com mola e cursor histórico. `Focus.hidden` será lido do documento atual, nunca do frame histórico.
 - Prova vermelha do renderer: `npm test -- src/render/graph.test.ts -t 'PHY-81'` — **4 failed, 7 skipped (11)**. `colorOf is not a function` e `visibleSeries is not a function`; nenhuma produção alterada. O teste de eixo vazio também fixa o [-1, 1] descrito no ticket: a implementação anterior usava [-0.05, 0.05], sem afetar a inversão do eixo t.
 

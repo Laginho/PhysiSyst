@@ -19,6 +19,7 @@ import { scenePath } from './scene'
 import type { FocusGroup, Scene } from './scene/types'
 import { PRESETS, presetById } from './presets'
 import { withBrowserSession } from './test/browser'
+import { colorOf } from './render/graph'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -342,6 +343,111 @@ describe('scene focus chips (PHY-78)', () => {
     const row = focusChip(host, 'forces').parentElement!
     expect(row.textContent).toContain(labels[0])
     expect([...row.querySelectorAll('button')].map(b => b.textContent)).toEqual(labels.slice(1))
+  })
+})
+
+function graphLegend(host: HTMLElement, label = 'curvas do gráfico'): HTMLElement {
+  const list = host.querySelector<HTMLElement>(`#recording-graph [aria-label="${label}"]`)
+  expect(list, 'HTML graph legend').not.toBeNull()
+  return list!
+}
+
+function graphCurve(host: HTMLElement, name: string): HTMLButtonElement {
+  const button = [...graphLegend(host).querySelectorAll('button')].find(b => b.textContent === name.replace('_', ''))
+  expect(button, `legend curve ${name}`).toBeDefined()
+  return button!
+}
+
+describe('clickable graph legend (PHY-81)', () => {
+  beforeEach(() => setLang('pt-BR'))
+  afterEach(() => setLang('pt-BR'))
+
+  it.each([
+    ['pt-BR', 'curvas do gráfico'], ['en', 'graph curves'],
+  ] as const)('shows localized accessible energy curves with HTML subscripts and matching swatches in %s', (lang, label) => {
+    const host = renderApp()
+    const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, lang))
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const buttons = [...graphLegend(host, label).querySelectorAll('button')]
+    expect(buttons.map(b => b.textContent)).toEqual(['Ec', 'Epg', 'Emec'])
+    expect(buttons.map(b => b.querySelector('sub')?.textContent)).toEqual(['c', 'pg', 'mec'])
+    expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'true'])
+    buttons.forEach((button, i) => {
+      const swatch = button.querySelector('span')!
+      const expected = document.createElement('span')
+      expected.style.background = colorOf(['E_c', 'E_pg', 'E_mec'][i])
+      expect(swatch.style.background).toBe(expected.style.background)
+    })
+  })
+
+  it('keeps hidden curves per kind, autosaves the user focus and toggles a curve back on', async () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'curves', name: 'Curves', updatedAt: 1 }])
+      saveScene(window.localStorage, 'curves', DEMO_SCENE)
+      saveCurrentSceneId(window.localStorage, 'curves')
+    })
+    await settleSimImport()
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const kind = host.querySelector<HTMLSelectElement>('#recording-graph select')!
+    act(() => graphCurve(host, 'E_pg').click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => setSelectValue(kind, 'momentum'))
+    expect([...graphLegend(host).querySelectorAll('button')].map(b => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['px', 'true'], ['py', 'true'], ['|p|', 'true'],
+    ])
+    act(() => graphCurve(host, 'p_x').click())
+    act(() => setSelectValue(kind, 'energy'))
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, 'curves')?.focus).toEqual({
+      show: ['forces', 'kinematics', 'energy', 'momentum'], hidden: { energy: ['E_pg'], momentum: ['p_x'] },
+    })
+    act(() => graphCurve(host, 'E_pg').click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('true')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, 'curves')?.focus?.hidden).toEqual({ energy: [], momentum: ['p_x'] })
+  })
+
+  it('opens stored hidden curves and preserves them when a focus chip changes', async () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'hidden', name: 'Hidden', updatedAt: 1 }])
+      saveScene(window.localStorage, 'hidden', { ...DEMO_SCENE, focus: { show: ['energy'], hidden: { energy: ['E_pg'] } } })
+      saveCurrentSceneId(window.localStorage, 'hidden')
+    })
+    await settleSimImport()
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    expect(graphCurve(host, 'E_c').getAttribute('aria-pressed')).toBe('true')
+    toggleFocus(host, 'momentum')
+    act(() => graphCurve(host, 'E_c').click())
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, 'hidden')?.focus).toEqual({
+      show: ['energy', 'momentum'], hidden: { energy: ['E_pg', 'E_c'] },
+    })
+  })
+
+  it('keeps preset hidden curves only for the open session without creating a user scene', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    const openPreset = () => act(() => [...host.querySelectorAll('button')].find(b =>
+      b.querySelector('strong')?.textContent === t('preset.free-fall.name'),
+    )!.click())
+    openPreset()
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const before = loadIndex(window.localStorage)
+    act(() => graphCurve(host, 'E_pg').click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(sceneSelect(host).value).toBe('preset:free-fall')
+    expect(loadIndex(window.localStorage)).toEqual(before)
+    expect(window.localStorage.getItem('physics-sim:scene:preset:free-fall')).toBeNull()
+    act(() => setSelectValue(sceneSelect(host), 'cena-1'))
+    openPreset()
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('true')
   })
 })
 
@@ -4047,6 +4153,32 @@ describe('recorded time player (PHY-64)', () => {
     }
     expect(bodyMore().textContent).toContain('E_c')
     expect(bodyMore().textContent).not.toContain('|p|')
+  })
+
+  it('PHY-81 toggles current graph visibility at record five and zero without undo, stepping or reset', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(10)
+    p.seek(5)
+    act(() => findButton(p.host, t('graph.toggle'))!.click())
+    act(() => graphCurve(p.host, 'E_pg').click())
+    expect(graphCurve(p.host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    const unchanged = (cursor: string) => {
+      expect(p.slider().value).toBe(cursor)
+      expect(p.slider().max).toBe('10')
+      expect(p.step).toHaveBeenCalledTimes(10)
+      expect(p.replaceScene).not.toHaveBeenCalled()
+      expect(findButton(p.host, '↶')!.disabled).toBe(true)
+      expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    }
+    unchanged('5')
+    p.seek(0)
+    expect(graphCurve(p.host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => graphCurve(p.host, 'E_pg').click())
+    expect(graphCurve(p.host, 'E_pg').getAttribute('aria-pressed')).toBe('true')
+    unchanged('0')
+    await p.steps(1)
+    unchanged('1')
   })
 
   it('PHY-78 edits the current focus at record five while physics fields remain locked', async () => {
