@@ -280,3 +280,62 @@ Following the v4 spec's roadmap (*Depois da v4*):
 - A preset curation stage, with its own grilling, at the end of mechanics.
 - A UX polish phase, including the readout panel.
 - `/audit` until the repo is in good shape, before publishing.
+
+---
+
+# physics-sim v6 — Energy, momentum and graphs
+
+**PHY-74, 2026-10-03 — closeout pending the desktop pass.** Version advances directly from 0.4.0 to 0.6.0. v5 (PHY-58–PHY-66) had neither a version bump nor its own report section; its specification, tickets and ledger remain in [.scratch/physics-sim-v5/](.scratch/physics-sim-v5/).
+
+## Scope Delivered
+
+| Ticket | Deliverable |
+|---|---|
+| PHY-67 | Optional Contact restitution coefficient `e`, codec and editor controls. |
+| PHY-68 | Simulator restitution through per-body factors, with an explicit fallback warning (ADR-0005). |
+| PHY-69 | Elastic and inelastic collision presets, with localized gallery entries. |
+| PHY-70 | Pure body/system energy and linear-momentum calculations from simulator readouts. |
+| PHY-71 | Body and system energy/momentum readouts. |
+| PHY-72 | Collapsible recording graphs for position, velocity, acceleration, energy and momentum. |
+| PHY-73 | Graph click/drag seeks the recording and pauses playback; available graph types follow body selection. |
+| PHY-74 | Conservation tests and version 0.6.0; this report is prepared, but desktop verification and independent review remain pending. |
+
+The v6 ledger contains one closing entry for each of PHY-67–PHY-73. PHY-74 receives its entry only when stage 3 closes it.
+
+## Gate Outcomes
+
+- **1094 tests / 33 files passed**, no skips or failures; lint **0 warnings**, typecheck and build exit 0. One complete sequential run of `npm test -- --maxWorkers=2`, `npm run lint`, `npm run typecheck`, `npm run build` passed, using the command-only two-worker mitigation already recorded for PHY-72/73. Counts were extracted from `%TEMP%/PHY-74-gate-workers2.log`, outside the repository. No configuration changed.
+- The preceding unrestricted-worker attempt passed 1093 tests and failed one browser setup assertion (slider remained at 0 instead of the prepared 60 frames); lint/typecheck/build did not run in that failed chain. Its output is retained separately in `%TEMP%/PHY-74-gate.log`.
+- Build: 52 modules; entry 306.32 kB (gzip 94.55 kB), lazy physics chunk 2136.50 kB (gzip 811.26 kB). The captured build emitted no warning. No new CI/deployment run is claimed.
+
+The two new conservation tests call the actual preset, codec, simulator and `systemEnergy`: projectile within 0.5% from frame 1 through the last contact-free frame up to 1 s, and simple pendulum within 2% over 600 steps. Both passed and both failed with gravity temporarily zeroed in the production potential-energy calculation; per-test red output is recorded in the ticket. Production was restored byte-for-byte.
+
+## Desktop Manual Pass
+
+**Not executed.** The available UI-control inventory returned no browsers or apps; attempts to open the local Vite app with both `iab` and `chrome` returned `Browser is not available`. Automated coverage is not a substitute for these observations. Each item remains pending, rather than being reported as OK or as a product defect.
+
+| Item | Result |
+|---|---|
+| 1. Play `collision-elastic`: sphere 1 stops, sphere 2 takes its speed, neither bounces on the floor. | Pending — browser connection required. |
+| 2. Play `collision-inelastic`: both continue, sphere 1 slower. | Pending — browser connection required. |
+| 3. Set Contact `e` to 0 and reset: spheres stick together. | Pending — browser connection required. |
+| 4. Projectile system panel: mechanical energy steady in flight, drops on landing. | Pending — browser connection required. |
+| 5. Simple-pendulum graph: kinetic and gravitational potential energies alternate, mechanical energy stays level. | Pending — browser connection required. |
+| 6. Clicking the graph moves slider and scene; dragging during playback pauses. | Pending — browser connection required. |
+| 7. Resize the scene canvas: graph follows its width. | Pending — browser connection required. |
+| 8. English readouts/axes use decimal points; pt-BR uses decimal commas. | Pending — browser connection required. |
+
+## Known Limitations
+
+- Rapier 0.20 exposes no restitution velocity threshold here: a ball with `e = 1` keeps bouncing.
+- Undeclared pairs whose bodies participate in other positive-restitution pairs inherit `r_a · r_b`, the accepted residual deviation described in ADR-0005, analogous to friction.
+- Normal and friction forces still lack magnitude readouts; their representation remains directional.
+- Energy/momentum can temporarily reflect the previous world while a structural rebuild is pending or fails; CLEAN-30 records the reproductions and awaits a stage-1 contract.
+- Numerical rope projection can dissipate energy in fast swings (ADR-0004); the conservation checks establish only the stated preset windows and tolerances.
+- The lazy Rapier chunk remains large (about 2.14 MB before gzip).
+
+## Next Steps
+
+- Complete the eight desktop observations and independent PHY-74 review before closing v6.
+- v7: normal/friction magnitudes, work and dissipation, graph export.
+- Specify CLEAN-30's pending-rebuild readout behavior.
