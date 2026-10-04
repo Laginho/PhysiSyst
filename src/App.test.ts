@@ -164,6 +164,139 @@ describe('recording graph panel (PHY-72)', () => {
   })
 })
 
+describe('canvas dock and controls scale (PHY-76)', () => {
+  afterEach(() => setLang('pt-BR'))
+  const scaledControls = (host: HTMLElement): HTMLElement => {
+    const block = [...host.querySelectorAll<HTMLElement>('div')].find(el => Boolean(el.style.zoom))
+    if (!block) throw new Error('missing scaled controls block')
+    return block
+  }
+  const scaleButton = (host: HTMLElement, direction: 'bigger' | 'smaller'): HTMLButtonElement => {
+    const button = host.querySelector<HTMLButtonElement>(`button[aria-label="${t(`controls.${direction}`)}"]`)
+    if (!button) throw new Error(`missing controls.${direction} button`)
+    return button
+  }
+  const dock = (host: HTMLElement) => host.querySelector('canvas')!.parentElement!.nextElementSibling as HTMLElement
+
+  it('hydrates the saved scale and scales transport, palette and tool hints without scaling the sizer or graph', () => {
+    window.localStorage.setItem('physics-sim:controlsScale', '1.3')
+    const host = renderApp()
+    const block = scaledControls(host)
+    expect(block.style.zoom).toBe('1.3')
+    expect(block.contains(findButton(host, t('playback.play'))!)).toBe(true)
+    expect(block.contains(findButton(host, t('palette.rectangle'))!)).toBe(true)
+    for (const direction of ['bigger', 'smaller'] as const) {
+      const button = scaleButton(host, direction)
+      expect(block.contains(button)).toBe(false)
+      expect(dock(host).contains(button)).toBe(true)
+      expect(button.title).toBe(t('controls.sizeTitle', { pct: 130 }))
+    }
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    expect(dock(host).contains(host.querySelector('#recording-graph'))).toBe(true)
+    expect(block.contains(host.querySelector('#recording-graph'))).toBe(false)
+    act(() => findButton(host, t('palette.spring'))!.click())
+    expect(block.textContent).toContain(t('tool.springFirst'))
+  })
+
+  it('increments in tenths and persists the choice without changing the document, selection or undo', () => {
+    const host = renderApp()
+    click(host.querySelector('canvas')!, { x: 9, y: 3 })
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    const before = window.localStorage.getItem('physics-sim:scene:cena-1')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    act(() => scaleButton(host, 'bigger').click())
+    expect(scaledControls(host).style.zoom).toBe('1.1')
+    expect(window.localStorage.getItem('physics-sim:controlsScale')).toBe('1.1')
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    expect(window.localStorage.getItem('physics-sim:scene:cena-1')).toBe(before)
+    expect([...host.querySelectorAll('legend')].map(el => el.textContent)).toContain('caixa')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+  })
+
+  it.each([
+    ['bigger', 6, '1.6', 'smaller'],
+    ['smaller', 3, '0.7', 'bigger'],
+  ] as const)('stops %s at its bound and leaves the opposite button enabled', (direction, clicks, expected, opposite) => {
+    const host = renderApp()
+    const button = scaleButton(host, direction)
+    for (let i = 0; i < clicks; i++) act(() => button.click())
+    expect(scaledControls(host).style.zoom).toBe(expected)
+    expect(window.localStorage.getItem('physics-sim:controlsScale')).toBe(expected)
+    expect(button.disabled).toBe(true)
+    expect(scaleButton(host, opposite).disabled).toBe(false)
+    act(() => button.click())
+    expect(scaledControls(host).style.zoom).toBe(expected)
+  })
+
+  it.each([
+    [1200, 800, 'row'],
+    [700, 900, 'column'],
+  ] as const)('orders transport, palette and graph in a canvas-width dock at %ix%i', (width, height, direction) => {
+    containerSize = { width: direction === 'column' ? width - 282 : width, height }
+    const host = renderApp()
+    if (direction === 'column') act(() => lastResizeObserverCallback?.(
+      [{ contentRect: { width, height } } as ResizeObserverEntry], null as unknown as ResizeObserver,
+    ))
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const canvas = host.querySelector('canvas')!
+    expect(canvas.parentElement!.parentElement!.parentElement!.style.flexDirection).toBe(direction)
+    expect(dock(host).style.width).toBe(canvas.style.width)
+    const transport = findButton(host, t('playback.play'))!
+    const palette = findButton(host, t('palette.rectangle'))!
+    const graph = host.querySelector('#recording-graph')!
+    expect(dock(host).contains(transport)).toBe(true)
+    expect(dock(host).contains(palette)).toBe(true)
+    expect(transport.compareDocumentPosition(palette) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(palette.compareDocumentPosition(graph) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps the graph at canvas width and 180px high at both scale extremes and preserves its toggle', () => {
+    const host = renderApp()
+    const toggle = findButton(host, t('graph.toggle'))!
+    act(() => toggle.click())
+    for (const scale of ['1', '1.6']) {
+      if (scale === '1.6') for (let i = 0; i < 6; i++) act(() => scaleButton(host, 'bigger').click())
+      expect(scaledControls(host).style.zoom).toBe(scale)
+      const graph = host.querySelector<HTMLCanvasElement>('#recording-graph canvas')!
+      expect(graph.style.width).toBe(host.querySelector('canvas')!.style.width)
+      expect(graph.style.height).toBe('180px')
+      expect(scaledControls(host).contains(graph)).toBe(false)
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+      expect(toggle.getAttribute('aria-controls')).toBe('recording-graph')
+    }
+    act(() => toggle.click())
+    expect(host.querySelector('#recording-graph')).toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('updates dock width in the same render as a corner-handle drag', () => {
+    containerSize = { width: 1200, height: 800 }
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')!
+    const before = parseFloat(canvas.style.width)
+    const handle = host.querySelector<HTMLButtonElement>(`[aria-label="${t('canvas.resize')}"]`)!
+    Object.assign(handle, { setPointerCapture: () => {}, releasePointerCapture: () => {} })
+    act(() => handle.dispatchEvent(pointerEvent('pointerdown', before, 0)))
+    act(() => handle.dispatchEvent(pointerEvent('pointermove', before - 180, 0)))
+    expect(canvas.style.width).toBe(`${before - 180}px`)
+    expect(dock(host).style.width).toBe(canvas.style.width)
+    act(() => handle.dispatchEvent(pointerEvent('pointerup', before - 180, 0)))
+  })
+
+  it('translates both sizer labels and the percentage title in pt-BR and en', () => {
+    const host = renderApp()
+    const language = host.querySelector<HTMLSelectElement>('select:has(option[value="en"])')!
+    for (const lang of ['pt-BR', 'en']) {
+      act(() => setSelectValue(language, lang))
+      for (const direction of ['bigger', 'smaller'] as const) {
+        expect(scaleButton(host, direction).getAttribute('aria-label')).not.toBe(`controls.${direction}`)
+        expect(scaleButton(host, direction).title).toBe(t('controls.sizeTitle', { pct: 100 }))
+        expect(scaleButton(host, direction).title).toContain('100')
+      }
+    }
+  })
+})
+
 function inputForLabel(panel: Element, labelText: string): HTMLInputElement {
   const label = [...panel.querySelectorAll('label')].find((candidate) => candidate.textContent?.trim() === labelText)
   const input = label?.querySelector('input')
