@@ -1,5 +1,5 @@
 # PHY-78: Modelo de Foco e chips
-Stage: implementing
+Stage: to-review
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -160,3 +160,31 @@ Verde com a produção restaurada: `npm test -- src/App.test.ts src/scene/codec.
 → **4 arquivos / 50 passed / 389 skipped**, exit 0; os skips são os casos fora
 desse filtro. `git diff --exit-code -- src/App.tsx` confirmou que as mutações
 foram restauradas. Correções de harness e evidência ficam em commit só de teste.
+
+#### Stage 2 handoff (2026-10-04)
+
+- Pendência do critério 9 resolvida pelos commits só de teste `fa85eb6` e
+  `23bc640`: comparação dos sete campos na ponta antes/depois do chip,
+  habilitação no registro zero com forças desligadas e restauração de P no
+  registro simulado. As mutações e seus vermelhos estão registrados acima.
+- Integração com o PHY-82 concluída sobre a sessão `b3aca92`. O conflito de
+  `paint` preserva as sondas iniciais, o caminho documental de T e os grupos
+  independentes do Foco; a regressão dessa independência está coberta por teste
+  com mutação. A retomada não altera a produção de campos de forças/contatos.
+- Verificação focada completa fora do sandbox, permitindo Chromium:
+  `npm test -- src/scene/codec.test.ts src/persistence/persistence.test.ts src/playback/routing.test.ts src/App.test.ts`
+  → **4 arquivos / 439 testes passed, zero skips**, exit 0.
+- Gate oficial completo fora do sandbox:
+  `npm test && npm run lint && npm run typecheck && npm run build`
+  → **33 arquivos / 1226 testes passed, zero skips**, lint, typecheck e build
+  **exit 0**. Vite: 52 módulos; aviso preexistente do chunk do simulador acima
+  de 500 kB (2136,71 kB). Nenhuma validação pendente.
+- Diff revisado contra `b3aca92`, incluindo a resolução do conflito. Commits de
+  produção não alteram testes; retomada limitada a `App.test.ts`, ao ticket e à
+  resolução de `paint` durante o rebase. `git diff --check` verde, mutações
+  restauradas e artefatos de build fora do diff.
+- Limitação já registrada pela revisão anterior: desfazer/refazer uma edição
+  física pode restaurar um Foco anterior; o contrato adicional permanece em
+  `CLEAN-31`, que esta retomada preserva sem modificar.
+
+Etapa 2 encerrada em `to-review`, pronta para a revisão independente do stage 3.
