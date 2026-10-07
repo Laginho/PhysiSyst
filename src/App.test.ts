@@ -344,6 +344,76 @@ describe('scene focus chips (PHY-78)', () => {
     expect(row.textContent).toContain(labels[0])
     expect([...row.querySelectorAll('button')].map(b => b.textContent)).toEqual(labels.slice(1))
   })
+
+  it('CLEAN-31 preserves current groups and hidden graph curves when undoing a body addition', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    const id = sceneSelect(host).value
+    act(() => findButton(host, t('palette.circle'))!.click())
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    toggleFocus(host, 'momentum')
+    act(() => graphCurve(host, 'E_c').click())
+
+    act(() => findButton(host, '↶')!.click())
+
+    expect(focusChip(host, 'momentum').getAttribute('aria-pressed')).toBe('false')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    expect(findButton(host, '↷')!.disabled).toBe(false)
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    const saved = loadScene(window.localStorage, id)!
+    expect(saved.bodies.map(body => body.id)).toEqual(['chao'])
+    expect(saved.focus).toEqual({ show: ['forces', 'energy'], hidden: { energy: ['E_c'] } })
+  })
+
+  it('CLEAN-31 preserves current groups and hidden graph curves when redoing a mass edit', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    const id = sceneSelect(host).value
+    act(() => findButton(host, t('palette.circle'))!.click())
+    const mass = () => inputForLabel(panel(host, 'bola')!, t('properties.mass'))
+    act(() => setNativeInputValue(mass(), 5))
+    act(() => findButton(host, '↶')!.click())
+    expect(mass().value).toBe('1')
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    toggleFocus(host, 'momentum')
+    act(() => graphCurve(host, 'E_c').click())
+
+    act(() => findButton(host, '↷')!.click())
+
+    expect(mass().value).toBe('5')
+    expect(focusChip(host, 'momentum').getAttribute('aria-pressed')).toBe('false')
+    expect(graphCurve(host, 'E_c').getAttribute('aria-pressed')).toBe('false')
+    expect(findButton(host, '↷')!.disabled).toBe(true)
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, id)?.focus).toEqual({
+      show: ['forces', 'energy'], hidden: { energy: ['E_c'] },
+    })
+  })
+
+  it('CLEAN-31 keeps legacy scenes without focus showing all groups through undo and redo', async () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'legacy-focus', name: 'Legacy', updatedAt: 1 }])
+      saveScene(window.localStorage, 'legacy-focus', DEMO_SCENE)
+      saveCurrentSceneId(window.localStorage, 'legacy-focus')
+    })
+    await settleSimImport()
+    act(() => findButton(host, t('palette.circle'))!.click())
+    for (const action of ['↶', '↷']) {
+      act(() => findButton(host, action)!.click())
+      expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+        focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+      )).toEqual(['true', 'true', 'true', 'true'])
+      act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+      const saved = loadScene(window.localStorage, 'legacy-focus')!
+      expect(saved).not.toHaveProperty('focus')
+      expect(saved.bodies).toHaveLength(DEMO_SCENE.bodies.length + (action === '↷' ? 1 : 0))
+    }
+  })
 })
 
 function graphLegend(host: HTMLElement, label = 'curvas do gráfico'): HTMLElement {
@@ -929,6 +999,62 @@ function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
   const box = canvas?.parentElement
   return [...(box?.children ?? [])].find((el) => el !== canvas && el.tagName === 'DIV') as HTMLElement | undefined
 }
+
+describe('CLEAN-35 force grip visibility', () => {
+  beforeEach(() => setLang('pt-BR'))
+  afterEach(() => setLang('pt-BR'))
+
+  async function setup(scope: 'global' | 'selected') {
+    const frame = captureVectorFrame()
+    const scene = blankScene()
+    delete scene.focus
+    scene.bodies = [{ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0 }]
+    scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 }]
+    const { host, canvas } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'grip', name: 'Grip', updatedAt: 1 }])
+      saveScene(window.localStorage, 'grip', scene)
+      saveCurrentSceneId(window.localStorage, 'grip')
+    })
+    await settleSimImport()
+    click(canvas, { x: 6, y: 4 })
+    const allVectors = inputForLabel(host, t('panel.showVectors'))
+    if (allVectors.checked !== (scope === 'global')) act(() => allVectors.click())
+    const saved = () => {
+      act(() => window.dispatchEvent(new Event('pagehide')))
+      return loadScene(window.localStorage, 'grip')!
+    }
+    return { host, canvas, frame, saved }
+  }
+
+  it.each(['selected', 'global'] as const)('drags the body past its hidden force grip and still edits the anchor through fields: %s scope', async (scope) => {
+    const p = await setup(scope)
+    expect(p.frame.labels.map(l => l.text)).toContain('F')
+    if (scope === 'selected') expect(p.frame.rings).toContainEqual({ color: '#d97742', x: 450, y: 300 })
+    toggleFocus(p.host, 'forces')
+    expect(p.frame.rings.filter(r => r.color === '#d97742')).toEqual([])
+    dragTo(p.canvas, { x: 6, y: 4 }, { x: 7, y: 4 })
+    expect(p.saved().bodies[0]!.position).toEqual({ x: 7, y: 4 })
+    expect(p.saved().forces[0]!.anchor).toEqual({ x: 0, y: 0 })
+
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    const anchorX = inputForLabel(forces, t('forces.anchorX'))
+    const anchorY = inputForLabel(forces, t('forces.anchorY'))
+    expect(anchorX.matches(':disabled')).toBe(false)
+    expect(anchorY.matches(':disabled')).toBe(false)
+    act(() => setNativeInputValue(anchorX, 0.2))
+    act(() => setNativeInputValue(anchorY, -0.2))
+    expect(p.saved().forces[0]!.anchor).toEqual({ x: 0.2, y: -0.2 })
+    expect(p.saved().bodies[0]!.position).toEqual({ x: 7, y: 4 })
+  })
+
+  it.each(['selected', 'global'] as const)('drags the visible force anchor without moving the body: %s scope', async (scope) => {
+    const p = await setup(scope)
+    expect(p.frame.labels.map(l => l.text)).toContain('F')
+    dragTo(p.canvas, { x: 6, y: 4 }, { x: 7, y: 4 })
+    expect(p.saved().forces[0]!.anchor).toEqual({ x: 1, y: 0 })
+    expect(p.saved().bodies[0]!.position).toEqual({ x: 6, y: 4 })
+  })
+})
 
 describe('initial velocity overlay (PHY-59)', () => {
   it.each([

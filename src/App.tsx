@@ -1437,19 +1437,28 @@ export default function App() {
     }
   }, [playback.status, runSteps, syncWorld, showFrame, repaint])
 
+  /** Physical history restores geometry and parameters; focus stays with the current view. */
+  const restoreHistoryEntry = useCallback((entry: Scene) => {
+    const next = { ...entry }
+    const focus = docRef.current.focus
+    if (focus === undefined) delete next.focus
+    else next.focus = focus
+    return editDoc(next)
+  }, [editDoc])
+
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
-    if (!step || !editDoc(step.entry)) return
+    if (!step || !restoreHistoryEntry(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-  }, [dispatch, editDoc])
+  }, [dispatch, restoreHistoryEntry])
 
   const redo = useCallback(() => {
     const step = redoHistory(historyRef.current, docRef.current)
-    if (!step || !editDoc(step.entry)) return
+    if (!step || !restoreHistoryEntry(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-  }, [dispatch, editDoc])
+  }, [dispatch, restoreHistoryEntry])
 
   // The single keyboard-shortcut listener for the whole editor (T-PHY-14):
   // reads latest state off refs so it never needs re-subscribing on every
@@ -1647,7 +1656,7 @@ export default function App() {
         return
       }
       // Then the application points of its forces, which drag with Anchor snap.
-      const grabbed = displayedScene().forces.find((f) => {
+      const grabbed = (docRef.current.focus?.show ?? FOCUS_GROUPS).includes('forces') && displayedScene().forces.find((f) => {
         if (f.bodyId !== selected.id) return false
         const p = bodyPointToWorld(selected, f.anchor)
         const s = worldToScreen(transform, p.x, p.y)
