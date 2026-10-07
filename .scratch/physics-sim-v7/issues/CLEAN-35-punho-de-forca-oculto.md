@@ -1,5 +1,5 @@
 # CLEAN-35: Punho de força oculto ainda intercepta o arrasto do corpo
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -45,3 +45,9 @@ Todas as mutações abaixo foram temporárias, limitadas ao hunk de seleção da
 - Verde após restauração: **4 passed**, exit 0, filtro `CLEAN-35 force grip visibility`; os demais casos ficaram fora desse filtro.
 - Diff limitado à linha do guard, ao novo bloco de testes e a este registro. Nenhuma alteração em escopo global, paint, ForcesPanel ou simulação; o campo `focus` ausente mantém forças selecionáveis.
 - O gate completo e a revisão final ficam com o agente principal após integrar a correção de histórico feita no hunk separado. Nenhum commit, staging, push ou alteração do PR foi feito por este subagente.
+
+### Revisão final e gate — 2026-10-07
+
+- Commit de implementação `96fe38b`, revisado independentemente por dois subagentes GPT-6.1-sol high: Standards **0 achados**, Spec **0 achados**. A raiz confirmou o Foco corrente no hit-test, o fallback de cenas antigas e a preservação dos dois escopos e dos campos de edição.
+- Gate completo: `npm.cmd test -- --maxWorkers=2` — **34 arquivos, 1322 testes aprovados, nenhum skip**; `npm.cmd run lint`, `npm.cmd run typecheck` e `npm.cmd run build` — exit 0.
+- `git diff --check` limpo; produção sem mutações residuais. `Stage: done` e a linha CLEAN-35 no ledger são gravados juntos. As revisões humanas existentes de PHY-68 e PHY-76 permanecem pendentes no PR #17.

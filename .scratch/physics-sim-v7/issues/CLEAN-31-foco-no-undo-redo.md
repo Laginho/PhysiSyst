@@ -1,5 +1,5 @@
 # CLEAN-31: Foco atual ao desfazer/refazer uma edição física
-Stage: to-review
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -51,3 +51,9 @@ Aplicar a preservação somente na restauração em `App.tsx`, antes de passar o
 - O teste de limite legado conserva um comportamento existente e foi conferido vermelho com a mutação antes da execução verde. Não testa helper privado nem detalhes de tipo; observa chips, documento salvo e adição/remoção do corpo pela interface pública.
 - Verificação focada acima, com a produção restaurada: **1 file passed; 55 passed, 178 skipped (233)**, exit 0. Os três testes novos, os casos existentes de foco/legenda e os bloqueios de histórico selecionados passaram. `git diff --check` sem erros.
 - Gate completo e revisão final pertencem à sessão raiz, depois da integração das duas correções do PR #17. Stage permanece `to-review` até essa validação.
+
+#### Revisão final e gate (2026-10-07)
+
+- Commit de implementação `96fe38b`, revisado independentemente por dois subagentes GPT-6.1-sol high: Standards **0 achados**, Spec **0 achados**. A revisão da raiz confirmou preservação de `show`/`hidden`, ausência de Foco legado e o guard físico existente.
+- Gate completo na raiz: `npm.cmd test -- --maxWorkers=2` — **34 arquivos, 1322 testes aprovados, nenhum skip**; `npm.cmd run lint`, `npm.cmd run typecheck` e `npm.cmd run build` — exit 0.
+- `git diff --check` limpo; somente as duas correções autorizadas e seus testes/registros. `Stage: done` e a linha CLEAN-31 no ledger são gravados juntos. O PR #17 continua sujeito às revisões humanas existentes de PHY-68 e PHY-76.
