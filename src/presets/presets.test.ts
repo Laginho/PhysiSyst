@@ -1,13 +1,135 @@
 import { describe, expect, it } from 'vitest'
 import { collectWarnings, parse, serialize } from '../scene/codec'
-import { PRESETS, TREE, createPresetScene, type Preset, type TopicNode } from './index'
+import { PRESETS, TREE, createPresetScene, presetById, type Preset, type TopicNode } from './index'
+import { updateContact } from '../editor/doc'
 import { createSimulator, TIMESTEP, type RopeState } from '../sim'
 import { systemEnergy } from '../sim/energy'
 import { setLang, t } from '../i18n'
 import { en } from '../i18n/en'
-import type { ConstraintEnd, Scene } from '../scene/types'
+import { FOCUS_GROUPS, type ConstraintEnd, type Focus, type Scene } from '../scene/types'
 import { GALLERY_ACK_KEY, isGalleryAcked, loadIndex, loadScene, sceneKey, shouldShowGallery } from '../persistence'
 import type { Storage } from '../persistence'
+
+describe('preset focus (PHY-79)', () => {
+  const expectedFocus: Record<string, Focus> = {
+    'wedge-flagship': { show: ['forces'] },
+    'incline-block': { show: ['forces'] },
+    projectile: { show: ['kinematics', 'energy'] },
+    'free-fall': { show: ['kinematics', 'energy'] },
+    'collision-elastic': { show: ['kinematics', 'momentum'] },
+    'collision-inelastic': { show: ['kinematics', 'momentum'] },
+    atwood: { show: ['forces'] },
+    'table-hanging': { show: ['forces'] },
+    'movable-pulley': { show: ['forces'] },
+    'loop-pendulum': { show: ['forces'] },
+    'spring-horizontal': { show: ['energy'], hidden: { energy: ['E_pg'] } },
+    'spring-vertical': { show: ['forces', 'energy'] },
+    'simple-pendulum': { show: ['forces', 'energy'] },
+    'spring-damped': { show: ['energy'], hidden: { energy: ['E_pg'] } },
+  }
+
+  it('covers exactly the 14 presets in the gallery', () => {
+    expect(PRESETS).toHaveLength(14)
+    expect(PRESETS.map(p => p.id).sort()).toStrictEqual(Object.keys(expectedFocus).sort())
+  })
+
+  it.each(Object.entries(expectedFocus))('%s declares the focus of its topic', (id, focus) => {
+    const scene = presetById(id)!.buildScene()
+    expect(scene.focus).toStrictEqual(focus)
+    expect(scene.focus!.show).toStrictEqual(FOCUS_GROUPS.filter(group => focus.show.includes(group)))
+    expect(serialize(parse(serialize(scene)))).toStrictEqual(serialize(scene))
+    expect(collectWarnings(scene)).toStrictEqual([])
+  })
+})
+
+describe('unchanged preset scenes (PHY-79)', () => {
+  // Captured from buildScene() at session base ae93388, before adding focus.
+  const baseScenes: Record<string, string> = {
+    'wedge-flagship': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"cunha","shape":"triangle","base":8,"alpha":30,"fixed":false,"mass":10,"position":{"x":8,"y":0},"rotation":0},{"id":"bloco","shape":"circle","radius":0.5,"fixed":false,"mass":2,"position":{"x":10.00166604983954,"y":1.7330127018922192},"rotation":0}],"forces":[{"id":"empurrao","bodyId":"cunha","anchor":{"x":5.333333333333333,"y":1.5396007178390019},"magnitude":67.96567368900274,"direction":180}],"contacts":[{"a":"chao","b":"cunha","muS":0,"muK":0},{"a":"cunha","b":"bloco","muS":0,"muK":0}]}',
+    'incline-block': '{"version":1,"constants":{"g":9.81},"bodies":[{"id":"rampa","shape":"triangle","base":8,"alpha":30,"fixed":true,"mass":0,"position":{"x":2,"y":0},"rotation":0},{"id":"bloco","shape":"circle","radius":0.5,"fixed":false,"mass":2,"position":{"x":4.348076211353316,"y":1.9330127018922192},"rotation":0}],"forces":[],"contacts":[{"a":"rampa","b":"bloco","muS":0.3,"muK":0.2}]}',
+    'projectile': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"projetil","shape":"circle","radius":0.3,"fixed":false,"mass":1,"position":{"x":2,"y":0.3},"rotation":0,"vx":8,"vy":6}],"forces":[],"contacts":[{"a":"chao","b":"projetil","muS":0,"muK":0,"e":0}]}',
+    'free-fall': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"bola","shape":"circle","radius":0.5,"fixed":false,"mass":1,"position":{"x":6,"y":7},"rotation":0}],"forces":[],"contacts":[{"a":"chao","b":"bola","muS":0,"muK":0,"e":0}]}',
+    'collision-elastic': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"esfera-1","shape":"circle","radius":0.5,"fixed":false,"mass":1,"position":{"x":3,"y":0.5},"rotation":0,"vx":3},{"id":"esfera-2","shape":"circle","radius":0.5,"fixed":false,"mass":1,"position":{"x":8,"y":0.5},"rotation":0}],"forces":[],"contacts":[{"a":"esfera-1","b":"esfera-2","muS":0,"muK":0,"e":1},{"a":"chao","b":"esfera-1","muS":0,"muK":0,"e":0},{"a":"chao","b":"esfera-2","muS":0,"muK":0,"e":0}]}',
+    'collision-inelastic': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"esfera-1","shape":"circle","radius":0.5,"fixed":false,"mass":1,"position":{"x":3,"y":0.5},"rotation":0,"vx":3},{"id":"esfera-2","shape":"circle","radius":0.5,"fixed":false,"mass":1,"position":{"x":8,"y":0.5},"rotation":0}],"forces":[],"contacts":[{"a":"esfera-1","b":"esfera-2","muS":0,"muK":0,"e":0.5},{"a":"chao","b":"esfera-1","muS":0,"muK":0,"e":0},{"a":"chao","b":"esfera-2","muS":0,"muK":0,"e":0}]}',
+    'atwood': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"teto","shape":"rectangle","width":4,"height":0.5,"fixed":true,"mass":0,"position":{"x":6,"y":8},"rotation":0},{"id":"bloco-1","shape":"rectangle","width":0.4,"height":0.4,"fixed":false,"mass":3,"position":{"x":5.75,"y":3},"rotation":0},{"id":"bloco-2","shape":"rectangle","width":0.4,"height":0.4,"fixed":false,"mass":2,"position":{"x":6.25,"y":2},"rotation":0}],"forces":[],"contacts":[],"pulleys":[{"id":"polia","bodyId":"teto","anchor":{"x":0,"y":-0.75},"radius":0.25}],"constraints":[{"id":"corda","kind":"rope","a":{"bodyId":"bloco-1","anchor":{"x":0,"y":0.2}},"b":{"bodyId":"bloco-2","anchor":{"x":0,"y":0.2}},"via":["polia"]}]}',
+    'table-hanging': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"mesa","shape":"rectangle","width":8,"height":4,"fixed":true,"mass":0,"position":{"x":4,"y":2},"rotation":0},{"id":"bloco","shape":"rectangle","width":0.4,"height":0.4,"fixed":false,"mass":2,"position":{"x":2,"y":4.2},"rotation":0},{"id":"pendurado","shape":"rectangle","width":0.3,"height":0.3,"fixed":false,"mass":1,"position":{"x":8.4,"y":2.5},"rotation":0}],"forces":[],"contacts":[{"a":"mesa","b":"bloco","muS":0.2,"muK":0.2}],"pulleys":[{"id":"polia","bodyId":"mesa","anchor":{"x":4.2,"y":2},"radius":0.2}],"constraints":[{"id":"corda","kind":"rope","a":{"bodyId":"bloco","anchor":{"x":0.2,"y":0}},"b":{"bodyId":"pendurado","anchor":{"x":0,"y":0.15}},"via":["polia"]}]}',
+    'movable-pulley': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"teto","shape":"rectangle","width":4,"height":0.5,"fixed":true,"mass":0,"position":{"x":6,"y":8.5},"rotation":0},{"id":"carga","shape":"rectangle","width":0.3,"height":0.3,"fixed":false,"mass":3,"position":{"x":6,"y":2.5},"rotation":0},{"id":"contrapeso","shape":"rectangle","width":0.2,"height":0.2,"fixed":false,"mass":1,"position":{"x":6.75,"y":1.5},"rotation":0}],"forces":[],"contacts":[],"pulleys":[{"id":"movel","bodyId":"carga","anchor":{"x":0,"y":0},"radius":0.25},{"id":"fixa","bodyId":"teto","anchor":{"x":0.5,"y":-0.5},"radius":0.25}],"constraints":[{"id":"corda","kind":"rope","a":{"bodyId":"teto","anchor":{"x":-0.25,"y":0}},"b":{"bodyId":"contrapeso","anchor":{"x":0,"y":0}},"via":["movel","fixa"]}]}',
+    'loop-pendulum': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"pivo","shape":"circle","radius":0.05,"fixed":true,"mass":0,"position":{"x":6,"y":4.5},"rotation":0},{"id":"bola","shape":"circle","radius":0.1,"fixed":false,"mass":1,"position":{"x":6,"y":3.5},"rotation":0,"vx":7.672027111526653}],"forces":[],"contacts":[],"constraints":[{"id":"corda","kind":"rope","a":{"bodyId":"pivo","anchor":{"x":0,"y":0}},"b":{"bodyId":"bola","anchor":{"x":0,"y":0}},"via":[]}]}',
+    'spring-horizontal': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"parede","shape":"rectangle","width":0.2,"height":1,"fixed":true,"mass":0,"position":{"x":4,"y":0.5},"rotation":0},{"id":"bloco","shape":"rectangle","width":0.4,"height":0.4,"fixed":false,"mass":1,"position":{"x":6.1,"y":0.2},"rotation":0}],"forces":[],"contacts":[],"constraints":[{"id":"mola","kind":"spring","a":{"bodyId":"parede","anchor":{"x":0.1,"y":-0.3}},"b":{"bodyId":"bloco","anchor":{"x":-0.2,"y":0}},"k":40,"x0":1.5}]}',
+    'spring-vertical': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"teto","shape":"rectangle","width":4,"height":0.5,"fixed":true,"mass":0,"position":{"x":6,"y":8},"rotation":0},{"id":"bloco","shape":"rectangle","width":0.4,"height":0.4,"fixed":false,"mass":1,"position":{"x":6,"y":6.05},"rotation":0}],"forces":[],"contacts":[],"constraints":[{"id":"mola","kind":"spring","a":{"bodyId":"teto","anchor":{"x":0,"y":-0.25}},"b":{"bodyId":"bloco","anchor":{"x":0,"y":0.2}},"k":40,"x0":1.5}]}',
+    'simple-pendulum': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"pivo","shape":"circle","radius":0.05,"fixed":true,"mass":0,"position":{"x":6,"y":7},"rotation":0},{"id":"bola","shape":"circle","radius":0.1,"fixed":false,"mass":1,"position":{"x":6.347296355333861,"y":5.030384493975584},"rotation":0}],"forces":[],"contacts":[],"constraints":[{"id":"corda","kind":"rope","a":{"bodyId":"pivo","anchor":{"x":0,"y":0}},"b":{"bodyId":"bola","anchor":{"x":0,"y":0}},"via":[]}]}',
+    'spring-damped': '{"version":1,"constants":{"g":9.81},"bodies":[{"shape":"rectangle","width":20,"height":1,"id":"chao","fixed":true,"mass":0,"position":{"x":6,"y":-0.5},"rotation":0},{"id":"parede","shape":"rectangle","width":0.2,"height":1,"fixed":true,"mass":0,"position":{"x":4,"y":0.5},"rotation":0},{"id":"bloco","shape":"rectangle","width":0.4,"height":0.4,"fixed":false,"mass":1,"position":{"x":6.1,"y":0.2},"rotation":0}],"forces":[],"contacts":[],"constraints":[{"id":"mola","kind":"spring","a":{"bodyId":"parede","anchor":{"x":0.1,"y":-0.3}},"b":{"bodyId":"bloco","anchor":{"x":-0.2,"y":0}},"k":40,"x0":1.5,"c":0.8}]}',
+  }
+
+  it.each(Object.entries(baseScenes))('%s preserves its complete scene apart from focus', (id, snapshot) => {
+    const scene = { ...presetById(id)!.buildScene() }
+    delete scene.focus
+    expect(scene).toStrictEqual(JSON.parse(snapshot))
+    expect(JSON.stringify(scene)).toStrictEqual(snapshot)
+  })
+})
+
+describe('reachable ground restitution (PHY-75)', () => {
+  const cases = [
+    ['free-fall', [{ a: 'chao', b: 'bola', muS: 0, muK: 0, e: 0 }]],
+    ['projectile', [{ a: 'chao', b: 'projetil', muS: 0, muK: 0, e: 0 }]],
+    ['collision-elastic', [
+      { a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e: 1 },
+      { a: 'chao', b: 'esfera-1', muS: 0, muK: 0, e: 0 },
+      { a: 'chao', b: 'esfera-2', muS: 0, muK: 0, e: 0 },
+    ]],
+    ['collision-inelastic', [
+      { a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e: 0.5 },
+      { a: 'chao', b: 'esfera-1', muS: 0, muK: 0, e: 0 },
+      { a: 'chao', b: 'esfera-2', muS: 0, muK: 0, e: 0 },
+    ]],
+  ] as const
+
+  it.each(cases)('%s declares editable, frictionless, inelastic ground pairs', (id, contacts) => {
+    const scene = presetById(id)!.buildScene()
+    expect(scene.contacts).toEqual(contacts)
+    expect(collectWarnings(scene)).toEqual([])
+  })
+
+  it.each(cases)('%s preserves every body trajectory for 120 steps', async (id) => {
+    const scene = presetById(id)!.buildScene()
+    const declared = await createSimulator(scene)
+    const undeclared = await createSimulator({ ...scene, contacts: scene.contacts.filter(c => c.a !== 'chao' && c.b !== 'chao') })
+    for (let step = 0; step < 120; step++) {
+      declared.step()
+      undeclared.step()
+      const expected = undeclared.readStates()
+      const actual = declared.readStates()
+      expect([...actual.keys()]).toEqual([...expected.keys()])
+      for (const [id, state] of actual) {
+        const old = expected.get(id)!
+        for (const [value, reference] of [
+          [state.position.x, old.position.x], [state.position.y, old.position.y],
+          [state.rotation, old.rotation], [state.linvel.x, old.linvel.x],
+          [state.linvel.y, old.linvel.y], [state.angvel, old.angvel],
+        ]) expect(Math.abs(value - reference), `${id} at step ${step + 1}`).toBeLessThanOrEqual(1e-9)
+      }
+    }
+    expect(declared.warnings).toEqual([])
+    expect(undeclared.warnings).toEqual([])
+  })
+
+  it('free-fall bounces within two seconds after editing the ground pair to e=1', async () => {
+    const scene = updateContact(presetById('free-fall')!.buildScene(), 'chao', 'bola', { e: 1 })
+    const sim = await createSimulator(scene)
+    let fastestFall = 0
+    let bounce = 0
+    for (let step = 0; step < Math.round(2 / TIMESTEP); step++) {
+      sim.step()
+      const vy = sim.readStates().get('bola')!.linvel.y
+      if (vy > 0) { bounce = vy; break }
+      fastestFall = Math.max(fastestFall, Math.abs(vy))
+    }
+    expect(fastestFall).toBeGreaterThan(0)
+    expect(bounce).toBeGreaterThanOrEqual(0.8 * fastestFall)
+    expect(sim.warnings).toEqual([])
+  })
+})
 
 function memStorage(): Storage & { map: Map<string, string> } {
   const map = new Map<string, string>()

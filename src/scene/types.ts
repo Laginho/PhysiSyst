@@ -127,6 +127,16 @@ export interface Spring {
 
 export type Constraint = Rope | Spring
 
+export const FOCUS_GROUPS = ['forces', 'kinematics', 'energy', 'momentum'] as const
+export type FocusGroup = typeof FOCUS_GROUPS[number]
+
+export interface Focus {
+  /** Shown groups; absent Focus means all four. */
+  show: FocusGroup[]
+  /** Hidden series names, keyed by graph kind. */
+  hidden?: Record<string, string[]>
+}
+
 export interface Scene {
   version: number
   constants: {
@@ -148,4 +158,6 @@ export interface Scene {
    */
   pulleys?: Pulley[]
   constraints?: Constraint[]
+  /** View preferences, independent of physics and edit history. */
+  focus?: Focus
 }

@@ -11,7 +11,9 @@ import {
   vectorArrowLengthPx,
   appliedArrows,
   elasticArrows,
-  initialVelocityArrows,
+  accelerationArrows,
+  velocityArrows,
+  VECTOR_COLORS,
   normalArrows,
   numberedSymbol,
   tensionArrows,
@@ -38,16 +40,69 @@ type InitialVelocityArrow = {
   kind: string
 }
 
-type InitialVelocityArrowProducer = (view: Scene, pixelsPerMeter: number) => InitialVelocityArrow[]
+type InitialVelocityArrowProducer = (view: Scene, states: null, pixelsPerMeter: number) => InitialVelocityArrow[]
 
 async function produceInitialVelocityArrows(view: Scene, pixelsPerMeter: number): Promise<InitialVelocityArrow[]> {
-  const { initialVelocityArrows } = await import('./overlay') as unknown as {
-    initialVelocityArrows?: InitialVelocityArrowProducer
+  const { velocityArrows } = await import('./overlay') as unknown as {
+    velocityArrows?: InitialVelocityArrowProducer
   }
-  expect(typeof initialVelocityArrows, 'ticket 07 requires initialVelocityArrows(view, pixelsPerMeter)').toBe('function')
-  if (!initialVelocityArrows) return []
-  return initialVelocityArrows(view, pixelsPerMeter)
+  expect(typeof velocityArrows, 'PHY-80 requires velocityArrows(view, states, pixelsPerMeter)').toBe('function')
+  if (!velocityArrows) return []
+  return velocityArrows(view, null, pixelsPerMeter)
 }
+
+describe('accelerationArrows (PHY-80)', () => {
+  it('draws gravity downwards at the body position and clamps large accelerations', () => {
+    const scene = sceneWithBodies([block('fall', 1, 2), block('fast', 3, 4)])
+    const arrows = accelerationArrows(scene, new Map([
+      ['fall', { x: 0, y: -9.81 }], ['fast', { x: 100, y: 0 }],
+    ]), PPM)
+    expect(arrows).toHaveLength(2)
+    expect(arrows[0]).toMatchObject({ kind: 'acceleration', key: 'acceleration:fall' })
+    expectArrow(arrows[0], { x: 1, y: 2 }, { x: 0, y: -1.044030650891055 })
+    expectArrow(arrows[1], { x: 3, y: 4 }, { x: 2, y: 0 })
+  })
+
+  it('omits fixed, missing and zero accelerations and uses the minimum size for tiny vectors', () => {
+    const scene = sceneWithBodies([
+      block('fixed', 0, 0, true), block('missing', 0, 0), block('rest', 0, 0), block('tiny', 1, 2),
+    ])
+    const accelerations = new Map([
+      ['fixed', { x: 0, y: -9.81 }], ['rest', { x: 0, y: 0 }], ['tiny', { x: -0.001, y: 0 }],
+    ])
+    const arrows = accelerationArrows(scene, accelerations, PPM)
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0]!.key).toBe('acceleration:tiny')
+    expectArrow(arrows[0], { x: 1, y: 2 }, { x: -0.4, y: 0 })
+    expect(accelerationArrows(scene, new Map(), PPM)).toEqual([])
+    expect(accelerationArrows(sceneWithBodies([]), accelerations, PPM)).toEqual([])
+  })
+
+  it.each(['pt-BR', 'en'] as const)('labels single and multiple live vectors in %s', (lang) => {
+    const scene = sceneWithBodies([block('a', 0, 0), block('b', 2, 0)])
+    const states = new Map<string, BodyState>(scene.bodies.map(body => [body.id, {
+      ...stateAt(body.position.x, body.position.y), linvel: { x: 1, y: 0 },
+    }]))
+    const accelerations = new Map(scene.bodies.map(body => [body.id, { x: 0, y: -9.81 }]))
+    for (const [producer, symbol] of [
+      [velocityArrows(scene, states, PPM), 'v'], [accelerationArrows(scene, accelerations, PPM), 'a'],
+    ] as const) {
+      expect(producer.slice(0, 1).map(vectorLabels(producer.slice(0, 1), lang))).toEqual([symbol])
+      expect(producer.map(vectorLabels(producer, lang))).toEqual([`${symbol}_1`, `${symbol}_2`])
+    }
+  })
+
+  it('preserves existing colors, shares green for velocity and gives acceleration a distinct color', () => {
+    expect(VECTOR_COLORS).toMatchObject({
+      weight: '#2e7d32', applied: '#d97742', normal: '#1565c0', tension: '#6a1b9a',
+      elastic: '#00838f', 'initial-velocity': '#43a047', velocity: '#43a047',
+    })
+    expect(VECTOR_COLORS.acceleration).toMatch(/^#[0-9a-f]{6}$/i)
+    for (const kind of ['weight', 'applied', 'normal', 'tension', 'elastic', 'initial-velocity', 'velocity'] as const) {
+      expect(VECTOR_COLORS.acceleration).not.toBe(VECTOR_COLORS[kind])
+    }
+  })
+})
 
 describe('weightArrows', () => {
   it('produces one arrow per dynamic body, fixed bodies skipped, length sized by the shared rule', () => {
@@ -121,7 +176,37 @@ describe('appliedArrows', () => {
   })
 })
 
-describe('initialVelocityArrows', () => {
+describe('velocityArrows (PHY-80)', () => {
+  it('preserves initial velocity geometry, kinds and keys before playback', () => {
+    const scene = sceneWithBodies([
+      { ...block('shot', 1, 2), vx: 3, vy: 4 },
+      { ...block('fixed', 0, 0, true), vx: 3, vy: 4 },
+      block('rest', 0, 0),
+    ])
+    const arrows = velocityArrows(scene, null, PPM)
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0]).toMatchObject({ from: { x: 1, y: 2 }, kind: 'initial-velocity', key: 'initial-velocity:shot' })
+    expectArrow(arrows[0], { x: 1, y: 2 }, { x: 0.4472135954999579, y: 0.5962847939999439 })
+  })
+
+  it('uses simulated positions and velocities, omitting fixed, stationary and missing states', () => {
+    const scene = sceneWithBodies([
+      { ...block('shot', 1, 2), vx: -9 },
+      block('fixed', 0, 0, true), block('rest', 0, 0), { ...block('missing', 0, 0), vx: 2 },
+    ])
+    const states = new Map<string, BodyState>([
+      ['shot', { ...stateAt(-7, 11), linvel: { x: 3, y: 4 } }],
+      ['fixed', { ...stateAt(0, 0), linvel: { x: 3, y: 4 } }],
+      ['rest', stateAt(0, 0)],
+    ])
+    const arrows = velocityArrows(scene, states, PPM)
+    expect(arrows).toHaveLength(1)
+    expect(arrows[0]).toMatchObject({ kind: 'velocity', key: 'velocity:shot' })
+    expectArrow(arrows[0], { x: -7, y: 11 }, { x: 0.4472135954999579, y: 0.5962847939999439 })
+    expect(velocityArrows(scene, new Map(), PPM)).toEqual([])
+    expect(velocityArrows(sceneWithBodies([]), null, PPM)).toEqual([])
+  })
+
   it('anchors to the projected Body and points along stored world-frame v₀', async () => {
     const doc = sceneWithBodies([
       {
@@ -621,7 +706,7 @@ describe('vectorLabels', () => {
       ...appliedArrows(scene, PPM),
       ...tensionArrows({ ...atwood() }, [ropeState('r', [3, 3])], PPM).slice(0, 1),
       ...elasticArrows(scene, [springState('s', 2)], PPM),
-      ...initialVelocityArrows(scene, PPM),
+      ...velocityArrows(scene, null, PPM),
     ]
     expect(labelsOf(arrows)).toEqual(['P', 'N', 'F', 'T', 'F_el', 'v₀'])
     expect(labelsOf(arrows, 'en')).toEqual(['W', 'N', 'F', 'T', 'F_s', 'v₀'])

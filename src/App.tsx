@@ -1,14 +1,15 @@
 import { bodyEnergy, systemEnergy, type BodyEnergy, type SystemEnergy } from './sim/energy'
 import type { PulleyState } from './sim/simulator'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppliedForce, Body, ConstraintEnd, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
-import { bodyPointToWorld, collectWarnings, scenePath, serialize } from './scene'
+import type { AppliedForce, Body, ConstraintEnd, Focus, FocusGroup, Pulley, Rope, Scene, Spring, Vec2 } from './scene'
+import { bodyPointToWorld, collectWarnings, FOCUS_GROUPS, localVertices, scenePath, serialize } from './scene'
 import {
   advance,
   applyLiveOps,
   applyStates,
   initialPlayback,
   Recording,
+  RECORDING_CAP,
   routeDocChange,
   SPEED_MAX,
   SPEED_MIN,
@@ -21,7 +22,7 @@ import { DEMO_SCENE } from './scene/demo'
 import { createPresetScene, galleryGroups, nodeLabelKeys, presetById, type Preset } from './presets'
 // Types only: the simulator (Rapier + its wasm) is imported dynamically in
 // ensureSim so it lands in a late chunk and the shell paints without it.
-import type { BodyState, ConstraintState, ContactPoint, Simulator } from './sim'
+import type { BodyState, ConstraintState, ContactPoint, InitialProbe, Simulator } from './sim'
 import {
   addContact,
   addForce,
@@ -50,6 +51,7 @@ import {
 import { AXLE_HIT_RADIUS_PX, bodyAtPoint, pulleyAtPoint, ropeAtPoint, springAtPoint, worldToLocal } from './editor/hitTest'
 import { anchorSnap } from './editor/anchorSnap'
 import { resolveContactSnap } from './editor/contactSnap'
+import { bodyOrientationSnap, snapOrientation, type OrientationSnap } from './editor/orientationSnap'
 import { pointInTrash, trashRect, type Rect } from './editor/trash'
 import {
   canRedo,
@@ -72,24 +74,26 @@ import {
   pickHandle,
 } from './editor/handles'
 import { cartesianToPolar, polarToCartesian } from './editor/initialVelocity'
-import { drawArrow, drawGrid, drawScene, selectedOf, type ArrowStyle, type Selection } from './render/draw'
+import { drawArrow, drawGrid, drawScene, massLabels, selectedOf, splitLabel, type ArrowStyle, type Selection } from './render/draw'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld, worldToScreen, type Camera, type ScreenTransform } from './render/transform'
 import { CANVAS_MIN_WIDTH, fitCanvas } from './render/fitCanvas'
 import {
+  accelerationArrows,
   appliedArrows,
   elasticArrows,
-  initialVelocityArrows,
+  velocityArrows,
   normalArrows,
   numberedSymbol,
   tensionArrows,
   vectorLabels,
+  VECTOR_COLORS,
   weightArrows,
   type OverlayArrow,
 } from './render/overlay'
 import { getAcceleration, initialTracker, onRebuild, onReset, onSteps } from './playback/accelerationTracker'
 import { messageAt } from './render/loadingMessage'
 import { fmtNum, getLang, setLang as persistLang, t, type Lang } from './i18n'
-import { drawGraph, graphLayout, indexAtX, seriesFor, GRAPH_KINDS, type GraphKind } from './render/graph'
+import { colorOf, drawGraph, graphLayout, indexAtX, seriesFor, visibleSeries, GRAPH_KINDS, type GraphKind } from './render/graph'
 import {
   AUTOSAVE_DELAY_MS,
   DebouncedSaver,
@@ -102,11 +106,13 @@ import {
   importScene,
   loadCurrentSceneId,
   loadCanvasSize,
+  loadControlsScale,
   loadIndex,
   loadIndexResult,
   loadSceneOrBlank,
   saveCurrentSceneId,
   saveCanvasSize,
+  saveControlsScale,
   saveIndex,
   saveScene,
   shouldShowGallery,
@@ -177,8 +183,8 @@ function screenCircle(ctx: CanvasRenderingContext2D, at: { x: number; y: number 
   ctx.restore()
 }
 
-// In the editor the readings go stale (refreshed only at boot, reset and rebuild): the rope there follows the
-// document, and only a simulated frame's readings shape its drawing and its T arrows (PHY-56) and click (CLEAN-27).
+// The editor's rope drawing and hit test follow the document; simulated frames follow their readings
+// (PHY-56, CLEAN-27). The initial force probe supplies T arrows separately, on the document path.
 function ropeReadingsOf(states: ReadonlyMap<string, BodyState> | null, readings: readonly ConstraintState[]): readonly ConstraintState[] {
   return states !== null ? readings : []
 }
@@ -191,13 +197,18 @@ function paint(
   geometry: { camera: Camera; transform: ScreenTransform; trash: Rect },
   opts?: {
     showGlobal: boolean
+    /** Current document preferences, even when doc is a historical scene. */
+    focus?: Focus
     stepsTaken: number
     contacts?: readonly ContactPoint[]
     constraints?: readonly ConstraintState[]
+    initialProbe?: InitialProbe
+    accelerations?: ReadonlyMap<string, Vec2>
     lang?: Lang
     draggingBody?: boolean
     /** The spring or rope tool's first anchor, until the tool finishes. */
     pendingAnchor?: ConstraintEnd | null
+    guide?: OrientationSnap | null
   },
 ): void {
   const { camera, transform, trash } = geometry
@@ -207,6 +218,20 @@ function paint(
   drawGrid(ctx, camera, transform.width, transform.height)
   const ropeReadings = ropeReadingsOf(states, opts?.constraints ?? [])
   drawScene(ctx, view, camera, transform.width, transform.height, { selection, readings: ropeReadings })
+
+  if (opts?.guide) {
+    const { axis, through } = opts.guide
+    const at = worldToScreen(transform, through.x, through.y)
+    ctx.save()
+    ctx.strokeStyle = '#999'
+    ctx.lineWidth = 1
+    ctx.setLineDash([6, 4])
+    ctx.beginPath()
+    ctx.moveTo(axis === 'vertical' ? at.x : 0, axis === 'vertical' ? 0 : at.y)
+    ctx.lineTo(axis === 'vertical' ? at.x : transform.width, axis === 'vertical' ? transform.height : at.y)
+    ctx.stroke()
+    ctx.restore()
+  }
 
   const pendingBody = opts?.pendingAnchor && view.bodies.find((b) => b.id === opts.pendingAnchor!.bodyId)
   if (pendingBody) {
@@ -241,14 +266,26 @@ function paint(
   // reads the same letter it has in global mode.
   const ppm = camera.pixelsPerMeter
   const constraints = opts?.constraints ?? []
-  const showInitialVelocity = (opts?.stepsTaken ?? 0) === 0
+  const shownGroups = opts?.focus?.show ?? FOCUS_GROUPS
+  const showForces = shownGroups.includes('forces')
+  const atInitialTime = (opts?.stepsTaken ?? 0) === 0
+  // A structural rebuild can populate states before the first timestep.
+  const velocityStates = atInitialTime ? null : states
+  const showKinematics = shownGroups.includes('kinematics')
+  const accelerations = opts?.accelerations ?? new Map<string, Vec2>()
+  const initialProbe = atInitialTime ? opts?.initialProbe : undefined
+  // Only forces come from the disposable step; its moved rope path must not reach the editor.
+  const tensionReadings = initialProbe
+    ? initialProbe.constraints.map(state => state.kind === 'rope' ? { ...state, path: undefined } : state)
+    : ropeReadings
   const layers: Array<{ arrows: OverlayArrow[]; style: Partial<ArrowStyle> }> = [
-    { arrows: weightArrows(doc, states, ppm), style: { color: '#2e7d32', widthPx: 2, headLenPx: 8 } },
-    { arrows: showInitialVelocity ? initialVelocityArrows(view, ppm) : [], style: { color: '#43a047', widthPx: 2, headLenPx: 8 } },
-    { arrows: appliedArrows(view, ppm), style: { color: '#d97742', widthPx: 2, headLenPx: 10 } },
-    { arrows: normalArrows(opts?.contacts ?? []), style: { color: '#1565c0', widthPx: 2, headLenPx: 8 } },
-    { arrows: tensionArrows(view, ropeReadings, ppm), style: { color: '#6a1b9a', widthPx: 2, headLenPx: 8 } },
-    { arrows: elasticArrows(view, constraints, ppm), style: { color: '#00838f', widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? weightArrows(doc, states, ppm) : [], style: { color: VECTOR_COLORS.weight, widthPx: 2, headLenPx: 8 } },
+    { arrows: showKinematics ? velocityArrows(view, velocityStates, ppm) : [], style: { color: VECTOR_COLORS.velocity, widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? appliedArrows(view, ppm) : [], style: { color: VECTOR_COLORS.applied, widthPx: 2, headLenPx: 10 } },
+    { arrows: showForces ? normalArrows(initialProbe?.contacts ?? opts?.contacts ?? []) : [], style: { color: VECTOR_COLORS.normal, widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? tensionArrows(view, tensionReadings, ppm) : [], style: { color: VECTOR_COLORS.tension, widthPx: 2, headLenPx: 8 } },
+    { arrows: showForces ? elasticArrows(view, constraints, ppm) : [], style: { color: VECTOR_COLORS.elastic, widthPx: 2, headLenPx: 8 } },
+    { arrows: showKinematics ? accelerationArrows(view, accelerations, ppm) : [], style: { color: VECTOR_COLORS.acceleration, widthPx: 2, headLenPx: 8 } },
   ]
   const labels = vectorLabels(layers.flatMap((l) => l.arrows), opts?.lang ?? 'pt-BR')
   if (opts?.showGlobal) {
@@ -257,13 +294,14 @@ function paint(
     const sel = view.bodies.find((b) => b.id === selectedId)
     if (sel) {
       const selView: Scene = { ...view, bodies: [sel], forces: view.forces.filter((f) => f.bodyId === sel.id) }
-      if (showInitialVelocity) {
-        for (const a of initialVelocityArrows(selView, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+      if (showKinematics) {
+        for (const a of velocityArrows(selView, velocityStates, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[1]!.style, labels(a))
+        for (const a of accelerationArrows(selView, accelerations, ppm)) drawArrow(ctx, a.from, a.vec, transform, layers[6]!.style, labels(a))
       }
-      for (const a of appliedArrows(selView, ppm)) {
+      for (const a of showForces ? appliedArrows(selView, ppm) : []) {
         drawArrow(ctx, a.from, a.vec, transform, undefined, labels(a))
         // The application point is draggable (PHY-27): a ring marks the grip.
-        screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, '#d97742', 1.5)
+        screenCircle(ctx, worldToScreen(transform, a.from.x, a.from.y), HANDLE_SIZE_PX / 2, VECTOR_COLORS.applied, 1.5)
       }
     }
   }
@@ -463,31 +501,45 @@ function ForcesPanel({
   )
 }
 
-/** Scene-level auditable contact list; add via two body dropdowns. */
-function ContactsPanel({
+/** Each pair is editable from either body, retaining its stored endpoint order. */
+function BodyContactsPanel({
   doc,
+  bodyId,
   disabled,
   onAdd,
   onPatch,
   onRemove,
 }: {
   doc: Scene
+  bodyId: string
   disabled: boolean
   onAdd: (a: string, b: string) => string | null
   onPatch: (a: string, b: string, patch: { muS?: number; muK?: number; e?: number }) => void
   onRemove: (a: string, b: string) => void
 }) {
-  const [newA, setNewA] = useState(doc.bodies[0]?.id ?? '')
-  const [newB, setNewB] = useState(doc.bodies[1]?.id ?? '')
+  const contacts = doc.contacts.filter(c => c.a === bodyId || c.b === bodyId)
+  const paired = new Set(contacts.map(c => c.a === bodyId ? c.b : c.a))
+  const partners = doc.bodies.filter(b => b.id !== bodyId && !paired.has(b.id))
+  const [chosenPartner, setChosenPartner] = useState('')
+  // A successful add, deletion or scene edit can invalidate the previous choice.
+  const partnerId = partners.some(b => b.id === chosenPartner) ? chosenPartner : partners[0]?.id ?? ''
   const [error, setError] = useState<string | null>(null)
+  const labels = massLabels(doc)
+  const fixedCounts = new Map<Body['shape'], number>()
+  for (const body of doc.bodies) {
+    if (!body.fixed) continue
+    const n = (fixedCounts.get(body.shape) ?? 0) + 1
+    fixedCounts.set(body.shape, n)
+    labels.set(body.id, t('contacts.fixedLabel', { shape: t(`palette.${body.shape}`), n }))
+  }
   return (
     <fieldset disabled={disabled} style={{ width: 220 }}>
-      <legend>{t('contacts.title')}</legend>
-      {doc.contacts.length === 0 && <div style={{ fontSize: 12, color: '#777' }}>{t('contacts.empty')}</div>}
-      {doc.contacts.map((c) => (
+      <legend>{t('contacts.of', { label: labels.get(bodyId) ?? bodyId })}</legend>
+      {contacts.length === 0 && <div style={{ fontSize: 12, color: '#777' }}>{t('contacts.empty')}</div>}
+      {contacts.map((c) => (
         <div key={`${c.a}|${c.b}`} style={{ borderBottom: '1px solid #ddd', paddingBottom: 4, marginBottom: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-            <span>{c.a} ↔ {c.b}</span>
+            <span>{labels.get(c.a === bodyId ? c.b : c.a)}</span>
             <button onClick={() => onRemove(c.a, c.b)} title={t('contacts.removeTitle')}>✕</button>
           </div>
           <NumField label={t('contacts.muS')} value={c.muS} step={0.05} onChange={(v) => onPatch(c.a, c.b, { muS: v })} />
@@ -496,16 +548,14 @@ function ContactsPanel({
         </div>
       ))}
       <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-        <select value={newA} onChange={(e) => setNewA(e.target.value)} style={{ minWidth: 70 }}>
-          {doc.bodies.map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}
-        </select>
-        <select value={newB} onChange={(e) => setNewB(e.target.value)} style={{ minWidth: 70 }}>
-          {doc.bodies.map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}
+        <select aria-label={t('contacts.add')} disabled={partners.length === 0} value={partnerId} onChange={(e) => setChosenPartner(e.target.value)} style={{ minWidth: 70 }}>
+          {partners.map((b) => <option key={b.id} value={b.id}>{labels.get(b.id)}</option>)}
         </select>
       </div>
       <button
+        disabled={partners.length === 0}
         style={{ marginTop: 4 }}
-        onClick={() => setError(onAdd(newA, newB))}
+        onClick={() => setError(onAdd(bodyId, partnerId))}
       >
         {t('contacts.add')}
       </button>
@@ -594,6 +644,8 @@ function getAppStorage(): Storage {
 // the room the canvas column gives up when the two sit side by side.
 const INSPECTOR_WIDTH = 270
 const ROW_GAP = 12
+// Two 32px buttons with 6px of space beside the scaled controls.
+const CONTROLS_SIZER_WIDTH = 38
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -612,9 +664,11 @@ export default function App() {
   const storageRef = useRef<Storage | null>(null)
   if (!storageRef.current) storageRef.current = getAppStorage()
   const storage = storageRef.current
+  const [controlsScale, setControlsScale] = useState(() => loadControlsScale(storage))
   const preferredWidthRef = useRef(loadCanvasSize(storage))
   const canvasContainerRef = useRef({ width: 900, height: 600 })
   const resizeDragRef = useRef<{ pointerId: number; startX: number; width: number } | null>(null)
+  useEffect(() => saveControlsScale(storage, controlsScale), [storage, controlsScale])
   let initialSeedWarning: string | null = null
   const [sceneIndex, setSceneIndex] = useState<SceneIndexEntry[]>(() => {
     const res = loadIndexResult(storage)
@@ -675,10 +729,11 @@ export default function App() {
   const [tool, setTool] = useState<Tool>(null)
   const [toolError, setToolError] = useState<string | null>(null)
   const toolRef = useRef<Tool>(tool)
+  const toolGuideRef = useRef<OrientationSnap | null>(null)
   const [history, setHistory] = useState<History<Scene>>(initialHistory)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [contactSnapEnabled, setContactSnapEnabled] = useState(true)
-  const [showGlobal, setShowGlobal] = useState(false)
+  const [showGlobal, setShowGlobal] = useState(true)
   const [storageWarning, setStorageWarning] = useState<string | null>(initialSeedWarning)
   const [corruptWarningKey, setCorruptWarningKey] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -734,6 +789,19 @@ export default function App() {
   const contactsRef = useRef<ContactPoint[]>([])
   /** Rope and spring readings, refreshed with the contacts, for the rope's drawing and click and the T and F_el arrows. */
   const constraintsRef = useRef<ConstraintState[]>([])
+  const initialProbeRef = useRef<InitialProbe>({ contacts: [], constraints: [] })
+  // The live build can lag behind edits; compare against the probe's document for refresh cadence.
+  const initialProbeDocRef = useRef<Scene>(doc)
+  const refreshInitialProbe = useCallback(() => {
+    const scene = docRef.current
+    initialProbeDocRef.current = scene
+    try {
+      initialProbeRef.current = simRef.current?.probeInitial(scene) ?? { contacts: [], constraints: [] }
+    } catch {
+      // Optional overlay failure must not replace the live simulator's error handling.
+      initialProbeRef.current = { contacts: [], constraints: [] }
+    }
+  }, [])
   const captureFrame = useCallback((): RecordedFrame => ({
     scene: docRef.current,
     states: statesRef.current ?? simRef.current?.readStates() ?? null,
@@ -831,6 +899,30 @@ export default function App() {
   // Discrete edits push once here; drags push their initial doc on pointer-up.
   const commitDoc = useCallback((next: Scene | ((d: Scene) => Scene)) => editDoc(next, true), [editDoc])
 
+  /** Focus edits change only the view, including on presets and historical frames. */
+  const editFocus = useCallback((focus: Focus) => {
+    const next: Scene = { ...docRef.current, focus }
+    docRef.current = next
+    setDoc(next)
+  }, [])
+
+  const toggleFocusGroup = useCallback((group: FocusGroup) => {
+    const current = docRef.current
+    const shown = current.focus?.show ?? FOCUS_GROUPS
+    const show = FOCUS_GROUPS.filter((g) => g === group ? !shown.includes(g) : shown.includes(g))
+    editFocus({ ...current.focus, show })
+  }, [editFocus])
+
+  const toggleGraphCurve = useCallback((kind: GraphKind, name: string) => {
+    const focus = docRef.current.focus
+    const hidden = focus?.hidden?.[kind] ?? []
+    editFocus({
+      ...focus,
+      show: focus?.show ?? [...FOCUS_GROUPS],
+      hidden: { ...focus?.hidden, [kind]: hidden.includes(name) ? hidden.filter(n => n !== name) : [...hidden, name] },
+    })
+  }, [editFocus])
+
   /** Shared by the Delete/Backspace shortcut and the panel's own delete button. */
   const deleteSelected = useCallback(() => {
     const sel = selectionRef.current
@@ -842,7 +934,7 @@ export default function App() {
   // Drag interaction: kind + per-kind payload captured at pointer-down.
   // Only Body movement consumes Contact snap; handle drags stay unsnapped.
   const dragRef = useRef<
-    | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null; startDoc: Scene }
+    | { kind: 'move'; id: string; offX: number; offY: number; neighborId: string | null; guide: OrientationSnap | null; startDoc: Scene }
     | { kind: 'rotate'; id: string; startAngle: number; startRotation: number; startDoc: Scene }
     | { kind: 'resize' | 'alpha'; id: string; startDoc: Scene }
     | { kind: 'forceAnchor'; id: string; forceId: string; startDoc: Scene }
@@ -866,7 +958,7 @@ export default function App() {
     const frames = Array.from({ length: recording.length }, (_, i) => recording.at(i)!)
     const bodyId = selectedOf(selectionRef.current, 'body')
     const kind = bodyId === null && graphKindRef.current !== 'energy' && graphKindRef.current !== 'momentum' ? 'energy' : graphKindRef.current
-    const series = seriesFor(kind, frames, bodyId, displayedScene())
+    const series = visibleSeries(seriesFor(kind, frames, bodyId, displayedScene()), docRef.current.focus?.hidden?.[kind])
     drawGraph(ctx, graphLayout(series, Math.max(1, (recording.length - 1) * TIMESTEP), size.width, 180), series,
       (playbackRef.current.cursor ?? recording.length - 1) * TIMESTEP, langRef.current)
   }, [size.width, displayedScene])
@@ -885,16 +977,26 @@ export default function App() {
         : [...nextWarnings],
     )
     const ctx = ctxRef.current
-    if (ctx)
-      paint(ctx, displayedScene(), selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
+    if (ctx) {
+      const scene = displayedScene()
+      const accelerations = new Map<string, Vec2>()
+      for (const body of scene.bodies) {
+        if (!body.fixed) accelerations.set(body.id, getAcceleration(accelRef.current, scene, body.id, playbackRef.current.status === 'paused'))
+      }
+      paint(ctx, scene, selectionRef.current, statesRef.current, geometryFor(size.width, size.height), {
         showGlobal: showGlobalRef.current,
+        focus: docRef.current.focus,
         stepsTaken: playbackRef.current.cursor ?? playbackRef.current.stepsTaken,
         contacts: contactsRef.current,
         constraints: constraintsRef.current,
+        initialProbe: initialProbeRef.current,
+        accelerations,
         lang: langRef.current,
         draggingBody: dragRef.current?.kind === 'move',
         pendingAnchor: toolRef.current?.a ?? null,
+        guide: dragRef.current?.kind === 'move' ? dragRef.current.guide : toolGuideRef.current,
       })
+    }
     repaintGraph()
   }, [size.width, size.height, displayedScene, repaintGraph])
 
@@ -957,6 +1059,7 @@ export default function App() {
   useEffect(() => {
     selectionRef.current = selection
     toolRef.current = tool
+    toolGuideRef.current = null
     repaint()
   }, [selection, tool, repaint])
 
@@ -1137,13 +1240,14 @@ export default function App() {
           setSimError(messageOf(e))
           pendingRebuildRef.current = true
         }
+        refreshInitialProbe()
         resetRecording()
       }
       repaint()
       if (t.steps > 0) runSteps(t.steps)
       setRecordingLength(recordingRef.current!.length)
     },
-    [repaint, runSteps, showFrame, resetRecording],
+    [repaint, runSteps, showFrame, resetRecording, refreshInitialProbe],
   )
 
   function seekGraph(canvas: HTMLCanvasElement, clientX: number) {
@@ -1180,8 +1284,12 @@ export default function App() {
         }
       }
     }
+    // Returning to the live world's geometry can still invalidate the probe.
+    if (simRef.current && playbackRef.current.stepsTaken === 0 && routeDocChange(initialProbeDocRef.current, doc).kind === 'structural') {
+      refreshInitialProbe()
+    }
     repaint()
-  }, [doc, showGlobal, repaint, dispatch, resetRecording])
+  }, [doc, showGlobal, bootState, repaint, dispatch, resetRecording, refreshInitialProbe])
 
   const switchToScene = useCallback(
     (id: string) => {
@@ -1250,9 +1358,13 @@ export default function App() {
           builtDocRef.current = bootDoc
           contactsRef.current = sim.readContacts()
           constraintsRef.current = sim.readConstraints()
+          refreshInitialProbe()
           resetRecording()
-          // Edits made while WASM was booting land at the next frame boundary.
-          pendingRebuildRef.current = docRef.current !== bootDoc
+          // Scene patches are immutable. Only changes outside focus can make
+          // the booted world stale and require the next frame boundary.
+          const currentDoc = docRef.current
+          const docKeys = Object.keys({ ...bootDoc, ...currentDoc }) as (keyof Scene)[]
+          pendingRebuildRef.current = docKeys.some(key => key !== 'focus' && bootDoc[key] !== currentDoc[key])
           setSimError(null)
           setBootState('ready')
           return sim
@@ -1268,7 +1380,7 @@ export default function App() {
       )
     }
     return simBootRef.current
-  }, [resetRecording])
+  }, [resetRecording, refreshInitialProbe])
 
   /** Retries a failed boot, restarting the joke rotation from the top. */
   const retryBoot = useCallback(() => {
@@ -1300,19 +1412,23 @@ export default function App() {
     const tick = () => {
       if (!live) return
       if (syncWorld()) {
-        const previousCursor = playbackRef.current.cursor
+        const previous = playbackRef.current
         const t = advance(playbackRef.current, { type: 'frame', length: recordingRef.current!.length })
         playbackRef.current = t.state
-        if (previousCursor !== t.state.cursor) {
+        if (previous.cursor !== t.state.cursor) {
           // Restore the live snapshot before surplus steps so acceleration uses
           // the actual preceding live step, not the previously displayed record.
           showFrame(t.state.cursor === null ? liveFrameRef.current : recordingRef.current!.at(t.state.cursor)!)
-          setPlayback(t.state)
           repaint()
         }
+        if (previous.cursor !== t.state.cursor || previous.status !== t.state.status) setPlayback(t.state)
         runSteps(t.steps)
+        if (previous.status !== t.state.status) {
+          setStepsTick(t.state.cursor ?? t.state.stepsTaken)
+          setRecordingLength(recordingRef.current!.length)
+        }
       }
-      if (live) handle = requestAnimationFrame(tick)
+      if (live && playbackRef.current.status === 'playing') handle = requestAnimationFrame(tick)
     }
     handle = requestAnimationFrame(tick)
     return () => {
@@ -1321,19 +1437,28 @@ export default function App() {
     }
   }, [playback.status, runSteps, syncWorld, showFrame, repaint])
 
+  /** Physical history restores geometry and parameters; focus stays with the current view. */
+  const restoreHistoryEntry = useCallback((entry: Scene) => {
+    const next = { ...entry }
+    const focus = docRef.current.focus
+    if (focus === undefined) delete next.focus
+    else next.focus = focus
+    return editDoc(next)
+  }, [editDoc])
+
   const undo = useCallback(() => {
     const step = undoHistory(historyRef.current, docRef.current)
-    if (!step || !editDoc(step.entry)) return
+    if (!step || !restoreHistoryEntry(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-  }, [dispatch, editDoc])
+  }, [dispatch, restoreHistoryEntry])
 
   const redo = useCallback(() => {
     const step = redoHistory(historyRef.current, docRef.current)
-    if (!step || !editDoc(step.entry)) return
+    if (!step || !restoreHistoryEntry(step.entry)) return
     dispatch({ type: 'pause' })
     setHistory(step.history)
-  }, [dispatch, editDoc])
+  }, [dispatch, restoreHistoryEntry])
 
   // The single keyboard-shortcut listener for the whole editor (T-PHY-14):
   // reads latest state off refs so it never needs re-subscribing on every
@@ -1398,7 +1523,7 @@ export default function App() {
       return
     }
     void ensureSim().then((sim) => {
-      if (sim) dispatch({ type: 'play' })
+      if (sim) dispatch({ type: 'play', length: recordingRef.current!.length })
     })
   }
 
@@ -1432,6 +1557,29 @@ export default function App() {
     return { sx: e.clientX - r.left, sy: e.clientY - r.top }
   }
 
+  /** Anchor snap wins even when a click is exactly on a feature and does not move. */
+  function toolAnchorAt(view: Scene, hit: Body, w: Vec2): { anchor: Vec2; guide: OrientationSnap | null } {
+    const anchor = anchorSnap(hit, w, transform)
+    const tool = toolRef.current
+    if (!tool?.a || (tool.kind === 'rope' && tool.via.length > 0)) return { anchor, guide: null }
+    // anchorSnap returns only coordinates, so recognize its feature points before
+    // applying orientation; comparing with the raw click misses exact feature hits.
+    const vertices = localVertices(hit)
+    const center = vertices.length === 0 ? { x: 0, y: 0 } : {
+      x: vertices.reduce((sum, point) => sum + point.x, 0) / vertices.length,
+      y: vertices.reduce((sum, point) => sum + point.y, 0) / vertices.length,
+    }
+    const features = [center, ...vertices, ...vertices.map((point, index) => {
+      const next = vertices[(index + 1) % vertices.length]!
+      return { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 }
+    })]
+    if (features.some(point => point.x === anchor.x && point.y === anchor.y)) return { anchor, guide: null }
+    const otherBody = view.bodies.find(body => body.id === tool.a!.bodyId)
+    if (!otherBody) return { anchor, guide: null }
+    const guide = snapOrientation(w, bodyPointToWorld(otherBody, tool.a.anchor), camera.pixelsPerMeter)
+    return { anchor: guide ? worldToLocal(hit, { x: w.x + guide.delta.x, y: w.y + guide.delta.y }) : anchor, guide }
+  }
+
   /**
    * Palette tool click, every body anchor through Anchor snap. Pulley: one
    * click on a body. Spring: anchor A, then anchor B. Rope: anchor A, then the
@@ -1452,7 +1600,7 @@ export default function App() {
     }
     const hit = bodyAtPoint(view.bodies, w)
     if (!hit) return
-    const anchor = anchorSnap(hit, w, transform)
+    const { anchor } = toolAnchorAt(view, hit, w)
     if (tool.kind === 'pulley') {
       finishTool(addPulley(docRef.current, hit.id, anchor))
       return
@@ -1508,7 +1656,7 @@ export default function App() {
         return
       }
       // Then the application points of its forces, which drag with Anchor snap.
-      const grabbed = displayedScene().forces.find((f) => {
+      const grabbed = (docRef.current.focus?.show ?? FOCUS_GROUPS).includes('forces') && displayedScene().forces.find((f) => {
         if (f.bodyId !== selected.id) return false
         const p = bodyPointToWorld(selected, f.anchor)
         const s = worldToScreen(transform, p.x, p.y)
@@ -1532,7 +1680,7 @@ export default function App() {
     const hit = bodyAtPoint(view.bodies, w)
     if (hit) {
       setSelection({ kind: 'body', id: hit.id })
-      dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, startDoc: docRef.current }
+      dragRef.current = { kind: 'move', id: hit.id, offX: w.x - hit.position.x, offY: w.y - hit.position.y, neighborId: null, guide: null, startDoc: docRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       repaint() // reveal the trash target immediately, even before the first move
       return
@@ -1544,8 +1692,19 @@ export default function App() {
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragRef.current
-    if (!drag) return
+    if (!drag && !toolRef.current?.a && !toolGuideRef.current) return
     const raw = eventToWorld(e)
+    if (!drag) {
+      const view = applyStates(docRef.current, statesRef.current)
+      const hit = toolRef.current?.a && bodyAtPoint(view.bodies, raw)
+      const guide = hit ? toolAnchorAt(view, hit, raw).guide : null
+      const previous = toolGuideRef.current
+      if (previous?.axis !== guide?.axis || previous?.through.x !== guide?.through.x || previous?.through.y !== guide?.through.y) {
+        toolGuideRef.current = guide
+        repaint()
+      }
+      return
+    }
 
     if (drag.kind === 'move') {
       editDoc((d) => {
@@ -1557,7 +1716,9 @@ export default function App() {
         }
         const { body: snapped, neighborId } = resolveContactSnap(proposed, d.bodies, camera.pixelsPerMeter, contactSnapEnabled)
         drag.neighborId = neighborId
-        return updateBody(d, drag.id, { position: snapped.position, rotation: snapped.rotation })
+        const oriented = neighborId === null ? bodyOrientationSnap(d, snapped, camera.pixelsPerMeter) : { body: snapped, guide: null }
+        drag.guide = oriented.guide
+        return updateBody(d, drag.id, { position: oriented.body.position, rotation: oriented.body.rotation })
       })
       return
     }
@@ -1663,10 +1824,18 @@ export default function App() {
   const ropePerLeg = !!selectedRope && selectedRope.via.some((id) => (doc.pulleys?.find((p) => p.id === id)?.mass ?? 0) > 0)
   const selectedConstraint = selectedSpring ?? selectedRope
   const selectedItem = selected ?? selectedConstraint ?? selectedPulley
+  const shownGroups = docRef.current.focus?.show ?? FOCUS_GROUPS
+  const showForces = shownGroups.includes('forces')
+  const showKinematics = shownGroups.includes('kinematics')
+  const showEnergy = shownGroups.includes('energy')
+  const showMomentum = shownGroups.includes('momentum')
+  const graphLegendSeries = graphOpen ? seriesFor(effectiveGraphKind, [], graphBodyId, displayedScene()) : []
   const warnings = [...collectWarnings(doc), ...simWarnings]
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 8, minHeight: '100vh', boxSizing: 'border-box', padding: 8 }}>
+    // Account for the body's two default 8px margins so the row is bounded
+    // by the viewport, including the dock and the main element's padding.
+    <main style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - 16px)', boxSizing: 'border-box', padding: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <h1 style={{ fontSize: 18, margin: 8 }}>{t('app.title')}</h1>
         <label style={{ fontSize: 12 }}>
@@ -1715,6 +1884,9 @@ export default function App() {
               flex: 1,
               minWidth: 0,
               minHeight: 0,
+              // Reserve the two border pixels and fitCanvas's possible 1px
+              // rounding up; ResizeObserver reports the remaining content box.
+              paddingBottom: 3,
               display: 'flex',
               alignItems: 'flex-start',
               // Centering split any width-floor overflow evenly left and
@@ -1831,131 +2003,178 @@ export default function App() {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {openPreset && <span style={{ fontSize: 12 }}>{t('preset.readOnlyHint')}</span>}
-            <button onClick={togglePlay} style={{ minWidth: 110 }}>
-              {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
-            </button>
-            <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
-              {t('playback.stepBack')}
-            </button>
-            <button onClick={stepOnce} title={t('playback.stepTitle')}>
-              {t('playback.step')}
-            </button>
-            <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
-              {t('playback.reset')}
-            </button>
-            <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
-              ↶
-            </button>
-            <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
-              ↷
-            </button>
-            <span style={{ position: 'relative' }}>
-              <button onClick={() => setShowShortcuts((v) => !v)} title={t('shortcuts.title')}>
-                ?
-              </button>
-              {showShortcuts && (
-                <div
-                  onClick={() => setShowShortcuts(false)}
-                  style={{ position: 'fixed', inset: 0, zIndex: 1 }}
-                >
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: 'absolute',
-                      top: 24,
-                      left: 0,
-                      background: '#fff',
-                      border: '1px solid #999',
-                      borderRadius: 4,
-                      padding: 10,
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                      fontSize: 12,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <strong>{t('shortcuts.title')}</strong>
-                    <table style={{ marginTop: 6, borderSpacing: '0 4px' }}>
-                      <tbody>
-                        <tr><td style={{ paddingRight: 12 }}>Ctrl+Z</td><td>{t('shortcuts.undo')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Ctrl+Shift+Z / Ctrl+Y</td><td>{t('shortcuts.redo')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>←</td><td>{t('shortcuts.stepBack')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
-                        <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+          {/* Match the scene canvas's side borders while preserving its logical
+              width. The dock is a sibling of the measured canvas area. */}
+          <div style={{
+            width: size.width, borderInline: '1px solid transparent',
+            alignSelf: stacked ? 'flex-start' : 'center', flexShrink: 0,
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <div style={{ zoom: controlsScale, width: (size.width - CONTROLS_SIZER_WIDTH) / controlsScale, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* Keep the preset hint on its own row at every controls scale. */}
+                  {openPreset && <span style={{ fontSize: 12, flexBasis: '100%' }}>{t('preset.readOnlyHint')}</span>}
+                  <button onClick={togglePlay} disabled={recordingLength >= RECORDING_CAP && playback.cursor === null} style={{ minWidth: 110 }}>
+                    {playback.status === 'playing' ? t('playback.pause') : t('playback.play')}
+                  </button>
+                  <button onClick={stepBack} disabled={(playback.cursor ?? recordingLength - 1) === 0} title={t('playback.stepBackTitle')}>
+                    {t('playback.stepBack')}
+                  </button>
+                  <button onClick={stepOnce} disabled={recordingLength >= RECORDING_CAP && playback.cursor === null} title={t('playback.stepTitle')}>
+                    {t('playback.step')}
+                  </button>
+                  <button onClick={() => dispatch({ type: 'reset' })} title={t('playback.resetTitle')}>
+                    {t('playback.reset')}
+                  </button>
+                  <button onClick={undo} disabled={liveLocked || !canUndo(history) || (structuralLocked && !canEditDoc(history.past.at(-1)!))} title={t('playback.undoTitle')}>
+                    ↶
+                  </button>
+                  <button onClick={redo} disabled={liveLocked || !canRedo(history) || (structuralLocked && !canEditDoc(history.future[0]!))} title={t('playback.redoTitle')}>
+                    ↷
+                  </button>
+                  <span style={{ position: 'relative' }}>
+                    <button onClick={() => setShowShortcuts((v) => !v)} title={t('shortcuts.title')}>
+                      ?
+                    </button>
+                    {showShortcuts && (
+                      <div
+                        onClick={() => setShowShortcuts(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 1 }}
+                      >
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: 'absolute',
+                            top: 24,
+                            left: 0,
+                            background: '#fff',
+                            border: '1px solid #999',
+                            borderRadius: 4,
+                            padding: 10,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                            fontSize: 12,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <strong>{t('shortcuts.title')}</strong>
+                          <table style={{ marginTop: 6, borderSpacing: '0 4px' }}>
+                            <tbody>
+                              <tr><td style={{ paddingRight: 12 }}>Ctrl+Z</td><td>{t('shortcuts.undo')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>Ctrl+Shift+Z / Ctrl+Y</td><td>{t('shortcuts.redo')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>Delete / Backspace</td><td>{t('shortcuts.delete')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>{t('shortcuts.keySpace')}</td><td>{t('shortcuts.togglePlay')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>→</td><td>{t('shortcuts.stepOnce')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>←</td><td>{t('shortcuts.stepBack')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>R</td><td>{t('shortcuts.reset')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>Esc</td><td>{t('shortcuts.deselectOrClose')}</td></tr>
+                              <tr><td style={{ paddingRight: 12 }}>?</td><td>{t('shortcuts.toggleHelp')}</td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </span>
+                  <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, flex: '1 1 100%', minWidth: 0 }}>
+                    {t('playback.speedLabel')}
+                    <input
+                      type="range"
+                      min={SPEED_MIN}
+                      max={SPEED_MAX}
+                      step={SPEED_STEP}
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={playback.speed}
+                      onChange={(e) => dispatch({ type: 'setSpeed', speed: e.target.valueAsNumber })}
+                    />
+                    <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
+                      {fmtNum(playback.speed, 2, lang)}×
+                    </span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 100%', minWidth: 0 }}>
+                    {t('playback.timeLabel')}
+                    <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
+                      value={playback.cursor ?? recordingLength - 1}
+                      onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
+                    />
+                    <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
+                    </span>
+                  </label>
+                  {recordingLength >= RECORDING_CAP && <span role="status" style={{ fontSize: 12, flexBasis: '100%' }}>{t('playback.recordingFull')}</span>}
                 </div>
-              )}
-            </span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
-              {t('playback.speedLabel')}
-              <input
-                type="range"
-                min={SPEED_MIN}
-                max={SPEED_MAX}
-                step={SPEED_STEP}
-                value={playback.speed}
-                onChange={(e) => dispatch({ type: 'setSpeed', speed: e.target.valueAsNumber })}
-              />
-              <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>
-                {fmtNum(playback.speed, 2, lang)}×
-              </span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px' }}>
-              {t('playback.timeLabel')}
-              <input type="range" min={0} max={recordingLength - 1} step={1} style={{ flex: 1, minWidth: 0 }}
-                value={playback.cursor ?? recordingLength - 1}
-                onChange={(e) => dispatch({ type: 'seek', index: e.target.valueAsNumber, length: recordingRef.current!.length })}
-              />
-              <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                t = {((playback.cursor ?? stepsTick) * TIMESTEP).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s
-              </span>
-            </label>
-            <button aria-pressed={graphOpen} aria-controls="recording-graph" onClick={() => setGraphOpen(open => !open)}>{t('graph.toggle')}</button>
-          </div>
-          {graphOpen && <div id="recording-graph" style={{ position: 'relative', width: size.width, height: 180 }}>
-            <select aria-label={t('graph.kindLabel')} value={effectiveGraphKind}
-              onChange={e => setGraphKind(e.target.value as GraphKind)} style={{ position: 'absolute', top: 0, left: 0 }}>
-              {GRAPH_KINDS.map(kind => <option key={kind} value={kind}
-                disabled={graphBodyId === null && kind !== 'energy' && kind !== 'momentum'}>{t(`graph.kind.${kind}`)}</option>)}
-            </select>
-            <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
-              onPointerDown={e => {
-                if (e.button !== 0) return
-                e.currentTarget.setPointerCapture(e.pointerId)
-                seekGraph(e.currentTarget, e.clientX)
-              }}
-              onPointerMove={e => {
-                if (e.buttons & 1) seekGraph(e.currentTarget, e.clientX)
-              }}
-              style={{ display: 'block', width: size.width, height: 180, touchAction: 'none' }} />
-          </div>}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
-            <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>
-            <button disabled={structuralLocked} onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
-            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
-            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
-            <button disabled={structuralLocked} onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
-          </div>
-          {(tool || toolError) && (
-            <div style={{ fontSize: 12, color: '#555' }}>
-              {tool && t(toolHint(tool))}
-              {toolError && <span style={{ color: '#b00' }}>{tool && ' — '}{t(toolError)}</span>}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button disabled={structuralLocked} onClick={() => addShape('rectangle')}>{t('palette.rectangle')}</button>
+                  <button disabled={structuralLocked} onClick={() => addShape('circle')}>{t('palette.circle')}</button>
+                  <button disabled={structuralLocked} onClick={() => addShape('triangle')}>{t('palette.triangle')}</button>
+                  <button disabled={structuralLocked} onClick={() => armTool({ kind: 'spring', a: null })}>{t('palette.spring')}</button>
+                  <button disabled={structuralLocked} onClick={() => armTool({ kind: 'pulley' })}>{t('palette.pulley')}</button>
+                  <button disabled={structuralLocked} onClick={() => armTool({ kind: 'rope', a: null, via: [] })}>{t('palette.rope')}</button>
+                </div>
+                {(tool || toolError) && (
+                  <div style={{ fontSize: 12, color: '#555' }}>
+                    {tool && t(toolHint(tool))}
+                    {toolError && <span style={{ color: '#b00' }}>{tool && ' — '}{t(toolError)}</span>}
+                  </div>
+                )}
+              </div>
+              <div style={{ width: CONTROLS_SIZER_WIDTH, paddingLeft: 6, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <button type="button" aria-label={t('controls.bigger')} title={t('controls.sizeTitle', { pct: Math.round(controlsScale * 100) })}
+                  disabled={controlsScale >= 1.6} onClick={() => setControlsScale(scale => Math.min(1.6, Math.round((scale + 0.1) * 10) / 10))}
+                  style={{ width: 32, height: 24, padding: 0 }}>+</button>
+                <button type="button" aria-label={t('controls.smaller')} title={t('controls.sizeTitle', { pct: Math.round(controlsScale * 100) })}
+                  disabled={controlsScale <= 0.7} onClick={() => setControlsScale(scale => Math.max(0.7, Math.round((scale - 0.1) * 10) / 10))}
+                  style={{ width: 32, height: 24, padding: 0 }}>−</button>
+              </div>
             </div>
-          )}
+            {graphOpen && <div id="recording-graph" style={{ position: 'relative', width: size.width, height: 180 }}>
+              <select aria-label={t('graph.kindLabel')} value={effectiveGraphKind}
+                onChange={e => setGraphKind(e.target.value as GraphKind)} style={{ position: 'absolute', top: 0, left: 0 }}>
+                {GRAPH_KINDS.map(kind => <option key={kind} value={kind}
+                  disabled={graphBodyId === null && kind !== 'energy' && kind !== 'momentum'}>{t(`graph.kind.${kind}`)}</option>)}
+              </select>
+              <ul aria-label={t('graph.legend')} style={{ position: 'absolute', top: 0, right: 0, display: 'flex',
+                flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4, margin: 0, padding: 0, listStyle: 'none', maxWidth: 'calc(100% - 112px)' }}>
+                {graphLegendSeries.map(series => {
+                  const [base, sub] = splitLabel(series.name)
+                  const visible = !doc.focus?.hidden?.[effectiveGraphKind]?.includes(series.name)
+                  return <li key={series.name}>
+                    <button type="button" aria-pressed={visible} onClick={() => toggleGraphCurve(effectiveGraphKind, series.name)}
+                      style={{ fontSize: 12, background: '#fff', opacity: visible ? 1 : 0.5 }}>
+                      <span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 3, marginRight: 4, background: colorOf(series.name) }} />
+                      {base}{sub && <sub>{sub}</sub>}
+                    </button>
+                  </li>
+                })}
+              </ul>
+              <canvas ref={graphCanvasRef} role="img" aria-label={t('graph.aria', { kind: t(`graph.kind.${effectiveGraphKind}`), id: graphBodyId ?? t('readout.system') })}
+                onPointerDown={e => {
+                  if (e.button !== 0) return
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  seekGraph(e.currentTarget, e.clientX)
+                }}
+                onPointerMove={e => {
+                  if (e.buttons & 1) seekGraph(e.currentTarget, e.clientX)
+                }}
+                style={{ display: 'block', width: size.width, height: 180, touchAction: 'none' }} />
+            </div>}
+          </div>
         </div>
         {/* The row sets the panel height; excess content scrolls independently.
             The width is fixed because the panel's content width changes with the
             selection and the canvas rectangle must not follow it: without it the
             canvas narrows 15 px at 1280 on selection and the PHY-18 tests fail. */}
         <div style={{ display: 'grid', gap: 8, width: stacked ? '100%' : INSPECTOR_WIDTH, flexShrink: 0, overflowY: 'auto', alignContent: 'start' }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
+            <span>{t('focus.show')}</span>
+            {FOCUS_GROUPS.map((group) => (
+              <button type="button" key={group} aria-pressed={shownGroups.includes(group)} onClick={() => toggleFocusGroup(group)}
+                style={{ fontSize: 12, padding: '2px 4px', border: '1px solid #888', borderRadius: 12,
+                  background: shownGroups.includes(group) ? '#e3effc' : '#fff' }}>
+                {t(`focus.${group}`)}
+              </button>
+            ))}
+          </div>
           <label style={{ fontSize: 14 }}>
             <input
               type="checkbox"
@@ -2151,33 +2370,39 @@ export default function App() {
               <div>{t('readout.speed')}: {fmtNum(playback.speed, 2, lang)}×</div>
               {selected && readout && (
                 <>
-                  <div>
-                    {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
-                  </div>
-                  <details>
+                  {showKinematics && <>
+                    <div>
+                      {t('readout.position')}: ({fmtNum(readout.x, 2, lang)}, {fmtNum(readout.y, 2, lang)}) m
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.velocityMagnitude')}: {fmtNum(Math.hypot(readout.vx, readout.vy), 2, lang)} m/s
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {t('readout.accelerationMagnitude')}: {readout.approximate ? '≈ ' : ''}{fmtNum(Math.hypot(readout.ax, readout.ay), 2, lang)} m/s²
+                    </div>
+                  </>}
+                  {(showKinematics || showEnergy || showMomentum) && <details>
                     <summary>{t('readout.more')}</summary>
-                    <div>
-                      {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
-                    </div>
-                    <div>
-                      {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
-                    </div>
-                    {energyReadout.body && <>
+                    {showKinematics && <>
+                      <div>
+                        {t('readout.velocity')}: ({fmtNum(readout.vx, 2, lang)}, {fmtNum(readout.vy, 2, lang)}) m/s
+                      </div>
+                      <div>
+                        {t('readout.acceleration')}: ({fmtNum(readout.ax, 2, lang)}, {fmtNum(readout.ay, 2, lang)}) m/s²
+                      </div>
+                    </>}
+                    {showEnergy && energyReadout.body && <>
                       <div>{t('readout.kinetic')}: {fmtNum(energyReadout.body.Ec, 2, lang)} J</div>
                       <div>{t('readout.potential')}: {fmtNum(energyReadout.body.Epg, 2, lang)} J</div>
-                      <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s</div>
                     </>}
-                  </details>
+                    {showMomentum && energyReadout.body && <div>
+                      {t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.body.p.x, energyReadout.body.p.y), 2, lang)} kg·m/s
+                    </div>}
+                  </details>}
                 </>
               )}
               {selected && !readout && <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
-              {selectedSpring && constraintReadout?.kind === 'spring' && (
+              {showForces && selectedSpring && constraintReadout?.kind === 'spring' && (
                 <>
                   {/* F_el differs per end only on a spring with mass (PHY-30), labelled as its arrows. */}
                   {(selectedSpring.mass ?? 0) > 0 ? (
@@ -2196,7 +2421,7 @@ export default function App() {
                   </div>
                 </>
               )}
-              {selectedRope && constraintReadout?.kind === 'rope' && (
+              {showForces && selectedRope && constraintReadout?.kind === 'rope' && (
                 <>
                   {(ropePerLeg ? constraintReadout.segments : [constraintReadout.tension]).map((T, i) => (
                     <div key={i} style={{ fontWeight: 600, fontSize: 14 }}>
@@ -2212,23 +2437,27 @@ export default function App() {
               {!selected && !selectedConstraint && !selectedPulley && <div style={{ color: '#777' }}>{t('panel.selectBodyEmpty')}</div>}
             </div>
           </fieldset>
-          <fieldset style={{ width: 220 }}>
+          {(showEnergy || showMomentum) && <fieldset style={{ width: 220 }}>
             <legend>{t('readout.system')}</legend>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               {energyReadout.system ? <>
-                <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
-                <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
-                {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
-                <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
-                <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
-                <details>
-                  <summary>{t('readout.more')}</summary>
-                  <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
-                  <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
-                </details>
+                {showEnergy && <>
+                  <div>{t('readout.kinetic')}: {fmtNum(energyReadout.system.Ec, 2, lang)} J</div>
+                  <div>{t('readout.potential')}: {fmtNum(energyReadout.system.Epg, 2, lang)} J</div>
+                  {energyReadout.hasSpring && <div>{t('readout.elastic')}: {fmtNum(energyReadout.system.Eel, 2, lang)} J</div>}
+                  <div><strong>{t('readout.mechanical')}: {fmtNum(energyReadout.system.Emec, 2, lang)} J</strong></div>
+                </>}
+                {showMomentum && <>
+                  <div>{t('readout.momentum')}: {fmtNum(Math.hypot(energyReadout.system.p.x, energyReadout.system.p.y), 2, lang)} kg·m/s</div>
+                  <details>
+                    <summary>{t('readout.more')}</summary>
+                    <div>{t('readout.momentumX')}: {fmtNum(energyReadout.system.p.x, 2, lang)} kg·m/s</div>
+                    <div>{t('readout.momentumY')}: {fmtNum(energyReadout.system.p.y, 2, lang)} kg·m/s</div>
+                  </details>
+                </>}
               </> : <div style={{ color: '#777' }}>{t('readout.noData')}</div>}
             </div>
-          </fieldset>
+          </fieldset>}
           <NumField disabled={liveLocked} title={liveLocked ? t('playback.scrubbedEditHint') : undefined} label={t('panel.gLabel')} value={doc.constants.g} step={0.01} onChange={(v) => commitDoc((d) => updateG(d, v))} />
           <label style={{ fontSize: 14 }}>
             <input
@@ -2255,6 +2484,19 @@ export default function App() {
                 onPatch={(id, patch) => commitDoc((d) => updateForce(d, id, patch))}
                 onRemove={(id) => commitDoc((d) => removeForce(d, id))}
               />
+              <BodyContactsPanel
+                key={selected.id}
+                bodyId={selected.id}
+                doc={doc}
+                disabled={structuralLocked}
+                onAdd={(a, b) => {
+                  const res = addContact(doc, a, b)
+                  commitDoc(res.doc)
+                  return res.error
+                }}
+                onPatch={(a, b, patch) => commitDoc((d) => updateContact(d, a, b, patch))}
+                onRemove={(a, b) => commitDoc((d) => removeContact(d, a, b))}
+              />
             </>
           )}
           {selectedSpring && (
@@ -2271,17 +2513,6 @@ export default function App() {
           {selectedPulley && (
             <PulleyPanel pulley={selectedPulley} disabled={structuralLocked} onPatch={(patch) => commitDoc((d) => updatePulley(d, selectedPulley.id, patch))} onDelete={deleteSelected} />
           )}
-          <ContactsPanel
-            doc={doc}
-            disabled={structuralLocked}
-            onAdd={(a, b) => {
-              const res = addContact(doc, a, b)
-              commitDoc(res.doc)
-              return res.error
-            }}
-            onPatch={(a, b, patch) => commitDoc((d) => updateContact(d, a, b, patch))}
-            onRemove={(a, b) => commitDoc((d) => removeContact(d, a, b))}
-          />
           {simError && (
             <fieldset style={{ width: 220, borderColor: '#b00' }}>
               <legend>{t('simError.title')}</legend>

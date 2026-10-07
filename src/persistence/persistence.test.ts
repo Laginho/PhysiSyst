@@ -3,6 +3,8 @@ import {
   AUTOSAVE_DELAY_MS,
   loadCanvasSize,
   saveCanvasSize,
+  loadControlsScale,
+  saveControlsScale,
   CURRENT_SCENE_KEY,
   DebouncedSaver,
   blankScene,
@@ -72,7 +74,50 @@ describe('canvas size preference (PHY-63)', () => {
   })
 })
 
+describe('controls scale preference (PHY-76)', () => {
+  it('defaults invalid values and clamps and rounds valid values to tenths', () => {
+    const storage = memStorage()
+    expect(loadControlsScale(storage)).toBe(1)
+    for (const [raw, expected] of [
+      ['', 1], [' ', 1], ['abc', 1], ['NaN', 1], ['Infinity', 1], ['-Infinity', 1],
+      ['1.3', 1.3], ['2', 1.6], ['0.5', 0.7], ['1.26', 1.3], ['1.24', 1.2],
+    ] as const) {
+      storage.setItem('physics-sim:controlsScale', raw)
+      expect(loadControlsScale(storage), raw).toBe(expected)
+    }
+  })
+
+  it('round-trips the controls scale through its own storage key', () => {
+    const storage = memStorage()
+    saveControlsScale(storage, 1.2)
+    expect(storage.getItem('physics-sim:controlsScale')).toBe('1.2')
+    expect(loadControlsScale(storage)).toBe(1.2)
+    expect(storage.getItem('physics-sim:canvasSize')).toBeNull()
+  })
+
+  it('keeps the controls usable when storage reads or writes throw', () => {
+    const storage: Storage = {
+      getItem: () => { throw new Error('SecurityError') },
+      setItem: () => { throw new Error('QuotaExceededError') },
+      removeItem: () => {},
+    }
+    expect(loadControlsScale(storage)).toBe(1)
+    expect(() => saveControlsScale(storage, 1.2)).not.toThrow()
+  })
+})
+
 describe('ticket 03: blank scene starts grounded', () => {
+  it('PHY-78 persists the explicit blank focus and preserves canonical payload bytes', () => {
+    const scene = blankScene()
+    expect(scene.focus).toEqual({ show: ['forces', 'energy', 'momentum'] })
+    const storage = memStorage()
+    const result = createNewScene(storage, 1)
+    expect(result).not.toHaveProperty('reason')
+    if ('reason' in result) throw new Error(result.reason)
+    expect(loadScene(storage, result.entry.id)?.focus).toEqual({ show: ['forces', 'energy', 'momentum'] })
+    expect(JSON.stringify(serialize(parse(serialize(scene))))).toBe(JSON.stringify(serialize(scene)))
+  })
+
   it('contains the fixed hatched ground (same recipe as presets), parses clean with zero warnings', () => {
     const scene = blankScene()
     expect(scene.bodies).toHaveLength(1)
