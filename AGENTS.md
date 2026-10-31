@@ -34,9 +34,6 @@ Which chat runs which stage is `docs/agents/loop.md`; the per-chat model and eff
 
 - Gate: `npm test && npm run lint && npm run typecheck && npm run build`
 - Base branch: `main`
-- Models (default): sol
-- Models (sol): stage 2 gpt-6.1-sol high, hard gpt-6.1-sol xhigh, stage 3 gpt-6.1-sol xhigh
-- Models (opus): stage 2 opus-5.5 high, hard opus-5.5 xhigh, stage 3 opus-5.5 xhigh
 
 Branches are named `phy/PHY-NN-<slug>` off the base branch.
 
