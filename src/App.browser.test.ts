@@ -2,6 +2,217 @@ import { describe, expect, it } from 'vitest'
 import { withBrowserSession } from './test/browser'
 import { makeTransform, pixelsPerMeterForWidth, screenToWorld } from './render/transform'
 import { ptBR } from './i18n/pt-BR'
+import { colorOf } from './render/graph'
+
+describe('canvas dock geometry (PHY-76)', () => {
+  type Session = import('./test/browser').BrowserSession
+  type Rect = import('./test/browser').Rect
+  type Geometry = {
+    canvas: Rect; box: Rect; column: Rect; dock: Rect; transport: Rect
+    bigger: Rect; smaller: Rect; graph: Rect; scaled: Rect; sizer: Rect
+    direction: string; zoom: number; scrollHeight: number; viewportHeight: number
+  }
+  const frames = (session: Session, count = 3) => session.evaluate<void>(`new Promise(resolve => {
+    let remaining = ${count}; const tick = () => --remaining === 0 ? resolve() : requestAnimationFrame(tick);
+    requestAnimationFrame(tick);
+  })`)
+  const openGraph = async (session: Session) => {
+    await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['graph.toggle'])}).click()`)
+    await frames(session)
+  }
+  const enlarge = async (session: Session) => {
+    await session.evaluate(`(() => {
+      const button = document.querySelector('[aria-label="${ptBR['controls.bigger']}"]');
+      if (!button) throw new Error('missing controls sizer');
+      for (let i = 0; i < 6; i++) button.click();
+    })()`)
+    await frames(session)
+  }
+  const measure = (session: Session) => session.evaluate<Geometry>(`(() => {
+    const canvas = document.querySelector('canvas'), box = canvas.parentElement, column = box.parentElement;
+    const transport = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['playback.play'])}).parentElement;
+    const bigger = document.querySelector('[aria-label="${ptBR['controls.bigger']}"]');
+    const smaller = document.querySelector('[aria-label="${ptBR['controls.smaller']}"]');
+    const scaled = [...document.querySelectorAll('div')].find(el => el.style.zoom);
+    const rect = el => el.getBoundingClientRect().toJSON();
+    return { canvas: rect(canvas), box: rect(box), column: rect(column), dock: rect(box.nextElementSibling),
+      transport: rect(transport), bigger: rect(bigger), smaller: rect(smaller),
+      graph: rect(document.querySelector('#recording-graph canvas')), scaled: rect(scaled), sizer: rect(bigger.parentElement),
+      direction: column.parentElement.style.flexDirection, zoom: Number(scaled.style.zoom),
+      scrollHeight: document.documentElement.scrollHeight, viewportHeight: innerHeight };
+  })()`)
+
+  it.each([
+    [1920, 1], [1920, 1.6], [1280, 1], [1280, 1.6], [700, 1.6],
+  ] as const)('aligns the dock to the canvas and fits the viewport at %ipx and scale %s', async (width, scale) => {
+    await withBrowserSession(width, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      if (scale === 1.6) await enlarge(session)
+      const g = await measure(session)
+      expect(g.zoom).toBe(scale)
+      expect(Math.abs(g.dock.left - g.canvas.left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(g.dock.width - g.canvas.width)).toBeLessThanOrEqual(1)
+      expect(g.dock.top).toBeGreaterThanOrEqual(g.canvas.bottom)
+      expect(g.scaled.width + g.sizer.width).toBeCloseTo(g.canvas.width - 2, 0)
+      expect(g.graph.height).toBe(180)
+      if (width >= 1280) {
+        expect(g.direction).toBe('row')
+        expect(g.canvas.bottom + g.dock.height).toBeLessThanOrEqual(g.column.bottom)
+        expect(g.scrollHeight).toBeLessThanOrEqual(g.viewportHeight)
+      } else expect(g.direction).toBe('column')
+    })
+  }, 30000)
+
+  it.each([1920, 1280])('scales transport height by 1.6 while sizer buttons and graph keep their height at %ipx', async width => {
+    await withBrowserSession(width, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      const before = await measure(session)
+      await enlarge(session)
+      const after = await measure(session)
+      expect(after.zoom).toBe(1.6)
+      expect(after.transport.height / before.transport.height).toBeGreaterThanOrEqual(1.44)
+      expect(after.transport.height / before.transport.height).toBeLessThanOrEqual(1.76)
+      expect(after.bigger.height).toBe(before.bigger.height)
+      expect(after.smaller.height).toBe(before.smaller.height)
+      expect(before.graph.height).toBe(180)
+      expect(after.graph.height).toBe(180)
+    })
+  }, 30000)
+
+  it.each([1920, 1280])('scales preset transport height by 1.6 without changing the sizer or graph at %ipx', async width => {
+    await withBrowserSession(width, 25000, async session => {
+      await session.reset()
+      await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['scenes.galleryOpen'])})?.click()`)
+      await session.evaluate(`(() => {
+        const card = [...document.querySelectorAll('button')].find(b => b.querySelector('strong')?.textContent.trim() === ${JSON.stringify(ptBR['preset.atwood.name'])});
+        if (!card) throw new Error('missing Atwood preset');
+        card.click();
+      })()`)
+      await openGraph(session)
+      const before = await measure(session)
+      await enlarge(session)
+      const after = await measure(session)
+      expect(await session.evaluate<boolean>(`[...document.querySelectorAll('span')].some(el => el.textContent.trim() === ${JSON.stringify(ptBR['preset.readOnlyHint'])})`)).toBe(true)
+      expect(before.zoom).toBe(1)
+      expect(after.zoom).toBe(1.6)
+      expect(after.transport.height / before.transport.height).toBeGreaterThanOrEqual(1.44)
+      expect(after.transport.height / before.transport.height).toBeLessThanOrEqual(1.76)
+      expect(after.bigger.height).toBe(before.bigger.height)
+      expect(after.smaller.height).toBe(before.smaller.height)
+      expect(before.graph.height).toBe(180)
+      expect(after.graph.height).toBe(180)
+    })
+  }, 30000)
+
+  it('keeps the sizer and scaled controls inside a 402px preferred canvas at scale 1.6', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      const canvas = await session.rect()
+      const handle = await session.evaluate<{ x: number; y: number }>(`(() => {
+        const r = document.querySelector('[aria-label="${ptBR['canvas.resize']}"]').getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`)
+      const ppm = pixelsPerMeterForWidth(canvas.width - 2)
+      const transform = makeTransform({ centerX: 6, centerY: 4, pixelsPerMeter: ppm }, canvas.width - 2, canvas.height - 2)
+      const from = screenToWorld(transform, handle.x - canvas.left, handle.y - canvas.top)
+      await session.drag(from, { x: from.x - 3000 / ppm, y: from.y })
+      await enlarge(session)
+      const g = await measure(session)
+      expect(g.zoom).toBe(1.6)
+      expect(g.canvas.width).toBe(404)
+      expect(g.dock.width).toBe(404)
+      expect(g.bigger.left).toBeGreaterThanOrEqual(g.dock.left)
+      expect(g.bigger.right).toBeLessThanOrEqual(g.dock.right)
+      expect(g.smaller.right).toBeLessThanOrEqual(g.dock.right)
+      const overflow = await session.evaluate<number>(`(() => {
+        const scaled = [...document.querySelectorAll('div')].find(el => el.style.zoom);
+        const right = scaled.getBoundingClientRect().right;
+        return Math.max(...[...scaled.querySelectorAll('*')].map(el => el.getBoundingClientRect().right - right));
+      })()`)
+      expect(overflow).toBeLessThanOrEqual(1)
+    })
+  }, 30000)
+
+  it('refits for the taller dock within three frames and stays inside its independent box', async () => {
+    await withBrowserSession(1920, 25000, async session => {
+      await session.reset()
+      await openGraph(session)
+      const before = await measure(session)
+      await enlarge(session)
+      const samples: Geometry[] = []
+      for (let i = 0; i < 3; i++) {
+        samples.push(await measure(session))
+        await frames(session, 1)
+      }
+      expect(samples[0].zoom).toBe(1.6)
+      expect(samples[0].canvas.height).toBeLessThan(before.canvas.height)
+      expect(samples[1].canvas).toEqual(samples[0].canvas)
+      expect(samples[2].canvas).toEqual(samples[0].canvas)
+      for (const g of samples) expect(g.canvas.height).toBeLessThanOrEqual(g.box.height)
+    })
+  }, 30000)
+})
+
+it('PHY-81 removes hidden curve pixels, preserves neighboring colors and contains the HTML legend', async () => {
+  await withBrowserSession(1920, 25000, async session => {
+    await session.reset()
+    await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(ptBR['scenes.galleryOpen'])})?.click()`)
+    await session.evaluate(`[...document.querySelectorAll('button')].find(b => b.querySelector('strong')?.textContent === ${JSON.stringify(ptBR['preset.free-fall.name'])}).click()`)
+    await session.select(6, 7)
+    expect(await session.selectedLegends()).toContain('bola')
+    await session.evaluate(`(() => {
+      const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text);
+      button(${JSON.stringify(ptBR['graph.toggle'])}).click();
+      for (let i = 0; i < 60; i++) button(${JSON.stringify(ptBR['playback.step'])}).click();
+    })()`)
+    await session.evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    expect(await session.evaluate<string>('document.querySelector(\'input[type="range"][min="0"]\').value')).toBe('60')
+    const pixels = () => session.evaluate<number[]>(`(() => {
+      const canvas = document.querySelector('#recording-graph canvas');
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      const colors = ${JSON.stringify(['E_pg', 'E_c'].map(colorOf))}.map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+      return colors.map(rgb => {
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] && Math.hypot(data[i] - rgb[0], data[i + 1] - rgb[1], data[i + 2] - rgb[2]) <= 40) count++;
+        }
+        return count;
+      });
+    })()`)
+    const before = await pixels()
+    expect(before[0]).toBeGreaterThan(0)
+    expect(before[1]).toBeGreaterThan(0)
+    await session.evaluate(`[...document.querySelectorAll('#recording-graph [aria-label="curvas do gráfico"] button')].find(b => b.querySelector('sub')?.textContent === 'pg').click()`)
+    await session.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    const after = await pixels()
+    expect(after[0]).toBe(0)
+    expect(after[1]).toBeGreaterThanOrEqual(before[1] * 0.95)
+    expect(after[1]).toBeLessThanOrEqual(before[1] * 1.05)
+    const geometry = await session.evaluate<{ panel: DOMRect; legend: DOMRect }>(`(() => {
+      const panel = document.querySelector('#recording-graph').getBoundingClientRect();
+      const legend = document.querySelector('#recording-graph [aria-label="curvas do gráfico"]').getBoundingClientRect();
+      return { panel: panel.toJSON(), legend: legend.toJSON() };
+    })()`)
+    expect(geometry.legend.left).toBeGreaterThanOrEqual(geometry.panel.left)
+    expect(geometry.legend.top).toBeGreaterThanOrEqual(geometry.panel.top)
+    expect(geometry.legend.right).toBeLessThanOrEqual(geometry.panel.right)
+    expect(geometry.legend.bottom).toBeLessThanOrEqual(geometry.panel.bottom)
+    expect(geometry.panel.right - geometry.legend.right).toBeLessThanOrEqual(8)
+    // Hidden names belong to today's Focus even when displaying an older frame.
+    await session.evaluate(`(() => {
+      const slider = document.querySelector('input[type="range"][min="0"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '5');
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      slider.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    await session.evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    expect(await session.evaluate<string>('document.querySelector(\'input[type="range"][min="0"]\').value')).toBe('5')
+    expect((await pixels())[0]).toBe(0)
+  })
+}, 30000)
 
 it('PHY-73 seeks from a real graph click to the expected slider index', async () => {
   await withBrowserSession(1920, 25000, async session => {

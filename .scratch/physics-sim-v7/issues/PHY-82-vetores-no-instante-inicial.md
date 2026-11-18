@@ -1,5 +1,5 @@
 # PHY-82: Vetores N e T no instante inicial
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: agent
@@ -50,3 +50,149 @@ Com o grupo forças do Foco desligado (PHY-78, quando existir) as setas da sonda
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: independente de A–F; sonda = simulador descartável do mesmo documento pelo caminho de construção de `replaceScene`, um `TIMESTEP`, ler contatos e trações, liberar, desenhar em t = 0 junto do que já existe; o mundo vivo nunca é tocado; recalcular só em edições estruturais em t = 0.
 - Planner: `probeInitial` como método síncrono do `Simulator`, com `dispose` no `RapierSimulator`; o `path` da leitura da sonda é descartado para a seta de T cair no caminho do documento; o resultado vale também com o cursor em 0; a leitura de T do painel em t = 0 fica fora do escopo (spec, "Fora de escopo").
+
+#### Stage 2 — costuras e primeiro vermelho (2026-10-04)
+
+- Costuras aprovadas: API pública do `Simulator` em `contacts.test.ts`; DOM e canvas reais do App com simulador falso em `App.test.ts`.
+- Chamadores examinados antes dos testes: `paint` via `repaint` (resize, seleção, idioma, documento, transporte e rAF); `ensureSim` via mount, play, step e retry; `dispatch(reset)` via reinício, edição no registro 0 e transições de cena; `syncWorld` via step/rAF. `readContacts` e `readConstraints` também alimentam gravação, painéis e energia; a sonda não substitui essas leituras.
+- Fronteiras a preservar: documento vazio; massa dinâmica inválida com mundo vivo ainda utilizável; boot pendente e erro da sonda; edição ao vivo após rebuild estrutural pendente; cursor 0 e registros posteriores; caminho de corda e F_el do documento/mundo vivo.
+- Vermelho da API: `npm test -- src/sim/contacts.test.ts` → **5 failed | 12 passed (17)**, os cinco novos testes com `TypeError: sim.probeInitial is not a function`. Nenhum código de produção alterado.
+- Verde da API: **17 passed (17)**. Mutantes confirmados: omitir `probe.step()` derruba normal e Atwood; inserir `this.step()` derruba isolamento/repetição e cena vazia; propagar falha de construção derruba massa inválida. Todos restaurados antes do commit de produção.
+- Vermelho do App, antes de alterar `App.tsx`: `npm test -- src/App.test.ts -t 'initial force vectors'` → **8 failed | 169 skipped (177)**. Os testes de desenho falham pela ausência de N em t = 0/cursor 0; os demais falham pela ausência de chamadas à sonda. Incluem boot com edição pendente, troca de cena/edição do registro 0 e preservação de corda/F_el/leitura T. `npm run typecheck` passa com o contrato da API implementado.
+- Correção de harness em commit só de teste: o teste de erro verificava P como prova de pintura, mas `weightArrows` já exige estados simulados e não pinta P com `states === null`. A prova de cena pintada passa a ser o rótulo de massa `m`; não muda critério nem produção. Vermelho confirmado com mutação no catch da sonda (`setSimError('probe failed')`): **1 failed | 176 skipped (177)**, `expected … not to contain 'probe failed'` após reset. Mutação restaurada.
+- Segunda correção de harness em commit só de teste: passar `probe.constraints` ao desenho da corda sobreviveu (**1 passed | 176 skipped**) porque o canvas registrava só `moveTo` e as duas leituras compartilhavam a primeira ponta. O harness agora registra também `lineTo` e exige a outra ponta do documento `[8, 3.2]`. A mesma mutação fica vermelha: **1 failed | 176 skipped (177)**, `expected … to deep equally contain [8, 3.2]`. O teste também exige a origem de F_el antes de medir sua seta. Mutação restaurada.
+
+#### Mutate-verify do App (2026-10-04)
+
+Cada linha corresponde a um teste novo de `describe('initial force vectors (PHY-82)')` em `src/App.test.ts`. As mutações são temporárias em `src/App.tsx`, com o desenho e os produtores reais; todas foram restauradas. Comando por linha: `npm test -- src/App.test.ts -t '<prefixo do teste>'` (os dois testes de leitura após passos também foram executados juntos: **2 failed | 175 skipped (177)**).
+
+| Teste (prefixo) | Mutação aplicada | Saída vermelha observada |
+| --- | --- | --- |
+| `paints N and T at t0` | Não descartar `RopeState.path` da sonda ao alimentar `tensionArrows`. | **1 failed | 176 skipped (177)**; `expected [690, 300] to deeply equal [570, 348]`. |
+| `uses live contacts and constraints` | Usar a sonda em todos os instantes, removendo a condição de t = 0. | **2 failed | 175 skipped (177)** no filtro conjunto; este teste: `expected [270, 540] to deeply equal [276, 540]` após o primeiro passo. |
+| `probes once per structural t0 edit` | Omitir `refreshInitialProbe()` no ramo estrutural do doc effect. | **1 failed | 176 skipped (177)**; `expected vi.fn() to be called 2 times, but got 1 times` no primeiro arrasto. |
+| `uses the cached probe on seek(0)` | Passar os passos totais a `paint`, ignorando o cursor exibido. | **1 failed | 176 skipped (177)**; `expected ['m', 'a', 'm', 'b'] to include 'N'` depois de seek(0). |
+| `keeps painting without N, T or simError` | Chamar `setSimError('probe failed')` no catch da sonda. | **1 failed | 176 skipped (177)**; `expected … not to contain 'probe failed'` após reset. |
+| `probes the latest document` | Alimentar a sonda com o documento anterior (`initialProbeDocRef`) em vez de `docRef.current`. | **1 failed | 176 skipped (177)**; `expected 8 to be 9` na posição enviada depois do arrasto durante boot. |
+| `refreshes on scene switching` | Omitir a atualização da sonda no rebuild do `dispatch`. | **1 failed | 176 skipped (177)**; `expected vi.fn() to be called 2 times, but got 1 times` ao abrir Atwood. |
+| `preserves the document rope drawing` | Alimentar `drawScene` com `probe.constraints`; separadamente, alimentar `elasticArrows` com a sonda. | **1 failed | 176 skipped (177)** em cada mutação; primeira: falta `[8, 3.2]` nos pontos da corda; segunda: `expected undefined to deeply equal [570, 360]` na origem de F_el. |
+| `paints initial vectors at the current canvas size` | Remover `bootState` das dependências do doc effect e pintar na resolução assíncrona com o callback capturado no boot. | **1 failed | 177 skipped (178)**; `expected [270, 540] to deeply equal [180, 360]` após resize 900 → 600 px. |
+
+- Validação focada completa inicial: **192 passed | 2 failed (194)**. Os dois erros são testes existentes do Chromium (`PHY-44`), com `failed to connect to Chromium DevTools` no sandbox; repetir fora dele, sem alterar o harness.
+- Regressão encontrada antes do commit do App: chamar `repaint` diretamente na resolução assíncrona usa o tamanho capturado no início do boot. Novo teste no mesmo seam DOM/canvas: boot pendente, resize 900 → 600 px, resolver boot; vermelho **1 failed | 177 skipped (178)**, `expected [270, 540] to deeply equal [180, 360]`. A pintura deve acompanhar o render que observa `bootState: ready`, usando a geometria atual.
+- Validação focada fora do sandbox: **195 passed (195), 2 arquivos**, incluindo Chromium. Primeiro gate completo: **1185 passed (1185), 33 arquivos**, seguido de uma falha de lint no parâmetro não usado `_scene` do falso. Correção só de tipagem do harness: `vi.fn<(scene: Scene) => InitialProbe>(() => …)` mantém os argumentos observáveis sem declarar um argumento ocioso. Vermelho reconfirmado com a sonda no documento antigo: **1 failed | 177 skipped (178)** (`expected vi.fn() to be called 1 times, but got 2 times`); após restaurar, **9 passed | 169 skipped (178)** e lint verde.
+
+#### Handoff stage 2 (2026-10-04)
+
+- Critérios 1–9 implementados. `probeInitial` constrói outro `RapierSimulator`, executa um passo, lê contatos/vínculos e libera seu mundo no `finally`; falha de construção retorna leituras vazias. Nenhum campo do mundo vivo é substituído pela sonda.
+- O App guarda a sonda separada das leituras/gravação. Atualiza no boot, reset/transição de cena e mudança estrutural em t = 0; compara a estrutura com o documento da última sonda para não sondar novamente por g, seleção ou repaint enquanto o rebuild vivo ainda está pendente. No instante 0, T descarta o caminho da sonda. O desenho da corda segue o documento, e F_el e painel T continuam usando as leituras vivas. Depois do primeiro passo e em registros posteriores, N/T vêm das leituras gravadas.
+- A pintura ao terminar o boot passa pelo doc effect que observa `bootState`, usando o tamanho atual do canvas. **14 testes novos**: 5 na API real e 9 no App. Testes vermelhos/correções de harness ficaram em commits próprios; commits de produção não alteram testes.
+- Gate final fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1185 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). O build emite o aviso de chunk acima de 500 kB no bundle do simulador; sem falha de build. Nenhuma validação pendente.
+- Diff final restrito aos cinco Primary files e ao próprio ticket; sem alterações em `syncWorld`, painel T, solver existente ou artefatos gerados. Stage 2 encerrado em `to-review`; sem review ou merge nesta sessão.
+
+#### Stage 3 — revisão (2026-10-04)
+
+Verdict: Reopen — critério 7: a sonda fica desatualizada ao desfazer ou arrastar de volta à geometria do mundo vivo antes do primeiro passo.
+
+- Base da revisão: `5ac927d` (`sweatshop/2026-10-04-1243`); implementação revisada até `cd60c4d`, diff completo e os oito commits examinados. Rebase sobre a sessão sem conflitos ou mudanças.
+- Chamadores e caminhos examinados: `paint`/`repaint` por documento, seleção, idioma, resize, transporte e rAF; `ensureSim` por mount/play/step/retry; boot pendente com edição e resize; `dispatch(reset)` e abertura de preset/cena salva; `syncWorld`/`runSteps`; roteamento estrutural e ao vivo (g/F); undo/redo; seek(0), seek posterior e replay. Na API, construtor, `buildWorld`, `step`, leitores, `replaceScene`, falha de construção e liberação no `finally`.
+- Interações examinadas: desenho e hit test da corda no documento, âncoras locais rotacionadas, F_el e painel T vivos, gravação, aceleração, energia e avisos. Não foram examinadas integrações com PHY-78–81 ainda não mesclados, nem foi feito perfil prolongado de memória; não são requisitos deste ticket. Não há decisões `Proxy decided` no ticket.
+
+##### Standards
+
+- Um comentário desatualizado em `src/render/overlay.ts` dizia que `paint` só passava leituras durante playback. Corrigido em `a362004`: a leitura da sonda em t = 0 descarta seu caminho e usa o documental. Mudança exclusivamente documental, permitida pela exceção de documentação desatualizada do `ticket-flow`, embora o arquivo esteja fora dos Primary files. Nenhum comportamento ou teste mudou nesse commit.
+- Sem violações bloqueantes ou smells que justifiquem mudança. Os dois commits de produção não alteram testes; testes e correções de harness estão em commits próprios. O ticket contém mutação e saída vermelha para cada um dos nove testes novos de DOM/canvas; os cinco testes da API chamam a costura pública de produção diretamente.
+
+##### Spec
+
+- **P2 — critério 7 parcial**, `src/App.tsx:1206–1214`: o contrato exige "uma vez a mais a cada edição estrutural em t = 0". Depois de boot em A e arrasto para B, a sonda passa a B, mas o mundo vivo continua construído de A. Desfazer restaura a própria referência A de `builtDocRef`, pulando todo o ramo de roteamento; arrastar de volta à geometria A produz rota `live` contra o mundo vivo, pulando o ramo estrutural. Nos dois casos existe mudança estrutural contra `initialProbeDocRef` (B → A), mas a sonda não é atualizada. N pode ficar na posição anterior, e T mantém a tração da sonda anterior.
+- Os testes existentes arrastam progressivamente para posições novas e não cobrem a volta à geometria do mundo vivo. A correção precisa de novos testes no seam DOM/canvas já aprovado, portanto volta ao stage 2; nenhum conserto comportamental foi feito nesta revisão.
+- Nenhum outro requisito ausente ou incorreto e nenhum desvio de escopo encontrado na primeira passagem completa.
+
+##### Critérios
+
+1. ✅ Normal vertical unitária com Rapier real.
+2. ✅ Atwood com tração dentro de 15 % de 23,54 N e corda tensa.
+3. ✅ Isolamento do mundo vivo e repetição determinística de 20 sondas.
+4. ✅ Massa inválida retorna leituras vazias e preserva o mundo vivo utilizável.
+5. ✅ N/T em t = 0; T ancorada no documento, sem o caminho movido da sonda.
+6. ✅ Contatos/vínculos vivos após o primeiro passo, sem nova sonda.
+7. ❌ Atualização omitida em edição estrutural que retorna à geometria construída, por undo ou arrasto de volta; demais cadências verificadas pelos testes existentes.
+8. ✅ seek(0) usa a sonda; seek(5) usa a gravação.
+9. ✅ Falha opcional da sonda preserva pintura e não publica `simError`.
+
+##### Reprodução e validação
+
+- Foram adicionados temporariamente dois testes ao `describe('initial force vectors (PHY-82)')`, usando `setupProbe` e eventos reais do App. O mock devolvia o contato em `x = posição da bola − 5`, para tornar a posição de N observável em cada documento. A bola era arrastada de `(8, 3)` para `(9, 3)`; um teste clicava `↶`, o outro arrastava de volta para `(8, 3)`, tudo antes de qualquer passo.
+- `npm test -- src/App.test.ts -t 'review reproducer'` → **2 failed | 178 skipped (180)**. Em ambos, N ficou em `[330, 540]` em vez de `[270, 540]`. Reexecutando com a contagem antes da posição, ambos falharam com `expected "vi.fn()" to be called 3 times, but got 2 times`. Os dois testes temporários foram removidos, e `src/App.test.ts` foi restaurado exatamente ao commit de implementação.
+- Primeiro gate no sandbox: **28 failed | 1157 passed (1185)**, todos os erros de conexão/disconexão do Chromium DevTools; lint/typecheck/build não executados nessa tentativa porque o comando para no teste vermelho.
+- Gate completo repetido fora do sandbox, após restaurar os testes: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1185 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). Permanece o aviso de chunk do simulador acima de 500 kB. A suíte atual fica verde apesar da lacuna reproduzida no critério 7.
+- Trabalho restante para stage 2: somente o ❌ do critério 7, com testes permanentes vermelhos de undo/arrasto de retorno no seam existente; atualização da sonda determinada pela mudança estrutural contra seu próprio documento, preservando zero chamadas extras por g/F, seleção, resize e `syncWorld`. Registrar mutate-verify dos novos testes de DOM, passar o gate e devolver a `to-review` na mesma branch. Critérios e Primary files não foram reescritos.
+- Sem merge na sessão e sem linha de ledger: o ticket volta a `to-implement` neste commit. A correção documental permanece na branch.
+
+#### Stage 2 — retorno estrutural ao documento original (2026-10-04)
+
+- Escopo desta retomada: somente o ❌ do critério 7. Costura já aprovada: eventos reais do App e desenho no canvas em `src/App.test.ts`, com o simulador falso pela API pública. Um cenário parametrizado cobre desfazer e arrastar de volta, antes do primeiro passo.
+- Chamadores e fronteiras reexaminados: doc effect por edição/undo/redo, seleção, visibilidade dos vetores e resize; `refreshInitialProbe` também chamado por boot e rebuild/reset; `syncWorld` continua reservado ao próximo passo. Preservar boot pendente, reset no registro 0, falha opcional da sonda e ausência de sondas extras por edição ao vivo ou após passos.
+- Vermelho permanente antes de alterar produção: `npm test -- src/App.test.ts -t 'refreshes initial forces when'` → **2 failed | 178 skipped (180)**. Ambos mostram `expected [330, 540] to deeply equal [270, 540]`: depois de voltar de `(9, 3)` para `(8, 3)`, N ainda corresponde à sonda do documento anterior. O teste também verifica T na âncora documental, uma chamada por mudança estrutural e zero passos do mundo vivo.
+- Correção em `src/App.tsx`: a atualização compara o documento atual com `initialProbeDocRef` independentemente do roteamento contra `builtDocRef`. Mantém as condições de simulador disponível, zero passos e mudança estrutural; executa antes do repaint, sem alterar o rebuild vivo ou `syncWorld`.
+- Verde do grupo de forças iniciais: `npm test -- src/App.test.ts -t 'initial force vectors'` → **11 passed | 169 skipped (180)**.
+
+##### Mutate-verify dos retornos estruturais
+
+Mutação temporária em `src/App.tsx`: recolocar a chamada de `refreshInitialProbe` dentro do ramo estrutural contra `builtDocRef`, removendo a verificação independente. Comando: `npm test -- src/App.test.ts -t 'refreshes initial forces when'`. A correção foi restaurada antes da validação focada.
+
+| Teste novo | Saída vermelha com a mutação |
+| --- | --- |
+| `refreshes initial forces when undo restores the original geometry before the first step` | Falha em N: `expected [330, 540] to deeply equal [270, 540]`. |
+| `refreshes initial forces when drag back restores the original geometry before the first step` | Falha em N: `expected [330, 540] to deeply equal [270, 540]`. |
+
+- Resultado conjunto da mutação: **2 failed | 178 skipped (180)**. Validação focada após restaurar a produção, fora do sandbox para incluir Chromium: `npm test -- src/sim/contacts.test.ts src/App.test.ts` → **197 passed (197), 2 arquivos**.
+
+##### Handoff da retomada stage 2
+
+- Critério 7 corrigido para ambos os retornos à geometria do mundo vivo: undo da referência original e arrasto de volta com novo documento. N acompanha a nova sonda, T continua na âncora do documento e o mundo vivo não avança durante as edições. Os demais critérios permanecem cobertos pela suíte existente.
+- Testes permanentes vermelhos no commit `4874118`; correção e handoff em commit separado sem alterações em testes. As duas evidências de mutate-verify estão registradas acima.
+- Gate completo fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0**, **33 arquivos / 1187 testes passaram**, lint e typecheck sem erros, build Vite concluído (52 módulos). Permanece somente o aviso já existente de chunk do simulador acima de 500 kB; nenhuma validação pendente.
+- Diff desta retomada revisado contra `feeb4eb`: apenas `src/App.tsx`, `src/App.test.ts` e este ticket; sem alterações de solver, API, gravação, painel ou artefatos gerados. Stage 2 devolvido a `to-review` na mesma branch; sem revisão stage 3 ou merge nesta sessão.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Revisão da retomada `feeb4eb...557a265`, com Standards e Spec em sub-agentes separados. O escopo foi o ❌ do critério 7 e o diff desde a primeira revisão, conforme `ticket-flow`; os critérios já aprovados não foram renegociados. Nenhuma correção permanente de produção ou teste foi necessária nesta etapa.
+
+##### Standards
+
+- Nenhuma violação documentada ou smell acionável. O diff da retomada fica em `src/App.tsx`, `src/App.test.ts` e neste ticket, dentro do escopo aprovado. O comentário explica por que a verificação da sonda precisa ficar independente do roteamento do mundo vivo.
+- `4874118` contém somente testes e documentação do ticket; `557a265` contém somente produção e documentação do ticket. A evidência DOM registra a mutação de produção e o vermelho por teste. A parametrização exerce undo e arrasto de retorno pelos eventos reais do App e observa N/T no canvas, cadência da sonda e ausência de passos vivos.
+- A correção documental anterior em `src/render/overlay.ts` permanece como já revisada. Sem refactor, arquivos gerados ou linha `Proxy decided`.
+
+##### Spec
+
+- Nenhum requisito ausente ou parcial, desvio de escopo ou comportamento incorreto identificado na retomada.
+- **Critério 7: ✅** `initialProbeDocRef` é comparado independentemente de `builtDocRef`, antes do repaint. Undo que restaura a referência original e arrasto de volta à geometria construída atualizam a sonda exatamente uma vez, reposicionam N e mantêm T na âncora documental.
+- Boot e reset atualizam a referência da sonda e não duplicam a chamada no doc effect; g/F continuam como edições ao vivo; seleção, visibilidade e resize não invalidam a estrutura. `syncWorld` não sonda e, depois do primeiro passo, a condição impede novas chamadas. Critérios **1–6 e 8–9: ✅**, preservados desde a primeira revisão e cobertos pelo gate completo.
+
+Chamadores e interações reexaminados: doc effect, `refreshInitialProbe`, `routeDocChange`/`applyLiveOps`, edição/undo/redo, boot pendente e `ensureSim`, `dispatch(reset)`/rebuild, `syncWorld`/`runSteps`, pintura, registro 0 e registros posteriores. Os limites da primeira revisão permanecem: integrações com PHY-78–81 ainda não mesclados e perfil prolongado de memória não foram acrescentados a esta retomada.
+
+##### Prova vermelho/verde repetida
+
+O revisor principal substituiu temporariamente apenas `src/App.tsx` pela versão anterior à correção (`feeb4eb`), preservando os testes permanentes de `4874118`. Isso recoloca o refresh dentro do ramo estrutural contra `builtDocRef`. Execução: `node node_modules/vitest/vitest.mjs run src/App.test.ts -t 'refreshes initial forces when'`.
+
+| Teste novo | Vermelho observado nesta revisão |
+| --- | --- |
+| `refreshes initial forces when undo restores the original geometry before the first step` | `expected [330, 540] to deeply equal [270, 540]` na origem de N. |
+| `refreshes initial forces when drag back restores the original geometry before the first step` | A mesma falha na origem de N. |
+
+- Mutação: **2 failed | 178 skipped (180)**, exit 1 do Vitest, pelos dois motivos esperados. Produção restaurada byte a byte em `finally`; `git diff --exit-code HEAD -- src/App.tsx src/App.test.ts` confirmou restauração e testes intactos.
+- Código corrigido: `npm test -- src/App.test.ts -t 'initial force vectors'` → **11 passed | 169 skipped (180)**, incluindo os dois retornos estruturais. Depois da mutação restaurada, ambos também passaram no gate sem filtro.
+
+##### Gate e fechamento
+
+- `git rebase sweatshop/2026-10-04-1243` confirmou a branch atualizada, sem conflitos.
+- Gate independente, com Chromium fora do sandbox: `npm test && npm run lint && npm run typecheck && npm run build` → **exit 0; 33 arquivos / 1187 testes passaram, sem skips**; lint e typecheck sem erros; Vite construiu 52 módulos. Permanece o aviso existente de chunk do simulador acima de 500 kB (2136,71 kB); nenhuma validação pendente.
+- Merge sem squash **66fdfa6** em `sweatshop/2026-10-04-1243`. `git diff --exit-code 557a265 HEAD` confirmou que a árvore mesclada é a mesma validada antes do fechamento documental.
+- `Stage: done`, esta resolução e a linha do ledger são registrados juntos no commit de fechamento sobre a sessão.
+
+Totais por eixo nesta retomada: **Standards — 0 findings, 0 smells acionáveis; Spec — 0 findings**. Os nove critérios estão aprovados.

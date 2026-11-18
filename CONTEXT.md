@@ -50,6 +50,10 @@ _Avoid_: crash, bounce setting
 The editing behavior that moves a clicked or dragged anchor point (of a rope, spring, pulley or applied force) onto the nearest body feature within a screen tolerance: center of mass, face midpoint or vertex. Outside the tolerance the anchor stays where clicked.
 _Avoid_: magnet, point snap
 
+**Orientation snap**:
+The editing behavior that, while a body is dragged or a constraint anchor is placed, moves it so a spring or rope segment that is nearly vertical or nearly horizontal to its other end becomes exactly so, within a screen tolerance, showing a dashed guide. Contact snap and anchor snap take precedence.
+_Avoid_: grid snap, angle snap.
+
 **Constraint**:
 A relation restricting how bodies move relative to each other: ropes and springs. Pulleys are what ropes pass over.
 _Avoid_: joint, link
@@ -67,7 +71,7 @@ A constraint between two anchored bodies with stiffness `k`, natural length `x�
 _Avoid_: `L₀` for the natural length, elastic
 
 **Vector label**:
-The letter drawn beside every vector arrow (`P`, `N`, `F`, `T`, `F_el`, `v₀` in pt-BR; `W` and `F_s` in en-US), numbered only when two of the same kind exist. Derived from the scene, never stored; never shows a value.
+The letter drawn beside every vector arrow (`P`, `N`, `F`, `T`, `F_el`, `v₀`, `v`, `a` in pt-BR; `W` and `F_s` in en-US), numbered only when two of the same kind exist. `v₀` is shown before the first step; `v` and `a` follow the displayed simulation record, with analytic `a` at initial time. Derived from the scene, never stored; never shows a value.
 _Avoid_: arrow name, tag
 
 **Foco** (focus):

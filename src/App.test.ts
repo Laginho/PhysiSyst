@@ -9,16 +9,17 @@ import App from './App'
 import { makeTransform, worldToScreen } from './render/transform'
 import { CANVAS_MIN_WIDTH } from './render/fitCanvas'
 import { trashRect } from './editor/trash'
-import { createSimulator, type BodyState, type Simulator } from './sim'
+import { createSimulator, type BodyState, type InitialProbe, type Simulator } from './sim'
 import { ptBR } from './i18n/pt-BR'
 import { en } from './i18n/en'
 import { setLang, t } from './i18n'
 import { AUTOSAVE_DELAY_MS, CURRENT_SCENE_KEY, INDEX_KEY, GALLERY_ACK_KEY, loadIndex, SCENE_KEY_PREFIX, blankScene, loadScene, saveCurrentSceneId, saveIndex, saveScene, type SceneIndexEntry, type Storage as PersistStorage } from './persistence'
 import { DEMO_SCENE } from './scene/demo'
-import { scenePath } from './scene'
-import type { Scene } from './scene/types'
+import { bodyPointToWorld, scenePath } from './scene'
+import type { FocusGroup, Scene } from './scene/types'
 import { PRESETS, presetById } from './presets'
 import { withBrowserSession } from './test/browser'
+import { colorOf } from './render/graph'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -38,6 +39,7 @@ function makeFakeSimulator(): Simulator {
     readStates: () => new Map(),
     readContacts: () => [],
     readConstraints: () => [],
+    probeInitial: () => ({ contacts: [], constraints: [] }),
     readPulleys: () => [],
     setForceMagnitude: () => {},
     setGravity: () => {},
@@ -138,6 +140,387 @@ async function settleSimImport(): Promise<void> {
   })
 }
 
+function focusChip(host: HTMLElement, group: FocusGroup): HTMLButtonElement {
+  const button = findButton(host, t(`focus.${group}`))
+  expect(button, `focus.${group} chip`).toBeDefined()
+  return button!
+}
+
+function toggleFocus(host: HTMLElement, ...groups: FocusGroup[]): void {
+  for (const group of groups) act(() => focusChip(host, group).click())
+}
+
+/** Observe the current frame at the canvas boundary; keep the real vector producers and drawArrow. */
+function captureVectorFrame() {
+  const labels: Array<{ color: unknown; text: string }> = []
+  const rings: Array<{ color: unknown; x: number; y: number }> = []
+  const lines: Array<{ color: unknown; x: number; y: number }> = []
+  const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+    get(target, key) {
+      if (key === 'clearRect') return () => { labels.length = 0; rings.length = 0; lines.length = 0 }
+      if (key === 'fillText') return (text: string) => { labels.push({ color: target.fillStyle, text }) }
+      if (key === 'arc') return (x: number, y: number) => { rings.push({ color: target.strokeStyle, x, y }) }
+      if (key === 'lineTo') return (x: number, y: number) => { lines.push({ color: target.strokeStyle, x, y }) }
+      if (key === 'measureText') return () => ({ width: 10 })
+      return target[key] ?? (() => {})
+    },
+  })
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+  return { labels, rings, lines }
+}
+
+describe('scene focus chips (PHY-78)', () => {
+  beforeEach(() => setLang('pt-BR'))
+  afterEach(() => setLang('pt-BR'))
+
+  it.each(['global', 'selected'] as const)('composes focus with %s vector scope without hiding initial velocity fields', async (scope) => {
+    const frame = captureVectorFrame()
+    const scene = blankScene()
+    scene.bodies.push({ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false,
+      position: { x: 6, y: 4 }, rotation: 0, vx: 2 })
+    scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0.2, y: 0 }, magnitude: 3, direction: 0 }]
+    const { host, canvas } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'focused', name: 'Focused', updatedAt: 1 }])
+      saveScene(window.localStorage, 'focused', scene)
+      saveCurrentSceneId(window.localStorage, 'focused')
+    })
+    await settleSimImport()
+    const allVectors = inputForLabel(host, t('panel.showVectors'))
+    if (allVectors.checked !== (scope === 'global')) act(() => allVectors.click())
+    click(canvas, { x: 6, y: 4 })
+    const texts = () => frame.labels.map(l => l.text)
+    expect(texts()).not.toContain('v₀')
+    expect(texts()).toContain('F')
+    for (const key of ['vx', 'vy']) expect(inputForLabel(panel(host, 'ball')!, t(`properties.${key}`)).matches(':disabled')).toBe(false)
+    toggleFocus(host, 'kinematics')
+    expect(texts()).toContain('v₀')
+    toggleFocus(host, 'forces')
+    expect(texts()).not.toContain('F')
+    expect(texts()).not.toContain('P')
+    expect(texts()).toContain('v₀')
+    expect(frame.rings.filter(r => r.color === '#d97742')).toEqual([])
+    toggleFocus(host, 'forces')
+    expect(texts()).toContain('F')
+    if (scope === 'selected') expect(frame.rings).toContainEqual({ color: '#d97742', x: 462, y: 300 })
+  })
+
+  it('filters initial body readouts with blank focus and restores kinematics on request', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    act(() => findButton(host, t('palette.circle'))!.click())
+    act(() => { vi.advanceTimersByTime(100) })
+    const reading = [...host.querySelectorAll('fieldset')].find(f =>
+      f.querySelector('legend')?.textContent?.startsWith(t('readout.title', { id: '' })),
+    )!
+    expect(reading.textContent).toContain(t('readout.steps'))
+    expect(reading.textContent).toContain(t('readout.speed'))
+    for (const key of ['position', 'velocityMagnitude', 'accelerationMagnitude']) {
+      expect(reading.textContent).not.toContain(t(`readout.${key}`))
+    }
+    const more = reading.querySelector('details')!
+    act(() => more.querySelector('summary')!.click())
+    expect(more.textContent).toContain('E_c')
+    expect(more.textContent).toContain('|p|')
+    expect(more.textContent).not.toContain(t('readout.velocity'))
+    expect(more.textContent).not.toContain(t('readout.acceleration'))
+    toggleFocus(host, 'kinematics')
+    for (const key of ['position', 'velocityMagnitude', 'accelerationMagnitude']) {
+      expect(reading.textContent).toContain(t(`readout.${key}`))
+    }
+    expect(more.textContent).toContain(t('readout.velocity'))
+    expect(more.textContent).toContain(t('readout.acceleration'))
+  })
+
+  it.each([
+    ['demo', ['true', 'true', 'true', 'true']],
+    ['blank', ['true', 'false', 'true', 'true']],
+  ] as const)('puts accessible focus chips first in the inspector for %s scenes', (kind, pressed) => {
+    const host = renderApp()
+    if (kind === 'blank') act(() => findButton(host, t('scenes.new'))!.click())
+    const snap = inputForLabel(host, t('panel.contactSnap'))
+    const row = snap.closest('label')!.parentElement!.firstElementChild!
+    expect(row.textContent).toContain('mostrar:')
+    const buttons = [...row.querySelectorAll('button')]
+    expect(buttons.map(b => b.textContent)).toEqual(['forças', 'cinemática', 'energia', 'momento'])
+    expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(pressed)
+    expect(buttons.every(b => !b.disabled)).toBe(true)
+  })
+
+  it('starts with the vector scope covering all bodies', () => {
+    expect(inputForLabel(renderApp(), t('panel.showVectors')).checked).toBe(true)
+  })
+
+  it('toggles focus outside history and autosaves user view preferences with hidden curves intact', async () => {
+    vi.useFakeTimers()
+    const step = vi.fn()
+    const replaceScene = vi.fn()
+    vi.mocked(createSimulator).mockResolvedValue({ ...makeFakeSimulator(), step, replaceScene })
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    const id = sceneSelect(host).value
+    const slider = host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!
+    const cursor = slider.value
+    const rebuilds = replaceScene.mock.calls.length
+    toggleFocus(host, 'forces', 'kinematics', 'momentum')
+    expect(focusChip(host, 'forces').getAttribute('aria-pressed')).toBe('false')
+    expect(focusChip(host, 'kinematics').getAttribute('aria-pressed')).toBe('true')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    expect(findButton(host, '↷')!.disabled).toBe(true)
+    expect(step).not.toHaveBeenCalled()
+    expect(replaceScene).toHaveBeenCalledTimes(rebuilds)
+    expect(slider.value).toBe(cursor)
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, id)?.focus?.show).toEqual(['kinematics', 'energy'])
+
+    const saved = loadScene(window.localStorage, id)!
+    saved.focus!.hidden = { energy: ['E_pg'] }
+    saveScene(window.localStorage, id, saved)
+    act(() => setSelectValue(sceneSelect(host), 'cena-1'))
+    act(() => setSelectValue(sceneSelect(host), id))
+    toggleFocus(host, 'momentum')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, id)?.focus).toEqual({
+      show: ['kinematics', 'energy', 'momentum'], hidden: { energy: ['E_pg'] },
+    })
+  })
+
+  it('PHY-79 keeps preset focus in memory without creating a scene and restores its topic focus on reopening', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    const openPreset = () => {
+      const card = [...host.querySelectorAll('button')].find(b => b.textContent?.includes(t('preset.free-fall.name')))
+      expect(card).toBeDefined()
+      act(() => card!.click())
+    }
+    openPreset()
+    const before = loadIndex(window.localStorage)
+    toggleFocus(host, 'forces')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(sceneSelect(host).value).toBe('preset:free-fall')
+    expect(sceneSelect(host).selectedOptions[0]!.textContent).toBe(t('scenes.presetOption', { name: t('preset.free-fall.name') }))
+    expect(focusChip(host, 'forces').getAttribute('aria-pressed')).toBe('true')
+    expect(loadIndex(window.localStorage)).toEqual(before)
+    expect(window.localStorage.getItem('physics-sim:scene:preset:free-fall')).toBeNull()
+    act(() => setSelectValue(sceneSelect(host), 'cena-1'))
+    openPreset()
+    expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+      focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+    )).toEqual(['false', 'true', 'true', 'false'])
+  })
+
+  it('PHY-79 opens elastic collisions from the gallery with kinematics and momentum readouts', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    const gallery = panel(host, t('gallery.title'))!
+    const card = [...gallery.querySelectorAll('button')].find(button =>
+      button.querySelector('strong')?.textContent === t('preset.collision-elastic.name'),
+    )
+    expect(card).toBeDefined()
+    act(() => card!.click())
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(sceneSelect(host).value).toBe('preset:collision-elastic')
+    expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+      focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+    )).toEqual(['false', 'true', 'false', 'true'])
+    const system = panel(host, t('readout.system'))
+    expect(system).toBeDefined()
+    expect(system!.textContent).toContain(t('readout.momentum'))
+    expect(system!.textContent).not.toContain(t('readout.mechanical'))
+  })
+
+  it.each([
+    ['pt-BR', ['mostrar:', 'forças', 'cinemática', 'energia', 'momento']],
+    ['en', ['show:', 'forces', 'kinematics', 'energy', 'momentum']],
+  ] as const)('localizes the focus row in %s', (lang, labels) => {
+    const host = renderApp()
+    const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, lang))
+    const row = focusChip(host, 'forces').parentElement!
+    expect(row.textContent).toContain(labels[0])
+    expect([...row.querySelectorAll('button')].map(b => b.textContent)).toEqual(labels.slice(1))
+  })
+
+  it('CLEAN-31 preserves current groups and hidden graph curves when undoing a body addition', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    const id = sceneSelect(host).value
+    act(() => findButton(host, t('palette.circle'))!.click())
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    toggleFocus(host, 'momentum')
+    act(() => graphCurve(host, 'E_c').click())
+
+    act(() => findButton(host, '↶')!.click())
+
+    expect(focusChip(host, 'momentum').getAttribute('aria-pressed')).toBe('false')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    expect(findButton(host, '↷')!.disabled).toBe(false)
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    const saved = loadScene(window.localStorage, id)!
+    expect(saved.bodies.map(body => body.id)).toEqual(['chao'])
+    expect(saved.focus).toEqual({ show: ['forces', 'energy'], hidden: { energy: ['E_c'] } })
+  })
+
+  it('CLEAN-31 preserves current groups and hidden graph curves when redoing a mass edit', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    act(() => findButton(host, t('scenes.new'))!.click())
+    const id = sceneSelect(host).value
+    act(() => findButton(host, t('palette.circle'))!.click())
+    const mass = () => inputForLabel(panel(host, 'bola')!, t('properties.mass'))
+    act(() => setNativeInputValue(mass(), 5))
+    act(() => findButton(host, '↶')!.click())
+    expect(mass().value).toBe('1')
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    toggleFocus(host, 'momentum')
+    act(() => graphCurve(host, 'E_c').click())
+
+    act(() => findButton(host, '↷')!.click())
+
+    expect(mass().value).toBe('5')
+    expect(focusChip(host, 'momentum').getAttribute('aria-pressed')).toBe('false')
+    expect(graphCurve(host, 'E_c').getAttribute('aria-pressed')).toBe('false')
+    expect(findButton(host, '↷')!.disabled).toBe(true)
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, id)?.focus).toEqual({
+      show: ['forces', 'energy'], hidden: { energy: ['E_c'] },
+    })
+  })
+
+  it('CLEAN-31 keeps legacy scenes without focus showing all groups through undo and redo', async () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'legacy-focus', name: 'Legacy', updatedAt: 1 }])
+      saveScene(window.localStorage, 'legacy-focus', DEMO_SCENE)
+      saveCurrentSceneId(window.localStorage, 'legacy-focus')
+    })
+    await settleSimImport()
+    act(() => findButton(host, t('palette.circle'))!.click())
+    for (const action of ['↶', '↷']) {
+      act(() => findButton(host, action)!.click())
+      expect(['forces', 'kinematics', 'energy', 'momentum'].map(group =>
+        focusChip(host, group as FocusGroup).getAttribute('aria-pressed'),
+      )).toEqual(['true', 'true', 'true', 'true'])
+      act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+      const saved = loadScene(window.localStorage, 'legacy-focus')!
+      expect(saved).not.toHaveProperty('focus')
+      expect(saved.bodies).toHaveLength(DEMO_SCENE.bodies.length + (action === '↷' ? 1 : 0))
+    }
+  })
+})
+
+function graphLegend(host: HTMLElement, label = 'curvas do gráfico'): HTMLElement {
+  const list = host.querySelector<HTMLElement>(`#recording-graph [aria-label="${label}"]`)
+  expect(list, 'HTML graph legend').not.toBeNull()
+  return list!
+}
+
+function graphCurve(host: HTMLElement, name: string): HTMLButtonElement {
+  const button = [...graphLegend(host).querySelectorAll('button')].find(b => b.textContent === name.replace('_', ''))
+  expect(button, `legend curve ${name}`).toBeDefined()
+  return button!
+}
+
+describe('clickable graph legend (PHY-81)', () => {
+  beforeEach(() => setLang('pt-BR'))
+  afterEach(() => setLang('pt-BR'))
+
+  it.each([
+    ['pt-BR', 'curvas do gráfico'], ['en', 'graph curves'],
+  ] as const)('shows localized accessible energy curves with HTML subscripts and matching swatches in %s', (lang, label) => {
+    const host = renderApp()
+    const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    act(() => setSelectValue(language, lang))
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const buttons = [...graphLegend(host, label).querySelectorAll('button')]
+    expect(buttons.map(b => b.textContent)).toEqual(['Ec', 'Epg', 'Emec'])
+    expect(buttons.map(b => b.querySelector('sub')?.textContent)).toEqual(['c', 'pg', 'mec'])
+    expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'true'])
+    buttons.forEach((button, i) => {
+      const swatch = button.querySelector('span')!
+      const expected = document.createElement('span')
+      expected.style.background = colorOf(['E_c', 'E_pg', 'E_mec'][i])
+      expect(swatch.style.background).toBe(expected.style.background)
+    })
+  })
+
+  it('keeps hidden curves per kind, autosaves the user focus and toggles a curve back on', async () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'curves', name: 'Curves', updatedAt: 1 }])
+      saveScene(window.localStorage, 'curves', DEMO_SCENE)
+      saveCurrentSceneId(window.localStorage, 'curves')
+    })
+    await settleSimImport()
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const kind = host.querySelector<HTMLSelectElement>('#recording-graph select')!
+    act(() => graphCurve(host, 'E_pg').click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => setSelectValue(kind, 'momentum'))
+    expect([...graphLegend(host).querySelectorAll('button')].map(b => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['px', 'true'], ['py', 'true'], ['|p|', 'true'],
+    ])
+    act(() => graphCurve(host, 'p_x').click())
+    act(() => setSelectValue(kind, 'energy'))
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, 'curves')?.focus).toEqual({
+      show: ['forces', 'kinematics', 'energy', 'momentum'], hidden: { energy: ['E_pg'], momentum: ['p_x'] },
+    })
+    act(() => graphCurve(host, 'E_pg').click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('true')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, 'curves')?.focus?.hidden).toEqual({ energy: [], momentum: ['p_x'] })
+  })
+
+  it('opens stored hidden curves and preserves them when a focus chip changes', async () => {
+    vi.useFakeTimers()
+    const { host } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'hidden', name: 'Hidden', updatedAt: 1 }])
+      saveScene(window.localStorage, 'hidden', { ...DEMO_SCENE, focus: { show: ['energy'], hidden: { energy: ['E_pg'] } } })
+      saveCurrentSceneId(window.localStorage, 'hidden')
+    })
+    await settleSimImport()
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    expect(graphCurve(host, 'E_c').getAttribute('aria-pressed')).toBe('true')
+    toggleFocus(host, 'momentum')
+    act(() => graphCurve(host, 'E_c').click())
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(loadScene(window.localStorage, 'hidden')?.focus).toEqual({
+      show: ['energy', 'momentum'], hidden: { energy: ['E_pg', 'E_c'] },
+    })
+  })
+
+  it('keeps preset hidden curves only for the open session without creating a user scene', async () => {
+    vi.useFakeTimers()
+    const host = renderApp()
+    await settleSimImport()
+    const openPreset = () => act(() => [...host.querySelectorAll('button')].find(b =>
+      b.querySelector('strong')?.textContent === t('preset.free-fall.name'),
+    )!.click())
+    openPreset()
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const before = loadIndex(window.localStorage)
+    act(() => graphCurve(host, 'E_pg').click())
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => { vi.advanceTimersByTime(AUTOSAVE_DELAY_MS) })
+    expect(sceneSelect(host).value).toBe('preset:free-fall')
+    expect(loadIndex(window.localStorage)).toEqual(before)
+    expect(window.localStorage.getItem('physics-sim:scene:preset:free-fall')).toBeNull()
+    act(() => setSelectValue(sceneSelect(host), 'cena-1'))
+    openPreset()
+    expect(graphCurve(host, 'E_pg').getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
 describe('recording graph panel (PHY-72)', () => {
   it('toggles an accessible panel, defaults to energy and follows selection', async () => {
     const host = renderApp()
@@ -161,6 +544,139 @@ describe('recording graph panel (PHY-72)', () => {
     expect(select.value).toBe('energy')
     act(() => toggle!.click())
     expect(host.querySelector(`#${id}`)).toBeNull()
+  })
+})
+
+describe('canvas dock and controls scale (PHY-76)', () => {
+  afterEach(() => setLang('pt-BR'))
+  const scaledControls = (host: HTMLElement): HTMLElement => {
+    const block = [...host.querySelectorAll<HTMLElement>('div')].find(el => Boolean(el.style.zoom))
+    if (!block) throw new Error('missing scaled controls block')
+    return block
+  }
+  const scaleButton = (host: HTMLElement, direction: 'bigger' | 'smaller'): HTMLButtonElement => {
+    const button = host.querySelector<HTMLButtonElement>(`button[aria-label="${t(`controls.${direction}`)}"]`)
+    if (!button) throw new Error(`missing controls.${direction} button`)
+    return button
+  }
+  const dock = (host: HTMLElement) => host.querySelector('canvas')!.parentElement!.nextElementSibling as HTMLElement
+
+  it('hydrates the saved scale and scales transport, palette and tool hints without scaling the sizer or graph', () => {
+    window.localStorage.setItem('physics-sim:controlsScale', '1.3')
+    const host = renderApp()
+    const block = scaledControls(host)
+    expect(block.style.zoom).toBe('1.3')
+    expect(block.contains(findButton(host, t('playback.play'))!)).toBe(true)
+    expect(block.contains(findButton(host, t('palette.rectangle'))!)).toBe(true)
+    for (const direction of ['bigger', 'smaller'] as const) {
+      const button = scaleButton(host, direction)
+      expect(block.contains(button)).toBe(false)
+      expect(dock(host).contains(button)).toBe(true)
+      expect(button.title).toBe(t('controls.sizeTitle', { pct: 130 }))
+    }
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    expect(dock(host).contains(host.querySelector('#recording-graph'))).toBe(true)
+    expect(block.contains(host.querySelector('#recording-graph'))).toBe(false)
+    act(() => findButton(host, t('palette.spring'))!.click())
+    expect(block.textContent).toContain(t('tool.springFirst'))
+  })
+
+  it('increments in tenths and persists the choice without changing the document, selection or undo', () => {
+    const host = renderApp()
+    click(host.querySelector('canvas')!, { x: 9, y: 3 })
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    const before = window.localStorage.getItem('physics-sim:scene:cena-1')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+    act(() => scaleButton(host, 'bigger').click())
+    expect(scaledControls(host).style.zoom).toBe('1.1')
+    expect(window.localStorage.getItem('physics-sim:controlsScale')).toBe('1.1')
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    expect(window.localStorage.getItem('physics-sim:scene:cena-1')).toBe(before)
+    expect([...host.querySelectorAll('legend')].map(el => el.textContent)).toContain('caixa')
+    expect(findButton(host, '↶')!.disabled).toBe(true)
+  })
+
+  it.each([
+    ['bigger', 6, '1.6', 'smaller'],
+    ['smaller', 3, '0.7', 'bigger'],
+  ] as const)('stops %s at its bound and leaves the opposite button enabled', (direction, clicks, expected, opposite) => {
+    const host = renderApp()
+    const button = scaleButton(host, direction)
+    for (let i = 0; i < clicks; i++) act(() => button.click())
+    expect(scaledControls(host).style.zoom).toBe(expected)
+    expect(window.localStorage.getItem('physics-sim:controlsScale')).toBe(expected)
+    expect(button.disabled).toBe(true)
+    expect(scaleButton(host, opposite).disabled).toBe(false)
+    act(() => button.click())
+    expect(scaledControls(host).style.zoom).toBe(expected)
+  })
+
+  it.each([
+    [1200, 800, 'row'],
+    [700, 900, 'column'],
+  ] as const)('orders transport, palette and graph in a canvas-width dock at %ix%i', (width, height, direction) => {
+    containerSize = { width: direction === 'column' ? width - 282 : width, height }
+    const host = renderApp()
+    if (direction === 'column') act(() => lastResizeObserverCallback?.(
+      [{ contentRect: { width, height } } as ResizeObserverEntry], null as unknown as ResizeObserver,
+    ))
+    act(() => findButton(host, t('graph.toggle'))!.click())
+    const canvas = host.querySelector('canvas')!
+    expect(canvas.parentElement!.parentElement!.parentElement!.style.flexDirection).toBe(direction)
+    expect(dock(host).style.width).toBe(canvas.style.width)
+    const transport = findButton(host, t('playback.play'))!
+    const palette = findButton(host, t('palette.rectangle'))!
+    const graph = host.querySelector('#recording-graph')!
+    expect(dock(host).contains(transport)).toBe(true)
+    expect(dock(host).contains(palette)).toBe(true)
+    expect(transport.compareDocumentPosition(palette) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(palette.compareDocumentPosition(graph) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps the graph at canvas width and 180px high at both scale extremes and preserves its toggle', () => {
+    const host = renderApp()
+    const toggle = findButton(host, t('graph.toggle'))!
+    act(() => toggle.click())
+    for (const scale of ['1', '1.6']) {
+      if (scale === '1.6') for (let i = 0; i < 6; i++) act(() => scaleButton(host, 'bigger').click())
+      expect(scaledControls(host).style.zoom).toBe(scale)
+      const graph = host.querySelector<HTMLCanvasElement>('#recording-graph canvas')!
+      expect(graph.style.width).toBe(host.querySelector('canvas')!.style.width)
+      expect(graph.style.height).toBe('180px')
+      expect(scaledControls(host).contains(graph)).toBe(false)
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+      expect(toggle.getAttribute('aria-controls')).toBe('recording-graph')
+    }
+    act(() => toggle.click())
+    expect(host.querySelector('#recording-graph')).toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('updates dock width in the same render as a corner-handle drag', () => {
+    containerSize = { width: 1200, height: 800 }
+    const host = renderApp()
+    const canvas = host.querySelector('canvas')!
+    const before = parseFloat(canvas.style.width)
+    const handle = host.querySelector<HTMLButtonElement>(`[aria-label="${t('canvas.resize')}"]`)!
+    Object.assign(handle, { setPointerCapture: () => {}, releasePointerCapture: () => {} })
+    act(() => handle.dispatchEvent(pointerEvent('pointerdown', before, 0)))
+    act(() => handle.dispatchEvent(pointerEvent('pointermove', before - 180, 0)))
+    expect(canvas.style.width).toBe(`${before - 180}px`)
+    expect(dock(host).style.width).toBe(canvas.style.width)
+    act(() => handle.dispatchEvent(pointerEvent('pointerup', before - 180, 0)))
+  })
+
+  it('translates both sizer labels and the percentage title in pt-BR and en', () => {
+    const host = renderApp()
+    const language = host.querySelector<HTMLSelectElement>('select:has(option[value="en"])')!
+    for (const lang of ['pt-BR', 'en']) {
+      act(() => setSelectValue(language, lang))
+      for (const direction of ['bigger', 'smaller'] as const) {
+        expect(scaleButton(host, direction).getAttribute('aria-label')).not.toBe(`controls.${direction}`)
+        expect(scaleButton(host, direction).title).toBe(t('controls.sizeTitle', { pct: 100 }))
+        expect(scaleButton(host, direction).title).toContain('100')
+      }
+    }
   })
 })
 
@@ -188,9 +704,12 @@ function screen(wx: number, wy: number) {
 }
 
 function contactPairs(host: HTMLElement): string[] {
-  const fieldset = [...host.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent?.trim() === 'contatos')
-  if (!fieldset) return []
-  return [...fieldset.querySelectorAll('span')].map((s) => s.textContent?.trim() ?? '').filter((text) => text.includes('↔'))
+  // Snap no longer has a global contact list. Observe its persisted document
+  // through the same public save/load path the user uses when leaving the app.
+  act(() => window.dispatchEvent(new Event('pagehide')))
+  const scene = loadScene(window.localStorage, sceneSelect(host).value)
+  if (!scene) throw new Error('missing persisted scene')
+  return scene.contacts.map(c => `${c.a} ↔ ${c.b}`)
 }
 
 // The scene picker's own <select> — the app renders more than one <select>
@@ -272,39 +791,203 @@ function setupWith(seed: () => void): { host: HTMLElement; canvas: HTMLCanvasEle
   return { host, canvas }
 }
 
-describe('Contact restitution editor (PHY-67)', () => {
-  it('shows restitution after kinetic friction for each pair and persists edits without clamping', () => {
-    vi.useFakeTimers()
-    const storage = window.localStorage as unknown as PersistStorage
-    const scene: Scene = {
-      ...DEMO_SCENE,
+describe('selected Body contacts (PHY-75)', () => {
+  function contactScene(): Scene {
+    return {
+      version: 1, constants: { g: 0 }, forces: [],
+      bodies: [
+        { id: 'chao', shape: 'rectangle', width: 14, height: 1, fixed: true, mass: 0, position: { x: 7, y: -0.5 }, rotation: 0 },
+        { id: 'bloco', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 2, position: { x: 4, y: 3 }, rotation: 0 },
+        { id: 'bola', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 8, y: 3 }, rotation: 0 },
+      ],
       contacts: [
-        { ...DEMO_SCENE.contacts[0], e: 0.5 },
-        { a: 'rampa', b: 'chao', muS: 0, muK: 0 },
+        { a: 'chao', b: 'bloco', muS: 0.3, muK: 0.2, e: 0.5 },
+        { a: 'bloco', b: 'bola', muS: 0.7, muK: 0.6 },
       ],
     }
-    expect(scene.contacts.length).toBeGreaterThan(1)
-    const { host } = setupWith(() => {
-      saveIndex(storage, [{ id: 'restitution', name: 'Restitution', updatedAt: 1 }])
-      saveScene(storage, 'restitution', scene)
-      saveCurrentSceneId(storage, 'restitution')
+  }
+  function setup(scene = contactScene()) {
+    vi.useFakeTimers()
+    return setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'restitution', name: 'Restitution', updatedAt: 1 }])
+      saveScene(window.localStorage, 'restitution', scene)
+      saveCurrentSceneId(window.localStorage, 'restitution')
     })
-    const contacts = panel(host, ptBR['contacts.title'])!
-    const fields = [...contacts.querySelectorAll('input')]
-    expect(fields).toHaveLength(scene.contacts.length * 3)
-    for (let i = 0; i < scene.contacts.length; i++) {
-      const labels = fields.slice(i * 3, i * 3 + 3).map((input) => input.closest('label')?.textContent?.trim())
-      expect(labels).toEqual([ptBR['contacts.muS'], ptBR['contacts.muK'], 'e — restituição'])
-      expect(fields[i * 3 + 2].value).toBe(i === 0 ? '0.5' : '0')
-      expect(fields[i * 3 + 2].step).toBe('0.05')
+  }
+  function contactsOf(host: HTMLElement, label: string): HTMLFieldSetElement {
+    const fieldset = panel(host, `contatos de ${label}`)
+    if (!fieldset) throw new Error(`missing contacts of ${label}`)
+    return fieldset
+  }
+  function rows(fieldset: Element): Element[] {
+    return [...fieldset.querySelectorAll('span')].map(span => span.parentElement!.parentElement!)
+  }
+  function saved(): Scene {
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    return loadScene(window.localStorage, 'restitution')!
+  }
+
+  it.each(['populated', 'empty'] as const)('has no global contact panel or coefficients without selection: %s', (kind) => {
+    const scene = kind === 'populated' ? contactScene() : { ...contactScene(), bodies: [], contacts: [] }
+    const { host } = setup(scene)
+    expect(panel(host, 'contatos')).toBeUndefined()
+    expect([...host.querySelectorAll('label')].some(label => label.textContent?.trim() === ptBR['contacts.muS'])).toBe(false)
+  })
+
+  it('shows all and only selected-body pairs from either endpoint with partner labels and coefficient fields', () => {
+    const { host, canvas } = setup()
+    click(canvas, { x: 4, y: 3 })
+    const contacts = contactsOf(host, 'm_a')
+    expect([...contacts.querySelectorAll('span')].map(span => span.textContent)).toEqual(['fixo: retângulo 1', 'm_b'])
+    expect(contacts.previousElementSibling?.querySelector('legend')?.textContent).toBe('forças de bloco')
+    expect(rows(contacts)).toHaveLength(2)
+    for (const [i, row] of rows(contacts).entries()) {
+      const inputs = [...row.querySelectorAll('input[type="number"]')]
+      expect(inputs).toHaveLength(3)
+      expect(inputs.map(input => input.closest('label')?.textContent?.trim())).toEqual([ptBR['contacts.muS'], ptBR['contacts.muK'], ptBR['contacts.e']])
+      expect(inputs.every(input => (input as HTMLInputElement).step === '0.05')).toBe(true)
+      expect((inputs[2] as HTMLInputElement).value).toBe(i === 0 ? '0.5' : '0')
+      expect(row.querySelector('button')?.textContent).toBe('✕')
     }
+    click(canvas, { x: 8, y: 3 })
+    expect(panel(host, 'contatos de m_a')).toBeUndefined()
+    expect([...contactsOf(host, 'm_b').querySelectorAll('span')].map(span => span.textContent)).toEqual(['m_a'])
+  })
+
+  it('edits restitution from endpoint b without clamping or changing pair order or friction, then removes only that pair', () => {
+    const scene = contactScene()
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm_b')
+    const restitution = inputForLabel(contacts, ptBR['contacts.e'])
     for (const e of [0.8, -0.1, 1.5]) {
-      act(() => setNativeInputValue(fields[2], e))
-      act(() => { window.dispatchEvent(new Event('pagehide')) })
-      const saved = loadScene(storage, 'restitution')!
-      expect(saved.contacts[0]).toEqual({ ...scene.contacts[0], e })
-      expect(saved.contacts.slice(1)).toEqual(scene.contacts.slice(1))
-      expect(fields[2].value).toBe(String(e))
+      act(() => setNativeInputValue(restitution, e))
+      expect(saved().contacts).toEqual([scene.contacts[0], { ...scene.contacts[1], e }])
+      expect(restitution.value).toBe(String(e))
+    }
+    act(() => contacts.querySelector('button')!.click())
+    expect(saved().contacts).toEqual([scene.contacts[0]])
+    expect(contacts.textContent).toContain(ptBR['contacts.empty'])
+    expect(contacts.querySelector('input')).toBeNull()
+  })
+
+  it('edits both friction coefficients independently from endpoint b', () => {
+    const scene = contactScene()
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm_b')
+    act(() => setNativeInputValue(inputForLabel(contacts, ptBR['contacts.muS']), -0.2))
+    expect(saved().contacts).toEqual([scene.contacts[0], { ...scene.contacts[1], muS: -0.2 }])
+    act(() => setNativeInputValue(inputForLabel(contacts, ptBR['contacts.muK']), 1.2))
+    expect(saved().contacts).toEqual([scene.contacts[0], { ...scene.contacts[1], muS: -0.2, muK: 1.2 }])
+  })
+
+  it('disables an exhausted partner picker and adds only the unpaired partner with default coefficients', () => {
+    const scene = contactScene()
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 4, y: 3 })
+    const block = contactsOf(host, 'm_a')
+    expect(block.querySelector('select')!.options).toHaveLength(0)
+    expect(block.querySelector('select')!.matches(':disabled')).toBe(true)
+    expect(findButton(host, ptBR['contacts.add'])!.matches(':disabled')).toBe(true)
+    click(canvas, { x: 8, y: 3 })
+    const ball = contactsOf(host, 'm_b')
+    const select = ball.querySelector('select')!
+    expect([...select.options].map(o => [o.value, o.text])).toEqual([['chao', 'fixo: retângulo 1']])
+    expect(select.matches(':disabled')).toBe(false)
+    act(() => findButton(host, ptBR['contacts.add'])!.click())
+    expect(saved().contacts).toEqual([...scene.contacts, { a: 'bola', b: 'chao', muS: 0, muK: 0, e: 0 }])
+    expect([...ball.querySelectorAll('span')].map(span => span.textContent)).toEqual(['m_a', 'fixo: retângulo 1'])
+    expect(select.options).toHaveLength(0)
+    expect(select.matches(':disabled')).toBe(true)
+    expect(findButton(host, ptBR['contacts.add'])!.matches(':disabled')).toBe(true)
+  })
+
+  it('keeps partner choice valid after adding, removing, and switching selected bodies', () => {
+    const scene = { ...contactScene(), contacts: [] }
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    let contacts = contactsOf(host, 'm_b')
+    let select = contacts.querySelector('select')!
+    expect([...select.options].map(o => o.text)).toEqual(['fixo: retângulo 1', 'm_a'])
+    act(() => setSelectValue(select, 'bloco'))
+    act(() => findButton(host, ptBR['contacts.add'])!.click())
+    expect(saved().contacts).toEqual([{ a: 'bola', b: 'bloco', muS: 0, muK: 0, e: 0 }])
+    expect(select.value).toBe('chao')
+    act(() => contacts.querySelector('button')!.click())
+    expect(saved().contacts).toEqual([])
+    click(canvas, { x: 4, y: 3 })
+    contacts = contactsOf(host, 'm_a')
+    select = contacts.querySelector('select')!
+    expect([...select.options].map(o => o.value)).toEqual(['chao', 'bola'])
+    expect(select.value).toBe('chao')
+    act(() => findButton(host, ptBR['contacts.add'])!.click())
+    expect(saved().contacts).toEqual([{ a: 'bloco', b: 'chao', muS: 0, muK: 0, e: 0 }])
+  })
+
+  it('numbers fixed partners by shape in document order and uses the same labels for fixed selection', () => {
+    const scene = contactScene()
+    scene.bodies.push(
+      { id: 'parede', shape: 'rectangle', width: 1, height: 1, fixed: true, mass: 0, position: { x: 2, y: 6 }, rotation: 0 },
+      { id: 'apoio', shape: 'circle', radius: 0.4, fixed: true, mass: 0, position: { x: 6, y: 6 }, rotation: 0 },
+      { id: 'rampa', shape: 'triangle', base: 1, alpha: 45, fixed: true, mass: 0, position: { x: 9, y: 6 }, rotation: 0 },
+    )
+    scene.contacts = []
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    expect([...contactsOf(host, 'm_b').querySelector('select')!.options].map(o => o.text)).toEqual([
+      'fixo: retângulo 1', 'm_a', 'fixo: retângulo 2', 'fixo: bola 1', 'fixo: cunha 1',
+    ])
+    click(canvas, { x: 2, y: 6 })
+    const fixed = contactsOf(host, 'fixo: retângulo 2')
+    expect(fixed.textContent).toContain(ptBR['contacts.empty'])
+    expect([...fixed.querySelector('select')!.options].map(o => o.value)).not.toContain('parede')
+  })
+
+  it('shows an empty, disabled partner picker for a lone selected body', () => {
+    const scene = contactScene()
+    scene.bodies = [scene.bodies[2]]
+    scene.contacts = []
+    const { host, canvas } = setup(scene)
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm')
+    expect(contacts.textContent).toContain(ptBR['contacts.empty'])
+    expect(contacts.querySelector('select')!.options).toHaveLength(0)
+    expect(contacts.querySelector('select')!.matches(':disabled')).toBe(true)
+    expect(findButton(host, ptBR['contacts.add'])!.matches(':disabled')).toBe(true)
+  })
+
+  it('locks the whole body contact fieldset after stepping and unlocks after reset', async () => {
+    const { host, canvas } = setup()
+    await settleSimImport()
+    click(canvas, { x: 8, y: 3 })
+    const contacts = contactsOf(host, 'm_b')
+    expect(contacts.disabled).toBe(false)
+    await act(async () => findButton(host, ptBR['playback.step'])!.click())
+    expect(contacts.disabled).toBe(true)
+    expect([...contacts.querySelectorAll('input, select, button')].every(el => el.matches(':disabled'))).toBe(true)
+    act(() => findButton(host, ptBR['playback.reset'])!.click())
+    expect(contacts.disabled).toBe(false)
+    expect([...contacts.querySelectorAll('input, select, button')].every(el => !el.matches(':disabled'))).toBe(true)
+  })
+
+  it('localizes body and fixed contact labels with matching catalogs and removes contacts.title', () => {
+    for (const catalog of [ptBR, en] as Record<string, string>[]) {
+      expect(catalog['contacts.of']).toBeTruthy()
+      expect(catalog['contacts.fixedLabel']).toBeTruthy()
+      expect(catalog).not.toHaveProperty('contacts.title')
+    }
+    expect(Object.keys(ptBR).sort()).toEqual(Object.keys(en).sort())
+    const { host, canvas } = setup()
+    click(canvas, { x: 4, y: 3 })
+    const language = [...host.querySelectorAll('select')].find(s => s.querySelector('option[value="en"]'))!
+    try {
+      act(() => setSelectValue(language, 'en'))
+      expect(panel(host, 'contacts of m_a')?.textContent).toContain('fixed: rectangle 1')
+      click(canvas, { x: 1, y: -0.5 })
+      expect(panel(host, 'contacts of fixed: rectangle 1')).toBeDefined()
+    } finally {
+      act(() => setSelectValue(language, 'pt-BR'))
     }
   })
 })
@@ -316,6 +999,62 @@ function loadingOverlay(host: HTMLElement): HTMLElement | undefined {
   const box = canvas?.parentElement
   return [...(box?.children ?? [])].find((el) => el !== canvas && el.tagName === 'DIV') as HTMLElement | undefined
 }
+
+describe('CLEAN-35 force grip visibility', () => {
+  beforeEach(() => setLang('pt-BR'))
+  afterEach(() => setLang('pt-BR'))
+
+  async function setup(scope: 'global' | 'selected') {
+    const frame = captureVectorFrame()
+    const scene = blankScene()
+    delete scene.focus
+    scene.bodies = [{ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0 }]
+    scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 }]
+    const { host, canvas } = setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'grip', name: 'Grip', updatedAt: 1 }])
+      saveScene(window.localStorage, 'grip', scene)
+      saveCurrentSceneId(window.localStorage, 'grip')
+    })
+    await settleSimImport()
+    click(canvas, { x: 6, y: 4 })
+    const allVectors = inputForLabel(host, t('panel.showVectors'))
+    if (allVectors.checked !== (scope === 'global')) act(() => allVectors.click())
+    const saved = () => {
+      act(() => window.dispatchEvent(new Event('pagehide')))
+      return loadScene(window.localStorage, 'grip')!
+    }
+    return { host, canvas, frame, saved }
+  }
+
+  it.each(['selected', 'global'] as const)('drags the body past its hidden force grip and still edits the anchor through fields: %s scope', async (scope) => {
+    const p = await setup(scope)
+    expect(p.frame.labels.map(l => l.text)).toContain('F')
+    if (scope === 'selected') expect(p.frame.rings).toContainEqual({ color: '#d97742', x: 450, y: 300 })
+    toggleFocus(p.host, 'forces')
+    expect(p.frame.rings.filter(r => r.color === '#d97742')).toEqual([])
+    dragTo(p.canvas, { x: 6, y: 4 }, { x: 7, y: 4 })
+    expect(p.saved().bodies[0]!.position).toEqual({ x: 7, y: 4 })
+    expect(p.saved().forces[0]!.anchor).toEqual({ x: 0, y: 0 })
+
+    const forces = panel(p.host, t('forces.title', { id: 'ball' }))!
+    const anchorX = inputForLabel(forces, t('forces.anchorX'))
+    const anchorY = inputForLabel(forces, t('forces.anchorY'))
+    expect(anchorX.matches(':disabled')).toBe(false)
+    expect(anchorY.matches(':disabled')).toBe(false)
+    act(() => setNativeInputValue(anchorX, 0.2))
+    act(() => setNativeInputValue(anchorY, -0.2))
+    expect(p.saved().forces[0]!.anchor).toEqual({ x: 0.2, y: -0.2 })
+    expect(p.saved().bodies[0]!.position).toEqual({ x: 7, y: 4 })
+  })
+
+  it.each(['selected', 'global'] as const)('drags the visible force anchor without moving the body: %s scope', async (scope) => {
+    const p = await setup(scope)
+    expect(p.frame.labels.map(l => l.text)).toContain('F')
+    dragTo(p.canvas, { x: 6, y: 4 }, { x: 7, y: 4 })
+    expect(p.saved().forces[0]!.anchor).toEqual({ x: 1, y: 0 })
+    expect(p.saved().bodies[0]!.position).toEqual({ x: 6, y: 4 })
+  })
+})
 
 describe('initial velocity overlay (PHY-59)', () => {
   it.each([
@@ -343,6 +1082,8 @@ describe('initial velocity overlay (PHY-59)', () => {
     })
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
     const scene = blankScene()
+    // This overlay contract predates focus and explicitly exercises all groups.
+    delete scene.focus
     scene.bodies = [{ id: 'ball', shape: 'circle', radius: 0.5, mass: 1, fixed: false, position: { x: 6, y: 4 }, rotation: 0, vx: 2 }]
     scene.forces = [{ id: 'push', bodyId: 'ball', anchor: { x: 0, y: 0 }, magnitude: 3, direction: 0 }]
     const step = vi.fn()
@@ -354,12 +1095,9 @@ describe('initial velocity overlay (PHY-59)', () => {
       saveCurrentSceneId(storage, 'velocity')
     })
     await settleSimImport()
-    if (mode === 'global') {
-      const label = [...host.querySelectorAll('label')].find((el) => el.textContent?.trim() === ptBR['panel.showVectors'])!
-      act(() => label.querySelector('input')!.click())
-    } else {
-      click(canvas, { x: 6, y: 4 })
-    }
+    const scope = inputForLabel(host, ptBR['panel.showVectors'])
+    if (scope.checked !== (mode === 'global')) act(() => scope.click())
+    if (mode === 'selected') click(canvas, { x: 6, y: 4 })
     const expectOverlay = (visible: boolean) => {
       expect(strokes.includes('#43a047')).toBe(visible)
       expect(labels.filter((label) => label.color === '#43a047').map((label) => label.text)).toEqual(visible ? ['v₀'] : [])
@@ -383,6 +1121,354 @@ describe('initial velocity overlay (PHY-59)', () => {
     }
     act(() => findButton(host, ptBR['playback.reset'])!.click())
     expectOverlay(true)
+  })
+})
+
+describe('initial force vectors (PHY-82)', () => {
+  const doc = (): Scene => ({
+    version: 1, constants: { g: 9.81 }, contacts: [], forces: [],
+    bodies: [
+      ...blankScene().bodies,
+      { id: 'caixa', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 3, y: 0.5 }, rotation: 0 },
+      { id: 'pivo', shape: 'circle', radius: 0.2, fixed: true, mass: 0, position: { x: 8, y: 6 }, rotation: 0 },
+      { id: 'bola', shape: 'circle', radius: 0.3, fixed: false, mass: 1, position: { x: 8, y: 3 }, rotation: Math.PI / 2 },
+    ],
+    constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'pivo', anchor: { x: 0, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0.2, y: 0 } }, via: [] }],
+  })
+  const probeReading = (): InitialProbe => ({
+    contacts: [{ aId: 'chao', bId: 'caixa', point: { x: 3, y: 0 }, normal: { x: 0, y: 1 } }],
+    constraints: [{
+      id: 'corda', kind: 'rope', tension: 5, slack: false, segments: [5],
+      // Poses after the disposable step differ from the document anchors.
+      path: { segments: [{ from: { x: 8, y: 6 }, to: { x: 10, y: 4 } }], arcs: [], length: Math.sqrt(8) },
+    }],
+  })
+
+  async function setupProbe(options: { scene?: Scene; otherScene?: Scene; throws?: boolean; delayedBoot?: boolean } = {}) {
+    setLang('pt-BR')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const labels: string[] = []
+    const arrows: Array<{ color: unknown; path: number[][] }> = []
+    const points: number[][] = []
+    let path: number[][] = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { labels.length = 0; arrows.length = 0; points.length = 0 }
+        if (key === 'beginPath') return () => { path = [] }
+        if (key === 'moveTo' || key === 'lineTo') return (x: number, y: number) => { path.push([x, y]); points.push([x, y]) }
+        if (key === 'stroke') return () => {
+          if (['#1565c0', '#6a1b9a', '#00838f'].includes(target.strokeStyle as string)) {
+            arrows.push({ color: target.strokeStyle, path: [...path] })
+          }
+        }
+        if (key === 'fillText') return (text: string) => { labels.push(text) }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    const scene = options.scene ?? doc()
+    let current = scene
+    let count = 0
+    const step = vi.fn(() => { count++ })
+    const probeInitial = vi.fn<(scene: Scene) => InitialProbe>(() => {
+      if (options.throws) throw new Error('probe failed')
+      return probeReading()
+    })
+    const sim: Simulator = {
+      ...makeFakeSimulator(), step, probeInitial,
+      replaceScene: vi.fn((next: Scene) => { current = next; count = 0 }),
+      readContacts: () => count === 0 ? [] : [{ aId: 'chao', bId: 'caixa', point: { x: 3 + count / 10, y: 0 }, normal: { x: 0, y: 1 } }],
+      readConstraints: () => [
+        { id: 'corda', kind: 'rope', tension: count * 9, slack: false, segments: [count * 9] },
+        ...(current.constraints?.some(c => c.kind === 'spring')
+          ? [{ id: 'mola', kind: 'spring' as const, dx: 0.7, force: { a: 7, b: 7 } }] : []),
+      ],
+      readStates: () => new Map(current.bodies.map(body => [body.id, {
+        position: { x: body.position.x + (body.fixed ? 0 : count / 10), y: body.position.y },
+        rotation: body.rotation, linvel: { x: body.fixed ? 0 : count, y: 0 }, angvel: 0,
+      }])),
+    }
+    let resolveBoot!: (sim: Simulator) => void
+    if (options.delayedBoot) vi.mocked(createSimulator).mockImplementation(() => new Promise(resolve => { resolveBoot = resolve }))
+    else vi.mocked(createSimulator).mockResolvedValue(sim)
+    const { host, canvas } = setupWith(() => {
+      saveIndex(window.localStorage, [
+        { id: 'probe', name: 'Probe', updatedAt: 1 },
+        ...(options.otherScene ? [{ id: 'other', name: 'Other', updatedAt: 2 }] : []),
+      ])
+      saveScene(window.localStorage, 'probe', scene)
+      if (options.otherScene) saveScene(window.localStorage, 'other', options.otherScene)
+      saveCurrentSceneId(window.localStorage, 'probe')
+    })
+    // Request global scope while boot is pending, regardless of its initial default.
+    const allVectors = inputForLabel(host, ptBR['panel.showVectors'])
+    if (!allVectors.checked) act(() => allVectors.click())
+    await settleSimImport()
+    const origin = (color: string): number[] | undefined => arrows.find(arrow => arrow.color === color)?.path[0]
+    const point = (x: number, y: number): number[] => { const p = screen(x, y); return [p.x, p.y] }
+    const steps = async (n: number) => {
+      for (let i = 0; i < n; i++) await act(async () => { findButton(host, ptBR['playback.step'])!.click() })
+    }
+    const seek = (index: number) => act(() => {
+      setNativeInputValue(host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!, index)
+    })
+    return { host, canvas, labels, arrows, points, sim, step, probeInitial, origin, point, steps, seek,
+      resolveBoot: () => act(async () => { resolveBoot(sim) }),
+    }
+  }
+
+  it('paints N and T at t0 and anchors T to the document rather than the disposable pose', async () => {
+    const p = await setupProbe()
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
+    expect(p.origin('#6a1b9a')).not.toEqual(p.point(10, 4))
+    expect(p.probeInitial).toHaveBeenCalledExactlyOnceWith(doc())
+    expect(p.step).not.toHaveBeenCalled()
+    toggleFocus(p.host, 'kinematics')
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    toggleFocus(p.host, 'forces')
+    expect(p.labels).not.toContain('N')
+    expect(p.labels).not.toContain('T')
+    toggleFocus(p.host, 'forces')
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.probeInitial).toHaveBeenCalledExactlyOnceWith(doc())
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
+  it('uses live contacts and constraints after the first step without probing again', async () => {
+    const p = await setupProbe()
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    await p.steps(1)
+    expect(p.origin('#1565c0')).toEqual(p.point(3.1, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8.1, 3.2))
+    const tension = p.arrows.find(arrow => arrow.color === '#6a1b9a')!.path
+    expect(Math.hypot(tension[1]![0]! - tension[0]![0]!, tension[1]![1]! - tension[0]![1]!)).toBeCloseTo(60, 6)
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).toHaveBeenCalledTimes(1)
+  })
+
+  it('probes once per structural t0 edit and reset, but never for g or pending-world synchronization', async () => {
+    const p = await setupProbe()
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    for (let i = 0; i < 3; i++) {
+      dragTo(p.canvas, { x: 8 + i, y: 3 }, { x: 9 + i, y: 3 })
+      expect(p.probeInitial).toHaveBeenCalledTimes(i + 2)
+      expect(p.probeInitial.mock.lastCall![0].bodies.find(body => body.id === 'bola')!.position.x).toBe(9 + i)
+    }
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['panel.gLabel']), 5))
+    expect(p.probeInitial).toHaveBeenCalledTimes(4)
+    // Selection and vector visibility repaint a document whose live rebuild is pending.
+    click(p.canvas, { x: 1, y: 7 })
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(4)
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(5)
+    expect(p.probeInitial.mock.lastCall![0].constants.g).toBe(5)
+    expect(p.step).not.toHaveBeenCalled()
+    await p.steps(1)
+    expect(p.probeInitial).toHaveBeenCalledTimes(5)
+  })
+
+  it('uses the cached probe on seek(0) and the recorded contact on seek(5)', async () => {
+    const p = await setupProbe()
+    await p.steps(10)
+    expect(p.origin('#1565c0')).toEqual(p.point(4, 0))
+    p.seek(0)
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
+    p.seek(5)
+    expect(p.origin('#1565c0')).toEqual(p.point(3.5, 0))
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).toHaveBeenCalledTimes(10)
+  })
+
+  it.each(['undo', 'drag back'] as const)('refreshes initial forces when %s restores the original geometry before the first step', async (action) => {
+    const p = await setupProbe()
+    p.probeInitial.mockImplementation(scene => {
+      const reading = probeReading()
+      reading.contacts[0]!.point.x = scene.bodies.find(body => body.id === 'bola')!.position.x - 5
+      return reading
+    })
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    dragTo(p.canvas, { x: 8, y: 3 }, { x: 9, y: 3 })
+    expect(p.origin('#1565c0')).toEqual(p.point(4, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    expect(p.probeInitial).toHaveBeenCalledTimes(2)
+
+    if (action === 'undo') act(() => findButton(p.host, '↶')!.click())
+    else dragTo(p.canvas, { x: 9, y: 3 }, { x: 8, y: 3 })
+
+    expect(p.origin('#1565c0')).toEqual(p.point(3, 0))
+    expect(p.origin('#6a1b9a')).toEqual(p.point(8, 3.2))
+    expect(p.probeInitial).toHaveBeenCalledTimes(3)
+    expect(p.probeInitial.mock.lastCall![0].bodies.find(body => body.id === 'bola')!.position.x).toBe(8)
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
+  it('keeps painting without N, T or simError when the optional probe throws', async () => {
+    const p = await setupProbe({ throws: true })
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.labels).toContain('m')
+    expect(p.labels).not.toContain('N')
+    expect(p.labels).not.toContain('T')
+    expect(loadingOverlay(p.host)).toBeUndefined()
+    expect(p.host.textContent).not.toContain('probe failed')
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(2)
+    expect(p.host.textContent).not.toContain('probe failed')
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
+  it('probes the latest document after edits made while boot is pending', async () => {
+    const p = await setupProbe({ delayedBoot: true })
+    expect(p.probeInitial).not.toHaveBeenCalled()
+    dragTo(p.canvas, { x: 8, y: 3 }, { x: 9, y: 3 })
+    await p.resolveBoot()
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.probeInitial.mock.lastCall![0].bodies.find(body => body.id === 'bola')!.position.x).toBe(9)
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    expect(p.step).not.toHaveBeenCalled()
+    await p.steps(1)
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['none', 'during boot', 'after boot'] as const)('PHY-78 preserves initial rope readouts with a focus edit %s', async (timing) => {
+    const p = await setupProbe({ delayedBoot: true })
+    expect(loadingOverlay(p.host)).toBeDefined()
+    if (timing === 'during boot') toggleFocus(p.host, 'energy')
+    await p.resolveBoot()
+    if (timing === 'after boot') toggleFocus(p.host, 'energy')
+
+    expect(loadingOverlay(p.host)).toBeUndefined()
+    expect(focusChip(p.host, 'forces').getAttribute('aria-pressed')).toBe('true')
+    click(p.canvas, { x: 8, y: 4.5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    const readout = panel(p.host, t('readout.title', { id: 'corda' }))!
+    expect(readout.textContent).toContain('T: 0,00 N')
+    expect(readout.textContent).not.toContain(ptBR['readout.noData'])
+    expect(p.labels).toContain('N')
+    expect(p.labels).toContain('T')
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+
+    await p.steps(1)
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it.each(['during boot', 'after boot'] as const)('PHY-78 keeps physical boot edits pending when focus changes %s', async (timing) => {
+    const p = await setupProbe({ delayedBoot: true })
+    dragTo(p.canvas, { x: 8, y: 3 }, { x: 9, y: 3 })
+    if (timing === 'during boot') toggleFocus(p.host, 'energy')
+    await p.resolveBoot()
+    if (timing === 'after boot') toggleFocus(p.host, 'energy')
+
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+    click(p.canvas, { x: 8.5, y: 4.6 })
+    act(() => { vi.advanceTimersByTime(100) })
+    const readout = () => panel(p.host, t('readout.title', { id: 'corda' }))!.textContent
+    expect(readout()).toContain(ptBR['readout.noData'])
+
+    await p.steps(1)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(p.sim.replaceScene).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      bodies: expect.arrayContaining([expect.objectContaining({ id: 'bola', position: { x: 9, y: 3 } })]),
+      focus: { show: ['forces', 'kinematics', 'momentum'] },
+    }))
+    expect(p.step).toHaveBeenCalledTimes(1)
+    expect(readout()).toContain('T: 9,00 N')
+    expect(readout()).not.toContain(ptBR['readout.noData'])
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+  })
+
+  it('PHY-78 preserves restitution edits during boot when focus changes before and after boot', async () => {
+    const scene = doc()
+    scene.contacts = [{ a: 'caixa', b: 'chao', muS: 0, muK: 0, e: 0 }]
+    const p = await setupProbe({ scene, delayedBoot: true })
+    click(p.canvas, { x: 3, y: 0.5 })
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['contacts.e']), 0.75))
+    toggleFocus(p.host, 'energy')
+    await p.resolveBoot()
+    toggleFocus(p.host, 'momentum')
+
+    click(p.canvas, { x: 8, y: 4.5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    const readout = () => panel(p.host, t('readout.title', { id: 'corda' }))!.textContent
+    expect(readout()).toContain(ptBR['readout.noData'])
+    expect(p.step).not.toHaveBeenCalled()
+    expect(p.sim.replaceScene).not.toHaveBeenCalled()
+
+    await p.steps(1)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(p.sim.replaceScene).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      contacts: [{ a: 'caixa', b: 'chao', muS: 0, muK: 0, e: 0.75 }],
+    }))
+    expect(readout()).toContain('T: 9,00 N')
+    expect(readout()).not.toContain(ptBR['readout.noData'])
+  })
+
+  it('paints initial vectors at the current canvas size when boot finishes after a resize', async () => {
+    const p = await setupProbe({ delayedBoot: true })
+    act(() => lastResizeObserverCallback?.(
+      [{ contentRect: { width: 600, height: 400 } } as ResizeObserverEntry], null as unknown as ResizeObserver,
+    ))
+    expect(p.canvas.style.width).toBe('600px')
+    await p.resolveBoot()
+    expect(p.origin('#1565c0')).toEqual([180, 360])
+    expect(p.origin('#6a1b9a')).toEqual([380, 232])
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+  })
+
+  it('refreshes on scene switching and on editing the initial recorded document', async () => {
+    const next = doc()
+    next.bodies = next.bodies.map(body => body.id === 'bola' ? { ...body, position: { x: 9, y: 3 } } : body)
+    const p = await setupProbe({ otherScene: next })
+    // Opening the preset uses the same rebuild transition as opening a saved scene.
+    act(() => findButton(p.host, ptBR['scenes.galleryOpen'])!.click())
+    const atwood = [...p.host.querySelectorAll('button')].find(button => button.textContent?.includes(ptBR['preset.atwood.name']))!
+    act(() => atwood.click())
+    expect(p.probeInitial).toHaveBeenCalledTimes(2)
+    expect(p.probeInitial.mock.lastCall![0]).toEqual(presetById('atwood')!.buildScene())
+    act(() => setSelectValue(sceneSelect(p.host), 'other'))
+    expect(p.probeInitial).toHaveBeenCalledTimes(3)
+    expect(p.origin('#6a1b9a')).toEqual(p.point(9, 3.2))
+    await p.steps(2)
+    p.seek(0)
+    dragTo(p.canvas, { x: 9, y: 3 }, { x: 10, y: 3 })
+    expect(p.probeInitial).toHaveBeenCalledTimes(4)
+    expect(p.origin('#6a1b9a')).toEqual(p.point(10, 3.2))
+    expect(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0"]')!.max).toBe('0')
+    expect(p.step).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves the document rope drawing and live initial spring readings', async () => {
+    const scene = doc()
+    scene.constraints!.push({ id: 'mola', kind: 'spring', a: { bodyId: 'pivo', anchor: { x: -1, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0, y: 0 } }, k: 10, x0: 2.3 })
+    const p = await setupProbe({ scene })
+    expect(p.probeInitial).toHaveBeenCalledTimes(1)
+    expect(p.points).toContainEqual([8, 6])
+    expect(p.points).toContainEqual([8, 3.2])
+    expect(p.points).not.toContainEqual([10, 4])
+    expect(p.origin('#00838f')).toEqual(p.point(8, 3))
+    const spring = p.arrows.find(arrow => arrow.color === '#00838f')!.path
+    expect(spring[0]).toEqual(p.point(8, 3))
+    expect(Math.hypot(spring[1]![0]! - spring[0]![0]!, spring[1]![1]! - spring[0]![1]!)).toBeCloseTo(20 * Math.sqrt(7), 6)
+    click(p.canvas, { x: 8, y: 4.5 })
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(panel(p.host, t('readout.title', { id: 'corda' }))?.textContent).toContain('T: 0,00 N')
   })
 })
 
@@ -1062,6 +2148,196 @@ describe('simulator warnings panel (PHY-53)', () => {
   })
 })
 
+describe('orientation snap (PHY-83)', () => {
+  beforeEach(() => setLang('pt-BR'))
+
+  function setup(scene: Scene) {
+    return setupWith(() => {
+      saveIndex(window.localStorage, [{ id: 'orientation', name: 'Orientation', updatedAt: 1 }])
+      saveScene(window.localStorage, 'orientation', scene)
+      saveCurrentSceneId(window.localStorage, 'orientation')
+    })
+  }
+
+  function saved(): Scene {
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    const scene = loadScene(window.localStorage, 'orientation')
+    if (!scene) throw new Error('missing orientation scene')
+    return scene
+  }
+
+  function pendulum(): Scene {
+    return { version: 1, constants: { g: 9.81 }, contacts: [], forces: [], bodies: [
+      { id: 'pivo', shape: 'circle', radius: 0.1, fixed: true, mass: 0, position: { x: 6, y: 7 }, rotation: 0 },
+      { id: 'bola', shape: 'circle', radius: 0.3, fixed: false, mass: 1, position: { x: 8, y: 5 }, rotation: 0 },
+    ], constraints: [{ id: 'corda', kind: 'rope', via: [],
+      a: { bodyId: 'pivo', anchor: { x: 0, y: 0 } }, b: { bodyId: 'bola', anchor: { x: 0, y: 0 } } }] }
+  }
+
+  function wallAndBlock(): Scene {
+    return { version: 1, constants: { g: 9.81 }, contacts: [], forces: [], bodies: [
+      { id: 'parede', shape: 'rectangle', width: 0.2, height: 2, fixed: true, mass: 0, position: { x: 4, y: 0.2 }, rotation: 0 },
+      { id: 'bloco', shape: 'rectangle', width: 2, height: 2, fixed: false, mass: 1, position: { x: 6, y: 0.27 }, rotation: 0 },
+    ] }
+  }
+
+  function arm(host: HTMLElement, canvas: Element, kind: 'spring' | 'rope') {
+    act(() => findButton(host, t(`palette.${kind}`))!.click())
+    click(canvas, { x: 4.1, y: 0.2 })
+  }
+
+  /** Observe the current guide at the canvas boundary; fixed-body borders also use dashes. */
+  function captureGuideFrame() {
+    const dashes: number[][] = []
+    const moves: number[][] = []
+    const lines: number[][] = []
+    const ctx = new Proxy({} as Record<PropertyKey, unknown>, {
+      get(target, key) {
+        if (key === 'clearRect') return () => { dashes.length = 0; moves.length = 0; lines.length = 0 }
+        if (key === 'setLineDash') return (dash: number[]) => {
+          if (target.strokeStyle === '#999' && target.lineWidth === 1) dashes.push(dash)
+        }
+        if (key === 'moveTo' || key === 'lineTo') return (x: number, y: number) => {
+          if (target.strokeStyle === '#999' && target.lineWidth === 1) (key === 'moveTo' ? moves : lines).push([x, y])
+        }
+        if (key === 'measureText') return () => ({ width: 10 })
+        return target[key] ?? (() => {})
+      },
+    })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ctx })
+    return { dashes, moves, lines }
+  }
+
+  function pointer(canvas: Element, type: string, at: { x: number; y: number }) {
+    const point = screen(at.x, at.y)
+    act(() => canvas.dispatchEvent(pointerEvent(type, point.x, point.y)))
+  }
+
+  it('snaps a pendulum drag exactly, leaves distant drags free and creates one undo per drag', async () => {
+    const { host, canvas } = setup(pendulum())
+    await settleSimImport()
+    dragTo(canvas, { x: 8, y: 5 }, { x: 6.08, y: 5 })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position).toEqual({ x: 6, y: 5 })
+    pressKey('z', { ctrlKey: true })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position).toEqual({ x: 8, y: 5 })
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+    dragTo(canvas, { x: 8, y: 5 }, { x: 6.3, y: 5 })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position.x).toBeCloseTo(6.3, 12)
+    pressKey('z', { ctrlKey: true })
+    expect(saved().bodies.find(b => b.id === 'bola')!.position.x).toBe(8)
+    expect(findButton(host, '↶')?.disabled).toBe(true)
+  })
+
+  it('draws the vertical guide edge to edge only during an active snap', async () => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(pendulum())
+    await settleSimImport()
+    pointer(canvas, 'pointerdown', { x: 8, y: 5 })
+    pointer(canvas, 'pointermove', { x: 6.08, y: 5 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    expect(frame.moves).toContainEqual([450, 0])
+    expect(frame.lines).toContainEqual([450, 600])
+    pointer(canvas, 'pointermove', { x: 6.3, y: 5 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointermove', { x: 6.08, y: 5 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    pointer(canvas, 'pointerup', { x: 6.08, y: 5 })
+    expect(frame.dashes).toEqual([])
+    // A fresh repaint must not revive the released guide.
+    toggleFocus(host, 'forces')
+    expect(frame.dashes).toEqual([])
+  })
+
+  it('gives contact snap priority over a nearby spring axis and draws no guide', async () => {
+    const frame = captureGuideFrame()
+    const scene: Scene = { version: 1, constants: { g: 9.81 }, contacts: [], forces: [], bodies: [
+      { id: 'chao', shape: 'rectangle', width: 14, height: 1, fixed: true, mass: 0, position: { x: 7, y: -0.5 }, rotation: 0 },
+      { id: 'parede', shape: 'rectangle', width: 0.2, height: 2, fixed: true, mass: 0, position: { x: 4, y: 0.6 }, rotation: 0 },
+      { id: 'bloco', shape: 'rectangle', width: 1, height: 1, fixed: false, mass: 1, position: { x: 6, y: 3 }, rotation: 0 },
+    ], constraints: [{ id: 'mola', kind: 'spring', k: 10, x0: 2,
+      a: { bodyId: 'parede', anchor: { x: 0.1, y: 0 } }, b: { bodyId: 'bloco', anchor: { x: 0, y: 0 } } }] }
+    const { canvas } = setup(scene)
+    await settleSimImport()
+    pointer(canvas, 'pointerdown', { x: 6, y: 3 })
+    pointer(canvas, 'pointermove', { x: 6, y: 0.56 })
+    expect(saved().bodies.find(b => b.id === 'bloco')!.position).toEqual({ x: 6, y: 0.5 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointerup', { x: 6, y: 0.56 })
+    expect(saved().contacts).toHaveLength(1)
+    expect(saved().contacts[0]).toMatchObject({ a: 'bloco', b: 'chao' })
+    expect(frame.dashes).toEqual([])
+  })
+
+  it.each(['spring', 'rope'] as const)('aligns the %s tool second end and clears its guide on completion', async (kind) => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(wallAndBlock())
+    await settleSimImport()
+    arm(host, canvas, kind)
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    click(canvas, { x: 6.5, y: 0.2 + 4 / 60 })
+    const scene = saved()
+    expect(scene.constraints).toHaveLength(1)
+    const end = scene.constraints![0]!.b
+    expect(end.bodyId).toBe('bloco')
+    expect(end.anchor.x).toBeCloseTo(0.5, 12)
+    expect(bodyPointToWorld(scene.bodies.find(b => b.id === 'bloco')!, end.anchor).y).toBe(0.2)
+    expect(frame.dashes).toEqual([])
+  })
+
+  it.each([5 / 60, 0])('gives anchor features priority at %s meters from the center', async (offset) => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(wallAndBlock())
+    await settleSimImport()
+    arm(host, canvas, 'spring')
+    pointer(canvas, 'pointermove', { x: 6 + offset, y: 0.27 })
+    expect(frame.dashes).toEqual([])
+    click(canvas, { x: 6 + offset, y: 0.27 })
+    expect(saved().constraints![0]!.b.anchor).toEqual({ x: 0, y: 0 })
+  })
+
+  it('previews the horizontal guide only within tolerance and clears it on Esc', async () => {
+    const frame = captureGuideFrame()
+    const { host, canvas } = setup(wallAndBlock())
+    await settleSimImport()
+    arm(host, canvas, 'spring')
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    expect(frame.moves).toContainEqual([0, 528])
+    expect(frame.lines).toContainEqual([900, 528])
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.7 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    pressKey('Escape')
+    expect(frame.dashes).toEqual([])
+    toggleFocus(host, 'forces')
+    expect(frame.dashes).toEqual([])
+    expect(saved().constraints ?? []).toEqual([])
+  })
+
+  it('does not orient a rope routed through a pulley', async () => {
+    const frame = captureGuideFrame()
+    const scene = wallAndBlock()
+    scene.bodies.push({ id: 'suporte', shape: 'circle', radius: 0.2, fixed: true, mass: 0,
+      position: { x: 5, y: 3 }, rotation: 0 })
+    scene.pulleys = [{ id: 'polia', bodyId: 'suporte', anchor: { x: 0, y: 0 }, radius: 0.25 }]
+    const { host, canvas } = setup(scene)
+    await settleSimImport()
+    arm(host, canvas, 'rope')
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toContainEqual([6, 4])
+    click(canvas, { x: 5, y: 3 })
+    expect(frame.dashes).toEqual([])
+    pointer(canvas, 'pointermove', { x: 6.5, y: 0.2 + 4 / 60 })
+    expect(frame.dashes).toEqual([])
+    click(canvas, { x: 6.5, y: 0.2 + 4 / 60 })
+    const rope = saved().constraints![0]!
+    expect(rope).toMatchObject({ kind: 'rope', via: ['polia'] })
+    expect(rope.b.anchor.y).toBeCloseTo(-1 / 300, 12)
+  })
+})
+
 describe('ferramenta Mola, Anchor snap e arraste do ponto de força (PHY-27)', () => {
   // Wall face midpoint (1.5, 2) and block center (5, 0.5): the relaxed x₀
   // between the snapped anchors is √(3.5² + 1.5²). Raw clicks near them are
@@ -1707,8 +2983,9 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
     expect(sceneSelect(host).value).toBe('cena-3')
     // Pins the *content* half of criterion 2 — the canvas doc, not only the
     // <select>, must be the persisted scene's.
-    expect(host.textContent).toContain('marca-cena-3')
-    expect(host.textContent).not.toContain('marca-cena-1')
+    click(host.querySelector('canvas')!, { x: 1, y: 1 })
+    expect(panel(host, 'marca-cena-3')).toBeDefined()
+    expect(panel(host, 'marca-cena-1')).toBeUndefined()
   })
 
   it('sem marca de cena atual, a inicialização abre a primeira do índice (comportamento atual)', () => {
@@ -1731,8 +3008,9 @@ describe('recarregar reabre a cena em que o estudante estava (PHY-19)', () => {
 
     const reopened = renderApp()
     expect(sceneSelect(reopened).value).toBe('cena-2')
-    expect(reopened.textContent).toContain('marca-cena-2')
-    expect(reopened.textContent).not.toContain('marca-cena-1')
+    click(reopened.querySelector('canvas')!, { x: 1, y: 1 })
+    expect(panel(reopened, 'marca-cena-2')).toBeDefined()
+    expect(panel(reopened, 'marca-cena-1')).toBeUndefined()
   })
 
   it('excluir a cena atual e reinicializar abre a primeira do índice restante, sem tela quebrada', () => {
@@ -1902,9 +3180,13 @@ describe('galeria em árvore (PHY-31)', () => {
 
       const scenes = panel(host, en['scenes.title'])?.querySelector('select')
       expect(scenes?.selectedOptions[0]?.textContent?.trim()).toBe(name(english, 'atwood'))
-      // The canvas doc is the preset's: its blocks are listed in the app.
-      expect(host.textContent).toContain('bloco-1')
-      expect(host.textContent).toContain('bloco-2')
+      // Inspect both blocks on the canvas; the removed global contact
+      // dropdowns no longer list every body id in the DOM.
+      const canvas = host.querySelector('canvas')!
+      click(canvas, { x: 5.75, y: 3 })
+      expect(panel(host, 'bloco-1')).toBeDefined()
+      click(canvas, { x: 6.25, y: 2 })
+      expect(panel(host, 'bloco-2')).toBeDefined()
     } finally {
       setLang('pt-BR')
     }
@@ -1983,6 +3265,8 @@ describe('trocar de cena zera o playback (PHY-36)', () => {
   // Same id and same pose in both scenes.
   const ballScene = (): Scene => ({
     ...blankScene(),
+    // Playback assertions inspect all readout groups on these legacy fixtures.
+    focus: undefined,
     bodies: [...blankScene().bodies, { shape: 'circle', radius: 0.5, id: 'bola', fixed: false, mass: 1, position: { x: 6, y: 3.5 }, rotation: 0 }],
   })
   function seed() {
@@ -2386,7 +3670,7 @@ describe('edição estrutural só em t0 (PHY-39)', () => {
     }
     expect(panel(host, ptBR['forces.title'].replace('{id}', 'bloco'))!.querySelector('button')!.matches(':disabled')).toBe(true)
     expect(inputForLabel(host, ptBR['panel.particleMode']).matches(':disabled')).toBe(true)
-    expect([...panel(host, ptBR['contacts.title'])!.querySelectorAll('input, select, button')].every((el) => el.matches(':disabled'))).toBe(true)
+    expect([...panel(host, 'contatos de m')!.querySelectorAll('input, select, button')].every((el) => el.matches(':disabled'))).toBe(true)
     act(() => findButton(host, ptBR['playback.reset'])!.click())
     expect(structural.every((el) => !el.matches(':disabled'))).toBe(true)
     expect(findButton(host, 'mola')!.disabled).toBe(false)
@@ -2883,7 +4167,12 @@ describe('galeria de um clique (PHY-62)', () => {
 
 
 describe('recorded time player (PHY-64)', () => {
-  async function setupRecording(kind?: 'spring' | 'rope', bodies: 'dynamic' | 'fixed' | 'empty' = 'dynamic') {
+  async function setupRecording(kind?: 'spring' | 'rope', bodies: 'dynamic' | 'fixed' | 'empty' = 'dynamic', options: {
+    configure?: (scene: Scene) => void
+    velocity?: (step: number) => BodyState['linvel']
+    contacts?: ReturnType<Simulator['readContacts']>
+    slack?: boolean
+  } = {}) {
     setLang('pt-BR')
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let frame!: FrameRequestCallback
@@ -2907,17 +4196,19 @@ describe('recorded time player (PHY-64)', () => {
     }
     if (bodies === 'empty') { scene.bodies = []; scene.forces = [] }
     if (bodies === 'fixed') scene.bodies.forEach(b => { b.fixed = true })
+    options.configure?.(scene)
     let current = scene
     const step = vi.fn(() => { count++ })
     const replaceScene = vi.fn((doc: Scene) => { current = doc; count = 0 })
     vi.mocked(createSimulator).mockResolvedValue({
       ...makeFakeSimulator(), step, replaceScene,
+      readContacts: () => options.contacts ?? [],
       readConstraints: () => kind === 'spring'
         ? [{ id: 'link', kind, dx: count / 100, force: { a: count, b: count } }]
-        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: false, segments: [count] }] : [],
+        : kind === 'rope' ? [{ id: 'link', kind, tension: count, slack: options.slack ?? false, segments: [count] }] : [],
       readStates: () => new Map(current.bodies.map((b) => [b.id, {
         position: { x: b.position.x + (b.fixed ? 0 : count / 100), y: b.position.y },
-        rotation: b.rotation, linvel: { x: b.fixed ? 0 : count * count / 60, y: 0 }, angvel: 0,
+        rotation: b.rotation, linvel: b.fixed ? { x: 0, y: 0 } : options.velocity?.(count) ?? { x: count * count / 60, y: 0 }, angvel: 0,
       }])),
     })
     const { host, canvas } = setupWith(() => {
@@ -2945,6 +4236,106 @@ describe('recorded time player (PHY-64)', () => {
     }
   }
 
+  it('PHY-80 replaces launch velocity with live velocity after stepping and restores it at record zero', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.bodies.find(b => b.id === 'ball')!.vx = 2 },
+      velocity: count => ({ x: count === 0 ? 2 : 1, y: 0 }),
+    })
+    const velocityLabels = () => frame.labels.filter(l => l.color === '#43a047').map(l => l.text)
+    expect(velocityLabels()).toEqual(['v₀'])
+    await p.steps(1)
+    expect(velocityLabels()).toEqual(['v'])
+    expect(frame.lines.find(l => l.color === '#43a047')).toMatchObject({ x: 474.6, y: 300 })
+    p.seek(0)
+    expect(velocityLabels()).toEqual(['v₀'])
+    p.seek(1)
+    expect(velocityLabels()).toEqual(['v'])
+    expect(p.step).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['global', 'selected'] as const)('PHY-80 keeps launch velocity after a zero-step rebuild in %s scope', async (scope) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.bodies.find(b => b.id === 'ball')!.vx = 2 },
+      velocity: count => ({ x: count === 0 ? 2 : 1, y: 0 }),
+    })
+    const velocityLabels = () => frame.labels.filter(l => l.color === '#43a047').map(l => l.text)
+    click(p.canvas, { x: 6, y: 4 })
+    if (scope === 'selected') act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    act(() => setNativeInputValue(inputForLabel(p.host, ptBR['properties.posY']), 5))
+    act(() => setNativeInputValue(p.host.querySelector<HTMLInputElement>('input[type="range"][min="0.25"]')!, 0.5))
+    await p.play()
+    // Half speed rebuilds the world on this frame, before the first timestep.
+    p.frame()
+    act(() => findButton(p.host, ptBR['playback.pause'])!.click())
+    expect(p.replaceScene).toHaveBeenCalledTimes(1)
+    expect(p.step).not.toHaveBeenCalled()
+    expect(velocityLabels()).toEqual(['v₀'])
+    await p.steps(1)
+    expect(velocityLabels()).toEqual(['v'])
+    p.seek(0)
+    expect(velocityLabels()).toEqual(['v₀'])
+  })
+
+  it('PHY-80 paints analytic acceleration at initial time and restores it when seeking to zero', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => { scene.constants.g = 9; scene.forces = [] },
+    })
+    const accelerationTip = () => frame.lines.find(l => l.color === '#c62828')
+    expect(frame.labels.filter(l => l.color === '#c62828').map(l => l.text)).toEqual(['a'])
+    expect(accelerationTip()).toMatchObject({ x: 450, y: 360 })
+    await p.steps(2)
+    expect(accelerationTip()!.y).toBe(300)
+    p.seek(0)
+    expect(accelerationTip()).toMatchObject({ x: 450, y: 360 })
+  })
+
+  it('PHY-80 paints acceleration from the displayed recording instead of the live tip', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording()
+    await p.steps(2)
+    const accelerationTip = () => frame.lines.find(l => l.color === '#c62828')
+    expect(frame.labels.filter(l => l.color === '#c62828').map(l => l.text)).toEqual(['a'])
+    expect(accelerationTip()).toMatchObject({ x: expect.closeTo(485.8410161513775, 8), y: 300 })
+    p.seek(1)
+    expect(accelerationTip()).toMatchObject({ x: expect.closeTo(474.6, 8), y: 300 })
+    p.seek(2)
+    expect(accelerationTip()).toMatchObject({ x: expect.closeTo(485.8410161513775, 8), y: 300 })
+    expect(p.step).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['initial', 'live'] as const)('PHY-80 composes %s kinematic vectors with global scope, selection and focus', async (time) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording(undefined, 'dynamic', {
+      configure: scene => {
+        const ball = scene.bodies.find(b => b.id === 'ball')!
+        ball.vx = 2
+        scene.bodies.push({ ...ball, id: 'other', position: { x: 8, y: 4 } })
+      },
+    })
+    if (time === 'live') await p.steps(2)
+    const velocitySymbol = time === 'initial' ? 'v₀' : 'v'
+    const symbols = () => frame.labels.filter(l => l.color === '#43a047' || l.color === '#c62828')
+      .map(l => l.text).filter(text => ['v₀', 'v', 'a'].includes(text))
+    expect(symbols()).toEqual([velocitySymbol, velocitySymbol, 'a', 'a'])
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    expect(symbols()).toEqual([])
+    click(p.canvas, { x: time === 'live' ? 6.02 : 6, y: 4 })
+    expect(symbols()).toEqual([velocitySymbol, 'a'])
+    // Numbering still identifies the selected body's scene-wide quantities.
+    expect(frame.labels.filter(l => l.color === '#43a047').map(l => l.text)).toEqual([velocitySymbol, '1'])
+    toggleFocus(p.host, 'kinematics')
+    expect(symbols()).toEqual([])
+    click(p.canvas, { x: 11, y: 7 })
+    expect(symbols()).toEqual([])
+    act(() => inputForLabel(p.host, ptBR['panel.showVectors']).click())
+    expect(symbols()).toEqual([])
+    toggleFocus(p.host, 'kinematics')
+    expect(symbols()).toEqual([velocitySymbol, velocitySymbol, 'a', 'a'])
+  })
+
   async function setupGraph() {
     const p = await setupRecording()
     act(() => findButton(p.host, ptBR['graph.toggle'])!.click())
@@ -2961,6 +4352,186 @@ describe('recorded time player (PHY-64)', () => {
     }
     return { ...p, graph, select, pointer, capture }
   }
+
+  it('PHY-78 hides force layers and spring readouts while preserving editable force and contact fields', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording('spring', 'dynamic', {
+      configure: scene => {
+        scene.bodies.push(blankScene().bodies[0]!)
+        scene.bodies.find(b => b.id === 'ball')!.position.y = 0.5
+        scene.contacts = [{ a: 'ball', b: 'chao', muS: 0.3, muK: 0.2 }]
+      },
+      contacts: [{ aId: 'ball', bId: 'chao', point: { x: 6, y: 0 }, normal: { x: 0, y: 1 } }],
+    })
+    await p.steps(1)
+    expect(frame.labels.map(l => l.text)).toContain('P')
+    expect(frame.labels.map(l => l.text)).toContain('N')
+    // F_el is drawn as separate base/subscript fillText calls, not the literal "F_el".
+    expect(frame.labels.filter(l => l.color === '#00838f').map(l => l.text)).toEqual(['F', 'el'])
+    click(p.canvas, { x: 6, y: 0.5 })
+    p.poll()
+    const editingFields = () => {
+      const forces = panel(p.host, t('forces.title', { id: 'ball' }))
+      expect(forces, 'force editor remains in the DOM').toBeDefined()
+      const forceInputs = [...forces!.querySelectorAll('input')]
+      expect(forceInputs).toHaveLength(4)
+      return [
+        ...forceInputs,
+        ...['muS', 'muK', 'e'].map(key => inputForLabel(p.host, t(`contacts.${key}`))),
+      ]
+    }
+    const disabledAtTip = editingFields().map(input => input.matches(':disabled'))
+    expect(disabledAtTip).toEqual([false, false, false, false, true, true, true])
+    toggleFocus(p.host, 'forces')
+    // Compare at the same post-step instant, before any seek changes the locks.
+    expect(editingFields().map(input => input.matches(':disabled'))).toEqual(disabledAtTip)
+    expect(frame.labels.map(l => l.text)).not.toContain('P')
+    expect(frame.labels.map(l => l.text)).not.toContain('N')
+    expect(frame.labels.filter(l => l.color === '#00838f' || l.color === '#d97742')).toEqual([])
+    click(p.canvas, { x: 4, y: 2.25 })
+    p.poll()
+    const reading = panel(p.host, t('readout.title', { id: 'link' }))!
+    expect(reading.textContent).not.toContain(t('readout.springForce'))
+    expect(reading.textContent).not.toContain(t('readout.springDx'))
+    expect(reading.textContent).toContain(t('readout.steps'))
+    toggleFocus(p.host, 'forces')
+    expect(reading.textContent).toContain(t('readout.springForce'))
+    expect(frame.labels.map(l => l.text)).toContain('P')
+    toggleFocus(p.host, 'forces')
+    // Record zero releases the existing structural locks with forces still hidden.
+    p.seek(0)
+    click(p.canvas, { x: 6, y: 0.5 })
+    expect(editingFields().map(input => input.matches(':disabled'))).toEqual([false, false, false, false, false, false, false])
+    // P uses simulated states; return to the recorded tip before checking its restoration.
+    p.seek(1)
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).toContain('P')
+  })
+
+  it.each([false, true])('PHY-78 hides rope tension and slack readouts with forces off (slack=%s)', async (slack) => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording('rope', 'dynamic', { slack })
+    await p.steps(1)
+    expect(frame.labels.map(l => l.text)).toContain('T')
+    click(p.canvas, { x: 4, y: 4 })
+    p.poll()
+    const reading = panel(p.host, t('readout.title', { id: 'link' }))!
+    expect(reading.textContent).toContain(t('readout.ropeTension'))
+    if (slack) expect(reading.textContent).toContain(t('readout.ropeSlack'))
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).not.toContain('T')
+    expect(reading.textContent).not.toContain(t('readout.ropeTension'))
+    expect(reading.textContent).not.toContain(t('readout.ropeSlack'))
+    expect(reading.textContent).toContain(t('readout.steps'))
+  })
+
+  it('PHY-78 uses current focus when painting recorded force vectors', async () => {
+    const frame = captureVectorFrame()
+    const p = await setupRecording()
+    await p.steps(8)
+    p.seek(5)
+    expect(frame.labels.map(l => l.text)).toContain('P')
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).not.toContain('P')
+    expect(frame.labels.map(l => l.text)).not.toContain('F')
+    expect(p.slider().value).toBe('5')
+    expect(p.step).toHaveBeenCalledTimes(8)
+    toggleFocus(p.host, 'forces')
+    expect(frame.labels.map(l => l.text)).toContain('P')
+  })
+
+  it('PHY-78 filters body and spring system energy independently from momentum', async () => {
+    const p = await setupRecording('spring')
+    click(p.canvas, { x: 6, y: 4 })
+    p.poll()
+    const bodyMore = () => panel(p.host, t('readout.title', { id: 'ball' }))!.querySelector('details')!
+    const system = () => panel(p.host, t('readout.system'))
+    expect(system()!.textContent).toContain('E_el')
+    toggleFocus(p.host, 'energy')
+    for (const key of ['kinetic', 'potential', 'elastic', 'mechanical']) {
+      expect(system()!.textContent).not.toContain(t(`readout.${key}`))
+    }
+    for (const key of ['momentum', 'momentumX', 'momentumY']) {
+      expect(system()!.textContent).toContain(t(`readout.${key}`))
+    }
+    expect(bodyMore().textContent).not.toContain('E_c')
+    expect(bodyMore().textContent).not.toContain('E_pg')
+    expect(bodyMore().textContent).toContain('|p|')
+    toggleFocus(p.host, 'momentum')
+    expect(system()).toBeUndefined()
+    expect(bodyMore().textContent).not.toContain('|p|')
+    toggleFocus(p.host, 'energy')
+    for (const key of ['kinetic', 'potential', 'elastic', 'mechanical']) {
+      expect(system()!.textContent).toContain(t(`readout.${key}`))
+    }
+    for (const key of ['momentum', 'momentumX', 'momentumY']) {
+      expect(system()!.textContent).not.toContain(t(`readout.${key}`))
+    }
+    expect(bodyMore().textContent).toContain('E_c')
+    expect(bodyMore().textContent).not.toContain('|p|')
+  })
+
+  it('PHY-81 toggles current graph visibility at record five and zero without undo, stepping or reset', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(10)
+    p.seek(5)
+    act(() => findButton(p.host, t('graph.toggle'))!.click())
+    act(() => graphCurve(p.host, 'E_pg').click())
+    expect(graphCurve(p.host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    const unchanged = (cursor: string) => {
+      expect(p.slider().value).toBe(cursor)
+      expect(p.slider().max).toBe('10')
+      expect(p.step).toHaveBeenCalledTimes(10)
+      expect(p.replaceScene).not.toHaveBeenCalled()
+      expect(findButton(p.host, '↶')!.disabled).toBe(true)
+      expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    }
+    unchanged('5')
+    p.seek(0)
+    expect(graphCurve(p.host, 'E_pg').getAttribute('aria-pressed')).toBe('false')
+    act(() => graphCurve(p.host, 'E_pg').click())
+    expect(graphCurve(p.host, 'E_pg').getAttribute('aria-pressed')).toBe('true')
+    unchanged('0')
+    await p.steps(1)
+    unchanged('1')
+  })
+
+  it('PHY-78 edits the current focus at record five while physics fields remain locked', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.steps(10)
+    p.seek(5)
+    expect(inputForLabel(p.host, t('panel.gLabel')).disabled).toBe(true)
+    expect(inputForLabel(panel(p.host, 'ball')!, t('properties.vx')).matches(':disabled')).toBe(true)
+    expect(focusChip(p.host, 'kinematics').disabled).toBe(false)
+    toggleFocus(p.host, 'kinematics')
+    expect(focusChip(p.host, 'kinematics').getAttribute('aria-pressed')).toBe('false')
+    expect(p.readout()).not.toContain(t('readout.position'))
+    toggleFocus(p.host, 'kinematics')
+    expect(p.readout()).toContain('posição: (6,05, 4,00) m')
+    expect(p.slider().value).toBe('5')
+    expect(p.slider().max).toBe('10')
+    expect(p.step).toHaveBeenCalledTimes(10)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+  })
+
+  it('PHY-78 preserves the recording when focus changes at record zero', async () => {
+    const p = await setupRecording()
+    await p.steps(8)
+    p.seek(0)
+    toggleFocus(p.host, 'energy', 'momentum', 'forces')
+    expect(p.slider().value).toBe('0')
+    expect(p.slider().max).toBe('8')
+    expect(panel(p.host, t('readout.system'))).toBeUndefined()
+    expect(p.step).toHaveBeenCalledTimes(8)
+    expect(p.replaceScene).not.toHaveBeenCalled()
+    expect(findButton(p.host, '↶')!.disabled).toBe(true)
+    expect(findButton(p.host, '↷')!.disabled).toBe(true)
+    await p.steps(1)
+    expect(p.slider().value).toBe('1')
+    expect(p.step).toHaveBeenCalledTimes(8)
+  })
 
   it('PHY-73 seeks the midpoint to frame 30 and returns to the live tip at the right margin', async () => {
     const p = await setupGraph()
@@ -3330,7 +4901,7 @@ describe('recorded time player (PHY-64)', () => {
     expect(p.readout()).toContain('(9,00, 0,00) m/s²')
   })
 
-  it.each(['play', 'step'] as const)('PHY-65 capped replay reaches the current live world via %s', async (mode) => {
+  it.each(['play', 'step'] as const)('PHY-77 capped replay pauses at the last recorded pose via %s', async (mode) => {
     const p = await setupRecording()
     click(p.canvas, { x: 6, y: 4 })
     await p.play()
@@ -3341,30 +4912,108 @@ describe('recorded time player (PHY-64)', () => {
     else await p.steps(1)
     expect(p.slider().value).toBe('598')
     expect(p.readout()).toContain('(11,98, 4,00) m')
-    expect(p.step).toHaveBeenCalledTimes(610)
+    expect(p.step).toHaveBeenCalledTimes(599)
     if (mode === 'play') { p.frame(); p.poll() }
     else await p.steps(1)
     expect(p.slider().value).toBe('599')
     expect(p.slider().max).toBe('599')
-    expect(p.readout()).toContain('(12,10, 4,00) m')
-    expect(p.readout()).toContain('passos: 610')
-    expect(p.host.textContent).toContain('t = 10,17 s')
-    expect(p.step).toHaveBeenCalledTimes(610)
+    expect(p.readout()).toContain('(11,99, 4,00) m')
+    expect(p.readout()).toContain('passos: 599')
+    expect(p.host.textContent).toContain('t = 9,98 s')
+    expect(findButton(p.host, ptBR['playback.play'])!.disabled).toBe(true)
+    expect(p.step).toHaveBeenCalledTimes(599)
   })
-  it('keeps running past the cap and the last slider position is the live world', async () => {
+  it('PHY-77 pauses when full with the slider, clock and step count at the last record', async () => {
     const p = await setupRecording()
     click(p.canvas, { x: 6, y: 4 })
     await p.play()
     for (let i = 0; i < 610; i++) p.frame()
     p.poll()
+    expect(p.step).toHaveBeenCalledTimes(599)
     expect(p.slider().max).toBe('599')
-    expect(p.readout()).toContain('passos: 610')
+    expect(p.slider().value).toBe('599')
+    expect(p.readout()).toContain('(11,99, 4,00) m')
+    expect(p.readout()).toContain('passos: 599')
+    expect(p.host.textContent).toContain('t = 9,98 s')
+    expect(findButton(p.host, ptBR['playback.play'])).toBeDefined()
+    expect(p.host.textContent).toContain('gravação cheia (10 s) — reinicie')
+    const language = p.host.querySelector<HTMLSelectElement>('select:has(option[value="en"])')!
+    act(() => setSelectValue(language, 'en'))
+    expect(p.host.textContent).toContain('recording full (10 s) — reset')
+  })
+
+  it('PHY-77 blocks full-tip buttons and keyboard steps while keeping recorded navigation available', async () => {
+    const p = await setupRecording()
+    click(p.canvas, { x: 6, y: 4 })
+    await p.play()
+    for (let i = 0; i < 610; i++) p.frame()
+    p.poll()
+    const play = findButton(p.host, ptBR['playback.play'])!
+    const step = findButton(p.host, ptBR['playback.step'])!
+    expect(play?.disabled).toBe(true)
+    expect(step.disabled).toBe(true)
+    act(() => { play.click(); step.click() })
+    await act(async () => { pressKey(' '); pressKey('ArrowRight') })
+    expect(p.step).toHaveBeenCalledTimes(599)
+    expect(findButton(p.host, ptBR['playback.play'])?.disabled).toBe(true)
+    p.frame()
+    p.poll()
+    expect(p.step).toHaveBeenCalledTimes(599)
+    expect(p.slider().value).toBe('599')
+    expect(findButton(p.host, ptBR['playback.play'])!.disabled).toBe(true)
+    const back = findButton(p.host, ptBR['playback.stepBack'])!
+    expect(back.disabled).toBe(false)
+    expect(p.slider().disabled).toBe(false)
+    act(() => back.click())
+    p.poll()
+    expect(p.slider().value).toBe('598')
+    expect(findButton(p.host, ptBR['playback.play'])!.disabled).toBe(false)
+    expect(step.disabled).toBe(false)
     p.seek(10)
     expect(p.readout()).toContain('(6,10, 4,00) m')
-    p.seek(599)
-    expect(p.readout()).toContain('(12,10, 4,00) m')
-    expect(p.readout()).toContain('passos: 610')
-    expect(p.step).toHaveBeenCalledTimes(610)
+    expect(p.host.textContent).toContain('gravação cheia (10 s) — reinicie')
+    expect(p.step).toHaveBeenCalledTimes(599)
+  })
+
+  it('PHY-77 replays a full recording from 590 and pauses again without new physics steps', async () => {
+    const p = await setupRecording()
+    await p.play()
+    for (let i = 0; i < 610; i++) p.frame()
+    p.poll()
+    p.seek(590)
+    await p.play()
+    p.frame()
+    p.poll()
+    expect(p.slider().value).toBe('591')
+    expect(findButton(p.host, ptBR['playback.pause'])).toBeDefined()
+    for (let i = 0; i < 20; i++) p.frame()
+    p.poll()
+    expect(p.slider().value).toBe('599')
+    expect(findButton(p.host, ptBR['playback.play'])!.disabled).toBe(true)
+    expect(p.step).toHaveBeenCalledTimes(599)
+  })
+
+  it('PHY-77 reset clears the full warning and enables recording a new run', async () => {
+    const p = await setupRecording()
+    await p.play()
+    for (let i = 0; i < 610; i++) p.frame()
+    p.poll()
+    expect(p.host.textContent).toContain('gravação cheia (10 s) — reinicie')
+    expect(findButton(p.host, ptBR['playback.reset'])!.disabled).toBe(false)
+    act(() => findButton(p.host, ptBR['playback.reset'])!.click())
+    p.poll()
+    expect(p.host.textContent).not.toContain('gravação cheia (10 s) — reinicie')
+    expect(p.slider().max).toBe('0')
+    expect(p.slider().value).toBe('0')
+    expect(findButton(p.host, ptBR['playback.play'])!.disabled).toBe(false)
+    expect(findButton(p.host, ptBR['playback.step'])!.disabled).toBe(false)
+    expect(p.step).toHaveBeenCalledTimes(599)
+    await p.play()
+    p.frame()
+    p.poll()
+    expect(p.step).toHaveBeenCalledTimes(600)
+    expect(p.slider().max).toBe('1')
+    expect(p.slider().value).toBe('1')
   })
 
   it('blocks live fields, history and force anchor drags while inspecting an old step', async () => {

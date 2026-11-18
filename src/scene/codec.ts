@@ -1,5 +1,5 @@
-import { SCENE_VERSION } from './types'
-import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Pulley, Scene, Spring } from './types'
+import { FOCUS_GROUPS, SCENE_VERSION } from './types'
+import type { AppliedForce, Body, Constraint, ConstraintEnd, Contact, Focus, FocusGroup, Pulley, Scene, Spring } from './types'
 
 export class SceneParseError extends Error {
   constructor(message: string) {
@@ -267,9 +267,33 @@ function parseConstraint(
   return { id, kind, a, b, via: [...viaRaw] }
 }
 
+function parseFocus(raw: unknown): Focus {
+  if (!isObject(raw)) fail('focus must be a JSON object')
+  checkKeys(raw, ['show', 'hidden'], 'in focus')
+  if (!Array.isArray(raw['show'])) fail('focus.show must be an array')
+  const shown = new Set<FocusGroup>()
+  for (const value of raw['show']) {
+    const group = FOCUS_GROUPS.find((g) => g === value)
+    if (!group) fail(`focus.show: unknown group '${String(value)}'`)
+    if (shown.has(group)) fail(`focus.show: duplicate group '${group}'`)
+    shown.add(group)
+  }
+  const focus: Focus = { show: FOCUS_GROUPS.filter((group) => shown.has(group)) }
+  if ('hidden' in raw) {
+    if (!isObject(raw['hidden'])) fail('focus.hidden must be a JSON object')
+    focus.hidden = Object.fromEntries(Object.entries(raw['hidden']).map(([kind, series]) => {
+      if (!Array.isArray(series) || !series.every((name): name is string => typeof name === 'string' && name !== '')) {
+        fail(`focus.hidden.${kind} must be an array of non-empty strings`)
+      }
+      return [kind, [...series]]
+    }))
+  }
+  return focus
+}
+
 export function parse(json: unknown): Scene {
   if (!isObject(json)) fail('scene must be a JSON object')
-  checkKeys(json, ['version', 'constants', 'bodies', 'forces', 'contacts', 'pulleys', 'constraints'], 'at scene root')
+  checkKeys(json, ['version', 'constants', 'bodies', 'forces', 'contacts', 'pulleys', 'constraints', 'focus'], 'at scene root')
   reqKey(json, 'version', 'at scene root')
   reqKey(json, 'constants', 'at scene root')
   reqKey(json, 'bodies', 'at scene root')
@@ -356,6 +380,8 @@ export function parse(json: unknown): Scene {
       return c
     })
   }
+  // View preferences trail the physics fields; absence preserves legacy bytes.
+  if ('focus' in json) scene.focus = parseFocus(json['focus'])
   return scene
 }
 

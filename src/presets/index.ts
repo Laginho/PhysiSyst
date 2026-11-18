@@ -81,6 +81,7 @@ function wedgeFlagship(): Scene {
       { a: 'chao', b: 'cunha', muS: 0, muK: 0 },
       { a: 'cunha', b: 'bloco', muS: 0, muK: 0 },
     ],
+    focus: { show: ['forces'] },
   }
 }
 
@@ -107,6 +108,7 @@ function inclineBlock(): Scene {
     ],
     forces: [],
     contacts: [{ a: 'rampa', b: 'bloco', muS: 0.3, muK: 0.2 }],
+    focus: { show: ['forces'] },
   }
 }
 
@@ -132,7 +134,8 @@ function projectileLaunch(): Scene {
       },
     ],
     forces: [],
-    contacts: [],
+    contacts: [{ a: 'chao', b: 'projetil', muS: 0, muK: 0, e: 0 }],
+    focus: { show: ['kinematics', 'energy'] },
   }
 }
 
@@ -146,7 +149,12 @@ function collision(e: number): Scene {
       { id: 'esfera-2', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 8, y: 0.5 }, rotation: 0 },
     ],
     forces: [],
-    contacts: [{ a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e }],
+    contacts: [
+      { a: 'esfera-1', b: 'esfera-2', muS: 0, muK: 0, e },
+      { a: 'chao', b: 'esfera-1', muS: 0, muK: 0, e: 0 },
+      { a: 'chao', b: 'esfera-2', muS: 0, muK: 0, e: 0 },
+    ],
+    focus: { show: ['kinematics', 'momentum'] },
   }
 }
 
@@ -159,7 +167,8 @@ function freeFall(): Scene {
       { id: 'bola', shape: 'circle', radius: 0.5, fixed: false, mass: 1, position: { x: 6, y: 7 }, rotation: 0 },
     ],
     forces: [],
-    contacts: [],
+    contacts: [{ a: 'chao', b: 'bola', muS: 0, muK: 0, e: 0 }],
+    focus: { show: ['kinematics', 'energy'] },
   }
 }
 
@@ -183,6 +192,7 @@ function atwood(): Scene {
     contacts: [],
     pulleys: [{ id: 'polia', bodyId: 'teto', anchor: { x: 0, y: -0.75 }, radius: 0.25 }],
     constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'bloco-1', anchor: TOP }, b: { bodyId: 'bloco-2', anchor: TOP }, via: ['polia'] }],
+    focus: { show: ['forces'] },
   }
 }
 
@@ -203,6 +213,7 @@ function tableHanging(): Scene {
     constraints: [
       { id: 'corda', kind: 'rope', a: { bodyId: 'bloco', anchor: { x: 0.2, y: 0 } }, b: { bodyId: 'pendurado', anchor: { x: 0, y: 0.15 } }, via: ['polia'] },
     ],
+    focus: { show: ['forces'] },
   }
 }
 
@@ -226,6 +237,7 @@ function movablePulley(): Scene {
     constraints: [
       { id: 'corda', kind: 'rope', a: { bodyId: 'teto', anchor: { x: -0.25, y: 0 } }, b: { bodyId: 'contrapeso', anchor: CM }, via: ['movel', 'fixa'] },
     ],
+    focus: { show: ['forces'] },
   }
 }
 
@@ -241,6 +253,7 @@ function pendulum(pivot: { x: number; y: number }, bob: { x: number; y: number }
     forces: [],
     contacts: [],
     constraints: [{ id: 'corda', kind: 'rope', a: { bodyId: 'pivo', anchor: CM }, b: { bodyId: 'bola', anchor: CM }, via: [] }],
+    focus: { show: vx === undefined ? ['forces', 'energy'] : ['forces'] },
   }
 }
 
@@ -277,6 +290,7 @@ function horizontalSpring(c?: number): Scene {
         ...(c === undefined ? {} : { c }),
       },
     ],
+    focus: { show: ['energy'], hidden: { energy: ['E_pg'] } },
   }
 }
 
@@ -293,6 +307,7 @@ function verticalSpring(): Scene {
     forces: [],
     contacts: [],
     constraints: [{ id: 'mola', kind: 'spring', a: { bodyId: 'teto', anchor: { x: 0, y: -0.25 } }, b: { bodyId: 'bloco', anchor: TOP }, k: 40, x0: 1.5 }],
+    focus: { show: ['forces', 'energy'] },
   }
 }
 

@@ -1,5 +1,5 @@
 # PHY-76: Dock sob o canvas e tamanho dos controles
-Stage: to-implement
+Stage: done
 Status: ready-for-agent
 Blocked by: none
 Review: human
@@ -56,3 +56,164 @@ Hoje a barra de transporte, o painel do gráfico e a paleta são irmãos da caix
 
 - 2026-10-04 Stage 1 (planner, grilling confirmado pelo Bruno em outro chat). Bruno decidiu: dock sob o canvas na largura dele em todo layout, ordem barra → paleta → gráfico; `+`/`−` sempre visíveis, 70–160 % em passos de 10 %, persistido como `loadCanvasSize`/`saveCanvasSize`; CSS `zoom`, botões fora do bloco; gráfico 180 px sem escala com toggle; o fit subtrai o dock e nunca mede uma caixa que envolve o canvas; validado em `proto/ui-scale` variante D (`9080046`, `?variant=D`), que nunca é mesclada.
 - Planner: `Review: human` porque o layout foi aceito a olho no protótipo; a largura interna do bloco escalado é `(size.width − sizer) / scale` para a largura escalada bater com a do canvas.
+- 2026-10-04 Stage 2: costuras aprovadas no ticket: persistência pública, DOM do App com `FakeResizeObserver`, geometria real com `withBrowserSession`. Consumidores examinados: os três caminhos de `fitCanvas` (montagem, observer e alça), transformação/pintura do canvas, repaint/seek do gráfico, empilhamento com histerese e controles de reprodução/paleta. Entradas de borda: storage indisponível/não finito, limites 0,7/1,6, canvas preferido de 402 px, abertura do gráfico e quebra de linha dos controles. O dock continuará irmão da caixa medida; não haverá nova caixa envolvendo ambos. O commit de protótipo `9080046` não está disponível neste clone; o contrato escrito especifica a implementação.
+
+#### Stage 2 — evidência DOM (2026-10-04)
+
+- Red: `0d167a7`, nove casos novos falharam no App sem dock/zoom/sizer. Green: nove casos passaram após a implementação. Comandos: `npm test -- src/App.test.ts -t 'canvas dock and controls scale'`.
+- Mutação real em `src/App.tsx`, depois de green: fixar `zoom: 1`, mudar a largura do dock para `size.width + 3` e trocar os dois títulos traduzidos por `"controls.sizeTitle"`. Resultado: **9 failed, 157 skipped (166)**; mutações removidas.
+
+| Novo teste (nome abreviado) | Mutação que o matou | Saída vermelha |
+|---|---|---|
+| hydrates the saved scale… | `zoom: 1` | expected `'1'` to be `'1.3'` |
+| increments in tenths… | `zoom: 1` | expected `'1'` to be `'1.1'` |
+| stops bigger at its bound… | `zoom: 1` | expected `'1'` to be `'1.6'` |
+| stops smaller at its bound… | `zoom: 1` | expected `'1'` to be `'0.7'` |
+| orders… at 1200x800 | dock `width: size.width + 3` | expected `'1203px'` to be `'1200px'` |
+| orders… at 700x900 | dock `width: size.width + 3` | expected `'702px'` to be `'699px'` |
+| keeps the graph… | `zoom: 1` | expected `'1'` to be `'1.6'` |
+| updates dock width… | dock `width: size.width + 3` | expected `'1023px'` to be `'1020px'` |
+| translates both sizer labels… | títulos literais sem tradução | expected `'controls.sizeTitle'` to be `'Tamanho dos controles: 100%'` |
+
+- Rodada ampliada de App/persistência/i18n: 245 passed e dois testes PHY-44 desconectados pelo sandbox. Reexecução dos mesmos dois testes com permissão para o Chromium: **2 passed, 164 skipped (166)**. As próximas verificações com browser rodam com essa permissão.
+
+- 2026-10-04 Correção do harness do teste de 402 px (commit exclusivo de testes): o seletor inicial media `button, label, input`, mas não o `span` da leitura de velocidade. Um slider inflexível de 129 px deixava esse span vazar e sobrevivia. O teste agora confirma zoom 1,6 e mede todos os descendentes. A mesma mutação na produção (`style={{ width: 129, flexShrink: 0 }}` no slider de velocidade) produz **1 failed, 23 skipped (24)**: `expected 44.609375 to be less than or equal to 1`. Mutação removida; o contrato não mudou.
+
+#### Stage 2 — evidência Chromium (2026-10-04)
+
+- Red em `410a2c4`: quatro casos lado a lado com `scrollHeight` 1096 > 1080; altura da barra com razão 3,720788 > 1,76; canvas de 696 px em caixa de 694,640625 px. O caso empilhado foi morto pelo deslocamento de 12 px do dock. Red adicional em `df3ecb7`: razão 2,545673 > 1,76 em 1280 px e overflow de 49,40625 px no canvas mínimo.
+- Ajustes de produção: `main` limitado ao viewport descontando as margens padrão do body; 3 px reservados na caixa para bordas e arredondamento do fit; sliders de velocidade/tempo em linhas próprias, com largura flexível. O dock permanece irmão da caixa que recebe só a altura restante da coluna, de modo que o próprio flex desconta sua altura antes de `fitCanvas`.
+- Green: **9 passed, 15 skipped (24)** no grupo `canvas dock geometry`. Mutação conjunta de alinhamento, altura e shrink-wrap: **8 failed, 1 passed, 15 skipped (24)**. O caso de 402 px foi morto separadamente pelo slider inflexível; tabela por teste abaixo. Todas as mutações foram removidas.
+
+| Novo teste (nome abreviado) | Mutação na produção | Saída vermelha |
+|---|---|---|
+| aligns… 1920 px, escala 1 | dock `transform: translateX(12px)` | expected 12 to be ≤ 1 |
+| aligns… 1920 px, escala 1,6 | mesma | expected 12 to be ≤ 1 |
+| aligns… 1280 px, escala 1 | mesma | expected 12 to be ≤ 1 |
+| aligns… 1280 px, escala 1,6 | mesma | expected 12 to be ≤ 1 |
+| aligns… 700 px, escala 1,6 | mesma | expected 12 to be ≤ 1 |
+| scales transport height… 1920 px | barra `minHeight: 150 / controlsScale`, fixando sua altura física | expected 1 to be ≥ 1,44 |
+| scales transport height… 1280 px | mesma | expected 1 to be ≥ 1,44 |
+| refits… within three frames | caixa medida com `flex: controlsScale === 1.6 ? '0 0 auto' : 1`, shrink-wrap do canvas | expected 636 to be less than 630; o canvas cresceu em vez de refazer o fit |
+| keeps the sizer… 402 px | slider de velocidade `width: 129, flexShrink: 0` | expected 44.609375 to be ≤ 1 |
+
+- Verificação focada final: `npm test -- src/persistence/persistence.test.ts src/App.test.ts src/App.browser.test.ts` — **3 files passed, 241 tests passed**. Inclui os testes existentes de layout, seleção, alça, gráfico e edição numérica no Chromium, além dos novos casos.
+
+#### Stage 2 — entrega (2026-10-04)
+
+- Implementados os critérios 1–11: persistência normalizada de 70–160%, dock na largura lógica do canvas com as mesmas bordas laterais, ordem transporte → paleta/dica → gráfico, botões de tamanho fora do zoom e gráfico de 180 px sem escala. A alça atualiza a largura do dock no mesmo render. O fit usa a caixa independente que recebe a altura restante depois do dock.
+- **21 casos novos** (3 persistência, 9 DOM, 9 Chromium), com testes em commits separados da produção. Mutações reais e saídas vermelhas por caso de DOM/Chromium registradas acima; o harness corrigido também tem commit próprio e prova vermelha.
+- Gate oficial `npm test && npm run lint && npm run typecheck && npm run build`: **33 arquivos, 1.140 testes passaram; lint, typecheck e build concluíram com exit 0**. O build manteve o aviso de chunk >500 kB no módulo `sim`; nenhum arquivo gerado entrou no diff.
+- Diff final limitado aos Primary files e ao ticket; `git diff --check` verde. Branch `phy/PHY-76-controls-dock`, criada da sessão `sweatshop/2026-10-04-1243`. Pronto para stage 3; `Review: human` preservado.
+
+#### Stage 3 — revisão (2026-10-04)
+
+Verdict: Reopen — critério 8: em presets, a barra de transporte cresce 2,257× ao passar de escala 1 para 1,6, acima do máximo 1,76×.
+
+Primeira revisão do diff `758d59a8e0cebf225cd18d0cf084924f68d44560...4ab0876`, sobre a sessão `sweatshop/2026-10-04-1243`. Standards e Spec executados em sub-agentes independentes; gate, reprodução do finding e mutações conferidos pelo revisor principal. Contrato e Primary files preservados. Nenhuma alteração permanente de produção ou teste em stage 3.
+
+##### Standards
+
+- Uma observação de metadados, não bloqueante: `ticket-flow`, seção Commits and closing, pede motivo e ID no corpo do commit. Os oito commits (`c5d394d`, `f6511f1`, `0d167a7`, `fff5013`, `410a2c4`, `df3ecb7`, `c168393`, `4ab0876`) explicam o motivo, mas citam PHY-76 apenas no assunto. Histórico preservado; isto não viola Primary files, test-first nem comportamento existente.
+- Zero violações de código e zero smells acionáveis. Stats de todos os commits confirmam separação entre testes e produção; a correção do harness tem commit exclusivo de testes e nova evidência vermelha. Diff restrito aos Primary files e ao ticket. Não há linhas `Proxy decided`.
+
+##### Spec
+
+**F8 — ❌ critério 8, confirmado na produção sem mutações.** O critério exige: “a altura da barra de transporte é 1,6× a medida em escala 1 (±10 %)”. Com o preset Máquina de Atwood e gráfico aberto, em Chromium com janelas 1280×1080 e 1920×1080, a barra mede 76 px em escala 1 e 171,53125 px em 1,6: razão 2,256990, fora do intervalo [1,44; 1,76]. A largura inversa ao zoom (`src/App.tsx:1865`), o `flexWrap` (:1866) e o hint condicional `preset.readOnlyHint` (:1867) fazem a barra ocupar uma linha adicional. O hint já existia; o zoom e a nova restrição de largura introduzem esta falha no consumidor de presets. Os testes de proporcionalidade atuais (`src/App.browser.test.ts:66–80`) montam apenas a cena inicial e não exercitam esse caminho.
+
+Reprodução independente: armazenamento limpo e pt-BR → abrir Máquina de Atwood na galeria → abrir gráfico → medir o pai de reproduzir → seis cliques em `+` → esperar exatamente três `requestAnimationFrame` → medir de novo. Localizar a barra com `[...document.querySelectorAll('button')].find(b => b.style.minWidth === '110px').parentElement.getBoundingClientRect()`. As três medições seguintes do canvas permanecem iguais; dock alinhado, gráfico de 180 px e `scrollHeight` de 1080 px. Portanto a falha não é transiente de fit ou crescimento do observer.
+
+| Critério | Parecer |
+| --- | --- |
+| 1 | ✅ Defaults, limites, arredondamento, round-trip e indisponibilidade do storage verificados pela API de produção. |
+| 2 | ✅ Hydration do zoom; transporte/paleta/dica dentro do bloco, sizer e gráfico fora. |
+| 3 | ✅ Passos de 0,1, persistência e botões desabilitados nos limites 0,7/1,6. |
+| 4 | ✅ Ordem transporte → paleta/dica → gráfico e largura lógica do dock nos dois layouts. |
+| 5 | ✅ Gráfico mantém largura do canvas e altura de 180 px nas escalas 1 e 1,6. |
+| 6 | ✅ Geometria em 1920/1280 px, alinhamento e ausência de rolagem vertical nos casos verificados. |
+| 7 | ✅ Alinhamento no layout empilhado em 700 px e escala 1,6. |
+| 8 | ❌ F8: proporção da altura da barra falha no preset; alturas do sizer e gráfico permanecem corretas. |
+| 9 | ✅ Fit independente e retângulos estáveis; também conferidos nos presets após três frames. |
+| 10 | ✅ Alça sincroniza largura do canvas/dock; casos DOM e browser existentes verdes. |
+| 11 | ✅ Catálogos pt-BR/en e paridade; testes de layout anteriores verdes. |
+
+Consumidores e interações examinados: montagem, ResizeObserver e alça de `fitCanvas`; backing store, transformação e pintura; abertura, repaint e seek do gráfico; reprodução, seleção e undo; paleta e dicas; abertura/cópia de presets e seu hint; empilhamento com histerese; preferência mínima de 402 px; idioma e títulos do sizer; ajuda de atalhos com zoom. Caminhos de falha e fronteiras: storage ausente/inválido/não finito ou lançando, limites de escala, sliders e controles estreitos, gráfico fechado/aberto, caixas fracionárias e pisos do fit. Probes adicionais conferiram inglês, 700 px e backdrop da ajuda, inclusive escala 0,7. Não houve comparação visual com o protótipo, inspeção em outros navegadores ou novos experimentos no motor físico. Nenhum outro finding de Spec ou scope creep confirmado neste passe.
+
+##### Prova vermelho/verde repetida
+
+Repetidas as mutações registradas em stage 2, com relatórios por teste. Os nove casos DOM e os nove Chromium morreram pelos mesmos motivos das tabelas anteriores; também foram repetidas as três provas da persistência.
+
+| Mutação de produção | Resultado focal | Saída vermelha |
+| --- | --- | --- |
+| Persistência sem clamp/arredondamento, chave de escrita errada e fallback 0,7 | 3 failed, 48 skipped (51) | `expected 2 to be 1.6`; `expected null to be '1.2'`; `expected 0.7 to be 1`. |
+| Zoom fixo em 1, dock +3 px e títulos literais | 9 failed, 157 skipped (166) | Zoom esperado 1,3/1,1/1,6/0,7; larguras 1203≠1200, 702≠699 e 1023≠1020; título sem tradução. |
+| Dock deslocado 12 px, barra com altura física fixa e caixa shrink-wrap em 1,6 | 8 failed, 1 passed, 15 skipped (24) | Cinco casos: `expected 12 to be less than or equal to 1`; dois: razão 1 < 1,44; estabilidade: `expected 636 to be less than 630`. |
+| Slider de velocidade inflexível de 129 px no canvas mínimo | 1 failed, 23 skipped (24) | `expected 44.609375 to be less than or equal to 1`. |
+
+Todos os arquivos de produção foram restaurados byte a byte em `finally`; `git diff --exit-code -- src/App.tsx src/persistence/index.ts` passou. Green após a restauração: `npm test -- src/persistence/persistence.test.ts src/App.test.ts src/App.browser.test.ts -t 'controls scale preference|canvas dock and controls scale|canvas dock geometry'` — **3 arquivos passed, 21 passed, 220 skipped (241)**.
+
+Runner, relatórios por mutação, `summary.json`, reprodução independente e `preset-height-proof.json`: `%TEMP%/phy76-review-4f638e89938a4e02ac1d6c1f32532c80/`. A evidência essencial permanece neste ticket.
+
+##### Gate e retorno à implementação
+
+- Gate oficial independente sobre a produção original: `npm test && npm run lint && npm run typecheck && npm run build`, exit 0; **33 arquivos passed, 1140 passed (1140), sem skips**; lint/typecheck/build exit 0, 52 módulos no build. Aviso já existente: chunk `sim` de 2136,50 kB (>500 kB).
+- A primeira tentativa no sandbox teve 26 falhas de conexão com Chromium e 1114 aprovados; executar o gate fora do sandbox resolveu as conexões sem mudança de código. O gate verde não cobre F8 no preset.
+- Retorno mecânico ao stage 2: F8 precisa de novo teste em `src/App.browser.test.ts`, na costura já aprovada, cobrindo o preset nas duas larguras e a proporção após três frames. Teste em commit próprio, vermelho na produção atual; depois corrigir a distribuição da barra nos Primary files, preservar os demais critérios e repetir mutação/gate. Nenhum critério foi reescrito.
+- `Stage: to-implement` na branch existente `phy/PHY-76-controls-dock`; sem merge na sessão. Nenhuma linha de ledger havia sido criada para remover. `Review: human` preservado.
+
+Totais por eixo: Standards — 1 observação de metadados, 0 bloqueantes, 0 smells acionáveis; Spec — 1 finding bloqueante (F8, critério 8).
+
+#### Stage 2 — correção de F8 (2026-10-04)
+
+- Retomada na branch existente, limitada ao finding F8 do critério 8. Costura já aprovada: geometria real do App em `withBrowserSession`, com o preset Máquina de Atwood aberto pela galeria, gráfico aberto e medições após exatamente três `requestAnimationFrame` ao aumentar a escala. Nenhum critério ou Primary file alterado.
+- Consumidores examinados antes do teste vermelho: cena inicial e cenas salvas sem hint; abertura/reabertura de presets e criação de cópia; barra de reprodução, ajuda de atalhos e sliders; zoom, sizer e gráfico; os caminhos de fit na montagem, observer e alça. A alteração planejada é local à distribuição do hint, sem modificar essas funções. Fronteiras consideradas: hint ausente/presente em pt-BR/en, largura inversa ao zoom, escala 1/1,6, canvas preferido mínimo e layout empilhado. Testes anteriores preservam essas interações; o novo caso reproduz o consumidor de preset que faltava em 1920 e 1280 px.
+- Prova vermelha antes da produção: `npm test -- src/App.browser.test.ts -t 'scales preset transport height'` — **2 failed, 24 skipped (26)**. Nos dois casos (1920 e 1280 px): `expected 2.2569901315789473 to be less than or equal to 1.76`. O teste abre o preset pela interface, confirma o hint e zoom 1/1,6, e verifica também alturas invariáveis do sizer e do gráfico. Commit exclusivo de testes e registro do ticket, com `Stage: implementing`; a produção continua inalterada.
+- Red commit: `fb5fa6d`. Correção local em `src/App.tsx`: hint com `flexBasis: '100%'` e gap da barra de 4 px. Só a linha própria não bastava: o novo teste ainda falhava com razão 2,072704 porque o botão do gráfico quebrava para outra linha depois do fit; a medição real confirmou esse caminho. O gap de 4 px permite manter os botões na mesma linha nos dois tamanhos verificados, sem mudar fit, zoom, textos ou ações.
+- Green da costura de geometria: `npm test -- src/App.browser.test.ts -t 'canvas dock geometry'` — **11 passed, 15 skipped (26)**, incluindo os dois casos novos e os nove anteriores.
+
+| Novo teste Chromium | Mutação na produção depois de green | Saída vermelha |
+| --- | --- | --- |
+| scales preset transport height… at 1920px | restaurar gap 6 e remover `flexBasis: '100%'` do hint | `expected 2.2569901315789473 to be less than or equal to 1.76` |
+| scales preset transport height… at 1280px | mesma | `expected 2.2569901315789473 to be less than or equal to 1.76` |
+
+- Comando da mutação: `npm test -- src/App.browser.test.ts -t 'scales preset transport height'` — **2 failed, 24 skipped (26)**. O arquivo de produção foi restaurado byte a byte em `finally`; nenhuma mutação fica no diff.
+- Gate oficial após a restauração: `npm test && npm run lint && npm run typecheck && npm run build` — **33 arquivos passed, 1.142 testes passed, sem skips**; lint, typecheck e build concluídos com exit 0. Build: 52 módulos, chunk `sim` mantido em 2.136,50 kB. Nenhum artefato gerado entrou no diff.
+- Entrega da retomada: F8 coberto em dois casos reais de Chromium e corrigido com duas regras locais de layout, sem alterar as funções consumidoras. Testes no commit vermelho `fb5fa6d`; o commit de produção não toca testes. `git diff --check` verde e diff limitado aos Primary files e ao ticket. `Stage: to-review`, pronto para re-revisão do finding F8; `Review: human` preservado, sem merge nesta etapa.
+
+#### Resolution (2026-10-04)
+
+Verdict: Approve
+
+Re-revisão independente de F8 e do diff `9c3f609...24b6a28`, sobre a base da sessão `758d59a`. Standards e Spec executados em sub-agentes separados; gate, mutação e medições adicionais conferidos pelo revisor principal. Contrato, critérios e Primary files preservados. Nenhuma correção permanente de produção ou testes nesta etapa.
+
+##### Standards
+
+- **0 novas violações e 0 smells acionáveis.** As duas regras locais em `src/App.tsx` mantêm a correção dentro do escopo, sem abstrações ou refactors adicionais. Os casos Chromium reutilizam os helpers existentes e exercitam a interface real.
+- `fb5fa6d` altera somente testes/ticket; `24b6a28` altera somente produção/ticket. A evidência por teste registra mutação e saída vermelha; os dois commits têm motivo e PHY-76 no corpo. A observação de metadados da primeira revisão permanece histórica e não se repete. Nenhuma linha `Proxy decided` ou nova falha da revisão anterior identificada.
+
+##### Spec
+
+- **0 novos findings; F8 resolvido. Critério 8: ✅.** O hint ocupa uma linha própria nas duas escalas e o gap de 4 px evita a quebra adicional dos botões. Nas medições independentes do preset Máquina de Atwood, com gráfico aberto, a barra passou de **92 px para 149,734375 px**, razão **1,6275475543**, dentro de [1,44; 1,76]. Resultado igual em **1920 e 1280 px, pt-BR e en**, após exatamente três `requestAnimationFrame`.
+- Nos quatro cenários, as alturas de `+`/`−` não mudaram, o gráfico continuou em 180 px, o dock permaneceu alinhado à esquerda e à largura do canvas (±1 px), o conjunto coube na coluna sem rolagem vertical e três retângulos consecutivos do canvas foram iguais, dentro da caixa independente. **Critérios 1–7 e 9–11 continuam ✅**, conforme a primeira revisão e o gate completo repetido.
+- Consumidores/interações examinados nesta retomada: abertura/reabertura, cópia e troca de presets; reprodução, undo/redo, ajuda e sliders; zoom, sizer, paleta e gráfico; observer e alça de fit. A mudança não altera handlers, persistência ou a caixa medida. Não foram reavaliados o protótipo visual, outros navegadores ou o motor físico. Nenhum scope creep confirmado.
+
+##### Prova vermelho/verde repetida
+
+Mutação exata registrada em stage 2: restaurar `gap: 6` na barra e remover `flexBasis: '100%'` do hint. Comando: `npm test -- src/App.browser.test.ts -t 'scales preset transport height'`.
+
+| Novo teste Chromium | Resultado com a mutação |
+| --- | --- |
+| scales preset transport height… at 1920px | ❌ `expected 2.2569901315789473 to be less than or equal to 1.76` |
+| scales preset transport height… at 1280px | ❌ `expected 2.2569901315789473 to be less than or equal to 1.76` |
+
+- Red: **2 failed, 24 skipped (26)**. Produção restaurada byte a byte em `finally`; `git diff --exit-code -- src/App.tsx src/App.browser.test.ts` verde. Green após restauração: grupo `canvas dock geometry`, **11 passed, 15 skipped (26)**.
+- A medição adicional inicialmente falhou na estabilização do harness e depois no script de revisão, que assumia a galeria fechada. Corrigida somente essa suposição no script temporário; os quatro cenários acima passaram. Nenhum teste ou arquivo de produção foi alterado para o probe.
+- Runner, relatórios por teste, `summary.json` com `restored: true` e `geometry-proof.json`: `%TEMP%/phy76-rereview-5b5998d1e4fe45818353c7e9b4f82712/`. A evidência essencial permanece neste ticket.
+
+##### Gate e fechamento
+
+- Gate oficial independente: `npm test && npm run lint && npm run typecheck && npm run build`, **exit 0; 33 arquivos e 1.142 testes passed, sem skips**; lint, typecheck e build exit 0, 52 módulos no build. Chunk `sim` continua em 2.136,50 kB. A tentativa inicial no sandbox teve 28 falhas de conexão com Chromium e 1.114 testes passed; a execução com permissão de browser resolveu todas sem alteração de código.
+- `git rebase sweatshop/2026-10-04-1243` confirmou a branch atualizada, sem mudança no HEAD validado. Merge **sem squash**, `f1b36ea`, na sessão `sweatshop/2026-10-04-1243`; `git diff --exit-code 24b6a28 HEAD` confirmou a mesma árvore revisada. Nenhum arquivo gerado entrou no diff.
+- `Stage: done` e linha de ledger registrados juntos no commit de fechamento sobre a sessão. `Review: human` preservado; dentro de sessão não retém o ticket, conforme `ticket-flow`. Sem PR ou push nesta etapa.
+
+Totais por eixo: Standards — 0 novos findings, 0 bloqueantes; Spec — 0 novos findings, F8 corrigido.
